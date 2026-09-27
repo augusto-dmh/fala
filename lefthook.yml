@@ -1,0 +1,33 @@
+# Local gates. CI repeats what matters (hooks can be skipped); see CONTRIBUTING.md.
+# Install once per clone: bunx lefthook install
+
+commit-msg:
+  commands:
+    commitlint:
+      run: bunx commitlint --edit {1}
+    no-forbidden-trailers:
+      run: scripts/check-commit-msg.sh {1}
+
+pre-commit:
+  jobs:
+    - name: branch name
+      run: scripts/check-branch.sh
+    - name: rustfmt
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
+    - name: frontend lint
+      glob: "*.{ts,tsx,js,css,json,md,yml,yaml}"
+      run: bun run lint && bunx prettier --check .
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: no direct push to main
+      run: scripts/check-push.sh
+      use_stdin: true
+    - name: branch name
+      run: scripts/check-branch.sh
+    - name: clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    - name: test
+      run: cargo test --workspace

@@ -1,0 +1,61 @@
+# cargo deny check — runs in CI (.github/workflows/ci.yml).
+
+[graph]
+all-features = false
+
+[advisories]
+# Unmaintained crates deep in the Tauri tree are upstream's to replace; flag only our direct deps.
+unmaintained = "workspace"
+ignore = [
+  # quick-xml 0.38 comes in only through plist and wayland-scanner, both parsing trusted XML at
+  # build time. The fix needs a semver bump in those crates; revisit on the next Tauri update.
+  { id = "RUSTSEC-2026-0194", reason = "build-time parsing of trusted XML (plist, wayland-scanner)" },
+  { id = "RUSTSEC-2026-0195", reason = "build-time parsing of trusted XML (plist, wayland-scanner)" },
+  # Linux overlay only; the GTK3 -> GTK4 move belongs to phase 3 (Linux GNOME Wayland).
+  { id = "RUSTSEC-2024-0422", reason = "Linux overlay only; replaced in phase 3" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+# The baseline is MIT and Apache-2.0. The rest are permissive licenses already present in the
+# Tauri and upstream dependency tree (checked 2026-09-26). MPL-2.0 is file-level copyleft, which is fine
+# for binaries as long as those files are not modified (Servo's cssparser/selectors, via wry).
+# A new license needs a deliberate line here, not a blanket allow.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[[licenses.clarify]]
+# Published without a license field; upstream repository is MIT (macOS only, not a target).
+crate = "tauri-nspanel"
+expression = "MIT"
+license-files = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# Workspace crates reference each other by path; git deps below are pinned by Cargo.lock.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# Inherited from upstream: forks with fixes not yet released on crates.io.
+allow-git = [
+  "https://github.com/ahkohd/tauri-nspanel",
+  "https://github.com/cjpais/hf-hub",
+  "https://github.com/cjpais/rodio.git",
+  "https://github.com/cjpais/tao",
+  "https://github.com/cjpais/vad-rs",
+  "https://github.com/rustdesk-org/rdev",
+]

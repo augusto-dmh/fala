@@ -26,22 +26,24 @@ dist-ssr
 *.sln
 *.sw?
 
-.claude/
+.claude/settings.local.json
+CLAUDE.local.md
 
 /target/
 recording_*
-.crush/
 
 # Playwright
 playwright-report/
 test-results/
 blob-report/
 
-.direnv
-.envrc
 
-# Nix build output
-result
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Downloaded models (the VAD model and the GigaAM vocab are versioned on purpose)
+apps/desktop/resources/models/*
+!apps/desktop/resources/models/silero_vad_v4.onnx
+!apps/desktop/resources/models/gigaam_vocab.txt
+*.gguf

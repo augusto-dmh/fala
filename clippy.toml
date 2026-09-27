@@ -1,0 +1,3 @@
+# The workspace denies unwrap/expect (Cargo.toml [workspace.lints]); tests may still use them.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

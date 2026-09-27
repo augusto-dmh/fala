@@ -28,7 +28,7 @@ const pickerLanguage = (languageCode: string): string =>
     : recognitionLanguage(languageCode);
 
 // Mirrors the matching logic of `effective_language` in
-// src-tauri/src/managers/model.rs. The Rust function is authoritative for the
+// apps/desktop/src/managers/model.rs. The Rust function is authoritative for the
 // *concrete* code the engine receives (e.g. `nb`); this resolves the canonical
 // picker intent (e.g. `no`) so model switches preserve the user's language.
 const effectiveLanguage = (

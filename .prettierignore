@@ -9,13 +9,16 @@ target
 *.bundle.*
 
 # Tauri
-src-tauri/target
-src-tauri/gen
+apps/desktop/target
+apps/desktop/gen
 
 # Generated files
 src/bindings.ts
-src-tauri/src/catalog/catalog.json
+apps/desktop/src/catalog/catalog.json
 
 # Misc
 .DS_Store
 *.log
+
+# Docs: ADRs and the design doc are frozen as written; prettier would rewrite them
+*.md

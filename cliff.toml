@@ -1,0 +1,28 @@
+# git-cliff: CHANGELOG.md entries from the Conventional Commits on main (PR titles).
+# Run at release time only: git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
+
+[changelog]
+trim = true
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}{% if commit.breaking %} **(breaking)**{% endif %}
+{%- endfor %}
+{% endfor %}
+"""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+# Keep a Changelog groups; the rest is internal and stays out.
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^fix", group = "<!-- 2 -->Fixed" },
+  { message = "^perf", group = "<!-- 1 -->Changed" },
+  { message = "^revert", group = "<!-- 3 -->Removed" },
+  { body = ".*security", group = "<!-- 4 -->Security" },
+  { message = "^(build|chore|ci|docs|refactor|style|test)", skip = true },
+]
