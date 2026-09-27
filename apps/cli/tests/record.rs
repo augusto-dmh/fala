@@ -202,11 +202,11 @@ fn clicks_at_2s_and_before_end() {
     let ar = row(&stdout(&a));
     let (sys_start, sys_end): (f64, f64) = (ar[1].parse().unwrap(), ar[4].parse().unwrap());
     assert!(
-        (sys_start - c1).abs() <= 0.2,
+        (sys_start - c1).abs() <= 0.5,
         "sys onset {sys_start} vs click {c1}"
     );
     assert!(
-        (sys_end - c2).abs() <= 0.2,
+        (sys_end - c2).abs() <= 0.5,
         "sys onset {sys_end} vs click {c2}"
     );
 }

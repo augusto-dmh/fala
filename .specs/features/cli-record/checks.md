@@ -53,7 +53,7 @@ Proof: `cargo test -p fala-cli --bin fala-cli record::capture::tests::full_ring_
 **C11** - The click is a 1000 Hz sine, 20 ms long, peak amplitude 0.5: at 48 kHz, 960 samples, max |x| in [0.49, 0.5], zero crossings every 24 samples (plan AC 10)
 Proof: `cargo test -p fala-cli --bin fala-cli record::capture::tests::click_is_1khz_20ms_half_amplitude`
 
-**C12** - A 10 s recording reports `click_1_s` in [2.0, 2.1] and `click_2_s` in [8.0, 8.1], and `--analyze` on the file finds the system onsets within 0.2 s of both (plan AC 10)
+**C12** - A 10 s recording reports `click_1_s` in [2.0, 2.1] and `click_2_s` in [8.0, 8.1], and `--analyze` on the file finds the system onsets within 0.5 s of both (plan AC 10)
 Proof: `cargo test -p fala-cli --test record -- --ignored --exact clicks_at_2s_and_before_end`
 
 **C13** - When the default output cannot open (ALSA pointed at a nonexistent config), the command exits 2 before recording and stderr names `--no-click` (plan AC 11)
@@ -148,3 +148,8 @@ Proof: `s=$(awk '/^## Windows/,0' docs/spikes/04-captura-dupla.md); for p in 'TO
   rtrb, hound) ≈ 105 KB / 4 ≈ 26k; S5 ≈ 3k plus the 60 min recording; total ≈ 30k, under the
   150k budget - one builder
 - Mechanism: one builder (fits)
+- **Settled mid-build:** C12 first allowed 0.2 s between `click_N_s` and the system onset; the
+  measured lag is 0.15-0.21 s (output buffer, and the WAV timeline starting at the first captured
+  frame rather than at wall-clock t0), so the proof sat on the boundary. Augusto approved on
+  2026-09-27 widening it to 0.5 s (the other click is ≥ 6 s away); the drift metrics never use
+  `click_N_s`. The report records the lag
