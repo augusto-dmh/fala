@@ -15,6 +15,10 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 fala-core.workspace = true
+hound = "3.5.1"
+icu_normalizer = { version = "2.1.1", default-features = false, features = ["compiled_data"] }
+log = "0.4.25"
+env_logger = "0.10"
 
 [lints]
 workspace = true

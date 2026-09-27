@@ -3,9 +3,11 @@
 //! Depende só de `crates/` (nunca de `tauri`), então compila sem WebView (ADR-0002).
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
-use std::path::PathBuf;
+mod bench;
 
-use anyhow::bail;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -30,17 +32,27 @@ enum Command {
         /// Caminho do arquivo (WAV, Opus ou qualquer formato que o ffmpeg leia).
         file: PathBuf,
     },
-    /// Roda o benchmark de WER/RTF sobre o corpus de referência.
-    Bench,
+    /// Mede WER e RTF de um modelo de ASR sobre cortes com referência.
+    Bench(bench::BenchArgs),
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> ExitCode {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
     let name = match cli.command {
         Command::Dictate => "dictate",
         Command::Record => "record",
         Command::Transcribe { .. } => "transcribe",
-        Command::Bench => "bench",
+        Command::Bench(args) => {
+            return match bench::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
     };
-    bail!("`{name}` ainda não foi implementado")
+    log::error!("`{name}` ainda não foi implementado");
+    ExitCode::FAILURE
 }
