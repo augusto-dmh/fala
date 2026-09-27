@@ -126,10 +126,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # transcribe-cpp's ggml-vulkan needs glslc plus the SPIRV-Headers CMake package. The
+      # humbletim action only 7z-extracts the installer, and LunarG's repackaged 1.4.309.0
+      # installer no longer yields the CMake configs that way; this action runs the installer.
       - name: Install Vulkan SDK
-        uses: humbletim/install-vulkan-sdk@v1.2
+        uses: jakoch/install-vulkan-sdk-action@v1
         with:
-          version: 1.4.309.0
+          vulkan_version: 1.4.335.0
+          install_runtime: false
           cache: true
 
       - uses: dtolnay/rust-toolchain@master

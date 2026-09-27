@@ -36,6 +36,10 @@ needless_late_init = "allow"
 items_after_test_module = "allow"
 manual_repeat_n = "allow"
 write_with_newline = "allow"
+# cfg(windows) code, seen only by the Windows CI job.
+if_same_then_else = "allow"
+ptr_eq = "allow"
+unnecessary_cast = "allow"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
