@@ -153,3 +153,8 @@ Proof: `s=$(awk '/^## Windows/,0' docs/spikes/04-captura-dupla.md); for p in 'TO
   frame rather than at wall-clock t0), so the proof sat on the boundary. Augusto approved on
   2026-09-27 widening it to 0.5 s (the other click is ≥ 6 s away); the drift metrics never use
   `click_N_s`. The report records the lag
+- **Settled mid-build:** the 60 min evidence took three runs. Run 1 (speech playing) recorded
+  cleanly but speech masked the end click in `--analyze`; run 2 (clicks only) ran with the sink
+  lowered to 0.06 between runs, so the mic did not hear the clicks; run 3 (clicks only, 0.68,
+  volume and routing logged every minute) gave the analysis table. Augusto chose each rerun on
+  2026-09-27; the report keeps all three
