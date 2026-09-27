@@ -4,6 +4,7 @@
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
 mod bench;
+mod record;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,8 +26,8 @@ struct Cli {
 enum Command {
     /// Grava do microfone até Enter, transcreve e imprime o texto.
     Dictate,
-    /// Grava microfone e áudio do sistema em dois canais.
-    Record,
+    /// Grava microfone e áudio do sistema em dois canais e mede o drift entre eles.
+    Record(record::RecordArgs),
     /// Transcreve um arquivo de áudio.
     Transcribe {
         /// Caminho do arquivo (WAV, Opus ou qualquer formato que o ffmpeg leia).
@@ -41,7 +42,15 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let name = match cli.command {
         Command::Dictate => "dictate",
-        Command::Record => "record",
+        Command::Record(args) => {
+            return match record::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
         Command::Transcribe { .. } => "transcribe",
         Command::Bench(args) => {
             return match bench::run(args) {
