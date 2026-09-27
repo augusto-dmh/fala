@@ -15,10 +15,19 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 fala-core.workspace = true
+# Código de spike da fase 0 (`bench`): os dois runtimes de ASR que o desktop já embarca.
+# Migra para `crates/asr` na fase 1.
+transcribe-rs = { version = "0.3.8", features = ["onnx"] }
+transcribe-cpp = { version = "0.2.3", default-features = false }
 hound = "3.5.1"
 icu_normalizer = { version = "2.1.1", default-features = false, features = ["compiled_data"] }
 log = "0.4.25"
 env_logger = "0.10"
+
+[features]
+# GPU só por feature de build; o default é CPU.
+vulkan = ["transcribe-cpp/vulkan"]
+cuda = ["transcribe-cpp/cuda"]
 
 [lints]
 workspace = true
