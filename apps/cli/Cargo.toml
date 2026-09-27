@@ -1,0 +1,20 @@
+[package]
+name = "fala-cli"
+description = "Fala sem UI: spikes, benchmark e uso headless."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "fala-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+fala-core.workspace = true
+
+[lints]
+workspace = true

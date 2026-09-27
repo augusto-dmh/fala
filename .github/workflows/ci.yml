@@ -1,0 +1,142 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          # webkit/gtk for apps/desktop; Vulkan + glslc + spirv-headers for transcribe-cpp's
+          # ggml Vulkan backend; evdev/X11 for the keyboard hook.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            libasound2-dev libssl-dev libgtk-layer-shell-dev libevdev-dev libx11-dev libxtst-dev \
+            libvulkan-dev glslc spirv-headers
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1" # keep in sync with rust-toolchain.toml
+          components: rustfmt, clippy
+
+      - uses: swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --all -- --check
+
+      - name: No tauri in crates/ (ADR-0002)
+        run: scripts/check-no-tauri-in-crates.sh
+
+      - name: Brand check (ADR-0001)
+        run: scripts/check-brand.sh
+
+      - name: fala-cli builds without WebView
+        run: cargo build -p fala-cli
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: test
+        run: cargo test --workspace
+
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bunx prettier --check .
+      - run: bunx tsc --noEmit
+      - run: bun run check:translations
+      - run: bun run check:model-languages
+
+  deny:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  # Title and body are what survives the squash merge (CONTRIBUTING.md).
+  pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            build
+            chore
+            ci
+            docs
+            feat
+            fix
+            perf
+            refactor
+            revert
+            style
+            test
+          requireScope: false
+          subjectPattern: "^(?![A-Z]).+[^.]$"
+          subjectPatternError: 'The description starts lowercase and has no trailing period: "{subject}"'
+
+      - name: Title is at most 72 characters
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: test "${#TITLE}" -le 72
+
+      - name: Body has the four sections and no generated footers
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: scripts/check-pr-body.sh
+
+      - name: Size is at most 1000 lines unless large-change
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/check-pr-size.sh ${{ github.event.pull_request.number }}
+
+  # TODO(windows): Windows 11 is the first target; this job keeps cfg(windows) code compiling.
+  # Runs after merge and on demand only, because Windows minutes cost double on private repos.
+  windows:
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

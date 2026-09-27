@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 const KEYBOARD_IMPLEMENTATION_OPTIONS: DropdownOption[] = [
   { value: "tauri", label: "Tauri Global Shortcut" },
-  { value: "handy_keys", label: "Handy Keys" },
+  { value: "fala_keys", label: "Fala Keys" },
 ];
 
 interface KeyboardImplementationSelectorProps {

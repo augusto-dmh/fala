@@ -1,7 +1,7 @@
 import React from "react";
 import { useSettings } from "../../hooks/useSettings";
 import { GlobalShortcutInput } from "./GlobalShortcutInput";
-import { HandyKeysShortcutInput } from "./HandyKeysShortcutInput";
+import { FalaKeysShortcutInput } from "./FalaKeysShortcutInput";
 
 interface ShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -15,15 +15,15 @@ interface ShortcutInputProps {
  * based on the keyboard_implementation setting.
  *
  * - "tauri" (default): Uses GlobalShortcutInput with JS keyboard events
- * - "handy_keys": Uses HandyKeysShortcutInput with backend key events
+ * - "fala_keys": Uses FalaKeysShortcutInput with backend key events
  */
 export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
   const { getSetting } = useSettings();
   const keyboardImplementation = getSetting("keyboard_implementation");
 
   // Default to Tauri implementation if not set
-  if (keyboardImplementation === "handy_keys") {
-    return <HandyKeysShortcutInput {...props} />;
+  if (keyboardImplementation === "fala_keys") {
+    return <FalaKeysShortcutInput {...props} />;
   }
 
   return <GlobalShortcutInput {...props} />;

@@ -1,0 +1,2 @@
+# Keeps the inherited upstream code (edition 2021) and the new crates (edition 2024) on one style.
+style_edition = "2021"
