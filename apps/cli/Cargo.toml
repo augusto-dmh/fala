@@ -19,6 +19,10 @@ fala-core.workspace = true
 # Migra para `crates/asr` na fase 1.
 transcribe-rs = { version = "0.3.8", features = ["onnx"] }
 transcribe-cpp = { version = "0.2.3", default-features = false }
+# Código de spike da fase 0 (`record`): captura dupla com o `cpal` que o desktop já usa.
+# Migra para `crates/audio` na fase 2.
+cpal = "0.16.0"
+rtrb = "0.4.0"
 hound = "3.5.1"
 icu_normalizer = { version = "2.1.1", default-features = false, features = ["compiled_data"] }
 log = "0.4.25"
