@@ -390,7 +390,11 @@ pub fn record(opt: &Options) -> Result<(), Failure> {
             let config = config_48k(&d, false)?;
             input_stream(&d, &config, sys_prod, Arc::clone(&sys_counters), "system")
         });
-        // SAFETY: como acima; o stream do sistema já abriu o PCM e não relê o ambiente.
+        // SAFETY: aqui já existem threads (a do stream do sistema no cpal e o loop do
+        // pipewire-alsa), então um `getenv` em C nelas pode correr junto com este `unsetenv`. É um
+        // risco aceito de spike: o plugin lê as variáveis ao abrir o PCM, que já abriu, e nenhuma
+        // das duas threads relê o ambiente depois disso; removê-las antes de abrir o mic é o que
+        // impede o mic de também capturar o monitor. A fase 3 troca isto por `pipewire-rs`.
         unsafe {
             std::env::remove_var("PIPEWIRE_NODE");
             std::env::remove_var("PIPEWIRE_ALSA");
