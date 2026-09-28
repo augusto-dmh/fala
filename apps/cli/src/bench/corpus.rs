@@ -12,6 +12,7 @@ pub const SAMPLE_RATE: u32 = 16_000;
 
 pub struct Cut {
     pub stem: String,
+    pub wav: PathBuf,
     pub audio_s: f64,
     pub reference: Vec<String>,
 }
@@ -57,6 +58,7 @@ pub fn load(cuts_dir: &Path, refs_dir: &Path) -> Result<Vec<Cut>> {
             }
             Ok(Cut {
                 stem,
+                wav,
                 audio_s,
                 reference,
             })
@@ -87,6 +89,15 @@ fn check_wav(path: &Path) -> Result<f64> {
         );
     }
     Ok(f64::from(reader.duration()) / f64::from(SAMPLE_RATE))
+}
+
+/// Amostras f32 em [-1, 1] de um corte já validado.
+pub fn read_samples(path: &Path) -> Result<Vec<f32>> {
+    let mut reader = hound::WavReader::open(path)?;
+    reader
+        .samples::<i16>()
+        .map(|s| Ok(f32::from(s?) / 32768.0))
+        .collect()
 }
 
 /// Hipótese externa (door 2): `<dir>/<stem>.txt` e, opcional, `<dir>/<stem>.wall_s`.

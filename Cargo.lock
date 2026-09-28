@@ -1875,6 +1875,8 @@ dependencies = [
  "hound",
  "icu_normalizer",
  "log",
+ "transcribe-cpp",
+ "transcribe-rs",
 ]
 
 [[package]]

@@ -1,11 +1,15 @@
 //! `fala-cli bench` pela fronteira: roda o binário e confere exit code, stdout e stderr.
+//!
+//! Os testes `#[ignore]` precisam de modelo e de fala real e leem do ambiente (falham se faltar):
+//! `FALA_TEST_PARAKEET_DIR`, `FALA_TEST_GGUF`, `FALA_TEST_SPEECH_WAV` (16 kHz mono i16, 5-20 s).
 
 // `allow-unwrap-in-tests` não cobre os helpers de um crate de teste de integração.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 const LEGEND_HYP: &str = "engine=hyp model=hyp threads=- device=- load_s=- tag=-";
 const HEADER: &str = "| cut | audio_s | wall_s | rtf | wer_% | sub | del | ins | ref_words |";
@@ -52,6 +56,26 @@ impl Corpus {
         }
     }
 
+    fn speech(&self, stem: &str) {
+        let src = env_path("FALA_TEST_SPEECH_WAV");
+        fs::copy(src, self.dir("cuts").join(format!("{stem}.wav"))).unwrap();
+        self.reference(stem, "referência provisória do teste");
+    }
+
+    /// Só os primeiros `seconds` da fala de teste.
+    fn speech_prefix(&self, stem: &str, seconds: u32) {
+        let mut reader = hound::WavReader::open(env_path("FALA_TEST_SPEECH_WAV")).unwrap();
+        let spec = reader.spec();
+        let n = (seconds * spec.sample_rate) as usize;
+        let mut w =
+            hound::WavWriter::create(self.dir("cuts").join(format!("{stem}.wav")), spec).unwrap();
+        for sample in reader.samples::<i16>().take(n) {
+            w.write_sample(sample.unwrap()).unwrap();
+        }
+        w.finalize().unwrap();
+        self.reference(stem, "referência provisória do teste");
+    }
+
     fn args(&self) -> Vec<String> {
         vec![
             "bench".into(),
@@ -91,6 +115,10 @@ fn write_wav(path: &Path, rate: u32, channels: u16, bits: u16, float: bool, seco
         }
     }
     w.finalize().unwrap();
+}
+
+fn env_path(var: &str) -> PathBuf {
+    PathBuf::from(std::env::var(var).unwrap_or_else(|_| panic!("{var} is not set")))
 }
 
 fn fala(args: &[String]) -> Output {
@@ -159,6 +187,197 @@ fn total_line_pools_wer_and_rtf() {
     assert_eq!(total[3], "0.875");
 }
 
+#[test]
+fn empty_reference_exits_2() {
+    let c = Corpus::new("empty_ref");
+    c.wav("a", 1.0);
+    c.reference("a", " ... !? ");
+    let o = fala(&with(
+        c.args(),
+        &["--engine", "parakeet-onnx", "--model", "/nonexistent/model"],
+    ));
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    assert!(stderr(&o).contains("a.txt"), "{}", stderr(&o));
+}
+
+// ---- S2 ----
+
+#[test]
+fn parakeet_rejects_threads_and_device() {
+    let c = Corpus::new("parakeet_rejects");
+    c.wav("a", 1.0);
+    c.reference("a", "um");
+    let base = with(
+        c.args(),
+        &["--engine", "parakeet-onnx", "--model", "/nonexistent/model"],
+    );
+    let o = fala(&with(base.clone(), &["--threads", "4"]));
+    assert_eq!(o.status.code(), Some(2));
+    assert!(stderr(&o).contains("--threads"), "{}", stderr(&o));
+    let o = fala(&with(base, &["--device", "gpu"]));
+    assert_eq!(o.status.code(), Some(2));
+    assert!(stderr(&o).contains("--device gpu"), "{}", stderr(&o));
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_PARAKEET_DIR and FALA_TEST_SPEECH_WAV"]
+fn parakeet_onnx_prints_one_row_per_cut() {
+    let c = Corpus::new("parakeet_rows");
+    c.speech("a");
+    let model = env_path("FALA_TEST_PARAKEET_DIR").display().to_string();
+    let o = fala(&with(
+        c.args(),
+        &["--engine", "parakeet-onnx", "--model", &model],
+    ));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert_eq!(out.lines().count(), 5, "{out}");
+    assert!(out.starts_with(
+        "engine=parakeet-onnx model=parakeet-tdt-0.6b-v3-int8 threads=- device=cpu load_s="
+    ));
+    assert_eq!(out.lines().nth(1).unwrap(), HEADER);
+    let r = rows(&out);
+    assert_eq!(r[0][0], "a");
+    assert_eq!(r[1][0], "total");
+    let rtf = &r[0][3];
+    assert_eq!(rtf.split('.').nth(1).map(str::len), Some(3), "rtf {rtf}");
+    assert!(rtf.parse::<f64>().unwrap() < 1.0, "rtf {rtf}");
+    r[0][1].parse::<f64>().unwrap();
+    r[0][2].parse::<f64>().unwrap();
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_PARAKEET_DIR and FALA_TEST_SPEECH_WAV"]
+fn load_time_is_excluded_from_wall_s() {
+    let c = Corpus::new("parakeet_load");
+    // 2 s de fala transcrevem em ~0.2 s; a carga leva ~1.5-2.5 s. Se a carga entrasse no wall_s,
+    // wall_s >= load_s sempre.
+    c.speech_prefix("a", 2);
+    let model = env_path("FALA_TEST_PARAKEET_DIR").display().to_string();
+    let o = fala(&with(
+        c.args(),
+        &["--engine", "parakeet-onnx", "--model", &model],
+    ));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(!out.lines().nth(1).unwrap().contains("load"));
+    let load_s: f64 = legend_field(&out, "load_s").parse().unwrap();
+    let wall_s: f64 = rows(&out)[0][2].parse().unwrap();
+    assert!(wall_s < load_s, "wall_s {wall_s} >= load_s {load_s}");
+}
+
+// ---- S3 ----
+
+#[test]
+#[ignore = "needs FALA_TEST_GGUF and FALA_TEST_SPEECH_WAV"]
+fn gguf_legend_reports_threads_and_cpu() {
+    let c = Corpus::new("gguf_threads");
+    c.speech("a");
+    let model = env_path("FALA_TEST_GGUF").display().to_string();
+    let base = with(c.args(), &["--engine", "gguf", "--model", &model]);
+    let o = fala(&with(base.clone(), &["--threads", "8"]));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(
+        out.lines()
+            .next()
+            .unwrap()
+            .contains(" threads=8 device=cpu "),
+        "{out}"
+    );
+    assert_eq!(rows(&out)[0][0], "a");
+    let o = fala(&base);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let n = std::thread::available_parallelism()
+        .unwrap()
+        .get()
+        .to_string();
+    assert_eq!(legend_field(&stdout(&o), "threads"), n);
+}
+
+#[test]
+#[ignore = "needs a build with --features vulkan, a GPU, FALA_TEST_GGUF and FALA_TEST_SPEECH_WAV"]
+fn gguf_gpu_reports_device() {
+    let c = Corpus::new("gguf_gpu");
+    c.speech("a");
+    let model = env_path("FALA_TEST_GGUF").display().to_string();
+    let o = fala(&with(
+        c.args(),
+        &["--engine", "gguf", "--model", &model, "--device", "gpu"],
+    ));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let device = legend_field(&stdout(&o), "device");
+    assert_ne!(device, "cpu");
+    let err = stderr(&o);
+    let line = err
+        .lines()
+        .find(|l| l.contains(&format!("dispositivo GPU: {device} ")))
+        .unwrap_or_else(|| panic!("no device line in {err}"));
+    assert!(
+        !line.contains("llvmpipe"),
+        "ran on the software rasterizer: {line}"
+    );
+}
+
+#[cfg(not(any(feature = "vulkan", feature = "cuda")))]
+#[test]
+fn gpu_without_backend_exits_1() {
+    let c = Corpus::new("gpu_missing");
+    c.wav("a", 1.0);
+    c.reference("a", "um");
+    let o = fala(&with(
+        c.args(),
+        &[
+            "--engine",
+            "gguf",
+            "--model",
+            "/nonexistent/model.bin",
+            "--device",
+            "gpu",
+        ],
+    ));
+    assert_eq!(o.status.code(), Some(1), "{}", stderr(&o));
+    let err = stderr(&o);
+    assert!(err.contains("vulkan") && err.contains("cuda"), "{err}");
+    assert_eq!(stdout(&o), "", "fell back to a run instead of failing");
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_GGUF and FALA_TEST_SPEECH_WAV"]
+fn engine_error_keeps_printed_rows() {
+    let c = Corpus::new("engine_error");
+    c.speech("a");
+    c.wav("b", 0.0);
+    c.reference("b", "vazio");
+    let model = env_path("FALA_TEST_GGUF").display().to_string();
+    let o = fala(&with(c.args(), &["--engine", "gguf", "--model", &model]));
+    assert_eq!(o.status.code(), Some(1), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert_eq!(out.lines().count(), 4, "{out}");
+    assert_eq!(rows(&out)[0][0], "a");
+    let err = stderr(&o);
+    let line = err
+        .lines()
+        .find(|l| l.contains("`b`"))
+        .unwrap_or_else(|| panic!("{err}"));
+    assert!(line.contains("run"), "engine error text missing: {line}");
+}
+
+#[test]
+fn missing_model_exits_1() {
+    let c = Corpus::new("missing_model");
+    c.wav("a", 1.0);
+    c.reference("a", "um");
+    for engine in ["parakeet-onnx", "gguf"] {
+        let o = fala(&with(
+            c.args(),
+            &["--engine", engine, "--model", "/nonexistent/model.bin"],
+        ));
+        assert_eq!(o.status.code(), Some(1), "{engine}: {}", stderr(&o));
+        assert_eq!(stdout(&o), "", "{engine}");
+    }
+}
+
 // ---- S4 ----
 
 #[test]
@@ -189,6 +408,20 @@ fn no_wav_exits_2() {
 }
 
 #[test]
+fn missing_reference_exits_2() {
+    let c = Corpus::new("missing_ref");
+    c.wav("a", 1.0);
+    c.wav("sem_ref", 1.0);
+    c.reference("a", "um");
+    let o = fala(&with(
+        c.args(),
+        &["--engine", "parakeet-onnx", "--model", "/nonexistent/model"],
+    ));
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    assert!(stderr(&o).contains("`sem_ref`"), "{}", stderr(&o));
+}
+
+#[test]
 fn wrong_wav_spec_exits_2() {
     // (rate, channels, bits, float, the value the message must cite)
     let cases = [
@@ -213,6 +446,51 @@ fn wrong_wav_spec_exits_2() {
 }
 
 // ---- S5 ----
+
+#[test]
+#[ignore = "needs FALA_TEST_PARAKEET_DIR and FALA_TEST_SPEECH_WAV"]
+fn out_then_hyp_round_trips() {
+    let c = Corpus::new("round_trip");
+    c.speech("a");
+    let model = env_path("FALA_TEST_PARAKEET_DIR").display().to_string();
+    let out_dir = c.dir("fresh").join("nested");
+    let o = fala(&with(
+        c.args(),
+        &[
+            "--engine",
+            "parakeet-onnx",
+            "--model",
+            &model,
+            "--out",
+            &out_dir.display().to_string(),
+        ],
+    ));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let engine_rows = rows(&stdout(&o));
+    let text = fs::read_to_string(out_dir.join("a.txt")).unwrap();
+    assert!(!text.trim().is_empty(), "empty hypothesis file");
+    // A hipótese só vai para o arquivo: a palavra mais longa não aparece no stdout nem no stderr.
+    let longest = text
+        .split_whitespace()
+        .max_by_key(|w| w.chars().count())
+        .unwrap();
+    for stream in [stdout(&o), stderr(&o)] {
+        assert!(!stream.contains(longest), "`{longest}` leaked: {stream}");
+    }
+    let wall: f64 = fs::read_to_string(out_dir.join("a.wall_s"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(format!("{wall:.2}"), engine_rows[0][2]);
+
+    let o = fala(&with(c.args(), &["--hyp", &out_dir.display().to_string()]));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let hyp_rows = rows(&stdout(&o));
+    for (e, h) in engine_rows.iter().zip(&hyp_rows) {
+        assert_eq!(e[4..], h[4..], "WER columns differ");
+    }
+}
 
 #[test]
 fn hyp_scores_and_names_dir() {
@@ -243,6 +521,30 @@ fn missing_wall_s_prints_dash() {
     assert_eq!((r[0][2].as_str(), r[0][3].as_str()), ("1.00", "0.500"));
     assert_eq!((r[1][2].as_str(), r[1][3].as_str()), ("-", "-"));
     assert_eq!(r[2][3], "-");
+}
+
+#[test]
+fn hyp_rejects_engine_flags() {
+    let c = Corpus::new("hyp_rejects");
+    c.wav("a", 1.0);
+    c.reference("a", "um");
+    c.hyp("a", "um", None);
+    let flags: [&[&str]; 5] = [
+        &["--engine", "gguf"],
+        &["--model", "/m"],
+        &["--threads", "4"],
+        &["--device", "cpu"],
+        &["--chunk-s", "30"],
+    ];
+    for flag in flags {
+        let o = fala(&with(c.hyp_args(), flag));
+        assert_eq!(
+            o.status.code(),
+            Some(2),
+            "{flag:?} accepted: {}",
+            stdout(&o)
+        );
+    }
 }
 
 #[test]
@@ -300,4 +602,42 @@ fn transcript_text_never_printed_above_debug() {
             "{stream}"
         );
     }
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_PARAKEET_DIR and FALA_TEST_SPEECH_WAV"]
+fn rows_stream_while_running() {
+    let c = Corpus::new("streaming");
+    c.speech("a");
+    // `b` = a fala repetida 6 vezes, para a engine ainda estar trabalhando quando `a` sair.
+    let mut reader = hound::WavReader::open(env_path("FALA_TEST_SPEECH_WAV")).unwrap();
+    let spec = reader.spec();
+    let samples: Vec<i16> = reader.samples::<i16>().map(Result::unwrap).collect();
+    let mut w = hound::WavWriter::create(c.dir("cuts").join("b.wav"), spec).unwrap();
+    for _ in 0..6 {
+        for s in &samples {
+            w.write_sample(*s).unwrap();
+        }
+    }
+    w.finalize().unwrap();
+    c.reference("b", "referência provisória");
+
+    let model = env_path("FALA_TEST_PARAKEET_DIR").display().to_string();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fala-cli"))
+        .args(with(
+            c.args(),
+            &["--engine", "parakeet-onnx", "--model", &model],
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let row_a = lines.nth(3).unwrap().unwrap();
+    assert!(row_a.starts_with("| a |"), "{row_a}");
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "process ended before row a was read"
+    );
+    assert!(child.wait().unwrap().success());
 }
