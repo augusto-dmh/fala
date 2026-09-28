@@ -332,11 +332,22 @@ fn analyze_rejects_recording_flags() {
         &["--no-click"],
         &["--flush-s", "5"],
     ];
+    // Um WAV válido: sem o conflito das flags, a análise sairia com 0, não com 2.
+    let dir = scratch("analyze_conflicts");
+    let wav = dir.join("clicks.wav");
+    stereo_clicks(&wav, 40, &[(0, 2.0), (1, 2.01), (0, 38.0), (1, 38.03)]);
+    let ok = fala(&["record", "--analyze", wav.to_str().unwrap()]);
+    assert_eq!(ok.status.code(), Some(0), "{}", stderr(&ok));
     for flag in flags {
-        let mut args = vec!["record", "--analyze", "x.wav"];
+        let mut args = vec!["record", "--analyze", wav.to_str().unwrap()];
         args.extend_from_slice(flag);
         let o = fala(&args);
         assert_eq!(o.status.code(), Some(2), "{flag:?} accepted");
+        assert!(
+            stderr(&o).contains("cannot be used with"),
+            "{flag:?}: {}",
+            stderr(&o)
+        );
     }
 }
 
