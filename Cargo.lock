@@ -1870,11 +1870,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "cpal",
  "env_logger",
  "fala-core",
  "hound",
  "icu_normalizer",
  "log",
+ "rtrb",
  "transcribe-cpp",
  "transcribe-rs",
 ]
