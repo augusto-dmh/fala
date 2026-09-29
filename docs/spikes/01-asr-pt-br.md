@@ -127,6 +127,26 @@ Limitações que valem para toda rodada:
 `docs/dev/build-windows.md`. A RTX 5050 é Blackwell (sm_120) e exige CUDA 12.8+; se o build com
 `--features cuda` não trouxer kernels para ela em 1 hora, registrar e seguir com Vulkan.
 
+Sessão de 2026-09-29 no Alienware: nenhuma rodada. `fala-research/benchmarks/audio/cuts/` e
+`reference/` ainda não existem, e sem eles o `bench` não tem o que medir. Os rabbit holes do
+Windows (CUDA na RTX 5050, Voxtral) também não foram tentados: dependem das mesmas rodadas, e
+esta máquina não tem o CUDA Toolkit (`nvcc` ausente; `CUDA_PATH` vazio).
+
+O que ficou pronto nesta máquina para quando os cortes existirem:
+
+| Item | Versão |
+| --- | --- |
+| Windows | 11 Pro 25H2, build 10.0.26200.9457 |
+| GPU | NVIDIA GeForce RTX 5050 Laptop GPU, driver 616.56 |
+| Vulkan SDK | 1.4.357.0 (`glslc` no `PATH`) |
+| Rust / Bun / CMake | 1.98.1 / 1.4.2 / 4.4.3 |
+| `fala-cli` | `cargo build --release -p fala-cli` em `da03312`, sem features, 2 min 18 s, exit 0 |
+
+O app (`bun run tauri build`, mesmo commit) carregou o `parakeet-unified-en-0.6b` Q8_0 no
+backend Vulkan com `bound device 'NVIDIA GeForce RTX 5050 Laptop GPU'` (log do app, 1774 ms de
+carga): o Vulkan enxerga a NVIDIA nesta máquina. Isso não mede WER nem RTF e não substitui a
+rodada `--device gpu` do `bench`.
+
 ```powershell
 cargo build --release -p fala-cli --features cuda     # whisper turbo em CUDA
 cargo build --release -p fala-cli --features vulkan   # alternativa se o CUDA falhar
