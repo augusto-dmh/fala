@@ -10,9 +10,18 @@ use transcribe_rs::onnx::parakeet::ParakeetModel;
 use transcribe_rs::onnx::Quantization;
 use transcribe_rs::{SpeechModel, TranscribeOptions};
 
+use super::Failure;
+
+/// Idioma pedido à engine gguf quando `--language` não é passado.
+pub const DEFAULT_LANGUAGE: &str = "pt-BR";
+
 pub enum Engine {
     Parakeet(Box<ParakeetModel>),
-    Gguf(transcribe_cpp::Session),
+    Gguf {
+        session: transcribe_cpp::Session,
+        /// Código já resolvido contra a lista do modelo (`resolve_language`).
+        language: String,
+    },
 }
 
 /// O que a legenda precisa saber sobre a engine carregada.
@@ -36,7 +45,14 @@ pub fn load_parakeet(dir: &Path) -> Result<Loaded> {
 }
 
 /// `gpu` exige um backend de GPU compilado e um dispositivo GPU/iGPU; nunca cai para CPU.
-pub fn load_gguf(path: &Path, threads: usize, gpu: bool) -> Result<Loaded> {
+/// `requested` é resolvido contra os idiomas que o modelo anuncia; um idioma sem
+/// correspondência é entrada inválida (código 2), não falha de engine.
+pub fn load_gguf(
+    path: &Path,
+    threads: usize,
+    gpu: bool,
+    requested: &str,
+) -> Result<Loaded, Failure> {
     transcribe_cpp::init_logging();
     transcribe_cpp::init_backends_default()?;
     let options = if gpu {
@@ -48,10 +64,11 @@ pub fn load_gguf(path: &Path, threads: usize, gpu: bool) -> Result<Loaded> {
         .filter_map(|(name, on)| on.then_some(name))
         .collect();
         if compiled.is_empty() {
-            bail!(
+            return Err(anyhow!(
                 "--device gpu: esta build não tem backend de GPU (vulkan ou cuda); \
                  recompile com --features vulkan ou --features cuda"
-            );
+            )
+            .into());
         }
         let device = transcribe_cpp::devices()
             .into_iter()
@@ -91,12 +108,49 @@ pub fn load_gguf(path: &Path, threads: usize, gpu: bool) -> Result<Loaded> {
     } else {
         "cpu".to_owned()
     };
+    let language = resolve_language(requested, &model.capabilities().languages)
+        .map_err(|error| Failure { code: 2, error })?;
+    log::info!("idioma: {language}");
     Ok(Loaded {
-        engine: Engine::Gguf(session),
+        engine: Engine::Gguf { session, language },
         threads: Some(threads),
         device,
         load_s,
     })
+}
+
+/// Escolhe, na lista que o modelo anuncia, o código que representa `requested`
+/// (comparação sem distinção de maiúsculas; devolve a grafia do modelo):
+/// o código exato; senão o prefixo sem região (`pt-BR` → `pt`, o que o whisper lista);
+/// senão, para um pedido sem região, a primeira variante regional na ordem do modelo
+/// (`pt` → `pt-BR`). Lista vazia (modelo sem metadado de idioma) devolve o prefixo.
+pub fn resolve_language(requested: &str, advertised: &[String]) -> Result<String> {
+    let bare = requested.split('-').next().unwrap_or(requested);
+    if advertised.is_empty() {
+        return Ok(bare.to_owned());
+    }
+    let find = |wanted: &str| {
+        advertised
+            .iter()
+            .find(|code| code.eq_ignore_ascii_case(wanted))
+            .cloned()
+    };
+    if let Some(code) = find(requested).or_else(|| find(bare)) {
+        return Ok(code);
+    }
+    if requested == bare {
+        let prefix = format!("{bare}-");
+        if let Some(code) = advertised.iter().find(|code| {
+            code.get(..prefix.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(&prefix))
+        }) {
+            return Ok(code.clone());
+        }
+    }
+    bail!(
+        "idioma `{requested}` não consta na lista do modelo; ele anuncia: {}",
+        advertised.join(", ")
+    )
 }
 
 impl Engine {
@@ -107,9 +161,9 @@ impl Engine {
                 .transcribe(samples, &TranscribeOptions::default())
                 .map_err(|e| anyhow!("{e}"))?
                 .text),
-            Engine::Gguf(session) => {
+            Engine::Gguf { session, language } => {
                 let options = RunOptions {
-                    language: Some("pt".to_owned()),
+                    language: Some(language.clone()),
                     ..RunOptions::default()
                 };
                 Ok(session.run(samples, &options)?.text)
@@ -163,6 +217,32 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    fn list(codes: &[&str]) -> Vec<String> {
+        codes.iter().map(|c| (*c).to_owned()).collect()
+    }
+
+    #[test]
+    fn language_resolution_table() {
+        let regional = list(&["pt-BR", "pt-PT"]);
+        let bare = list(&["en", "pt"]);
+        assert_eq!(resolve_language("pt-BR", &regional).unwrap(), "pt-BR");
+        assert_eq!(resolve_language("pt-PT", &regional).unwrap(), "pt-PT");
+        assert_eq!(resolve_language("pt-BR", &bare).unwrap(), "pt");
+        assert_eq!(resolve_language("pt", &regional).unwrap(), "pt-BR");
+        // A primeira na ordem do modelo, não a primeira em ordem alfabética.
+        assert_eq!(
+            resolve_language("pt", &list(&["pt-PT", "pt-BR"])).unwrap(),
+            "pt-PT"
+        );
+        assert_eq!(resolve_language("pt-BR", &[]).unwrap(), "pt");
+        assert_eq!(resolve_language("PT-br", &regional).unwrap(), "pt-BR");
+        let err = resolve_language("pt-BR", &list(&["en", "es"]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("pt-BR"), "{err}");
+        assert!(err.contains("en") && err.contains("es"), "{err}");
+    }
 
     #[test]
     fn chunks_are_consecutive_without_overlap() {
