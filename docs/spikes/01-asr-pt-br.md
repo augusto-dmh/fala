@@ -110,7 +110,7 @@ da rodada.
 | Rabbit hole | Coube na hora? | O que se viu |
 | --- | --- | --- |
 | Vulkan na iGPU | sim, ~5 min | `device=Vulkan0`. Build com `--features vulkan` compilou; `vulkaninfo` lista `Intel(R) Graphics (RPL-U)` (integrated) e `llvmpipe` (CPU); `--device gpu` escolheu `device=Vulkan0` = `Intel(R) Graphics (RPL-U)`, não o `llvmpipe`; whisper turbo transcreveu o corte |
-| Nemotron 3.5 | sim, ~10 min | `device=cpu`. O GGUF do catálogo carrega no `transcribe.cpp` (arquitetura parakeet). Na primeira tentativa a engine recusou `language = "pt"` (`unsupported language`, status 10): o modelo anuncia locais BCP-47 (`pt-BR`, `pt-PT`) e o `bench` passava `pt` fixo. Desde então o `bench` resolve o idioma contra a lista do modelo e registra `idioma: pt-BR` no stderr; com isso o Nemotron transcreve o corte de fumaça sem flag. NeMo-Speech.cpp não foi tentado: o GGUF já cobre o modelo |
+| Nemotron 3.5 | sim, ~10 min | `device=cpu`. O GGUF do catálogo carrega no `transcribe.cpp` (arquitetura parakeet). Na primeira tentativa a engine recusou `language = "pt"` (`unsupported language`, status 10): o modelo anuncia locais BCP-47 (`pt-BR`, `pt-PT`) e o `bench` passava `pt` fixo. Desde então o `bench` resolve o idioma contra a lista do modelo e registra `idioma: pt-BR` no stderr; com isso o Nemotron transcreve o corte de fumaça sem flag. NeMo-Speech.cpp não foi tentado: o GGUF já cobre o modelo. Em 2026-09-28, build de release no `fala` `da03312`, mesmo corte de fumaça, sem `--language`, 3 execuções: stderr `idioma: pt-BR`, legenda `threads=12 device=cpu`, `load_s` 1,22-2,65, RTF 0,385-0,415 (`wall_s` 5,77-6,22 em 15 s de áudio). O WER (766,67 %) não significa nada: a referência é provisória e não transcreve o corte |
 
 Limitações que valem para toda rodada:
 
