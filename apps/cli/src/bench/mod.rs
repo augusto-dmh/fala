@@ -33,8 +33,11 @@ pub struct BenchArgs {
     #[arg(long)]
     model: Option<PathBuf>,
     /// Pontua hipóteses externas (`<stem>.txt` e, opcional, `<stem>.wall_s`) em vez de uma engine.
-    #[arg(long, conflicts_with_all = ["engine", "model", "threads", "device", "chunk_s"])]
+    #[arg(long, conflicts_with_all = ["engine", "model", "threads", "device", "chunk_s", "language"])]
     hyp: Option<PathBuf>,
+    /// Idioma pedido ao modelo (só gguf; default pt-BR), resolvido contra a lista que ele anuncia.
+    #[arg(long)]
+    language: Option<String>,
     /// Threads de CPU (só gguf; default: todas as disponíveis).
     #[arg(long)]
     threads: Option<usize>,
@@ -70,6 +73,16 @@ pub struct Failure {
     pub error: anyhow::Error,
 }
 
+/// `?` sem mapeamento explícito é falha de engine/backend (código 1).
+impl<E: Into<anyhow::Error>> From<E> for Failure {
+    fn from(error: E) -> Self {
+        Failure {
+            code: 1,
+            error: error.into(),
+        }
+    }
+}
+
 fn input(error: anyhow::Error) -> Failure {
     Failure { code: 2, error }
 }
@@ -89,6 +102,11 @@ pub fn run(args: BenchArgs) -> Result<(), Failure> {
         if gpu {
             return Err(input(anyhow::anyhow!(
                 "--device gpu: a engine parakeet-onnx não expõe essa opção (só CPU)"
+            )));
+        }
+        if args.language.is_some() {
+            return Err(input(anyhow::anyhow!(
+                "--language: a engine parakeet-onnx não expõe essa opção"
             )));
         }
     }
@@ -120,16 +138,16 @@ pub fn run(args: BenchArgs) -> Result<(), Failure> {
             .map_err(input)?;
     }
     let loaded = match kind {
-        EngineKind::ParakeetOnnx => engine::load_parakeet(model),
+        EngineKind::ParakeetOnnx => engine::load_parakeet(model).map_err(engine_failure)?,
         EngineKind::Gguf => {
             let threads = match args.threads {
                 Some(n) => n,
                 None => std::thread::available_parallelism().map_or(1, |n| n.get()),
             };
-            engine::load_gguf(model, threads, gpu)
+            let language = args.language.as_deref().unwrap_or(engine::DEFAULT_LANGUAGE);
+            engine::load_gguf(model, threads, gpu, language)?
         }
-    }
-    .map_err(engine_failure)?;
+    };
 
     let engine_name = match kind {
         EngineKind::ParakeetOnnx => "parakeet-onnx",

@@ -72,7 +72,7 @@ done
 target/release/fala-cli bench --cuts $B/audio/cuts --refs $B/reference --engine gguf \
   --model $M/ggml-large-v3-turbo.bin --device gpu --tag linux-vulkan   # build --features vulkan
 
-# Nemotron 3.5 (GGUF pelo transcribe.cpp): ver rabbit hole abaixo
+# Nemotron 3.5 (GGUF pelo transcribe.cpp); o idioma vem da lista do modelo (ver abaixo)
 $FALA bench --cuts $B/audio/cuts --refs $B/reference --engine gguf \
   --model $M/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf --tag linux
 
@@ -82,7 +82,13 @@ $FALA bench --cuts $B/audio/cuts --refs $B/reference --hyp $B/hyp/faster-whisper
 ```
 
 `--chunk-s 60` no Parakeet evita o pico de RAM de um corte de 10 min inteiro nos 14 GB desta
-máquina; a rodada registra o valor usado. O WER normaliza os dois lados igual (NFC, minúsculas,
+máquina; a rodada registra o valor usado.
+
+Idioma na engine gguf: o `bench` pede `pt-BR` (ou o valor de `--language`) e resolve o código
+contra a lista que o modelo anuncia: o código exato quando existe, senão o prefixo sem região
+(`pt`, o que o whisper lista); um modelo que não anuncia nenhum dos dois sai com 2 listando o
+que suporta. O código resolvido sai no stderr como `idioma: <código>` (o Nemotron registra
+`idioma: pt-BR`, o whisper `idioma: pt`, então as rodadas do whisper seguem comparáveis). O WER normaliza os dois lados igual (NFC, minúsculas,
 tudo o que não é letra ou dígito vira espaço) e o agregado é Σ(S+D+I)/ΣN, nunca média de WERs.
 
 ## Evidência medida
@@ -104,7 +110,7 @@ da rodada.
 | Rabbit hole | Coube na hora? | O que se viu |
 | --- | --- | --- |
 | Vulkan na iGPU | sim, ~5 min | `device=Vulkan0`. Build com `--features vulkan` compilou; `vulkaninfo` lista `Intel(R) Graphics (RPL-U)` (integrated) e `llvmpipe` (CPU); `--device gpu` escolheu `device=Vulkan0` = `Intel(R) Graphics (RPL-U)`, não o `llvmpipe`; whisper turbo transcreveu o corte |
-| Nemotron 3.5 | sim, ~10 min (medição bloqueada pelo idioma, não pelo tempo) | `device=cpu`. O GGUF do catálogo carrega no `transcribe.cpp` (arquitetura parakeet), mas a engine recusa `language = "pt"` (`unsupported language`, status 10): o modelo anuncia locais BCP-47 (`pt-BR`, `pt-PT`), e o `bench` passa `pt` fixo por critério do plano. Com `pt-BR` num teste local descartado, transcreveu o corte. Medir o Nemotron exige mudar o plano do `bench` (idioma por modelo); devolvido ao planejamento. NeMo-Speech.cpp não foi tentado: o GGUF já cobre o modelo |
+| Nemotron 3.5 | sim, ~10 min | `device=cpu`. O GGUF do catálogo carrega no `transcribe.cpp` (arquitetura parakeet). Na primeira tentativa a engine recusou `language = "pt"` (`unsupported language`, status 10): o modelo anuncia locais BCP-47 (`pt-BR`, `pt-PT`) e o `bench` passava `pt` fixo. Desde então o `bench` resolve o idioma contra a lista do modelo e registra `idioma: pt-BR` no stderr; com isso o Nemotron transcreve o corte de fumaça sem flag. NeMo-Speech.cpp não foi tentado: o GGUF já cobre o modelo |
 
 Limitações que valem para toda rodada:
 
@@ -131,7 +137,8 @@ target\release\fala-cli bench --cuts $B\audio\cuts --refs $B\reference --engine 
   --model $M\ggml-large-v3-turbo.bin --device gpu --tag win-cuda
 
 # Voxtral Mini 4B Realtime (GGUF do catálogo: handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf, Q4_K_M,
-# sha256 39dc1f65539373a406edea7490505822d77c12edff521744678717eef4da4723); se recusar "pt" como o Nemotron, registrar
+# sha256 39dc1f65539373a406edea7490505822d77c12edff521744678717eef4da4723). O idioma é resolvido
+# contra a lista do modelo (pt-BR, senão pt); registrar o `idioma:` do stderr e, se sair com 2, a lista anunciada
 target\release\fala-cli bench --cuts $B\audio\cuts --refs $B\reference --engine gguf `
   --model $M\Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf --device gpu --tag win-cuda
 

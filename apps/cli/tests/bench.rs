@@ -1,7 +1,8 @@
 //! `fala-cli bench` pela fronteira: roda o binário e confere exit code, stdout e stderr.
 //!
 //! Os testes `#[ignore]` precisam de modelo e de fala real e leem do ambiente (falham se faltar):
-//! `FALA_TEST_PARAKEET_DIR`, `FALA_TEST_GGUF`, `FALA_TEST_SPEECH_WAV` (16 kHz mono i16, 5-20 s).
+//! `FALA_TEST_PARAKEET_DIR`, `FALA_TEST_GGUF`, `FALA_TEST_NEMOTRON_GGUF`, `FALA_TEST_SPEECH_WAV`
+//! (16 kHz mono i16, 5-20 s).
 
 // `allow-unwrap-in-tests` não cobre os helpers de um crate de teste de integração.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -640,4 +641,105 @@ fn rows_stream_while_running() {
         "process ended before row a was read"
     );
     assert!(child.wait().unwrap().success());
+}
+
+// ---- bench-language ----
+
+/// A linha do stderr que registra o idioma resolvido, sem o prefixo do logger.
+fn idioma(o: &Output) -> String {
+    let err = stderr(o);
+    let line = err
+        .lines()
+        .find(|l| l.contains("idioma: "))
+        .unwrap_or_else(|| panic!("no idioma: line in {err}"));
+    line[line.find("idioma: ").unwrap()..].to_owned()
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_NEMOTRON_GGUF and FALA_TEST_SPEECH_WAV"]
+fn nemotron_runs_with_pt_br() {
+    let c = Corpus::new("nemotron_pt_br");
+    c.speech("a");
+    let model = env_path("FALA_TEST_NEMOTRON_GGUF").display().to_string();
+    let o = fala(&with(c.args(), &["--engine", "gguf", "--model", &model]));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(idioma(&o), "idioma: pt-BR");
+    let out = stdout(&o);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 5, "{out}");
+    assert!(lines[0].starts_with("engine=gguf model="), "{out}");
+    assert_eq!(lines[1], HEADER);
+    assert_eq!(
+        lines[2],
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    );
+    assert!(lines[3].starts_with("| a |"), "{out}");
+    assert!(lines[4].starts_with("| total |"), "{out}");
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_GGUF and FALA_TEST_SPEECH_WAV"]
+fn whisper_keeps_bare_pt() {
+    let c = Corpus::new("whisper_bare_pt");
+    c.speech("a");
+    let model = env_path("FALA_TEST_GGUF").display().to_string();
+    let o = fala(&with(c.args(), &["--engine", "gguf", "--model", &model]));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(idioma(&o), "idioma: pt");
+}
+
+#[test]
+#[ignore = "needs FALA_TEST_GGUF and FALA_TEST_SPEECH_WAV"]
+fn language_override_and_unsupported() {
+    let c = Corpus::new("language_override");
+    c.speech("a");
+    let model = env_path("FALA_TEST_GGUF").display().to_string();
+    let base = with(c.args(), &["--engine", "gguf", "--model", &model]);
+    let o = fala(&with(base.clone(), &["--language", "en"]));
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(idioma(&o), "idioma: en");
+
+    let o = fala(&with(base, &["--language", "xx-YY"]));
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    let err = stderr(&o);
+    assert!(err.contains("xx-YY"), "{err}");
+    // A lista do modelo: o whisper anuncia pelo menos `en` e `pt`.
+    let listed = err
+        .lines()
+        .find(|l| l.contains("xx-YY"))
+        .unwrap_or_else(|| panic!("{err}"));
+    assert!(
+        listed.contains("en") && listed.contains("pt"),
+        "model languages not listed: {listed}"
+    );
+    assert_eq!(stdout(&o), "", "a row was transcribed");
+}
+
+#[test]
+fn language_rejected_outside_gguf() {
+    let c = Corpus::new("language_rejected");
+    c.wav("a", 1.0);
+    c.reference("a", "um");
+    c.hyp("a", "um", None);
+    let o = fala(&with(
+        c.args(),
+        &[
+            "--engine",
+            "parakeet-onnx",
+            "--model",
+            "/nonexistent/model",
+            "--language",
+            "pt-BR",
+        ],
+    ));
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    assert!(stderr(&o).contains("--language"), "{}", stderr(&o));
+    assert!(
+        stderr(&o).contains("não expõe essa opção"),
+        "{}",
+        stderr(&o)
+    );
+
+    let o = fala(&with(c.hyp_args(), &["--language", "pt-BR"]));
+    assert_eq!(o.status.code(), Some(2), "{}", stdout(&o));
 }
