@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 2,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "spec_precision_gap::for a check on a document make the proof assert the claimed values and structure not only that a matching line or row count exists",
+      "text": "For a check on a document, make the proof assert the claimed values and structure, not only that a matching line or row count exists",
+      "signal": "spec_precision_gap",
+      "scope": "docs",
+      "status": "candidate",
+      "features": [
+        "cli-bench"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "C32, C33 - .specs/features/cli-bench/verification.md Gaps R8, R9 (docs)"
+      ],
+      "created": "2026-09-30T02:28:17Z",
+      "last_seen": "2026-09-30T02:28:17Z"
+    }
+  ]
+}
