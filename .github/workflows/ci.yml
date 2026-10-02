@@ -148,3 +148,25 @@ jobs:
       # Plain `cargo test` covers default-members: crates/* and apps/cli, no WebView.
       - name: test
         run: cargo test
+
+  # ADR-0008: no key in the repo. The self-test proves the scanner flags a key before the real scan
+  # is trusted to find none.
+  secrets:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned, sha256-verified)
+        run: |
+          scripts/ci/install-gitleaks.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Scanner self-test
+        run: scripts/ci/test-check-secrets.sh
+
+      - name: Secret scan (history)
+        run: scripts/check-secrets.sh
