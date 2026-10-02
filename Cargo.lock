@@ -1861,7 +1861,14 @@ dependencies = [
 name = "fala-audio"
 version = "0.1.0"
 dependencies = [
+ "cpal",
  "fala-core",
+ "hound",
+ "log",
+ "rtrb",
+ "rubato",
+ "thiserror 2.0.18",
+ "vad-rs",
 ]
 
 [[package]]
