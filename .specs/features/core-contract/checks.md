@@ -48,7 +48,7 @@ Proof: `cargo test -p fala-core dictation::tests::unedited_keeps_raw_text -- --e
 **C11** - `Dictionary::new([" Fala ", "fala", "", "ADR", "  "]).terms()` is exactly `["Fala", "ADR"]` (AC 11)
 Proof: `cargo test -p fala-core dictionary::tests::normalizes_terms -- --exact`
 
-**C12** - `scripts/check-no-tauri-in-crates.sh` exits 0 and `rg -n 'cfg\(target_os|cfg\(windows' crates/core` prints nothing (exit 1) (AC 12)
+**C12** - `scripts/check-no-tauri-in-crates.sh` exits 0 and `grep -rnE 'cfg\((target_os|windows)' crates/core` prints nothing (exit 1) (AC 12)
 Proof: `scripts/check-no-tauri-in-crates.sh && ! grep -rnE 'cfg\((target_os|windows)' crates/core`
 
 **C13** - Deserializing `{"terms":[" Fala ","fala","","ADR","  "]}` yields `terms() == ["Fala", "ADR"]` and serializes back to `{"terms":["Fala","ADR"]}`, so a dictionary read from storage gets the same normalization as `Dictionary::new` (AC 11; added after verification round 1, finding 2)
@@ -85,5 +85,5 @@ Proof: `cargo test -p fala-core dictionary::tests::deserializing_normalizes_term
 - S1-S3 = ~4k, all in `fala-core`, under the 150k budget - one builder
 
 - **Boundary:** C1-C12 closed at `91f4e0d`; verification round 1 PASS
-- **Settled mid-build:** after round 1, C12's proof moved from `rg` to `grep` (a missing `rg` made `! rg` pass vacuously; same claim, stronger proof), and C13 was added because `Dictionary` deserialized without normalization (Verifier finding 2). Decided by Lux under the delegation of 2026-10-02
+- **Settled mid-build:** after round 1, C12's proof and its claim wording moved from `rg` to `grep` (a missing `rg` made `! rg` pass vacuously; same obligation, stronger proof; the claim text followed after round 2 noted the drift), and C13 was added because `Dictionary` deserialized without normalization (Verifier finding 2). Decided by Lux under the delegation of 2026-10-02
 - **Abandoned:** none
