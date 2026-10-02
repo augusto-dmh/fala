@@ -118,10 +118,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/check-pr-size.sh ${{ github.event.pull_request.number }}
 
-  # TODO(windows): Windows 11 is the first target; this job keeps cfg(windows) code compiling.
-  # Runs after merge and on demand only, because Windows minutes cost double on private repos.
+  # TODO(windows): Windows 11 is the first target; this job keeps cfg(windows) code compiling and
+  # runs the tests of crates/* and apps/cli there. apps/desktop is compiled by clippy only.
   windows:
-    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -145,3 +144,7 @@ jobs:
 
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Plain `cargo test` covers default-members: crates/* and apps/cli, no WebView.
+      - name: test
+        run: cargo test
