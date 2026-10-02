@@ -67,6 +67,7 @@ Só os subcomandos que esta feature cria. Flags comuns aos dois: `--data-dir <di
 | `fala-cli history undo` / `redo` | `<id>` | stdout: o texto que o item passa a mostrar | exit `0` · `1` id inexistente, item sem edição ou falha de banco/espelho · `2` argumentos · sem status HTTP (local; 200-599 n/a) |
 | `fala-cli reindex` | (só as flags comuns) | stdout: `N ditados reindexados, M arquivos ignorados`; stderr: um caminho e o motivo por arquivo ignorado | exit `0` com M = 0 · `1` com M > 0 ou falha de banco · `2` argumentos ou pasta `Ditados/` inexistente · sem status HTTP (local; 200-599 n/a) |
 | `fala_storage` (API Rust) | `Store::open`, `add`, `get`, `search`, `undo`, `redo`, `reindex` | `DictationRecord`, `Vec<DictationRecord>`, `ReindexReport` · `StorageError` | `Ok`, `Err(NotFound)`, `Err(NothingToUndo)`, `Err(Mirror { id })`, `Err(Db)`, `Err(Io)` · sem status HTTP (local; 200-599 n/a) |
+| `fala_storage::Store::add_sensitive` (API Rust, adicionada com a door 8) | `&Dictation`, `created_at` | `DictationRecord` com `sensitive = true`; todo `DictationRecord` ganha o campo `sensitive` | os mesmos de `add`: `Ok`, `Err(Mirror { id })`, `Err(Db)`, `Err(Io)` · sem status HTTP (local; 200-599 n/a) |
 
 ## Landing
 
@@ -78,6 +79,7 @@ Só os subcomandos que esta feature cria. Flags comuns aos dois: `--data-dir <di
 | 4. formato do espelho | `<notes-dir>/Ditados/<AAAA-MM-DD>/<HHMMSS>-<id>.md` em hora local; frontmatter entre linhas `---`, uma chave por linha no formato `chave: <valor JSON>` (JSON é YAML válido, o Obsidian lê) nas chaves `id`, `created_at` (RFC 3339 com offset local), `app` (`null` se ausente), `edited_by`, `showing`, `raw`; corpo = o texto final exato seguido de um `\n`; escrito em `<arquivo>.tmp` e renomeado | um `.md` por dia: o texto ditado precisaria de escape para um `## ` não virar seção (decidido com o Augusto em 2026-10-02). YAML de verdade (`serde_yaml`): dependência nova e descontinuada para um frontmatter que só este crate escreve |
 | 5. valores persistidos dos enums | `edited_by` ∈ `none`, `rules`, `llm`; `showing` ∈ `final`, `raw`; os mesmos literais no banco e no frontmatter | booleano `undone`: não distingue "nada a desfazer" de "mostrando o final" quando `edited_by = none` |
 | 7. idioma do item (adicionado no rebase sobre o S0) | coluna e chave de frontmatter `language` com a tag BCP-47 do `fala_core::Language` (`"pt-BR"`, `"en"`), obrigatória; a CLI ganha `history add --language <pt-BR ou en>`, default `pt-BR` | não persistir o idioma: o `reindex` não reconstruiria o `Transcript` do `Dictation` |
+| 8. marca de ditado sensível (adicionado em 2026-10-02, decisão 8 opção c do roadmap) | coluna `sensitive INTEGER NOT NULL DEFAULT 0 CHECK (sensitive IN (0, 1))` no schema 1 (nada foi distribuído, então entra sem subir o `user_version`); no frontmatter, a chave opcional `sensitive: true` escrita depois de `raw` só quando verdadeira; ausente ou `false` = não sensível; outro valor faz o `.md` ser ignorado; `Store::add` grava `false` e `Store::add_sensitive` grava `true`; nenhum filtro nesta feature | só marcar depois, numa feature futura: a coluna exigiria `user_version = 2` e uma migração, e os `.md` já sincronizados não teriam a chave |
 | 6. pasta padrão da CLI | `<dirs::data_dir()>/br.com.augusto.fala/fala.sqlite` (a mesma `app_data_dir` do desktop, identifier do `tauri.conf.json`) e `<data-dir>/notas/Ditados/` | `~/.local/share/fala/` do design doc §3.5: o desktop já grava na pasta do identifier, e a ligação teria que mover uma das duas (decidido com o Augusto em 2026-10-02) |
 
 - Nothing else in this change is hard to reverse: nomes de função, layout dos módulos, colunas
@@ -115,6 +117,8 @@ Cada item tem um `.md` que um humano lê e o `reindex` reconstrói.
 12. IF a escrita do `.md` falha THEN the system SHALL devolver `StorageError::Mirror` com o id, e a linha SHALL continuar no banco e na busca
 35. The system SHALL gravar o `language` do `Transcript` no banco e no frontmatter, e o `reindex` SHALL devolvê-lo igual; um `.md` com `language` fora de `pt-BR`/`en` conta como ignorado (AC 21)
 13. The system SHALL nunca deixar um `.md` parcial com o nome final: escreve `<nome>.md.tmp` e renomeia
+
+37. The system SHALL persistir em cada item o campo `sensitive` (falso por padrão): `Store::add_sensitive` grava verdadeiro no banco e `sensitive: true` no frontmatter; `Store::add` grava falso no banco e não escreve a chave; o `reindex` SHALL ler a chave ausente ou `false` como falso, `true` como verdadeiro, e ignorar com motivo o `.md` com outro valor (door 8). Nenhuma busca, sync ou destino filtra por ele nesta feature
 
 **Independent test:** gravar um item com `---\n## x\n"aspas"` no final e conferir o arquivo e a leitura de volta.
 

@@ -24,7 +24,8 @@ CREATE TABLE dictations (
     edited_by TEXT NOT NULL CHECK (edited_by IN ('none', 'rules', 'llm')),
     showing TEXT NOT NULL CHECK (showing IN ('final', 'raw')),
     raw TEXT NOT NULL,
-    final TEXT NOT NULL
+    final TEXT NOT NULL,
+    sensitive INTEGER NOT NULL DEFAULT 0 CHECK (sensitive IN (0, 1))
 );
 CREATE INDEX dictations_by_time ON dictations (created_ms DESC, id DESC);
 CREATE VIRTUAL TABLE dictations_fts USING fts5(raw, final, content='dictations', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
@@ -41,7 +42,7 @@ END;
 ";
 
 const COLUMNS: &str =
-    "d.id, d.created_at, d.language, d.app, d.edited_by, d.showing, d.raw, d.final";
+    "d.id, d.created_at, d.language, d.app, d.edited_by, d.showing, d.raw, d.final, d.sensitive";
 
 /// O histórico de ditados: `fala.sqlite` mais o espelho em `<notes_dir>/Ditados/`.
 #[derive(Debug)]
@@ -86,11 +87,30 @@ impl Store {
         dictation: &Dictation,
         created_at: DateTime<FixedOffset>,
     ) -> Result<DictationRecord, StorageError> {
+        self.add_marked(dictation, created_at, false)
+    }
+
+    /// Como `add`, com o item marcado como sensível.
+    pub fn add_sensitive(
+        &self,
+        dictation: &Dictation,
+        created_at: DateTime<FixedOffset>,
+    ) -> Result<DictationRecord, StorageError> {
+        self.add_marked(dictation, created_at, true)
+    }
+
+    fn add_marked(
+        &self,
+        dictation: &Dictation,
+        created_at: DateTime<FixedOffset>,
+        sensitive: bool,
+    ) -> Result<DictationRecord, StorageError> {
         let record = DictationRecord {
             id: uuid::Uuid::now_v7().hyphenated().to_string(),
             created_at,
             dictation: dictation.clone(),
             showing: Showing::Final,
+            sensitive,
         };
         insert(&self.conn, &record)?;
         log::debug!("ditado {} gravado", record.id);
@@ -227,8 +247,8 @@ impl Store {
 fn insert(conn: &Connection, record: &DictationRecord) -> Result<(), StorageError> {
     let d = &record.dictation;
     conn.execute(
-        "INSERT INTO dictations (id, created_at, created_ms, language, app, edited_by, showing, raw, final)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO dictations (id, created_at, created_ms, language, app, edited_by, showing, raw, final, sensitive)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             record.id,
             mirror::rfc3339(record),
@@ -239,6 +259,7 @@ fn insert(conn: &Connection, record: &DictationRecord) -> Result<(), StorageErro
             record.showing.as_str(),
             d.raw.text,
             d.final_text,
+            record.sensitive,
         ],
     )?;
     Ok(())
@@ -261,6 +282,7 @@ fn read_row(row: &Row<'_>) -> rusqlite::Result<Result<DictationRecord, StorageEr
     let showing: String = row.get(5)?;
     let raw: String = row.get(6)?;
     let final_text: String = row.get(7)?;
+    let sensitive: bool = row.get(8)?;
 
     let Ok(created_at) = DateTime::parse_from_rfc3339(&created_at) else {
         return Ok(Err(bad(1, format!("created_at inválido em {id}"))));
@@ -288,6 +310,7 @@ fn read_row(row: &Row<'_>) -> rusqlite::Result<Result<DictationRecord, StorageEr
             app: AppContext { app_name },
         },
         showing,
+        sensitive,
     }))
 }
 

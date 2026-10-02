@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/storage-history/plan.md`
 
-44 checks in 5 slices · 7 one-way doors · 0 open, of which 0 block
+45 checks in 5 slices · 8 one-way doors · 0 open, of which 0 block
 
 Os checks de 1 a 36 seguem a numeração dos ACs do plano (35 e 36 vieram do rebase sobre o S0).
 Os de 37 a 44 fecham os status da `Surface` e as portas que nenhum AC nomeia sozinho.
@@ -59,6 +59,9 @@ Proof: `cargo test -p fala-storage --test mirror -- --exact no_tmp_left_behind`
 **C35** - `language` `pt-BR` e `en` são gravados no banco e no frontmatter como a tag BCP-47 e voltam iguais do `reindex`; `language: "es"` faz o arquivo ser ignorado (AC 35, door 7)
 Proof: `cargo test -p fala-storage --test reindex -- --exact language_round_trips`
 Proof: `cargo test -p fala-storage --test reindex -- --exact invalid_files_are_skipped_with_reason`
+
+**C45** - `add_sensitive` grava `sensitive = 1` no banco (SQL cru) e `sensitive: true` como última linha do frontmatter; `add` grava `0` e o `.md` não tem a chave `sensitive`; depois de apagar o banco, o `reindex` devolve `sensitive` verdadeiro para o primeiro, falso para o segundo e falso para um `.md` com `sensitive: false` explícito; um `.md` com `sensitive: "sim"` é ignorado com um motivo que cita `sensitive` (AC 37, door 8)
+Proof: `cargo test -p fala-storage --test reindex -- --exact sensitive_round_trips`
 
 ### S3 - desfazer e reaplicar · 2 files · ~15 KB · ~4k
 
@@ -167,7 +170,8 @@ Proof: `cargo test -p fala-storage --test reindex -- --exact reindex_restores_ev
 | `fala-cli history undo`/`redo` statuses (3) | 0 C29 · 1 C30 · 2 C39 | - |
 | `fala-cli reindex` statuses (3) | 0 C31 · 1 C31 · 2 C32 | - |
 | `fala_storage` API outcomes (6) | `Ok` C1 · `NotFound` C18 · `NothingToUndo` C17 · `Mirror` C12 · `Db` C23 · `Io` C40 | - |
-| Landing doors (7) | 1 C9 · 2 C43 · 3 C1 · 4 C10 · 5 C41 · 6 C33 · 7 C35 | - |
+| Landing doors (8) | 1 C9 · 2 C43 · 3 C1 · 4 C10 · 5 C41 · 6 C33 · 7 C35 · 8 C45 | - |
+| `sensitive` values in a `.md` (4) | `true` C45 · absent C45 · `false` C45 · other C45 | - |
 | `edited_by` values (3) | `none` C17 · `rules` C14 · `llm` C14 | - |
 | `showing` transitions (4) | add -> `final` C1 · `final` -> `raw` C14 · `raw` -> `final` C15 · no-op both ways C16 | - |
 | FTS5 syntax in a query (5) | C6, table-driven over all 5 (`"`, `*`, `(`, `NEAR`, `-`) | - |

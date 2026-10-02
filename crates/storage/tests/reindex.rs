@@ -311,3 +311,71 @@ fn non_md_files_are_not_counted() {
     assert!(report.skipped.is_empty(), "{:?}", report.skipped);
     assert_eq!(store.get(&r.id).unwrap(), r);
 }
+
+#[test]
+fn sensitive_round_trips() {
+    let env = env("sensitive_round_trips");
+    let store = env.open();
+    let marked = store
+        .add_sensitive(&unedited("senha do banco"), at(8, 0, 0))
+        .unwrap();
+    let plain = store
+        .add(&unedited("lista de compras"), at(8, 0, 1))
+        .unwrap();
+    assert!(marked.sensitive);
+    assert!(!plain.sensitive);
+
+    let conn = Connection::open(&env.db).unwrap();
+    let stored = |id: &str| -> i64 {
+        conn.query_row(
+            "SELECT sensitive FROM dictations WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(stored(&marked.id), 1);
+    assert_eq!(stored(&plain.id), 0);
+    drop(conn);
+
+    let md = fs::read_to_string(md_of(&env, &marked.id)).unwrap();
+    assert!(
+        md.contains("\nraw: \"senha do banco\"\nsensitive: true\n---\n"),
+        "{md}"
+    );
+    let md_plain = fs::read_to_string(md_of(&env, &plain.id)).unwrap();
+    assert!(!md_plain.contains("sensitive"), "{md_plain}");
+
+    // Um `.md` com `sensitive: false` explícito e outro com um valor que não é bool.
+    let day = env.ditados().join("2026-10-02");
+    let explicit_id = "0199a3f2-5c1e-7b3a-9d4e-2f6a8c0b1e41";
+    let bad_id = "0199a3f2-5c1e-7b3a-9d4e-2f6a8c0b1e42";
+    let explicit = md_plain
+        .replace(&plain.id, explicit_id)
+        .replace("\n---\nlista", "\nsensitive: false\n---\nlista");
+    let bad = md_plain
+        .replace(&plain.id, bad_id)
+        .replace("\n---\nlista", "\nsensitive: \"sim\"\n---\nlista");
+    assert!(explicit.contains("sensitive: false"), "{explicit}");
+    assert!(bad.contains("sensitive: \"sim\""), "{bad}");
+    fs::write(day.join("explicito.md"), explicit).unwrap();
+    let bad_path = day.join("invalido.md");
+    fs::write(&bad_path, bad).unwrap();
+    drop(store);
+    delete_db(&env);
+
+    let mut store = env.open();
+    let report = store.reindex().unwrap();
+    assert_eq!(report.indexed, 3);
+    assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+    assert_eq!(report.skipped[0].path, bad_path);
+    assert!(
+        report.skipped[0].reason.contains("sensitive"),
+        "{:?}",
+        report.skipped
+    );
+    assert_eq!(store.get(&marked.id).unwrap(), marked);
+    assert!(store.get(&marked.id).unwrap().sensitive);
+    assert!(!store.get(&plain.id).unwrap().sensitive);
+    assert!(!store.get(explicit_id).unwrap().sensitive);
+}
