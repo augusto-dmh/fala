@@ -48,6 +48,10 @@ pub(crate) fn render(record: &DictationRecord) -> String {
         out.push_str(&value.to_string());
         out.push('\n');
     }
+    // Ausente = falso: só o item marcado ganha a chave, depois de `raw`.
+    if record.sensitive {
+        out.push_str("sensitive: true\n");
+    }
     out.push_str("---\n");
     out.push_str(&d.final_text);
     out.push('\n');
@@ -127,6 +131,11 @@ pub(crate) fn parse(content: &str) -> Result<DictationRecord, String> {
     let showing = Showing::parse(&string("showing")?)
         .ok_or_else(|| "`showing` não é `final` nem `raw`".to_string())?;
     let raw = string("raw")?;
+    let sensitive = match keys.get("sensitive") {
+        None | Some(Value::Bool(false)) => false,
+        Some(Value::Bool(true)) => true,
+        Some(_) => return Err("`sensitive` não é `true` nem `false`".to_string()),
+    };
 
     Ok(DictationRecord {
         id,
@@ -141,6 +150,7 @@ pub(crate) fn parse(content: &str) -> Result<DictationRecord, String> {
             app: AppContext { app_name },
         },
         showing,
+        sensitive,
     })
 }
 

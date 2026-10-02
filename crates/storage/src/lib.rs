@@ -55,6 +55,9 @@ pub struct DictationRecord {
     pub created_at: DateTime<FixedOffset>,
     pub dictation: Dictation,
     pub showing: Showing,
+    /// Marca para uma feature futura (lista de apps sensíveis) que MCP, sync e destinos filtram.
+    /// Nada filtra por ela ainda.
+    pub sensitive: bool,
 }
 
 impl DictationRecord {
