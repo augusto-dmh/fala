@@ -131,3 +131,4 @@ Proof: `awk '/^export type ShortcutActivation/,/^export type ShortcutBinding/' s
 ## Handoff
 
 - S1 = 15k, S2 = 2k, S3 = 16k, S4 = 4k (+12k para ler o `bindings.ts` gerado) = ~49k, todos em `apps/desktop` e no front, abaixo do budget de 150k - one builder
+- **Settled mid-build:** o helper herdado `drive` (testes de #1539) faz `match` exaustivo sobre `Option<Effect>`; com a variante `Discard` ele não compilava. Ganhou um braço `Some(Effect::Discard { .. }) => panic!("push-to-talk never discards")`. Nenhuma asserção herdada mudou e o braço só torna o helper mais estrito; C14 deve ser lido como "nenhuma asserção herdada editada"

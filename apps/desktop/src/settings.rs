@@ -169,6 +169,10 @@ pub enum ShortcutActivation {
     /// (`hold_threshold_ms`).
     #[default]
     HoldOrToggle,
+    /// Hold to record and release to stop; two taps within 500 ms keep
+    /// recording until the next press; a lone short tap (`hold_threshold_ms`)
+    /// is discarded without transcribing.
+    PushToTalkDoubleTap,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
