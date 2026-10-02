@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/core-contract/plan.md`
 
-12 checks in 3 slices · 4 one-way doors · 0 open, of which 0 block
+13 checks in 3 slices · 4 one-way doors · 0 open, of which 0 block
 
 ## Checks
 
@@ -49,7 +49,10 @@ Proof: `cargo test -p fala-core dictation::tests::unedited_keeps_raw_text -- --e
 Proof: `cargo test -p fala-core dictionary::tests::normalizes_terms -- --exact`
 
 **C12** - `scripts/check-no-tauri-in-crates.sh` exits 0 and `rg -n 'cfg\(target_os|cfg\(windows' crates/core` prints nothing (exit 1) (AC 12)
-Proof: `scripts/check-no-tauri-in-crates.sh && ! rg -n 'cfg\(target_os|cfg\(windows' crates/core`
+Proof: `scripts/check-no-tauri-in-crates.sh && ! grep -rnE 'cfg\((target_os|windows)' crates/core`
+
+**C13** - Deserializing `{"terms":[" Fala ","fala","","ADR","  "]}` yields `terms() == ["Fala", "ADR"]` and serializes back to `{"terms":["Fala","ADR"]}`, so a dictionary read from storage gets the same normalization as `Dictionary::new` (AC 11; added after verification round 1, finding 2)
+Proof: `cargo test -p fala-core dictionary::tests::deserializing_normalizes_terms -- --exact`
 
 ## Coverage
 
@@ -59,7 +62,8 @@ Proof: `scripts/check-no-tauri-in-crates.sh && ! rg -n 'cfg\(target_os|cfg\(wind
 | rejected language inputs (3) | `es` C2 · `pt-PT` C2 · empty C2 | - |
 | `Language` variants, serialized form (2) | `PtBr` C3 · `En` C3 | - |
 | `Editor` variants (3) | `none` C8 · `rules` C8 · `llm` C8 | - |
-| `Dictionary` normalization rules (4) | trim C11 · drop empty C11 · case-insensitive dedup C11 · first spelling and order kept C11 | - |
+| `Dictionary` normalization rules (4) | trim C11, C13 · drop empty C11, C13 · case-insensitive dedup C11, C13 · first spelling and order kept C11, C13 | - |
+| `Dictionary` construction paths (2) | `Dictionary::new` C11 · deserialization C13 | - |
 | one-way doors (4) | door 1 C3 · door 2 C8 · door 3 C5 · door 4 (dependencies) C5, C3 | - |
 
 - No check claims more than the cases its proof exercises
@@ -79,3 +83,7 @@ Proof: `scripts/check-no-tauri-in-crates.sh && ! rg -n 'cfg\(target_os|cfg\(wind
 ## Handoff
 
 - S1-S3 = ~4k, all in `fala-core`, under the 150k budget - one builder
+
+- **Boundary:** C1-C12 closed at `91f4e0d`; verification round 1 PASS
+- **Settled mid-build:** after round 1, C12's proof moved from `rg` to `grep` (a missing `rg` made `! rg` pass vacuously; same claim, stronger proof), and C13 was added because `Dictionary` deserialized without normalization (Verifier finding 2). Decided by Lux under the delegation of 2026-10-02
+- **Abandoned:** none

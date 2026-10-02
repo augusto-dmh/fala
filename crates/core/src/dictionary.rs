@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 /// Termos do dicionário pessoal, normalizados: sem espaço nas pontas, sem vazios e sem
 /// duplicatas que só diferem em maiúsculas (fica a primeira grafia, na ordem recebida).
+/// Desserializar passa pela mesma normalização de `Dictionary::new`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(from = "DictionaryTerms")]
 pub struct Dictionary {
     terms: Vec<String>,
 }
@@ -31,6 +33,17 @@ impl Dictionary {
     }
 }
 
+#[derive(Deserialize)]
+struct DictionaryTerms {
+    terms: Vec<String>,
+}
+
+impl From<DictionaryTerms> for Dictionary {
+    fn from(raw: DictionaryTerms) -> Self {
+        Dictionary::new(raw.terms)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -39,5 +52,16 @@ mod tests {
     fn normalizes_terms() {
         let dictionary = Dictionary::new([" Fala ", "fala", "", "ADR", "  "]);
         assert_eq!(dictionary.terms(), ["Fala", "ADR"]);
+    }
+
+    #[test]
+    fn deserializing_normalizes_terms() {
+        let json = r#"{"terms":[" Fala ","fala","","ADR","  "]}"#;
+        let dictionary: Dictionary = serde_json::from_str(json).unwrap();
+        assert_eq!(dictionary.terms(), ["Fala", "ADR"]);
+        assert_eq!(
+            serde_json::to_string(&dictionary).unwrap(),
+            r#"{"terms":["Fala","ADR"]}"#
+        );
     }
 }
