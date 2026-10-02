@@ -20,6 +20,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/audio` | `fala-audio` | captura (cpal, loopback WASAPI, PipeWire), VAD Silero, resample, gravador de reunião |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
+| `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
 | `crates/inject` | `fala-inject` | inserção no app ativo (clipboard + Ctrl+V com restore, SendInput) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `apps/desktop` | `fala` (lib `fala_app_lib`) | casca Tauri 2: tray, pill, janelas, comandos e eventos |
