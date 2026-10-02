@@ -4,6 +4,7 @@
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
 mod bench;
+mod history;
 mod record;
 
 use std::path::PathBuf;
@@ -35,6 +36,10 @@ enum Command {
     },
     /// Mede WER e RTF de um modelo de ASR sobre cortes com referência.
     Bench(bench::BenchArgs),
+    /// Histórico de ditado: gravar, buscar, desfazer e reaplicar a edição.
+    History(history::HistoryArgs),
+    /// Reconstrói o banco do histórico a partir dos `.md` de `Ditados/`.
+    Reindex(history::DirArgs),
 }
 
 fn main() -> ExitCode {
@@ -61,7 +66,19 @@ fn main() -> ExitCode {
                 }
             };
         }
+        Command::History(args) => return history_exit(history::run(args)),
+        Command::Reindex(dirs) => return history_exit(history::reindex(dirs)),
     };
     log::error!("`{name}` ainda não foi implementado");
     ExitCode::FAILURE
+}
+
+fn history_exit(result: Result<(), history::Failure>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => {
+            log::error!("{:#}", failure.error);
+            ExitCode::from(failure.code)
+        }
+    }
 }
