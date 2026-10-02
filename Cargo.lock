@@ -1855,6 +1855,9 @@ name = "fala-asr"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "hound",
+ "thiserror 2.0.18",
+ "transcribe-rs",
 ]
 
 [[package]]
