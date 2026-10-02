@@ -92,6 +92,6 @@ Sem updater, quem já instalou só recebe a versão nova instalando-a por cima.
 
 ## Retirar uma versão
 
-1. Volte o release para rascunho (`gh release edit vX.Y.Z --draft`) ou apague-o, e avise quem instalou. Se o repositório passar a usar releases imutáveis, o GitHub pode recusar mexer num release publicado: nesse caso, a única saída é publicar a versão seguinte.
+1. Volte o release para rascunho (`gh release edit vX.Y.Z --draft`) ou apague-o, e avise quem instalou. Se o repositório passar a usar releases imutáveis, o GitHub pode recusar mexer num release publicado: nesse caso, a tag e os assets ficam: publique a versão seguinte e avise.
 2. Não reutilize a tag nem o número: corrija e publique `X.Y.Z+1`.
 3. Sem updater, quem instalou a versão ruim fica nela até instalar a nova por cima; diga isso no aviso.
