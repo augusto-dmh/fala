@@ -188,6 +188,7 @@ A chave e o formatador são usáveis sem UI.
 | `temperature` | `0` | formatação quer saída estável; nenhum outro campo de `generationConfig` (o 2.5 Flash-Lite já vem sem thinking) | y - delegado pelo Augusto em 2026-10-02, confirmado pelo Lux |
 | chave no stdin | primeira linha, sem o `\n` final; sem `rpassword` | evita dependência nova; quem digita interativamente vê o eco, documentado no `--help` | y - delegado pelo Augusto em 2026-10-02, confirmado pelo Lux |
 | tipos do S0 | `Transcript`, `AppContext`, `Dictionary`, `Editor`, `Dictation`, `Language` de `feat/core-contract` (91f4e0d); "editor regras" = `Editor::Rules`, "editor LLM" = `Editor::Llm`; "não pt-BR" = `Language::En` | conferido no S0 commitado; `crates/core` só é lido | y - delegado pelo Augusto em 2026-10-02, confirmado pelo Lux |
+| "inserir o texto bruto" da ADR-0004 | o fallback insere a saída das regras locais (sem edição do LLM), não o texto cru do ASR | a mesma ADR diz "fallback: regras locais" nas Consequências; as regras são locais, determinísticas e não saem da máquina; ambiguidade levantada pelo Verifier na rodada 1 | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 | resposta tardia | prazo duplo: 2 s para inserir, 10 s para a `LateEdit`, uma request só (door 6) | pedido do Lux em 2026-10-02 a partir da ADR-0004 ("oferecer aplicar edição"); 10 s é quando a pessoa já seguiu adiante | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 
 **Open questions:**

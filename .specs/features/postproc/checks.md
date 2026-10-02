@@ -7,7 +7,7 @@ Perfil `standard` nesta feature (o projeto declara `light`): o teste de payload 
 da ADR-0004, e o `light` não pega um teste que passa sob a implementação errada. Decidido pelo
 Lux em 2026-10-02.
 
-35 checks in 5 slices · 6 one-way doors (C33-C35 e a door 6 por emenda aditiva de 2026-10-02, pedida pelo Lux) · 1 open (blocks go-live, não bloqueia o build)
+41 checks in 5 slices · 6 one-way doors (C33-C35 e a door 6 por emenda aditiva de 2026-10-02, pedida pelo Lux; C36-C40 por emenda aditiva depois da rodada 1 do Verifier, que achou membros sem prova; C41 depois da rodada 2) · 1 open (blocks go-live, não bloqueia o build)
 
 Todo `cargo` com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`.
 Provas unitárias e do servidor falso rodam no CI. As provas contra o keyring real são
@@ -110,6 +110,9 @@ Proof: `cargo test -p fala-secrets --lib tests::maps_keyring_errors`
 Proof: `cargo test -p fala-secrets --lib tests::api_key_debug_is_redacted`
 Proof: `cargo test -p fala-secrets --lib tests::keyring_entry_uses_fala_service -- --ignored`
 
+**C36** - Os outros 7 erros do `keyring` (`BadEncoding`, `BadDataFormat`, `BadStoreFormat`, `TooLong`, `Invalid`, `Ambiguous`, `NotSupportedByStore`) viram `SecretError::Store`, em `get` e em `delete` também (AC 21, complemento de C21)
+Proof: `cargo test -p fala-secrets --lib tests::maps_other_keyring_errors_to_store`
+
 ### S4 - fala-cli key e format · 4 files · 25 KB · ~7k
 
 Prova: `cargo test -p fala-cli --bin fala-cli <módulo>::tests::<nome>`; os testes injetam o
@@ -134,6 +137,23 @@ Proof: `cargo test -p fala-cli --bin fala-cli format::tests::llm_without_key_exi
 **C28** - Com um store que devolve `Unavailable`: `key set`, `key status`, `key delete` e `format --llm` saem com 1 e o stderr contém `keyring indisponível` (AC 28)
 Proof: `cargo test -p fala-cli --bin fala-cli key::tests::unavailable_keyring_exits_1`
 Proof: `cargo test -p fala-cli --bin fala-cli format::tests::unavailable_keyring_exits_1`
+
+**C37** - Com um store que devolve `SecretError::Store`: `key set`, `key status`, `key delete` e `format --llm` saem com 1, o stderr contém `keyring indisponível` e nunca o valor lido do stdin (AC 28, complemento de C28)
+Proof: `cargo test -p fala-cli --bin fala-cli key::tests::refused_operation_exits_1`
+Proof: `cargo test -p fala-cli --bin fala-cli format::tests::refused_keyring_exits_1`
+
+**C41** - Stdin que não é UTF-8 (`0xff 0xfe \n`): `key set gemini` sai com 2 e o store fica vazio; `format` sai com 2, stdout vazio e stderr falando do stdin (Surface: uso inválido; emenda aditiva depois da rodada 2 do Verifier)
+Proof: `cargo test -p fala-cli --bin fala-cli key::tests::non_utf8_stdin_exits_2`
+Proof: `cargo test -p fala-cli --bin fala-cli format::tests::non_utf8_stdin_exits_2`
+
+**C38** - `format --dictionary <arquivo inexistente>` e `format --lang es` saem com 2 e stdout vazio (Surface: uso inválido e dicionário ilegível)
+Proof: `cargo test -p fala-cli --bin fala-cli format::tests::unreadable_dictionary_or_bad_language_exits_2`
+
+**C39** - `format --llm` com chave e um servidor que responde `Texto do LLM.` → exit 0, stdout `Texto do LLM.\n`, stderr com `editor: llm` e sem `fallback:`, 1 request (AC 26)
+Proof: `cargo test -p fala-cli --bin fala-cli format::tests::llm_answer_prints_editor_llm`
+
+**C40** - As flags chegam ao processamento: `--app Slack --model gemini-3.5-flash-lite` → request line `POST /v1beta/models/gemini-3.5-flash-lite:generateContent HTTP/1.1` e corpo com `<app>Slack</app>`; `--app Slack --disable-app slack` → 0 requests novas e `editor: regras`; `ahn ok` sai `Ok` com o idioma padrão e `Ahn ok` com `--lang en` (Surface de `format`)
+Proof: `cargo test -p fala-cli --bin fala-cli format::tests::flags_reach_the_postprocessor`
 
 ### S5 - montagem, fronteiras e dependências · 3 files · 10 KB · ~3k
 
@@ -169,14 +189,21 @@ Proof: `cargo deny check`
 | destino da resposta do Gemini (3) | antes de 2 s vira o final C14 · entre 2 s e o prazo tardio vira `LateEdit` C33 · depois do prazo tardio vira `Err(Timeout)` C34 | - |
 | resultado da `LateEdit` (5) | texto C33 · `timeout` C34 · `http <código>` C34 · `rede` C34 · `resposta inválida` C34 | - |
 | casos sem `LateEdit` (4) | LLM usado C35 · LLM pulado por palavras C35 · app desligado C35 · fallback não-timeout C35 | - |
+| sinais de fechamento, lista literal no teste (6) | `,` C5, C7 · `.` C5, C7 · `;` C5, C7 · `:` C5, C7 · `?` C5, C7 · `!` C5, C7 - a lista vem escrita no teste, não da constante do código (correção da rodada 1) | - |
+| variantes de `SecretError`, recontadas na rodada 1 (4) | `InvalidProvider` C19 · `EmptyKey` C20 · `Unavailable` C21, C28 · `Store` C36, C37 | - |
+| erros do `keyring`, recontados na rodada 1 (11) | `NoStorageAccess` C21 · `PlatformFailure` C21 · `NoDefaultStore` C21 · `NoEntry` C21 · `BadEncoding` C36 · `BadDataFormat` C36 · `BadStoreFormat` C36 · `TooLong` C36 · `Invalid` C36 · `Ambiguous` C36 · `NotSupportedByStore` C36 | - |
+| `fala-cli format` saída 2, recontada na rodada 2 (4 causas) | `--llm` sem chave C27 · dicionário ilegível C38 · idioma inválido C38 · stdin ilegível C41 | - |
+| `fala-cli key set` saída 2, recontada na rodada 2 (3 causas) | provedor inválido C25 · stdin vazio C24 · stdin ilegível C41 | - |
+| linha `editor:` do `format` (2) | `regras` C26 · `llm` C39 | - |
+| flags de `format` (7) | `--llm` C26, C39 · `--dictionary` C26 · `--app` C40 · `--model` C40 · `--disable-app` C40 · `--lang` C40, C38 · `--gemini-base-url` (oculta, de teste) C26, C39 | - |
 | `SecretStore` operações (3) | `get` C17 · `set` C17 · `delete` C18 | - |
 | implementações de `SecretStore` (2) | `MemoryStore` C17, C18, C19 · `KeyringStore` C17, C18, C22, C29 | - |
-| erros de `SecretError` (3) | `InvalidProvider` C19 · `EmptyKey` C20 · `Unavailable` C21, C28 | - |
-| erros do `keyring` mapeados (4) | `NoStorageAccess` C21 · `PlatformFailure` C21 · `NoDefaultStore` C21 · `NoEntry` C21 | - |
+| erros de `SecretError`, superada pela linha recontada na rodada 1 (3) | `InvalidProvider` C19 · `EmptyKey` C20 · `Unavailable` C21, C28 | - |
+| erros do `keyring` mapeados, superada pela linha recontada na rodada 1 (4) | `NoStorageAccess` C21 · `PlatformFailure` C21 · `NoDefaultStore` C21 · `NoEntry` C21 | - |
 | `fala-cli key set` statuses (3) | 0 C23 · 1 C28 · 2 C24, C25 | - |
 | `fala-cli key status` statuses (3) | 0 C25 · 1 C28 · 2 C25 (mesmo validador de `set`, provado em `status_delete_and_invalid_provider`) | - |
 | `fala-cli key delete` statuses (3) | 0 C25 · 1 C28 · 2 C25 | - |
-| `fala-cli format` statuses (3) | 0 C26 · 1 C28 · 2 C27 | - |
+| `fala-cli format` statuses, saída 2 recontada nas rodadas 1 e 2 (3) | 0 C26 · 1 C28 · 2 C27 | - |
 | Landing doors (6) | 1 crate `fala-secrets` C30, C29 · 2 `keyring` C29, C31, C32 · 3 nome da entrada C22, C29 · 4 contrato Gemini C12, C13, C15, C32 · 5 trait `Formatter` C1, C9 · 6 prazo duplo C33, C34, C35 | - |
 | startup config: store das chaves (2 assemblies) | `main.rs` com `KeyringStore` C29 · testes do CLI com `MemoryStore` C23 | - |
 
