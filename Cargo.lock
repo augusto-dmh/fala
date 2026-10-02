@@ -1869,10 +1869,13 @@ name = "fala-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "cpal",
+ "dirs 6.0.0",
  "env_logger",
  "fala-core",
+ "fala-storage",
  "hound",
  "icu_normalizer",
  "log",
