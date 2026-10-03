@@ -1873,6 +1873,7 @@ dependencies = [
  "cpal",
  "env_logger",
  "fala-core",
+ "fala-media",
  "hound",
  "icu_normalizer",
  "log",

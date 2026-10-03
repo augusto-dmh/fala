@@ -142,3 +142,6 @@ Proof: `cargo test -p fala-media --lib -- --exact tests::ffprobe_args_match_the_
 ## Handoff
 
 - S1-S5 + doors ≈ 20k (arquivos novos em `crates/media` e `apps/cli`, mais 2 KB do `ARCHITECTURE.md` e dos manifests), muito abaixo do budget de 150k - one builder
+- **Boundary:** C1-C17, C24, C25 closed at `87c5df8`; C18-C23 closed in the `fala-cli import` commit
+- **Settled mid-build:** none (independent panel; decisions recorded in the plan's Assumptions)
+- **Abandoned:** `-ac 2` to build the stereo mp4 fixture: it upmixes the mono tone at -3 dB, so the source no longer carried the full tone; replaced by `pan=stereo|c0=c0|c1=c0` (fixture only, the C1 threshold is unchanged)
