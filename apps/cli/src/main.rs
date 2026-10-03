@@ -5,6 +5,7 @@
 
 mod bench;
 mod dictate;
+mod meeting;
 mod record;
 
 use std::path::PathBuf;
@@ -27,6 +28,8 @@ struct Cli {
 enum Command {
     /// Dita pelo microfone (Enter começa, Enter termina) ou por um WAV e imprime o texto.
     Dictate(dictate::DictateArgs),
+    /// Grava uma reunião: mic e áudio do sistema num WAV estéreo até Enter.
+    Meeting(meeting::MeetingArgs),
     /// Grava microfone e áudio do sistema em dois canais e mede o drift entre eles.
     Record(record::RecordArgs),
     /// Transcreve um arquivo de áudio.
@@ -44,6 +47,15 @@ fn main() -> ExitCode {
     let name = match cli.command {
         Command::Dictate(args) => {
             return match dictate::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
+        Command::Meeting(args) => {
+            return match meeting::run(args) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(failure) => {
                     log::error!("{:#}", failure.error);
