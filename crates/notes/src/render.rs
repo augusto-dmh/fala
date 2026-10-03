@@ -446,6 +446,17 @@ mod tests {
         }
         assert!(notes.markdown.contains("[[#^a2|a2]]"));
         assert_eq!(notes.dropped_sources, 0);
+        let payload: serde_json::Value = serde_json::from_str(
+            &crate::NotesPayload::build(&input)
+                .unwrap()
+                .to_json()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            payload["annotations"],
+            serde_json::json!([{"id":"a1","text":"decidir data"},{"id":"a2","text":"Ana: contrato"}])
+        );
     }
 
     #[test]
