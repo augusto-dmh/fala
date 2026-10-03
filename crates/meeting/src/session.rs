@@ -53,6 +53,12 @@ pub enum Input {
     /// O SO voltou da suspensão.
     OsResumed,
     /// O gravador fechou o cabeçalho e o arquivo da sessão.
+    ///
+    /// Contrato com o gravador: só responde assim a um [`Effect::FinalizeCapture`] pedido em
+    /// `Stopping`. O fechamento pedido pela suspensão do SO não gera resposta (em `Suspended`
+    /// esta entrada é ignorada), e parar depois de uma suspensão pede um segundo
+    /// `FinalizeCapture`, que o gravador trata como já feito e confirma. Sem esta resposta a
+    /// sessão fica em `Stopping` e `Process` não sai.
     CaptureFinalized,
 }
 

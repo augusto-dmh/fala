@@ -13,7 +13,7 @@ Todas as provas rodam com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target C
 
 **C1** - `MeetingSession::new` devolve uma sessão em `Idle`, e nenhum código fora do crate consegue construir `MeetingSession` em outro estado nem um `Indicator` (AC 1)
 Proof: `cargo test -p fala-meeting --test session start::new_session_is_idle -- --exact`
-Proof: `cargo test -p fala-meeting --doc compile_fail` (doctests do módulo oculto `compile_fail`: construir `MeetingSession` por literal e construir `Indicator` fora do crate não compilam)
+Proof: `cargo test -p fala-meeting --doc compile_fail` (doctests do módulo oculto `compile_fail`: atribuir ao campo privado `state` de `MeetingSession` e construir `Indicator` fora do crate não compilam; um doctest positivo do mesmo módulo cria a sessão por `new`)
 
 **C2** - Em `Idle`, `StartRecording` com 2 GiB livres leva a `Recording` e devolve exatamente `[ShowIndicator(Recording), StartCapture]` (AC 2)
 Proof: `cargo test -p fala-meeting --test session start::with_enough_disk_shows_indicator_before_capture -- --exact`
@@ -47,7 +47,7 @@ Proof: `cargo test -p fala-meeting --test session pause::only_resume_recording_r
 **C11** - Pausar aos 10 min gravados em T1 e retomar em T2 registra `Gap { kind: Pause, audio_offset: 10 min, from: T1, to: Some(T2) }` (AC 11)
 Proof: `cargo test -p fala-meeting --test session pause::gap_recorded -- --exact`
 
-**C12** - Ação inválida devolve `InvalidTransition { state, action }` sem mudar o estado, para os 4 casos: `PauseRecording` em `Paused`, `StopRecording` em `Idle`, `StartRecording` em `Stopping`, `ResumeRecording` em `Stopped` (AC 12)
+**C12** - Ação inválida devolve `InvalidTransition { state, action }` sem mudar o estado, para os 5 casos: `PauseRecording` em `Paused`, `StopRecording` em `Idle`, `StartRecording` em `Stopping`, `ResumeRecording` em `Stopped`, `StartRecording` em `Recording` (AC 12)
 Proof: `cargo test -p fala-meeting --test session pause::invalid_action_keeps_state -- --exact`
 
 ### S3 - parar e processar, nunca descartar · ~2 files · ~15 KB · ~4k
@@ -79,7 +79,7 @@ Proof: `cargo test -p fala-meeting --test session cap::warns_once_ten_minutes_be
 **C20** - O tick que alcança 3 h gravados leva a `Stopping` com `StopReason::CapReached` e devolve `[FinalizeCapture]` (AC 20)
 Proof: `cargo test -p fala-meeting --test session cap::reached_stops -- --exact`
 
-**C21** - `ExtendCap` em `Recording` e em `Paused` sobe o teto de 3 h para 4 h, e o aviso volta a sair aos 3 h 50 min; com teto de 8 h, `ExtendCap` devolve `CapAtMaximum` e o teto segue em 8 h (AC 21)
+**C21** - `ExtendCap` em `Recording` e em `Paused` sobe o teto de 3 h para 4 h, e nos dois casos o aviso volta a sair aos 3 h 50 min; com teto de 8 h, `ExtendCap` devolve `CapAtMaximum` e o teto segue em 8 h (AC 21)
 Proof: `cargo test -p fala-meeting --test session cap::extend_adds_one_hour_and_rearms -- --exact`
 Proof: `cargo test -p fala-meeting --test session cap::extend_refused_at_8_hours -- --exact`
 
@@ -102,7 +102,7 @@ Proof: `cargo test -p fala-meeting --test session suspend::user_resume_records_g
 **C26** - `SessionId::from_parts(1_727_000_000_000, 0)` é `01J8CKHDG0` seguido de 16 zeros (26 caracteres), e `from_str` do texto devolve o mesmo id; um id com entropia máxima termina em 16 `Z` (AC 26)
 Proof: `cargo test -p fala-meeting --lib id::tests::from_parts_encodes_time_and_round_trips -- --exact`
 
-**C27** - `from_str` recusa com `InvalidSessionId` um texto de 25 e um de 27 caracteres e textos com `I`, `L`, `O` e `U` (AC 27)
+**C27** - `from_str` recusa com `InvalidSessionId` um texto de 25 e um de 27 caracteres, textos com `I`, `L`, `O` e `U`, e um primeiro caractere acima de `7` (AC 27)
 Proof: `cargo test -p fala-meeting --lib id::tests::rejects_bad_text -- --exact`
 
 **C28** - Dois `generate(1_727_000_000_000)` são diferentes, e `generate(1_727_000_000_001)` ordena depois de ambos como texto (AC 28)

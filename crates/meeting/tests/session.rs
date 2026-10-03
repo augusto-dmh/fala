@@ -347,6 +347,13 @@ mod pause {
                 },
             ),
             (stopped(), UserAction::ResumeRecording),
+            // Clique duplo em "Gravar": não reinicia a captura.
+            (
+                recording(SessionMode::Meeting),
+                UserAction::StartRecording {
+                    free_disk_bytes: 10 * GIB,
+                },
+            ),
         ];
         for (mut s, action) in cases {
             let before = s.state();
@@ -576,11 +583,24 @@ mod cap {
             }]
         );
 
-        // Em Paused.
+        // Em Paused, depois de o aviso já ter saído.
         let mut s = recording(SessionMode::Meeting);
-        s.apply(at(1), user(UserAction::PauseRecording)).unwrap();
-        s.apply(at(2), user(UserAction::ExtendCap)).unwrap();
+        let effects = s.apply(at(170), loud(170 * MIN)).unwrap();
+        assert_eq!(effects.len(), 1);
+        s.apply(at(171), user(UserAction::PauseRecording)).unwrap();
+        assert!(s
+            .apply(at(172), user(UserAction::ExtendCap))
+            .unwrap()
+            .is_empty());
         assert_eq!(s.cap().hours(), 4);
+        s.apply(at(173), user(UserAction::ResumeRecording)).unwrap();
+        let effects = s.apply(at(233), loud(230 * MIN)).unwrap();
+        assert_eq!(
+            effects,
+            vec![Effect::CapWarning {
+                remaining: 10 * MIN
+            }]
+        );
     }
 
     #[test]

@@ -157,6 +157,12 @@ mod tests {
                 Err(SessionError::InvalidSessionId(bad.clone()))
             );
         }
+        // 26 × 5 = 130 bits: um primeiro caractere acima de `7` estoura os 128 bits.
+        let overflow = format!("8{}", &good[1..]);
+        assert_eq!(
+            overflow.parse::<SessionId>(),
+            Err(SessionError::InvalidSessionId(overflow.clone()))
+        );
     }
 
     #[test]
