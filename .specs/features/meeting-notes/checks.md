@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/meeting-notes/plan.md`
 
-29 checks in 3 slices · 7 one-way doors · 0 open, of which 0 block
+31 checks in 3 slices · 7 one-way doors · 0 open, of which 0 block
 
 Todo `cargo` abaixo roda com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`, um comando de cada vez. Os testes unitários ficam em `crates/notes/src/*.rs`; os de servidor falso em `crates/notes/tests/fake_claude.rs`, num `TcpListener` em `127.0.0.1:0`, sem rede real e com chave falsa.
 
@@ -43,7 +43,7 @@ Proof: `cargo test -p fala-notes --lib template::tests::template_rejects_unknown
 
 ### S2 - chamada ao Claude e "só local" · 3 files · ~35 KB · ~9k
 
-**C11** - Uma geração fora de "só local" faz exatamente 1 `POST /v1/messages` com `x-api-key` = chave falsa, `anthropic-version: 2023-06-01`, chaves de topo do corpo exatamente `model`, `max_tokens`, `system`, `messages`, `output_config`, sem `tools`, `system == SYSTEM_PROMPT`, uma só mensagem `user` cujo texto é igual ao JSON de `NotesPayload::build` da mesma entrada (AC 11, door 2, door 4)
+**C11** - Uma geração fora de "só local" faz exatamente 1 `POST /v1/messages` com `x-api-key` = chave falsa, `anthropic-version: 2023-06-01`, `content-type: application/json`, chaves de topo do corpo exatamente `model`, `max_tokens`, `system`, `messages`, `output_config`, sem `tools`, `system == SYSTEM_PROMPT`, uma só mensagem `user` cujo texto é igual ao JSON de `NotesPayload::build` da mesma entrada (AC 11, door 2, door 4)
 Proof: `cargo test -p fala-notes --test fake_claude request_carries_key_version_and_exact_body -- --exact`
 
 **C12** - O corpo leva `"model":"claude-sonnet-5"` por padrão e `"model":"claude-opus-5"` depois de `with_model("claude-opus-5")` (AC 12)
@@ -100,6 +100,12 @@ Proof: `cargo test -p fala-notes --lib render::tests::generated_text_is_one_line
 **C26** - `render_transcript` produz `- **[01:05] Pessoa 1:** oi ^s12` para o segmento 12, e todo `[[#^sN|` das notas geradas tem um `^sN` correspondente na transcrição renderizada (AC 26)
 Proof: `cargo test -p fala-notes --lib render::tests::transcript_anchors_match_pointers -- --exact`
 
+**C30** - Com idioma `en`, os títulos do Markdown são exatamente `## Notes` (anotações) e `## AI notes · <nome do template>`, também na sessão "só local" (door 5; acrescentado pela rodada 1 do Verifier)
+Proof: `cargo test -p fala-notes --lib render::tests::english_headings_follow_door_5 -- --exact`
+
+**C31** - O marcador `<!-- fala:ia -->` digitado pelo usuário numa anotação sai da linha humana; uma linha que só tinha o marcador não recebe id, e os ids seguintes continuam batendo com o payload (AC 20; acrescentado pela rodada 1 do Verifier)
+Proof: `cargo test -p fala-notes --lib render::tests::marker_typed_in_annotations_is_removed -- --exact`
+
 **C27** - O crate novo não puxa `tauri` e está no Code Map: `scripts/check-no-tauri-in-crates.sh` sai 0 e `grep -c '^| \`crates/notes\` | \`fala-notes\`' ARCHITECTURE.md` imprime 1 (door 6)
 Proof: `scripts/check-no-tauri-in-crates.sh`
 Proof: `grep -c '^| \`crates/notes\` | \`fala-notes\`' ARCHITECTURE.md`
@@ -119,6 +125,7 @@ Proof: `grep -c '^| \`crates/notes\` | \`fala-notes\`' ARCHITECTURE.md`
 | tipo de id citado (5) | `s` válido C21 · `a` válido C21 · `s` inexistente C22 · `a` inexistente C22 · prefixo estranho C22 | - |
 | ordem e forma das seções (3) | fora de ordem C24 · seção estranha C24 · seção vazia C24 | - |
 | doors do Landing (7) | 1 C1 · 2 C11 · 3 C28 · 4 C29 · 5 C20 · 6 C27 · 7 C10 | - |
+| títulos do Markdown × idioma (4) | `## Anotações` C19 · `## Notas · ` C19 · `## Notes` C30 · `## AI notes · ` C30 | - |
 
 - Claims naming a status, route or response shape: C11, C16, C17, C18 - each proof crosses the HTTP boundary through the fake server
 - No other check claims more than the single case its proof exercises
@@ -138,3 +145,7 @@ Proof: `grep -c '^| \`crates/notes\` | \`fala-notes\`' ARCHITECTURE.md`
 ## Handoff
 
 - S1 ~8k + S2 ~9k + S3 ~5k = ~22k de código e testes, mais ~40k de leitura (plano, ADRs, crate B como referência) = ~62k, abaixo do budget de 150k - one builder
+
+- **Boundary:** C1-C29 closed at `8be553c` (rebased on `origin/main` `cec96f0` after #22 merged; before the rebase, `14503e5`)
+- **Settled mid-build:** Verifier round 1 (FAIL) found the English annotation heading `## My notes` against the door 5 row `## Notes`; the code now follows the approved row, and C30 and C31 were added, C11 got stricter (`content-type`). No approved row was rewritten
+- **Abandoned:** nothing

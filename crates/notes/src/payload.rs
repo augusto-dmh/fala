@@ -78,7 +78,7 @@ impl NotesPayload {
                 .enumerate()
                 .map(|(index, text)| AnnotationPayload {
                     id: annotation_id(index + 1),
-                    text: text.to_string(),
+                    text,
                 })
                 .collect(),
             transcript: input

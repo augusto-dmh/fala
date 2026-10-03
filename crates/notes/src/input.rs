@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use fala_core::{Dictionary, Language};
 use serde::{Deserialize, Serialize};
 
-use crate::{NotesError, Template};
+use crate::{NotesError, Template, GENERATED_MARKER};
 
 /// Canal de origem de um segmento. Não sai no payload (ADR-0016 não o lista).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,10 +89,12 @@ impl NotesInput {
     }
 
     /// As linhas não vazias das anotações, aparadas, na ordem; a posição + 1 é o id (`a1`, ...).
-    pub(crate) fn annotation_lines(&self) -> Vec<&str> {
+    /// O marcador das linhas geradas é reservado: digitado pelo usuário, sai da linha, para que
+    /// nenhuma linha humana pareça gerada.
+    pub(crate) fn annotation_lines(&self) -> Vec<String> {
         self.annotations
             .lines()
-            .map(str::trim)
+            .map(|line| line.replace(GENERATED_MARKER, " ").trim().to_string())
             .filter(|line| !line.is_empty())
             .collect()
     }

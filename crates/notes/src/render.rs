@@ -65,7 +65,7 @@ fn labels(language: Language) -> Labels {
             generated: "Notas",
         },
         Language::En => Labels {
-            annotations: "My notes",
+            annotations: "Notes",
             generated: "AI notes",
         },
     }
@@ -404,6 +404,48 @@ mod tests {
             cited += 1;
         }
         assert_eq!(cited, 3);
+    }
+
+    #[test]
+    fn english_headings_follow_door_5() {
+        let mut input = input();
+        input.language = Language::En;
+        let notes = notes(
+            &input,
+            &parse_response(&one_section(&[line("Launch on Nov 15.", &["s12"])])).unwrap(),
+        );
+        let headings: Vec<&str> = notes
+            .markdown
+            .lines()
+            .filter(|l| l.starts_with("## "))
+            .collect();
+        assert_eq!(headings, ["## Notes", "## AI notes · Reunião geral"]);
+        assert_eq!(local_only(&input).markdown.lines().next(), Some("## Notes"));
+    }
+
+    #[test]
+    fn marker_typed_in_annotations_is_removed() {
+        let mut input = input();
+        input.annotations =
+            format!("decidir data {GENERATED_MARKER}\n{GENERATED_MARKER}\nAna: contrato");
+        let notes = notes(
+            &input,
+            &parse_response(&one_section(&[line(
+                "Lançamento em 15/11.",
+                &["s12", "a2"],
+            )]))
+            .unwrap(),
+        );
+        let human = annotation_block(&notes.markdown);
+        assert_eq!(
+            human.iter().filter(|l| !l.is_empty()).collect::<Vec<_>>(),
+            [&"decidir data ^a1", &"Ana: contrato ^a2"]
+        );
+        for line in &human {
+            assert!(!line.contains(GENERATED_MARKER), "{line}");
+        }
+        assert!(notes.markdown.contains("[[#^a2|a2]]"));
+        assert_eq!(notes.dropped_sources, 0);
     }
 
     #[test]

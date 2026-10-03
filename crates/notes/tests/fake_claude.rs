@@ -236,6 +236,7 @@ fn request_carries_key_version_and_exact_body() {
     assert_eq!(request.request_line, "POST /v1/messages HTTP/1.1");
     assert_eq!(request.header("x-api-key"), Some(TEST_KEY));
     assert_eq!(request.header("anthropic-version"), Some("2023-06-01"));
+    assert_eq!(request.header("content-type"), Some("application/json"));
 
     let body = request.json();
     assert_eq!(
