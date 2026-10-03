@@ -6,12 +6,19 @@
 //! O que sai para o LLM é só o `NotesPayload`, a lista enumerada da ADR-0016 (proposta), e
 //! nada sai numa sessão "só local".
 
+mod claude;
 mod input;
+mod key;
 mod payload;
 mod render;
 mod template;
 
+pub use claude::{
+    Claude, ANTHROPIC_VERSION, DEFAULT_BASE_URL, DEFAULT_MAX_TOKENS, DEFAULT_MODEL,
+    DEFAULT_TIMEOUT, KEY_PROVIDER, SYSTEM_PROMPT,
+};
 pub use input::{Channel, NotesInput, Segment, Speaker};
+pub use key::{ApiKey, KeySource};
 pub use payload::NotesPayload;
 pub use render::{render_transcript, Notes, GENERATED_MARKER};
 pub use template::{builtin_templates, Section, Template, TEMPLATE_SCHEMA};
