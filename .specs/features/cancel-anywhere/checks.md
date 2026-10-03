@@ -76,3 +76,6 @@ Proof: `TODO(windows)` manual - 10 ditados cancelados por Esc transcrevendo, 5 c
 ## Handoff
 
 - S1 = 20k (coordenador) + S2 = 13k (`actions.rs`, `handler.rs`, `utils.rs`) = ~33k, tudo em `apps/desktop/src`, abaixo do budget de 150k - one builder
+- **Settled mid-build:** nada além do plano; o registro assíncrono herdado do Esc (`spawn` em `fala_keys.rs`/`tauri_impl.rs`) não foi tocado, só quem o chama
+- **Abandoned:** desregistrar o Esc no `FinishGuard` do pipeline (ver door 1); descartado antes de escrever código
+- **Boundary:** C1-C8 fechados em `feat/cancel-anywhere`; C9 tem a parte Linux verde e a parte física `TODO(windows)`
