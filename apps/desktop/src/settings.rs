@@ -563,7 +563,8 @@ fn default_whats_new_last_seen_version() -> String {
 }
 
 fn default_selected_language() -> String {
-    "auto".to_string()
+    // The phase 1 pitch dictates in pt-BR; the tag matches the S0 contract.
+    "pt-BR".to_string()
 }
 
 fn default_overlay_position() -> OverlayPosition {
@@ -934,7 +935,7 @@ pub fn get_default_settings() -> AppSettings {
         clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
-        selected_language: "auto".to_string(),
+        selected_language: default_selected_language(),
         overlay_position: default_overlay_position(),
         debug_mode: false,
         log_level: default_log_level(),
@@ -1794,6 +1795,32 @@ mod tests {
                 .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
             apply_settings_migrations(&mut settings, &raw);
             assert_eq!(settings.shortcut_activation, expected, "stored '{stored}'");
+        }
+    }
+
+    #[test]
+    fn default_selected_language_is_pt_br() {
+        assert_eq!(get_default_settings().selected_language, "pt-BR");
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(from_empty.selected_language, "pt-BR");
+    }
+
+    #[test]
+    fn stored_selected_language_loads_unchanged() {
+        for stored in ["auto", "pt", "es"] {
+            let raw = serde_json::json!({
+                "settings_schema_version": 2,
+                "selected_model": "",
+                "onboarding_completed": true,
+                "whats_new_last_seen_version": "",
+                "overlay_style": "live",
+                "selected_language": stored
+            });
+            let mut settings: AppSettings = serde_json::from_value(raw.clone())
+                .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
+            apply_settings_migrations(&mut settings, &raw);
+            assert_eq!(settings.selected_language, stored, "stored '{stored}'");
         }
     }
 }
