@@ -44,6 +44,9 @@ jobs:
       - name: Brand check (ADR-0001)
         run: scripts/check-brand.sh
 
+      - name: Release config (ADR-0008)
+        run: python3 scripts/ci/test_release_config.py
+
       - name: fala-cli builds without WebView
         run: cargo build -p fala-cli
 
