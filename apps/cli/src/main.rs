@@ -4,13 +4,17 @@
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
 mod bench;
+mod format;
 mod history;
+mod key;
 mod record;
 
+use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use fala_secrets::KeyringStore;
 
 #[derive(Parser)]
 #[command(
@@ -36,6 +40,10 @@ enum Command {
     },
     /// Mede WER e RTF de um modelo de ASR sobre cortes com referência.
     Bench(bench::BenchArgs),
+    /// Guarda, consulta e apaga chaves de API no keyring do SO.
+    Key(key::KeyArgs),
+    /// Formata o texto do stdin com as regras e, com `--llm`, o Gemini.
+    Format(format::FormatArgs),
     /// Histórico de ditado: gravar, buscar, desfazer e reaplicar a edição.
     History(history::HistoryArgs),
     /// Reconstrói o banco do histórico a partir dos `.md` de `Ditados/`.
@@ -57,6 +65,24 @@ fn main() -> ExitCode {
             };
         }
         Command::Transcribe { .. } => "transcribe",
+        Command::Key(args) => {
+            return ExitCode::from(key::run(
+                args,
+                &KeyringStore,
+                &mut io::stdin().lock(),
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            ));
+        }
+        Command::Format(args) => {
+            return ExitCode::from(format::run(
+                args,
+                &KeyringStore,
+                &mut io::stdin().lock(),
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            ));
+        }
         Command::Bench(args) => {
             return match bench::run(args) {
                 Ok(()) => ExitCode::SUCCESS,
