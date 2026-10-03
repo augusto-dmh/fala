@@ -119,7 +119,7 @@ Proof: `cargo test -p fala-media --lib -- --exact tests::ffprobe_args_match_the_
 | `fala-cli import` exit codes (3) | `0` C18 · `1` C21 · `2` C22, C23 | - |
 | `fala-cli import` flags (2) | `<arquivo>` C18 · `--out` C18, C19 | - |
 | falhas que não deixam `out` nem `.part` (6) | `out`/`.part` após `InputNotFound` C8 · `NoAudioTrack` C9 · `Unreadable` C10 · `TooLong` C11 · `Ffmpeg` C12 · `Cancelled` C15, C16 | - |
-| doors (5) | 1 C24 · 2 C1, C25 · 3 C6, C7 · 4 C25, C17 · 5 C2, C13, C15 | - |
+| doors (5) | 1 C24 · 2 C1, C25 · 3 C6, C7 · 4 C25 (C17 prova o erro e as 0 conexões, não a flag) · 5 C2, C13, C15 | - |
 | eventos de progresso (3) | inicial em 0 C13 · por bloco `progress=` C14 · último = duração C14 | - |
 
 - Claims naming an exit code or a response shape: C18, C21, C22, C23 cross the binary boundary;
