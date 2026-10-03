@@ -22,6 +22,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/inject` | `fala-inject` | inserção no app ativo (clipboard + Ctrl+V com restore, SendInput) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
+| `crates/notes` | `fala-notes` | notas de reunião: payload enumerado da ADR-0016, trait `NotesLlm` com o cliente Claude, Markdown humano × gerado com ponteiros, templates |
 | `apps/desktop` | `fala` (lib `fala_app_lib`) | casca Tauri 2: tray, pill, janelas, comandos e eventos |
 | `apps/cli` | `fala-cli` | `dictate`, `record`, `transcribe`, `bench`, para spikes, benchmark e uso headless |
 | `src/` | — | frontend React + TypeScript + Tailwind (Vite, Bun), servido pelo `apps/desktop` |
