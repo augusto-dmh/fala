@@ -125,7 +125,7 @@ foreach ($app in $Apps) {
 
                 $restored = if (Test-Restored $kind $original) { 'y' } else { 'n' }
                 do {
-                    $answer = Read-Host "  a frase apareceu em $app? (y/n)"
+                    $answer = Read-Host "  a frase apareceu em ${app}? (y/n)"
                 } while ($answer -notin @('y', 'n'))
             }
             catch {
