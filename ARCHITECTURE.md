@@ -23,6 +23,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/inject` | `fala-inject` | inserção no app ativo (clipboard + Ctrl+V com restore, SendInput) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID) e modos |
+| `crates/retention` | `fala-retention` | áudio de reunião retido: WAV de trabalho para `audio/<id>/mic.opus` e `sys.opus` (Ogg Opus mono 24 kbps, libopus), validação antes de apagar o WAV, política de retenção (ADR-0014) |
 | `apps/desktop` | `fala` (lib `fala_app_lib`) | casca Tauri 2: tray, pill, janelas, comandos e eventos |
 | `apps/cli` | `fala-cli` | `dictate`, `record`, `transcribe`, `bench`, para spikes, benchmark e uso headless |
 | `src/` | — | frontend React + TypeScript + Tailwind (Vite, Bun), servido pelo `apps/desktop` |
