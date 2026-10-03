@@ -2026,6 +2026,11 @@ name = "fala-postproc"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "fala-secrets",
+ "log",
+ "serde_json",
+ "thiserror 2.0.18",
+ "ureq",
 ]
 
 [[package]]
