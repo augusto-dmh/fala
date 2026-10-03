@@ -1926,7 +1926,14 @@ dependencies = [
 name = "fala-storage"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "fala-core",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]

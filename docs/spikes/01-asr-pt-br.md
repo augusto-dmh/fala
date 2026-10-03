@@ -1,6 +1,6 @@
 # Spike 01 — ASR em pt-BR: WER e RTF
 
-**Fase:** 0 · **Status:** rodada Linux feita (2026-09-29); Windows pendente · **Decisão que alimenta:** ADR-0003
+**Fase:** 0 · **Status:** rodadas Linux (2026-09-29) e Windows (2026-09-30) feitas · **Decisão que alimenta:** ADR-0003
 
 ## Objetivo
 
@@ -174,35 +174,69 @@ Limitações que valem para toda rodada:
 
 ## Windows
 
-`TODO(windows)`: rodar no Alienware (Core 7 240H, 16 threads, RTX 5050 8 GB) depois do build por
-`docs/dev/build-windows.md`. A RTX 5050 é Blackwell (sm_120) e exige CUDA 12.8+; se o build com
-`--features cuda` não trouxer kernels para ela em 1 hora, registrar e seguir com Vulkan.
+### Rodada Windows, 2026-09-30
 
-```powershell
-cargo build --release -p fala-cli --features cuda     # whisper turbo em CUDA
-cargo build --release -p fala-cli --features vulkan   # alternativa se o CUDA falhar
-$B = "$HOME\projects\fala-research\benchmarks"; $M = "C:\fala-models"
+`fala` `881e77c`, Alienware 16 (Core 7 240H, 16 threads, 31,7 GB; RTX 5050 Laptop 8 GB, driver
+616.56), Windows 11 Pro 10.0.26200, na tomada, plano `Balanced`, build de release. Os mesmos cinco
+cortes e as mesmas referências revisadas da rodada Linux. A tabela por corte e o estado da máquina
+estão em `fala-research/benchmarks/README.md` § Rodadas; aqui, o agregado Σ(S+D+I)/ΣN por tipo de
+corte:
 
-# whisper large-v3-turbo na RTX 5050 (confira device= na legenda: tem de ser a NVIDIA)
-target\release\fala-cli bench --cuts $B\audio\cuts --refs $B\reference --engine gguf `
-  --model $M\ggml-large-v3-turbo.bin --device gpu --tag win-cuda
+| Engine | Threads · device | WER ditado | WER reunião | WER total | RTF | × tempo real |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Parakeet v3 int8 (`parakeet-onnx`, janela 60 s) | - · cpu | 8.88 % | 17.56 % | 14.86 % | 0.063 | 15.9× |
+| whisper large-v3-turbo (`gguf`) | 4 · cpu | 7.88 % | 13.89 % | 12.02 % | 0.404 | 2.5× |
+| whisper large-v3-turbo (`gguf`) | 8 · cpu | 7.88 % | 13.89 % | 12.02 % | 0.305 | 3.3× |
+| whisper large-v3-turbo (`gguf`) | 16 · cpu | 7.88 % | 13.89 % | 12.02 % | 0.285 | 3.5× |
+| whisper large-v3-turbo (`gguf`) | 16 · Vulkan0 (RTX 5050) | 7.69 % | 14.23 % | 12.19 % | 0.016 | 62.5× |
+| Nemotron 3.5 Q8_0 (`gguf`, janela 60 s) | 16 · cpu | 10.51 % | 12.61 % | 11.96 % | 0.084 | 11.9× |
+| Nemotron 3.5 Q8_0 (`gguf`, janela 60 s) | 16 · Vulkan0 (RTX 5050) | 10.44 % | 12.58 % | 11.92 % | 0.030 | 33.3× |
+| Voxtral Mini 4B Realtime Q4_K_M (`gguf`, janela 60 s) | 16 · Vulkan0 (RTX 5050) | 7.13 % | 13.40 % | 11.45 % | 0.126 | 7.9× |
+| faster-whisper turbo int8 (script) | padrão · cpu | 6.57 % | 9.79 % | 8.78 % | 0.309 | 3.2× |
 
-# Voxtral Mini 4B Realtime (GGUF do catálogo: handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf, Q4_K_M,
-# sha256 39dc1f65539373a406edea7490505822d77c12edff521744678717eef4da4723). O idioma é resolvido
-# contra a lista do modelo (pt-BR, senão pt); registrar o `idioma:` do stderr e, se sair com 2, a lista anunciada
-target\release\fala-cli bench --cuts $B\audio\cuts --refs $B\reference --engine gguf `
-  --model $M\Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf --device gpu --tag win-cuda
+Contra a ADR-0003, que cita para o Parakeet-TDT-0.6B-v3 WER pt ~6 % e 10-20x tempo real em CPU:
 
-# Parakeet v3 int8 no Core 7 (CPU)
-target\release\fala-cli bench --cuts $B\audio\cuts --refs $B\reference --engine parakeet-onnx `
-  --model <pasta parakeet-tdt-0.6b-v3-int8> --chunk-s 60 --tag win
+- **WER** (ADR-0003: ~6 %): o Parakeet v3 int8 mediu 8.88 % nos cortes de ditado, 17.56 % nas
+  reuniões e 14.86 % no total.
+- **Velocidade** (ADR-0003: 10-20x): RTF 0.063, 15.9× tempo real no Core 7, sem contar a carga
+  do modelo (~3,5 s) e com janela de 60 s.
+- **Ordem** entre as engines: no ditado, faster-whisper < Voxtral < whisper turbo < Parakeet <
+  Nemotron; nas reuniões, faster-whisper < Nemotron < Voxtral < whisper turbo < Parakeet.
+- **Mesma engine nas duas máquinas:** o WER total ficou a até 0,43 ponto do Linux (Parakeet
+  15.03 → 14.86 %, whisper turbo em CPU 12.25 → 12.02 %, Nemotron 12.09 → 11.96 %,
+  faster-whisper 9.21 → 8.78 %). Os WAVs dos cortes não são os mesmos bytes (ffmpeg 9.0.2 aqui,
+  7.1.1 no Linux), com o mesmo número de amostras. O RTF em CPU caiu de 0.097 para 0.063
+  (Parakeet), de 0.635 para 0.285 (whisper, todas as threads) e de 0.273 para 0.084 (Nemotron).
+- **Condições.** O Parakeet repetido no começo e no fim da rodada deu RTF 0.062 e 0.063, com o
+  mesmo texto.
 
-# whisper turbo em CPU, varredura de threads
-foreach ($t in 4, 8, 16) {
-  target\release\fala-cli bench --cuts $B\audio\cuts --refs $B\reference --engine gguf `
-    --model $M\ggml-large-v3-turbo.bin --threads $t --tag win-cpu-t$t
-}
+### Invocações
+
+Os mesmos comandos de § Invocações, com estes caminhos e diferenças:
+
+```sh
+# CARGO_TARGET_DIR curto (docs/dev/build-windows.md); o link do Vulkan precisa de %VULKAN_SDK%\Lib no LIB
+CARGO_TARGET_DIR='C:\f\cpu' cargo build --release -p fala-cli
+LIB="$VULKAN_SDK\\Lib;$LIB" CARGO_TARGET_DIR='C:\f\vk' cargo build --release -p fala-cli --features vulkan
+B=/c/dev/fala-research/benchmarks M=/c/fala-models   # modelos baixados do catálogo, sha256 conferido
+
+# --device gpu só no build Vulkan; a legenda tem de dizer Vulkan0 = NVIDIA GeForce RTX 5050 Laptop GPU
+/c/f/vk/release/fala-cli bench --cuts $B/audio/cuts --refs $B/reference --engine gguf \
+  --model $M/Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf --chunk-s 60 --device gpu \
+  --out $B/hyp/voxtral-4b-q4-vulkan-win --tag win-vulkan
+
+# faster-whisper: o PyAV 19 quebra o faster-whisper 1.2.1 (metadata_errors)
+uv run --with 'av<19' $B/scripts/bench_faster_whisper.py --cuts $B/audio/cuts \
+  --out $B/hyp/faster-whisper-turbo-int8-win
 ```
 
-Registrar em § Rodadas, com a mesma forma das rodadas do Linux: data, máquina, engine, modelo,
-versão, threads, device (o nome da legenda), corte, WER e RTF.
+Cada configuração grava em `hyp/<config>-win/`; a tabela sai de `score_rounds.py` com a lista das
+pastas `-win`.
+
+### Rabbit holes (limite de 1 hora cada)
+
+| Rabbit hole | Coube na hora? | O que se viu |
+| --- | --- | --- |
+| whisper em CUDA na RTX 5050 | não tentado | O CUDA Toolkit não está instalado nesta máquina (sem `nvcc` nem `CUDA_PATH`). A GPU foi medida por Vulkan (`--features vulkan`), como a iGPU no Linux |
+| Vulkan na RTX 5050 | sim | O primeiro link falhou com `LNK1181: cannot open input file 'vulkan-1.lib'`; com `%VULKAN_SDK%\Lib` no `LIB`, compilou. Entre a iGPU Intel e a NVIDIA, `--device gpu` escolheu `Vulkan0 (NVIDIA GeForce RTX 5050 Laptop GPU)` em todas as execuções |
+| Voxtral Mini 4B Realtime | sim | Carrega no `transcribe.cpp` (`voxtral_realtime`), `idioma: pt`. Sem janela, caiu no primeiro corte de reunião com `vk::Device::allocateMemory: ErrorOutOfDeviceMemory`, e no `ditado-2025-05-02` saiu com 23.93 % de WER (106 deleções); com `--chunk-s 60` rodou os cinco cortes (6.34 % nesse corte) |
