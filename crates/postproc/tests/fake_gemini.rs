@@ -347,12 +347,9 @@ fn response_under_two_seconds_is_used() {
 
 #[test]
 fn failures_fall_back_to_rules() {
-    let refused = {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
-        url
-    };
+    // Port 0 is refused at once on every OS. A freshly closed port is not: Windows retries the
+    // SYN for about 2 s, which hits the 2 s deadline and reports `Timeout` instead of `Network`.
+    let refused = "http://127.0.0.1:0".to_string();
     let cases: Vec<(Option<Reply>, Fallback)> = vec![
         (
             Some(Reply::After(Duration::ZERO, 500, "{}".into())),
