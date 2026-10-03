@@ -15,6 +15,8 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 fala-core.workspace = true
+fala-audio.workspace = true
+fala-asr.workspace = true
 # Código de spike da fase 0 (`bench`): os dois runtimes de ASR que o desktop já embarca.
 # Migra para `crates/asr` na fase 1.
 transcribe-rs = { version = "0.3.8", features = ["onnx"] }

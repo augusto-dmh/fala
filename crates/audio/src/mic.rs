@@ -24,31 +24,16 @@ pub struct Mic {
 }
 
 impl Mic {
+    /// Confere que alguma entrada tem `needle` no nome, sem abrir stream.
+    pub fn check(needle: &str) -> Result<(), AudioError> {
+        find(&cpal::default_host(), needle).map(|_| ())
+    }
+
     /// Abre a entrada cujo nome contém `needle`, ou a entrada padrão.
     pub fn open(needle: Option<&str>) -> Result<Self, AudioError> {
         let host = cpal::default_host();
         let device = match needle {
-            Some(needle) => {
-                let devices: Vec<cpal::Device> = host
-                    .input_devices()
-                    .map_err(|e| AudioError::Device(e.to_string()))?
-                    .collect();
-                let names: Vec<String> = devices
-                    .iter()
-                    .map(|d| d.name().unwrap_or_default())
-                    .collect();
-                let index = names
-                    .iter()
-                    .position(|n| n.contains(needle))
-                    .ok_or_else(|| AudioError::NoDevice {
-                        needle: needle.to_owned(),
-                        available: names.clone(),
-                    })?;
-                devices
-                    .into_iter()
-                    .nth(index)
-                    .ok_or_else(|| AudioError::Device("dispositivo sumiu da lista".to_owned()))?
-            }
+            Some(needle) => find(&host, needle)?,
             None => host
                 .default_input_device()
                 .ok_or_else(|| AudioError::Device("não há entrada padrão".to_owned()))?,
@@ -116,6 +101,28 @@ impl Mic {
             out.push(x);
         }
     }
+}
+
+fn find(host: &cpal::Host, needle: &str) -> Result<cpal::Device, AudioError> {
+    let devices: Vec<cpal::Device> = host
+        .input_devices()
+        .map_err(|e| AudioError::Device(e.to_string()))?
+        .collect();
+    let names: Vec<String> = devices
+        .iter()
+        .map(|d| d.name().unwrap_or_default())
+        .collect();
+    let index = names
+        .iter()
+        .position(|n| n.contains(needle))
+        .ok_or_else(|| AudioError::NoDevice {
+            needle: needle.to_owned(),
+            available: names.clone(),
+        })?;
+    devices
+        .into_iter()
+        .nth(index)
+        .ok_or_else(|| AudioError::Device("dispositivo sumiu da lista".to_owned()))
 }
 
 fn build(

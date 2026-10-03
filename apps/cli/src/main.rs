@@ -4,6 +4,7 @@
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
 mod bench;
+mod dictate;
 mod record;
 
 use std::path::PathBuf;
@@ -24,8 +25,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Grava do microfone até Enter, transcreve e imprime o texto.
-    Dictate,
+    /// Dita pelo microfone (Enter começa, Enter termina) ou por um WAV e imprime o texto.
+    Dictate(dictate::DictateArgs),
     /// Grava microfone e áudio do sistema em dois canais e mede o drift entre eles.
     Record(record::RecordArgs),
     /// Transcreve um arquivo de áudio.
@@ -41,7 +42,15 @@ fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
     let name = match cli.command {
-        Command::Dictate => "dictate",
+        Command::Dictate(args) => {
+            return match dictate::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
         Command::Record(args) => {
             return match record::run(args) {
                 Ok(()) => ExitCode::SUCCESS,

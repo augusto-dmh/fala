@@ -1882,6 +1882,8 @@ dependencies = [
  "clap",
  "cpal",
  "env_logger",
+ "fala-asr",
+ "fala-audio",
  "fala-core",
  "hound",
  "icu_normalizer",
