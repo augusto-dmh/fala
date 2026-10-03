@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/media-import/plan.md`
 
-23 checks in 5 slices · 5 one-way doors · 0 open, of which 0 block
+25 checks in 5 slices plus doors · 5 one-way doors · 0 open, of which 0 block
 
 Comandos (todos com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`):
 `cargo test -p fala-media` roda os testes sem ffmpeg; `cargo test -p fala-media -- --include-ignored`
@@ -29,7 +29,7 @@ Proof: `cargo test -p fala-media --test import -- --include-ignored --exact firs
 **C4** - Com `out` existente, `import` devolve `OutputExists(out)`, `out` fica byte a byte igual, e as ferramentas (arquivos `ffmpeg`/`ffprobe` vazios, não executáveis) não são iniciadas: o erro não é `Io` (AC 4)
 Proof: `cargo test -p fala-media --test import -- --exact existing_output_is_left_untouched`
 
-**C5** - No primeiro `on_progress` (ffmpeg já iniciado) `out` ainda não existe; depois do `Ok`, `out` existe e `<out>.part` não (AC 5)
+**C5** - Com uma origem WAV de 30 min a 8 kHz, em todo `on_progress` com `processed` > 0 `<out>.part` existe e `out` não; depois do `Ok`, `out` existe, `<out>.part` não e a duração é 1 800 s ± 60 ms (AC 5)
 Proof: `cargo test -p fala-media --test import -- --include-ignored --exact output_appears_only_after_success`
 
 ### S2 - falhas tipadas · 3 files · 15 KB · ~4k
@@ -52,8 +52,9 @@ Proof: `cargo test -p fala-media --test import -- --include-ignored --exact text
 **C11** - Um `.ffconcat` local com `duration 50000` devolve `TooLong { duration: 50 000 s, max: 43 200 s }`, sem `<out>.part` e sem nenhum evento de progresso (AC 11)
 Proof: `cargo test -p fala-media --test import -- --include-ignored --exact too_long_is_rejected_before_ffmpeg`
 
-**C12** - Com `out` num diretório que não existe, `import` devolve `Ffmpeg { code, detail }` com `code` ≠ `Some(0)`, `detail` não vazio e com no máximo 2 000 bytes, sem `out` nem `<out>.part` (AC 12)
+**C12** - Com `out` num diretório que não existe, `import` devolve `Ffmpeg { code, detail }` com `code` ≠ `Some(0)`, `detail` não vazio e com no máximo 2 000 bytes, sem `out` nem `<out>.part`; e com o ffmpeg terminado por SIGTERM depois de o `<out>.part` existir (origem de 30 min), devolve `Ffmpeg` com `code` ≠ `Some(0)` e não deixa `out` nem `<out>.part` (AC 12)
 Proof: `cargo test -p fala-media --test import -- --include-ignored --exact ffmpeg_failure_is_typed_with_stderr`
+Proof: `cargo test -p fala-media --test import -- --include-ignored --exact ffmpeg_killed_after_writing_leaves_nothing`
 Proof: `cargo test -p fala-media --lib -- --exact tests::stderr_tail_keeps_last_2000_bytes`
 
 ### S3 - progresso e cancelamento · 2 files · 15 KB · ~4k
@@ -65,7 +66,7 @@ Proof: `cargo test -p fala-media --test import -- --include-ignored --exact firs
 Proof: `cargo test -p fala-media --test import -- --include-ignored --exact progress_is_monotonic_and_ends_at_duration`
 Proof: `cargo test -p fala-media --lib -- --exact tests::progress_block_parses_out_time_us`
 
-**C15** - `cancel()` chamado dentro do primeiro `on_progress` faz `import` devolver `Cancelled` em ≤ 1 s, sem `out` nem `<out>.part` (AC 15)
+**C15** - `cancel()` chamado por outra thread assim que `<out>.part` aparece no disco (origem de 30 min) faz `import` devolver `Cancelled` em ≤ 1 s depois do cancelamento, sem `out` nem `<out>.part` (AC 15)
 Proof: `cargo test -p fala-media --test import -- --include-ignored --exact cancel_while_running_kills_and_cleans`
 
 **C16** - Token já cancelado devolve `Cancelled` sem iniciar subprocesso (ferramentas vazias: o erro não é `Io`) e sem `out` nem `<out>.part` (AC 16)
@@ -84,7 +85,7 @@ Proof: `cargo test -p fala-cli --test import -- --include-ignored --exact import
 **C19** - Sem `--out`, rodando em `<dir>`, o WAV sai em `<dir>/tom.fala.wav` (AC 19)
 Proof: `cargo test -p fala-cli --test import -- --include-ignored --exact import_default_out_is_stem_fala_wav`
 
-**C20** - O stderr tem ao menos uma linha com `import: ` e `/ 1.0 s (`; o formato é `import: 0.5 s / 2.0 s (25 %)` com total conhecido e `import: 0.5 s / ? s (? %)` sem total (AC 20)
+**C20** - O stderr tem ao menos 2 linhas com `import: ` (o evento inicial e o bloco final), a primeira terminando em `import: 0.0 s / 1.0 s (0 %)` e todas com `/ 1.0 s (`; o formato é `import: 0.5 s / 2.0 s (25 %)` com total conhecido e `import: 0.5 s / ? s (? %)` sem total (AC 20)
 Proof: `cargo test -p fala-cli --test import -- --include-ignored --exact import_reports_progress_on_stderr`
 Proof: `cargo test -p fala-cli --bin fala-cli -- --exact import::tests::progress_line_formats_known_and_unknown_total`
 
@@ -125,7 +126,8 @@ Proof: `cargo test -p fala-media --lib -- --exact tests::ffprobe_args_match_the_
   the crate's claims (C1 to C17) cross its public API from an integration test, the same API
   `crates/meeting` will call
 - C25 is the one check at unit level: the door is the literal argv, which no integration test
-  can observe; C17 is its behavioural counterpart for the whitelist
+  can observe. C17 proves only what it claims (error and 0 connections): with ffmpeg 7.1.1 the hls
+  demuxer already refuses `http` without the flag, so the whitelist itself is proven by C25 alone
 
 ## Swept
 
@@ -143,5 +145,5 @@ Proof: `cargo test -p fala-media --lib -- --exact tests::ffprobe_args_match_the_
 
 - S1-S5 + doors ≈ 20k (arquivos novos em `crates/media` e `apps/cli`, mais 2 KB do `ARCHITECTURE.md` e dos manifests), muito abaixo do budget de 150k - one builder
 - **Boundary:** C1-C17, C24, C25 closed at `87c5df8`; C18-C23 closed in the `fala-cli import` commit
-- **Settled mid-build:** none (independent panel; decisions recorded in the plan's Assumptions)
+- **Settled mid-build:** after verification round 1 (FAIL: C5, C12 and C15 never observed a `.part` on disk, so they would pass with the cleanup removed), the panel strengthened C5, C12 and C15 to run against a 30 min source with the `.part` already written, added the SIGTERM proof to C12, and tightened C20 to the initial and final progress lines; every change makes a claim stricter, none weakens one. Removing the `.part` cleanup now fails C12 and C15. Confirmed? y — delegado pelo Augusto em 2026-10-02, decidido pelo painel
 - **Abandoned:** `-ac 2` to build the stereo mp4 fixture: it upmixes the mono tone at -3 dB, so the source no longer carried the full tone; replaced by `pan=stereo|c0=c0|c1=c0` (fixture only, the C1 threshold is unchanged)

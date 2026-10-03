@@ -118,11 +118,15 @@ fn import_reports_progress_on_stderr() {
     let o = fala(&dir, &["import", "tom.mp3", "--out", "t.wav"], None);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     let err = stderr(&o);
+    let progress: Vec<&str> = err.lines().filter(|l| l.contains("import: ")).collect();
+    // Um evento em 0 ao iniciar o ffmpeg, mais ao menos o bloco `progress=end`.
+    assert!(progress.len() >= 2, "{err}");
     assert!(
-        err.lines()
-            .any(|l| l.contains("import: ") && l.contains("/ 1.0 s (")),
-        "{err}"
+        progress[0].ends_with("import: 0.0 s / 1.0 s (0 %)"),
+        "{}",
+        progress[0]
     );
+    assert!(progress.iter().all(|l| l.contains("/ 1.0 s (")), "{err}");
     assert!(!stdout(&o).contains("import: "));
 }
 

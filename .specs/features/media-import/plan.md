@@ -25,7 +25,7 @@ Reusa o ffmpeg e o ffprobe do sistema (D3, opção c) e o `hound` que já está 
 o cabeçalho do WAV escrito; não reimplementa decodificação nem resample, e não depende de
 `crates/meeting` nem de `crates/audio`.
 
-1. `fala-cli import <arquivo> [--out <wav>]` -> `Cli` clap em `apps/cli/src/main.rs` (exists) - valida a entrada com `fala_media::ensure_input`, localiza as ferramentas com `Tools::locate` (door 3) e chama `fala_media::import`
+1. `fala-cli import <arquivo> [--out <wav>]` -> `Cli` clap em `apps/cli/src/main.rs` (exists) - valida origem e saída com `fala_media::check_paths` antes de procurar o ffmpeg, localiza as ferramentas com `Tools::locate` (door 3) e chama `fala_media::import`
 2. `fala_media::import` em `crates/media` (door 1, API door 5) - recusa `out` existente, checa o token de cancelamento, roda o ffprobe (door 4) e decide: sem trilha de áudio, ilegível ou longo demais encerra aqui sem criar arquivo
 3. `fala_media::import` - inicia o ffmpeg (door 4) escrevendo em `<out>.part`, emite `Progress { processed: 0, total }` e depois um `Progress` por bloco `progress=` do `-progress pipe:1`; a cada ≤ 100 ms confere o `CancelToken` e, se cancelado, mata o ffmpeg e apaga o `.part`
 4. `fala_media::import` - com o ffmpeg em status 0, renomeia `<out>.part` para `out`, lê o cabeçalho com `hound` (exists, no lockfile) e devolve `ImportedAudio` (door 2)

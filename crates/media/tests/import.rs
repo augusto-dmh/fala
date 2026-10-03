@@ -13,6 +13,7 @@ use std::io::ErrorKind;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use fala_media::{import, CancelToken, ImportedAudio, MediaError, Progress, Tools};
@@ -107,6 +108,31 @@ fn video_only(dir: &Path) -> PathBuf {
         ],
         &dir.join("video.mp4"),
     )
+}
+
+/// WAV de 30 min a 8 kHz: a conversão leva segundos, então o `.part` fica visível no disco.
+fn long_wav(dir: &Path) -> PathBuf {
+    generate(
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1800:sample_rate=8000",
+            "-c:a",
+            "pcm_s16le",
+        ],
+        &dir.join("longo.wav"),
+    )
+}
+
+/// Espera `path` existir (no máximo 10 s) e devolve o instante em que apareceu.
+fn wait_for(path: &Path) -> Instant {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !path.exists() {
+        assert!(Instant::now() < deadline, "{} não apareceu", path.display());
+        thread::sleep(Duration::from_millis(5));
+    }
+    Instant::now()
 }
 
 fn no_progress() -> impl FnMut(Progress) {
@@ -279,22 +305,29 @@ fn existing_output_is_left_untouched() {
 #[ignore = "precisa de ffmpeg e ffprobe no PATH"]
 fn output_appears_only_after_success() {
     let dir = scratch("part");
-    let input = tone_mp3(&dir);
-    let out = dir.join("tom.fala.wav");
-    let mut out_seen_at_start = None;
-    let result = import(
-        &real_tools(),
-        &input,
-        &out,
-        &CancelToken::new(),
-        &mut |_| {
-            out_seen_at_start.get_or_insert(out.exists());
-        },
+    let input = long_wav(&dir);
+    let out = dir.join("longo.fala.wav");
+    let part = part_of(&out);
+    // (`.part` existe, `out` existe) em cada evento com áudio já escrito.
+    let mut mid_run = Vec::new();
+    let audio = import(&real_tools(), &input, &out, &CancelToken::new(), &mut |p| {
+        if p.processed > Duration::ZERO {
+            mid_run.push((part.exists(), out.exists()));
+        }
+    })
+    .unwrap();
+    assert!(!mid_run.is_empty(), "nenhum evento com processed > 0");
+    assert!(
+        mid_run.iter().all(|seen| *seen == (true, false)),
+        "{mid_run:?}"
     );
-    result.unwrap();
-    assert_eq!(out_seen_at_start, Some(false));
     assert!(out.exists());
-    assert!(!part_of(&out).exists());
+    assert!(!part.exists());
+    assert!(
+        near(audio.duration, Duration::from_secs(1800)),
+        "{:?}",
+        audio.duration
+    );
 }
 
 #[test]
@@ -501,25 +534,67 @@ fn progress_is_monotonic_and_ends_at_duration() {
 #[ignore = "precisa de ffmpeg e ffprobe no PATH"]
 fn cancel_while_running_kills_and_cleans() {
     let dir = scratch("cancel");
-    let input = tone_mp3(&dir);
-    let out = dir.join("tom.fala.wav");
+    let input = long_wav(&dir);
+    let out = dir.join("longo.fala.wav");
+    let part = part_of(&out);
     let token = CancelToken::new();
     let canceller = token.clone();
-    let mut cancelled_at = None;
-    let result = import(&real_tools(), &input, &out, &token, &mut |_| {
-        if cancelled_at.is_none() {
-            cancelled_at = Some(Instant::now());
+    // Cancela de outra thread assim que o ffmpeg já escreveu o `.part`.
+    let watcher = {
+        let part = part.clone();
+        thread::spawn(move || {
+            let seen = wait_for(&part);
             canceller.cancel();
-        }
-    });
-    let elapsed = cancelled_at.expect("nenhum evento de progresso").elapsed();
+            seen
+        })
+    };
+    let result = import(&real_tools(), &input, &out, &token, &mut no_progress());
+    let returned = Instant::now();
+    let cancelled_at = watcher.join().unwrap();
     assert!(
         matches!(result, Err(MediaError::Cancelled)),
         "esperava Cancelled, veio {result:?}"
     );
+    let elapsed = returned.duration_since(cancelled_at);
     assert!(elapsed <= Duration::from_secs(1), "{elapsed:?}");
     assert!(!out.exists());
-    assert!(!part_of(&out).exists());
+    assert!(!part.exists());
+}
+
+#[test]
+#[ignore = "precisa de ffmpeg e ffprobe no PATH (e do pkill)"]
+fn ffmpeg_killed_after_writing_leaves_nothing() {
+    let dir = scratch("ffmpeg-killed");
+    let input = long_wav(&dir);
+    let out = dir.join("longo.fala.wav");
+    let part = part_of(&out);
+    // SIGTERM no ffmpeg com o `.part` já no disco: ele sai com status diferente de 0.
+    let killer = {
+        let part = part.clone();
+        thread::spawn(move || {
+            wait_for(&part);
+            Command::new("pkill")
+                .arg("-TERM")
+                .arg("-f")
+                .arg(part.as_os_str())
+                .status()
+                .unwrap()
+        })
+    };
+    let result = import(
+        &real_tools(),
+        &input,
+        &out,
+        &CancelToken::new(),
+        &mut no_progress(),
+    );
+    assert!(killer.join().unwrap().success(), "pkill não achou o ffmpeg");
+    match result {
+        Err(MediaError::Ffmpeg { code, .. }) => assert_ne!(code, Some(0)),
+        other => panic!("esperava Ffmpeg, veio {other:?}"),
+    }
+    assert!(!out.exists());
+    assert!(!part.exists());
 }
 
 #[test]
