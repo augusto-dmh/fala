@@ -5,6 +5,7 @@
 
 mod bench;
 mod format;
+mod history;
 mod key;
 mod record;
 
@@ -43,6 +44,10 @@ enum Command {
     Key(key::KeyArgs),
     /// Formata o texto do stdin com as regras e, com `--llm`, o Gemini.
     Format(format::FormatArgs),
+    /// Histórico de ditado: gravar, buscar, desfazer e reaplicar a edição.
+    History(history::HistoryArgs),
+    /// Reconstrói o banco do histórico a partir dos `.md` de `Ditados/`.
+    Reindex(history::DirArgs),
 }
 
 fn main() -> ExitCode {
@@ -87,7 +92,19 @@ fn main() -> ExitCode {
                 }
             };
         }
+        Command::History(args) => return history_exit(history::run(args)),
+        Command::Reindex(dirs) => return history_exit(history::reindex(dirs)),
     };
     log::error!("`{name}` ainda não foi implementado");
     ExitCode::FAILURE
+}
+
+fn history_exit(result: Result<(), history::Failure>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => {
+            log::error!("{:#}", failure.error);
+            ExitCode::from(failure.code)
+        }
+    }
 }
