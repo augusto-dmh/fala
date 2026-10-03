@@ -177,10 +177,10 @@ mod tests {
         (listener, url)
     }
 
+    // Port 0 is refused at once on every OS. A freshly closed port is not: Windows retries the
+    // SYN for about 2 s, which hits the Gemini deadline and reports `timeout` instead of `rede`.
     fn refused_url() -> String {
-        let (listener, url) = idle_server();
-        drop(listener);
-        url
+        "http://127.0.0.1:0".to_string()
     }
 
     #[test]
