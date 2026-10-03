@@ -1,0 +1,25 @@
+[package]
+name = "fala-retention"
+description = "Áudio de reunião retido: WAV de trabalho para dois Ogg Opus mono, validação e política de retenção."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+# `static` compila o libopus do fonte (CMake) quando o sistema não o tem, igual no Windows e no Linux (ADR-0014).
+audiopus_sys.workspace = true
+fala-meeting.workspace = true
+hound.workspace = true
+ogg.workspace = true
+opus.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
