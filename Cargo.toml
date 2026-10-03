@@ -19,6 +19,7 @@ fala-asr = { path = "crates/asr" }
 fala-postproc = { path = "crates/postproc" }
 fala-inject = { path = "crates/inject" }
 fala-storage = { path = "crates/storage" }
+fala-media = { path = "crates/media" }
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }

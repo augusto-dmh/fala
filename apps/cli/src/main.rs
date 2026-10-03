@@ -4,6 +4,7 @@
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
 mod bench;
+mod import;
 mod record;
 
 use std::path::PathBuf;
@@ -35,6 +36,8 @@ enum Command {
     },
     /// Mede WER e RTF de um modelo de ASR sobre cortes com referência.
     Bench(bench::BenchArgs),
+    /// Converte um arquivo de áudio ou vídeo num WAV mono 48 kHz pelo ffmpeg do PATH.
+    Import(import::ImportArgs),
 }
 
 fn main() -> ExitCode {
@@ -54,6 +57,15 @@ fn main() -> ExitCode {
         Command::Transcribe { .. } => "transcribe",
         Command::Bench(args) => {
             return match bench::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
+        Command::Import(args) => {
+            return match import::run(args) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(failure) => {
                     log::error!("{:#}", failure.error);

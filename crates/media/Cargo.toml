@@ -1,0 +1,16 @@
+[package]
+name = "fala-media"
+description = "Importação de arquivos de áudio e vídeo pelo ffmpeg do sistema."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+hound = "3.5.1"
+log = "0.4.25"
+thiserror.workspace = true
+
+[lints]
+workspace = true
