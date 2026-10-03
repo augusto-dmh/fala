@@ -1906,6 +1906,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fala-media"
+version = "0.1.0"
+dependencies = [
+ "hound",
+ "log",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "fala-postproc"
 version = "0.1.0"
 dependencies = [
