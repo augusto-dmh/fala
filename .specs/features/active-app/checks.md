@@ -69,3 +69,7 @@ Proof: `RUSTC_BOOTSTRAP=1 cargo clippy -Zbuild-std=std,panic_abort --target x86_
 ## Handoff
 
 - S1 + S2 = ~5k (lib.rs, foreground.rs, Cargo.toml, exemplo, Cargo.lock), um crate só, bem abaixo do budget de 150k - one builder
+
+- **Boundary:** C1-C3 closed at `ef53e87`; C4-C6, C8 and C9 closed by the commit that adds this line; C7 open until the manual Windows run (`TODO(windows)`)
+- **Settled mid-build:** none; the Windows cross-check target moved from `-gnu` to `-msvc` before the checks were written (the `-gnu` std build needs `x86_64-w64-mingw32-dlltool`, absent here)
+- **Abandoned:** none
