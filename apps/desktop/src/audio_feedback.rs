@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 pub enum SoundType {
@@ -70,6 +71,18 @@ pub fn play_test_sound(app: &AppHandle, sound_type: SoundType) {
     if let Some(path) = resolve_sound_path(app, &settings, sound_type) {
         play_sound_blocking(app, &path);
     }
+}
+
+/// The session-limit warning: the theme's start chime twice, 150 ms apart.
+/// It plays even with feedback sounds off, since it announces that the
+/// recording is about to be cut, at the feedback volume and output device.
+pub fn play_limit_warning(app: &AppHandle) {
+    let app = app.clone();
+    thread::spawn(move || {
+        play_test_sound(&app, SoundType::Start);
+        thread::sleep(Duration::from_millis(150));
+        play_test_sound(&app, SoundType::Start);
+    });
 }
 
 fn play_sound_async(app: &AppHandle, path: PathBuf) {

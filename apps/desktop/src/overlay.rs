@@ -610,6 +610,19 @@ pub fn emit_recording_ready(app_handle: &AppHandle) {
     });
 }
 
+/// Tell the visible overlay that the recording is close to the session
+/// limit, so the pill turns amber until it hides. Skipped when overlays are
+/// disabled; queued on the main thread behind any pending show-overlay.
+pub fn emit_recording_limit_warning(app_handle: &AppHandle) {
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        let _ = handle.emit_to("recording_overlay", "recording-limit-warning", ());
+    });
+}
+
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "recording");
