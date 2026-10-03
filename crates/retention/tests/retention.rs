@@ -166,6 +166,13 @@ mod encode {
                 48_000
             );
             assert!(all[1].starts_with(b"OpusTags"), "{path:?}");
+            for packet in &all[2..] {
+                assert_eq!(
+                    opus::packet::get_nb_samples(packet, RATE).unwrap(),
+                    960,
+                    "pacote fora de 20 ms em {path:?}"
+                );
+            }
         }
     }
 
@@ -246,6 +253,22 @@ mod validate {
     }
 
     #[test]
+    fn rename_failure_after_validation_keeps_wav() {
+        let f = fixture();
+        tone_and_noise(&f.wav, 2 * RATE);
+        let size = fs::metadata(&f.wav).unwrap().len();
+        // `sys.opus` ocupado por uma pasta não vazia: o renomeio falha depois da validação.
+        fs::create_dir_all(f.dir.join("sys.opus")).unwrap();
+        fs::write(f.dir.join("sys.opus").join("ocupado"), b"x").unwrap();
+        let result = retain_wav(&f.wav, &f.dir);
+        assert!(
+            matches!(result, Err(RetentionError::Io { .. })),
+            "{result:?}"
+        );
+        assert_eq!(fs::metadata(&f.wav).unwrap().len(), size);
+    }
+
+    #[test]
     fn truncated_or_wrong_count_fails() {
         let f = fixture();
         tone_and_noise(&f.wav, 4 * RATE);
@@ -260,11 +283,14 @@ mod validate {
             "{result:?}"
         );
 
-        let result = validate_opus(&retained.mic, retained.samples + 1);
-        assert!(
-            matches!(result, Err(RetentionError::ValidationFailed { .. })),
-            "{result:?}"
-        );
+        let expected = retained.samples + 1;
+        match validate_opus(&retained.mic, expected) {
+            Err(RetentionError::ValidationFailed { reason, .. }) => {
+                assert!(reason.contains(&expected.to_string()), "{reason}");
+                assert!(reason.contains(&retained.samples.to_string()), "{reason}");
+            }
+            other => panic!("esperava ValidationFailed, veio {other:?}"),
+        }
     }
 
     #[test]

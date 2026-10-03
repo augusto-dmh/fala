@@ -36,6 +36,15 @@ pub struct RetainedAudio {
 /// Os arquivos são escritos como `.part` e renomeados depois da validação; uma tentativa
 /// anterior interrompida é sobrescrita. Em qualquer erro o WAV continua no disco.
 pub fn retain_wav(wav: &Path, session_dir: &Path) -> Result<RetainedAudio, RetentionError> {
+    retain_wav_with(wav, session_dir, validate_opus)
+}
+
+/// `retain_wav` com o validador injetável, para provar que uma validação recusada mantém o WAV.
+fn retain_wav_with(
+    wav: &Path,
+    session_dir: &Path,
+    validate: impl Fn(&Path, u64) -> Result<(), RetentionError>,
+) -> Result<RetainedAudio, RetentionError> {
     let reader = hound::WavReader::open(wav).map_err(|e| wav_error(wav, e))?;
     let spec = reader.spec();
     if spec.sample_rate != SAMPLE_RATE_HZ
@@ -57,11 +66,12 @@ pub fn retain_wav(wav: &Path, session_dir: &Path) -> Result<RetainedAudio, Reten
     let system_part = part_path(&system);
 
     let samples = encode_channels(reader, wav, &mic_part, &system_part)?;
-    validate_opus(&mic_part, samples)?;
-    validate_opus(&system_part, samples)?;
+    validate(&mic_part, samples)?;
+    validate(&system_part, samples)?;
 
     fs::rename(&mic_part, &mic).map_err(|e| RetentionError::io(&mic, e))?;
     fs::rename(&system_part, &system).map_err(|e| RetentionError::io(&system, e))?;
+    sync_dir(session_dir);
     fs::remove_file(wav).map_err(|e| RetentionError::io(wav, e))?;
 
     Ok(RetainedAudio {
@@ -287,6 +297,15 @@ fn parse_head(data: &[u8]) -> Result<u16, String> {
     Ok(u16::from_le_bytes([data[10], data[11]]))
 }
 
+/// Grava no disco os renomeios da pasta antes de o WAV sumir. Melhor esforço: onde o SO não
+/// abre uma pasta como arquivo, os dados já estão sincronizados (`OpusStream::finish`) e o pior
+/// caso de um crash aqui são `.part` íntegros com o WAV ainda no disco.
+fn sync_dir(dir: &Path) {
+    if let Ok(handle) = File::open(dir) {
+        let _ = handle.sync_all();
+    }
+}
+
 fn part_path(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(".part");
@@ -317,5 +336,62 @@ mod tests {
         let mut encoder = new_encoder().unwrap();
         assert_eq!(encoder.get_bitrate().unwrap(), Bitrate::Bits(24_000));
         assert_eq!(encoder.get_sample_rate().unwrap(), 48_000);
+        assert!(encoder.get_vbr().unwrap());
+    }
+
+    fn stereo_wav(path: &Path, frames: u32) {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: SAMPLE_RATE_HZ,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for i in 0..frames * 2 {
+            writer.write_sample(((i % 200) as i16 - 100) * 50).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    #[test]
+    fn rejected_validation_keeps_wav() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wav = tmp.path().join("sessao.wav");
+        let dir = tmp.path().join("audio").join("sessao");
+        stereo_wav(&wav, SAMPLE_RATE_HZ);
+        let size = fs::metadata(&wav).unwrap().len();
+        let result = retain_wav_with(&wav, &dir, |path, _| {
+            Err(RetentionError::ValidationFailed {
+                path: path.to_path_buf(),
+                reason: "recusado no teste".into(),
+            })
+        });
+        assert!(matches!(
+            result,
+            Err(RetentionError::ValidationFailed { .. })
+        ));
+        assert_eq!(fs::metadata(&wav).unwrap().len(), size);
+        assert!(!dir.join(MIC_FILE).exists());
+        assert!(!dir.join(SYSTEM_FILE).exists());
+    }
+
+    #[test]
+    fn decoded_count_below_granule_fails() {
+        // Um stream com um só pacote de 20 ms cujo granule final promete 10 quadros:
+        // o granule confere, a decodificação não.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("curto.opus");
+        let mut stream = OpusStream::create(&path, 1).unwrap();
+        let expected = 10 * FRAME as u64;
+        let granule = stream.pre_skip + expected;
+        stream.write_frame(&[0i16; FRAME], granule, true).unwrap();
+        stream.finish(&path).unwrap();
+        match validate_opus(&path, expected) {
+            Err(RetentionError::ValidationFailed { reason, .. }) => {
+                assert!(reason.contains("decodificadas"), "{reason}");
+                assert!(reason.contains(&expected.to_string()), "{reason}");
+            }
+            other => panic!("esperava ValidationFailed, veio {other:?}"),
+        }
     }
 }

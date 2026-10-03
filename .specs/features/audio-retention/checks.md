@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/audio-retention/plan.md`
 
-17 checks in 4 slices · 5 one-way doors · 0 open, of which 0 block
+18 checks in 4 slices · 5 one-way doors · 0 open, of which 0 block
 
 Todas as provas rodam com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2` (regra da rodada). Os WAVs de teste são gerados pelos próprios testes numa pasta temporária; nada de microfone nem de rede.
 
@@ -11,13 +11,13 @@ Todas as provas rodam com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target C
 
 ### S1 - WAV vira dois Opus mono · ~4 files · ~25 KB · ~7k
 
-**C1** - De um WAV estéreo 48 kHz i16 de 10 s, `retain_wav` deixa `mic.opus` e `sys.opus` na pasta da sessão; em cada um o 1º pacote Ogg começa com `OpusHead`, tem 1 canal e 48 000 Hz, e o 2º começa com `OpusTags` (AC 1)
+**C1** - De um WAV estéreo 48 kHz i16 de 10 s, `retain_wav` deixa `mic.opus` e `sys.opus` na pasta da sessão; em cada um o 1º pacote Ogg começa com `OpusHead`, tem 1 canal e 48 000 Hz, e o 2º começa com `OpusTags`; todo pacote de áudio decodifica 960 amostras (20 ms) (AC 1)
 Proof: `cargo test -p fala-retention --test retention encode::writes_two_mono_ogg_opus_files -- --exact`
 
 **C2** - Com tom de 440 Hz em L e silêncio digital em R, o RMS decodificado de `mic.opus` é > 0,05 e o de `sys.opus` é < 0,001 (AC 2)
 Proof: `cargo test -p fala-retention --test retention encode::left_is_mic_right_is_system -- --exact`
 
-**C3** - O encoder configurado reporta 24 000 bit/s, e cada arquivo de 10 s de tom com ruído tem no máximo 40 000 bytes (AC 3)
+**C3** - O encoder configurado reporta 24 000 bit/s e VBR ligado, e cada arquivo de 10 s de tom com ruído tem no máximo 40 000 bytes (AC 3)
 Proof: `cargo test -p fala-retention --lib encode::tests::encoder_targets_24_kbps -- --exact`
 Proof: `cargo test -p fala-retention --test retention encode::ten_seconds_fit_in_40_kb -- --exact`
 
@@ -26,7 +26,7 @@ Proof: `cargo test -p fala-retention --test retention encode::rejects_other_form
 
 ### S2 - validar antes de apagar o WAV · ~3 files · ~20 KB · ~5k
 
-**C5** - Para um WAV de 10 s mais 7 amostras (480 007 quadros), `RetainedAudio.samples` é 480 007 e `validate_opus` de cada arquivo com 480 007 passa (AC 5)
+**C5** - Para um WAV de 10 s mais 7 amostras (480 007 quadros), `RetainedAudio.samples` é 480 007 e `validate_opus` de cada arquivo com 480 007 passa: o granule final dá exatamente 480 007 depois do pre-skip, e a decodificação dá entre 480 007 e 480 007 + 959 (o resto do último quadro, que o granule corta, RFC 7845) (AC 5)
 Proof: `cargo test -p fala-retention --test retention validate::sample_count_matches_wav -- --exact`
 
 **C6** - Depois de `retain_wav` com sucesso, o WAV não existe e a pasta da sessão contém exatamente `{mic.opus, sys.opus}` (AC 6)
@@ -35,11 +35,16 @@ Proof: `cargo test -p fala-retention --test retention validate::wav_deleted_only
 **C7** - Com a pasta da sessão apontando para dentro de um arquivo comum (impossível de criar), `retain_wav` devolve erro e o WAV continua com o mesmo tamanho em bytes (AC 7)
 Proof: `cargo test -p fala-retention --test retention validate::failure_keeps_wav -- --exact`
 
-**C8** - `validate_opus` devolve `ValidationFailed` para um `mic.opus` truncado na metade e para a contagem esperada + 1 sobre um arquivo íntegro (AC 8)
+**C8** - `validate_opus` devolve `ValidationFailed` para um `mic.opus` truncado na metade, para a contagem esperada + 1 sobre um arquivo íntegro (com as duas contagens na causa) e para um stream cujo granule promete 10 quadros mas só decodifica 1 (causa cita as amostras decodificadas e a esperada) (AC 8)
 Proof: `cargo test -p fala-retention --test retention validate::truncated_or_wrong_count_fails -- --exact`
+Proof: `cargo test -p fala-retention --lib encode::tests::decoded_count_below_granule_fails -- --exact`
 
 **C9** - Com `mic.opus.part` e `sys.opus.part` com lixo deixados por uma tentativa anterior, `retain_wav` termina com `{mic.opus, sys.opus}` válidos e sem `.part` (AC 9)
 Proof: `cargo test -p fala-retention --test retention validate::rerun_overwrites_leftover_parts -- --exact`
+
+**C18** - O WAV continua no disco com o mesmo tamanho quando a validação recusa os `.part` (validador injetado que falha; nenhum `mic.opus`/`sys.opus` final é criado) e quando o renomeio falha depois da validação (`sys.opus` ocupado por uma pasta não vazia) (Landing door 5, AC 6)
+Proof: `cargo test -p fala-retention --lib encode::tests::rejected_validation_keeps_wav -- --exact`
+Proof: `cargo test -p fala-retention --test retention validate::rename_failure_after_validation_keeps_wav -- --exact`
 
 ### S3 - política de retenção · ~2 files · ~10 KB · ~3k
 
@@ -76,25 +81,26 @@ Proof: `cargo test -p fala-retention --test retention delete::missing_dir_is_fal
 | arquivos retidos (2) | `mic.opus` C1 · `sys.opus` C1 | - |
 | canais do WAV (2) | L -> mic C2 · R -> sys C2 | - |
 | formatos recusados (3) | mono 48 kHz C4 · estéreo 44,1 kHz C4 · estéreo 24 bits C4 | - |
-| falhas da validação (2) | truncado C8 · contagem diferente C8 | - |
+| falhas da validação (3) | truncado C8 · contagem do granule diferente C8 · decodificação abaixo do granule C8 | - |
+| falhas antes de apagar o WAV (3) | pasta impossível C7 · validação recusada C18 · renomeio falho C18 | - |
 | `RetentionPolicy` (3) | `Keep` C10 · `DeleteAfterDays` C11 · `DeleteAfterTranscript` C12 | - |
 | borda de dias (3) | 30 d − 1 min C11 · 30 d C11 · 31 d C11 | - |
 | limites de dias (4 bordas) | 0 C14 · 1 C14 · 3650 C14 · 3651 C14 | - |
 | saída de `delete_session_audio` (2) | `true` C16 · `false` C17 | - |
-| Landing doors (5) | crate novo C1 · dependências (libopus compila e roda) C1 · formato e layout C1, C2, C3 · forma da política C15 · apagar o WAV só depois de validar C6, C7 | - |
+| Landing doors (5) | crate novo C1 · dependências (libopus compila e roda) C1 · formato e layout C1, C2, C3 · forma da política C15 · apagar o WAV só depois de validar C18 (validação recusada, renomeio falho), C6, C7 | - |
 
 - Nenhum check alega mais que os casos que a prova exercita
 
 ## Swept
 
 - validation: C4, C14
-- failure modes: C7, C8 - o WAV fica quando algo falha
+- failure modes: C7, C8, C18 - o WAV fica quando algo falha
 - idempotency: C9 - rodar de novo sobre `.part` velhos termina igual
 - authorization: n/a - biblioteca local sem chamador remoto; `delete_session_audio` só aceita `SessionId` (26 caracteres Crockford), que não expressa `..` nem separador de caminho
 - concurrency: n/a - o pipeline converte uma sessão por vez e o job de retenção só apaga sessões encerradas (C13); duas conversões da mesma sessão ao mesmo tempo não acontecem no desenho da fase 2
 - data lifecycle: C6, C10, C11, C12, C13, C16
 - dependency failure: C7 - erro de I/O vira `RetentionError`, sem pânico; erro do libopus idem (mesmo caminho de `?`)
-- state transitions: C6 - `.part` -> renomeado -> WAV apagado, nessa ordem
+- state transitions: C6, C18 - `.part` -> validado -> renomeado -> WAV apagado, nessa ordem
 - observability: n/a - o crate não loga; os erros carregam o caminho e a causa, e quem chama loga (sem conteúdo de áudio)
 
 ## Handoff
