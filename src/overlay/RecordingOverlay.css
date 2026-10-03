@@ -333,6 +333,21 @@
   opacity: 0.45;
   animation: none;
 }
+/* Close to the session limit: amber with a faster pulse until the pill hides. */
+.sdot.limit {
+  background: var(--color-warning);
+  opacity: 1;
+  animation: sdot-limit-pulse 0.9s infinite;
+}
+@keyframes sdot-limit-pulse {
+  0% {
+    box-shadow: 0 0 0 0
+      color-mix(in srgb, var(--color-warning) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
 @keyframes sdot-pulse {
   0% {
     box-shadow: 0 0 0 0 var(--s-accent-soft);

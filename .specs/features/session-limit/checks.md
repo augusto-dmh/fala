@@ -116,3 +116,7 @@ Proof: `bun run check:translations`
 ## Handoff
 
 - S1 = 21k (coordenador, 85 KB / 4) + S2 = 6k (trechos de `audio_feedback.rs` e `overlay.rs`) + S3 = 2k (trechos do overlay React e CSS) = ~29k, tudo em `apps/desktop/src` e `src/overlay`, abaixo do budget de 150k - one builder
+- **Settled mid-build:** o helper herdado `drive` (testes de #1539) faz `match` exaustivo sobre `Option<Effect>`; com a variante `LimitWarning` ele não compilava. Ganhou um braço `panic!("these sequences never reach the session limit")`, como a 1.F1 fez para `Discard`. Nenhuma asserção herdada mudou; C11 deve ser lido como "nenhuma asserção herdada editada"
+- **Settled mid-build:** o corte também zera uma carência de soltura ainda pendente (`pending_release`), porque essa soltura pertence à sessão cortada; sem isso, uma repetição de key-down durante o processamento seria engolida como cancelamento da soltura
+- **Abandoned:** somar a marca da sessão a `next_deadline()`; testes da 1.F1 afirmam `next_deadline() == None` com a sessão travada e durante o auto-repeat, então o laço passou a usar `wake_deadline()` e `next_deadline()` ficou como estava
+- **Boundary:** C1-C14, C16 e C17 fechados em `feat/session-limit`; C15 fica `TODO(windows)`
