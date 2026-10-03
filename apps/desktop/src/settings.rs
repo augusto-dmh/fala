@@ -167,11 +167,11 @@ pub enum ShortcutActivation {
     /// Hold to record and release to stop, or tap to keep recording until the
     /// next press. Which one it was is decided by how long the key was held
     /// (`hold_threshold_ms`).
-    #[default]
     HoldOrToggle,
     /// Hold to record and release to stop; two taps within 500 ms keep
     /// recording until the next press; a lone short tap (`hold_threshold_ms`)
     /// is discarded without transcribing.
+    #[default]
     PushToTalkDoubleTap,
 }
 
@@ -860,14 +860,16 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
+    // Dictation sits on <mod>+shift+space, the gesture of the phase 1 pitch;
+    // the post-processing binding takes the plain <mod>+space it replaced.
     #[cfg(target_os = "windows")]
-    let default_shortcut = "ctrl+space";
+    let default_shortcut = "ctrl+shift+space";
     #[cfg(target_os = "macos")]
-    let default_shortcut = "option+space";
+    let default_shortcut = "option+shift+space";
     #[cfg(target_os = "linux")]
-    let default_shortcut = "ctrl+space";
+    let default_shortcut = "ctrl+shift+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_shortcut = "alt+space";
+    let default_shortcut = "alt+shift+space";
 
     let mut bindings = HashMap::new();
     bindings.insert(
@@ -881,13 +883,13 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     #[cfg(target_os = "windows")]
-    let default_post_process_shortcut = "ctrl+shift+space";
+    let default_post_process_shortcut = "ctrl+space";
     #[cfg(target_os = "macos")]
-    let default_post_process_shortcut = "option+shift+space";
+    let default_post_process_shortcut = "option+space";
     #[cfg(target_os = "linux")]
-    let default_post_process_shortcut = "ctrl+shift+space";
+    let default_post_process_shortcut = "ctrl+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_post_process_shortcut = "alt+shift+space";
+    let default_post_process_shortcut = "alt+space";
 
     bindings.insert(
         "transcribe_with_post_process".to_string(),
@@ -1276,7 +1278,7 @@ mod tests {
             .expect("all AppSettings fields need serde defaults");
         assert_eq!(
             settings.shortcut_activation,
-            ShortcutActivation::HoldOrToggle
+            ShortcutActivation::PushToTalkDoubleTap
         );
         assert_eq!(settings.hold_threshold_ms, default_hold_threshold_ms());
         assert!(!settings.audio_feedback);
@@ -1615,14 +1617,14 @@ mod tests {
     }
 
     #[test]
-    fn shortcut_activation_defaults_to_hold_or_toggle_without_legacy_key() {
+    fn shortcut_activation_defaults_to_push_to_talk_double_tap_without_legacy_key() {
         let mut settings = get_default_settings();
         let raw = serde_json::json!({ "selected_model": "" });
 
         apply_settings_migrations(&mut settings, &raw);
         assert_eq!(
             settings.shortcut_activation,
-            ShortcutActivation::HoldOrToggle
+            ShortcutActivation::PushToTalkDoubleTap
         );
     }
 
@@ -1734,5 +1736,64 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn default_shortcut_activation_is_push_to_talk_double_tap() {
+        assert_eq!(
+            get_default_settings().shortcut_activation,
+            ShortcutActivation::PushToTalkDoubleTap
+        );
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(
+            from_empty.shortcut_activation,
+            ShortcutActivation::PushToTalkDoubleTap
+        );
+    }
+
+    #[test]
+    fn push_to_talk_double_tap_round_trips_through_serde() {
+        let value = serde_json::to_value(ShortcutActivation::PushToTalkDoubleTap).unwrap();
+        assert_eq!(value, serde_json::json!("push_to_talk_double_tap"));
+        let parsed: ShortcutActivation =
+            serde_json::from_value(serde_json::json!("push_to_talk_double_tap")).unwrap();
+        assert_eq!(parsed, ShortcutActivation::PushToTalkDoubleTap);
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn default_bindings_put_dictation_on_ctrl_shift_space() {
+        let bindings = get_default_settings().bindings;
+        let transcribe = &bindings["transcribe"];
+        assert_eq!(transcribe.default_binding, "ctrl+shift+space");
+        assert_eq!(transcribe.current_binding, "ctrl+shift+space");
+        let post_process = &bindings["transcribe_with_post_process"];
+        assert_eq!(post_process.default_binding, "ctrl+space");
+        assert_eq!(post_process.current_binding, "ctrl+space");
+    }
+
+    /// Stores hold every field explicitly, so a stored mode is a choice we
+    /// cannot tell from an untouched default: none of them is migrated.
+    #[test]
+    fn stored_activation_modes_load_unchanged() {
+        for (stored, expected) in [
+            ("hold_or_toggle", ShortcutActivation::HoldOrToggle),
+            ("push_to_talk", ShortcutActivation::PushToTalk),
+            ("toggle", ShortcutActivation::Toggle),
+        ] {
+            let raw = serde_json::json!({
+                "settings_schema_version": 2,
+                "selected_model": "",
+                "onboarding_completed": true,
+                "whats_new_last_seen_version": "",
+                "overlay_style": "live",
+                "shortcut_activation": stored
+            });
+            let mut settings: AppSettings = serde_json::from_value(raw.clone())
+                .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
+            apply_settings_migrations(&mut settings, &raw);
+            assert_eq!(settings.shortcut_activation, expected, "stored '{stored}'");
+        }
     }
 }
