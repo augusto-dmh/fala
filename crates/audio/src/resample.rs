@@ -9,10 +9,11 @@ pub const OUT_RATE: u32 = fala_core::DictationAudio::SAMPLE_RATE_HZ;
 const CHUNK_IN: usize = 1024;
 
 /// Reamostrador em fluxo. A saída é alinhada à entrada: o atraso do filtro é descontado no
-/// começo e devolvido no `finish`, de modo que a saída total é `in_len × 16000 / in_rate`.
+/// começo e devolvido no `finish`, de modo que a saída total é `in_len × out_rate / in_rate`.
 pub struct Resampler {
     inner: Option<FftFixedIn<f32>>,
     in_rate: u32,
+    out_rate: u32,
     chunk: Vec<f32>,
     in_count: u64,
     out_count: u64,
@@ -21,12 +22,18 @@ pub struct Resampler {
 }
 
 impl Resampler {
+    /// Para os 16 kHz do ditado.
     pub fn new(in_rate: u32) -> Result<Self, AudioError> {
-        let inner = if in_rate == OUT_RATE {
+        Self::to(in_rate, OUT_RATE)
+    }
+
+    /// Para uma taxa de saída qualquer (os 48 kHz da reunião, por exemplo).
+    pub fn to(in_rate: u32, out_rate: u32) -> Result<Self, AudioError> {
+        let inner = if in_rate == out_rate {
             None
         } else {
             Some(
-                FftFixedIn::<f32>::new(in_rate as usize, OUT_RATE as usize, CHUNK_IN, 1, 1)
+                FftFixedIn::<f32>::new(in_rate as usize, out_rate as usize, CHUNK_IN, 1, 1)
                     .map_err(|e| AudioError::Resample(e.to_string()))?,
             )
         };
@@ -34,6 +41,7 @@ impl Resampler {
         Ok(Self {
             inner,
             in_rate,
+            out_rate,
             chunk: Vec::with_capacity(CHUNK_IN),
             in_count: 0,
             out_count: 0,
@@ -66,13 +74,13 @@ impl Resampler {
         Ok(())
     }
 
-    /// Esvazia o filtro: completa a saída até `in_len × 16000 / in_rate` e volta ao estado
+    /// Esvazia o filtro: completa a saída até `in_len × out_rate / in_rate` e volta ao estado
     /// inicial, pronto para um fluxo novo.
     pub fn finish(&mut self, out: &mut Vec<f32>) -> Result<(), AudioError> {
         let Some(inner) = self.inner.as_mut() else {
             return Ok(());
         };
-        let expected = self.in_count * u64::from(OUT_RATE) / u64::from(self.in_rate);
+        let expected = self.in_count * u64::from(self.out_rate) / u64::from(self.in_rate);
         let mut tail = Vec::new();
         if !self.chunk.is_empty() {
             let produced = inner
@@ -168,6 +176,21 @@ mod tests {
         let seconds = body.len() as f64 / 16_000.0;
         let freq = crossings as f64 / 2.0 / seconds;
         assert!((freq - 440.0).abs() <= 4.4, "frequência medida {freq} Hz");
+    }
+
+    #[test]
+    fn upsamples_to_48k() {
+        for len in [16_000 * 2 + 37, 999] {
+            let input = sine(16_000, 300.0, len as f64 / 16_000.0);
+            let mut r = Resampler::to(16_000, 48_000).unwrap();
+            let mut out = Vec::new();
+            for chunk in input.chunks(160) {
+                r.push(chunk, &mut out).unwrap();
+            }
+            r.finish(&mut out).unwrap();
+            let diff = (out.len() as i64 - input.len() as i64 * 3).abs();
+            assert!(diff <= 480, "in {}: out {}", input.len(), out.len());
+        }
     }
 
     #[test]
