@@ -132,3 +132,5 @@ Proof: `awk '/^export type ShortcutActivation/,/^export type ShortcutBinding/' s
 
 - S1 = 15k, S2 = 2k, S3 = 16k, S4 = 4k (+12k para ler o `bindings.ts` gerado) = ~49k, todos em `apps/desktop` e no front, abaixo do budget de 150k - one builder
 - **Settled mid-build:** o helper herdado `drive` (testes de #1539) faz `match` exaustivo sobre `Option<Effect>`; com a variante `Discard` ele não compilava. Ganhou um braço `Some(Effect::Discard { .. }) => panic!("push-to-talk never discards")`. Nenhuma asserção herdada mudou e o braço só torna o helper mais estrito; C14 deve ser lido como "nenhuma asserção herdada editada"
+- **Settled mid-build:** `src/bindings.ts` foi regenerado pelo export do `tauri-specta` rodando o binário de debug em modo portátil (`fala --list-models`, dados num diretório temporário, `LD_LIBRARY_PATH=apps/desktop/transcribe-libs`), sem `tauri dev`. O gerador no Linux também troca o comentário de `isLaptop` pelo do stub não-macOS; esse hunk, alheio à feature, foi descartado e só o hunk de `ShortcutActivation` entrou, idêntico à saída do gerador
+- **Boundary:** C1-C16 e C18-C23 fechados em `feat/shortcut-gestures`; C17 fica `TODO(windows)`

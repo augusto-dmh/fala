@@ -198,11 +198,13 @@
         "title": "Shortcut Behavior",
         "description": "Choose how the transcribe shortcut starts and stops recording.",
         "options": {
+          "pushToTalkDoubleTap": "Hold or double-tap",
           "holdOrToggle": "Auto",
           "pushToTalk": "Hold",
           "toggle": "Toggle"
         },
         "descriptions": {
+          "push_to_talk_double_tap": "Hold to record and release to stop. Double-tap to record hands-free and tap again to stop. A single tap is ignored",
           "hold_or_toggle": "Hold to record or tap to toggle",
           "push_to_talk": "Records while you hold the shortcut",
           "toggle": "Tap the shortcut to start recording, tap again to stop"
