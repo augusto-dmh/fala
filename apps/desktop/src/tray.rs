@@ -63,6 +63,34 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    /// Which dictation language item is checked, from [`tray_language_choice`].
+    language_choice: Option<&'static str>,
+}
+
+/// The dictation languages the tray offers, as the tags stored in
+/// `selected_language` (the serialized forms of the S0 `Language`).
+const DICTATION_LANGUAGES: [&str; 2] = ["pt-BR", "en"];
+
+/// Menu item ids for the dictation languages: `dictation_language:<tag>`.
+pub const LANGUAGE_ITEM_PREFIX: &str = "dictation_language:";
+
+/// The tray item a stored language intent checks: any Portuguese code is
+/// `pt-BR`, any English code is `en`; `auto` or another language checks none.
+fn tray_language_choice(selected_language: &str) -> Option<&'static str> {
+    let base = crate::managers::model::canonical_language_code(selected_language);
+    DICTATION_LANGUAGES
+        .into_iter()
+        .find(|tag| crate::managers::model::canonical_language_code(tag) == base)
+}
+
+fn language_item_id(tag: &str) -> String {
+    format!("{LANGUAGE_ITEM_PREFIX}{tag}")
+}
+
+/// The language tag of a tray item id, only for the tags the tray offers.
+pub fn parse_language_item(id: &str) -> Option<&'static str> {
+    let tag = id.strip_prefix(LANGUAGE_ITEM_PREFIX)?;
+    DICTATION_LANGUAGES.into_iter().find(|known| *known == tag)
 }
 
 /// Complete description of what the tray should look like.
@@ -334,6 +362,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             downloaded_models,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
+            language_choice: tray_language_choice(&settings.selected_language),
         },
     }
 }
@@ -546,6 +575,27 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             model_submenu.append(&item)?;
         }
 
+        // Dictation language: idle only, so a dictation in flight keeps the
+        // language it started with.
+        let language_submenu =
+            Submenu::with_id(app, "language_submenu", &strings.dictation_language, true)?;
+        for tag in &DICTATION_LANGUAGES {
+            let label = if *tag == "en" {
+                &strings.language_en
+            } else {
+                &strings.language_pt_br
+            };
+            let item = CheckMenuItem::with_id(
+                app,
+                language_item_id(tag),
+                label,
+                true,
+                Some(*tag) == inputs.language_choice,
+                None::<&str>,
+            )?;
+            language_submenu.append(&item)?;
+        }
+
         let unload_model_i = MenuItem::with_id(
             app,
             "unload_model",
@@ -562,6 +612,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &copy_last_transcript_i,
                 &separator()?,
                 &model_submenu,
+                &language_submenu,
                 &unload_model_i,
                 &separator()?,
                 &settings_i,
@@ -668,7 +719,10 @@ pub fn copy_last_transcript(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{last_transcript_text, load_tray_icon, MenuInputs, TrayDesired, TrayIconState};
+    use super::{
+        language_item_id, last_transcript_text, load_tray_icon, parse_language_item,
+        tray_language_choice, MenuInputs, TrayDesired, TrayIconState,
+    };
     use crate::managers::history::HistoryEntry;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
@@ -694,6 +748,7 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            language_choice: Some("pt-BR"),
         }
     }
 
@@ -740,5 +795,55 @@ mod tests {
     #[test]
     fn idle_and_busy_menus_differ() {
         assert_ne!(inputs(false), inputs(true));
+    }
+
+    #[test]
+    fn tray_language_choice_maps_the_stored_intent() {
+        let cases = [
+            ("pt", Some("pt-BR")),
+            ("pt-BR", Some("pt-BR")),
+            ("en", Some("en")),
+            ("en-US", Some("en")),
+            ("auto", None),
+            ("es", None),
+            ("", None),
+        ];
+        for (stored, expected) in cases {
+            assert_eq!(tray_language_choice(stored), expected, "stored {stored:?}");
+        }
+    }
+
+    #[test]
+    fn language_choice_change_rebuilds_the_menu() {
+        let pt = inputs(false);
+        let en = MenuInputs {
+            language_choice: Some("en"),
+            ..inputs(false)
+        };
+        let none = MenuInputs {
+            language_choice: None,
+            ..inputs(false)
+        };
+        assert_ne!(pt, en);
+        assert_ne!(en, none);
+    }
+
+    #[test]
+    fn language_item_ids_round_trip_only_for_known_tags() {
+        assert_eq!(language_item_id("pt-BR"), "dictation_language:pt-BR");
+        assert_eq!(language_item_id("en"), "dictation_language:en");
+        assert_eq!(
+            parse_language_item("dictation_language:pt-BR"),
+            Some("pt-BR")
+        );
+        assert_eq!(parse_language_item("dictation_language:en"), Some("en"));
+        for id in [
+            "dictation_language:es",
+            "dictation_language:",
+            "dictation_language:PT-BR",
+            "model_select:pt-BR",
+        ] {
+            assert_eq!(parse_language_item(id), None, "id {id:?}");
+        }
     }
 }

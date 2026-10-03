@@ -82,3 +82,6 @@ Proof: `cargo test -p fala --lib managers::model::tests::test_effective_language
 ## Handoff
 
 - S1 = ~19k, S2 = ~3k, total ~22k, tudo em `apps/desktop/src` e nas locales, abaixo do budget de 150k - one builder
+- **Settled mid-build:** a escolha do tray reusa `canonical_language_code` de `managers/model.rs` (a mesma base que `effective_language` usa), em vez de um segundo parser de código de idioma; o `build.rs` herdado passou a gerar 11 campos de tray (eram 8)
+- **Abandoned:** nada
+- **Boundary:** C1-C10 fechados em `feat/language-picker`; o visual do submenu no tray do Windows fica para o checklist `TODO(windows)` da sessão
