@@ -17,7 +17,7 @@ Proof: `cargo test -p fala-retention --test retention encode::writes_two_mono_og
 **C2** - Com tom de 440 Hz em L e silêncio digital em R, o RMS decodificado de `mic.opus` é > 0,05 e o de `sys.opus` é < 0,001 (AC 2)
 Proof: `cargo test -p fala-retention --test retention encode::left_is_mic_right_is_system -- --exact`
 
-**C3** - O encoder configurado reporta 24 000 bit/s e VBR ligado, e cada arquivo de 10 s de tom com ruído tem no máximo 40 000 bytes (AC 3)
+**C3** - O encoder configurado reporta 24 000 bit/s, VBR ligado e aplicação VoIP, e cada arquivo de 10 s de tom com ruído tem no máximo 40 000 bytes (AC 3)
 Proof: `cargo test -p fala-retention --lib encode::tests::encoder_targets_24_kbps -- --exact`
 Proof: `cargo test -p fala-retention --test retention encode::ten_seconds_fit_in_40_kb -- --exact`
 

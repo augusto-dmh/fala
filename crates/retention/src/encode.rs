@@ -337,6 +337,7 @@ mod tests {
         assert_eq!(encoder.get_bitrate().unwrap(), Bitrate::Bits(24_000));
         assert_eq!(encoder.get_sample_rate().unwrap(), 48_000);
         assert!(encoder.get_vbr().unwrap());
+        assert_eq!(encoder.get_application().unwrap(), Application::Voip);
     }
 
     fn stereo_wav(path: &Path, frames: u32) {
