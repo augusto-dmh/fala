@@ -1,0 +1,5 @@
+# Config for scripts/check-secrets.sh (ADR-0008). Default rules only, no allowlist: the history was
+# clean when this landed (gitleaks 8.30.1, 0 findings). If a finding is a false positive, add the
+# narrowest allowlist entry here with a comment saying why; never a baseline or a path-wide skip.
+[extend]
+useDefault = true
