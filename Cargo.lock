@@ -1904,6 +1904,7 @@ dependencies = [
  "earshot",
  "enigo",
  "env_filter",
+ "fala-secrets",
  "ferrous-opencc",
  "flate2",
  "futures-util",
