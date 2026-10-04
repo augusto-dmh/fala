@@ -675,6 +675,71 @@ mod tests {
     }
 
     #[test]
+    fn undo_then_redo_switches_showing() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let saved = save(&conn, Some(&store), llm_entry("fala-1.wav"), 1);
+        let id = link(&conn, saved.id).unwrap();
+
+        let undone =
+            HistoryManager::set_showing_with(&conn, Some(&store), saved.id, Showing::Raw).unwrap();
+        assert_eq!(undone.dictation.unwrap().showing, HistoryShowing::Raw);
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Raw);
+        let md = fs::read_to_string(env.md_of(&id).unwrap()).unwrap();
+        assert!(md.contains("showing: \"raw\""), "{md}");
+
+        let redone =
+            HistoryManager::set_showing_with(&conn, Some(&store), saved.id, Showing::Final)
+                .unwrap();
+        assert_eq!(redone.dictation.unwrap().showing, HistoryShowing::Final);
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Final);
+        let md = fs::read_to_string(env.md_of(&id).unwrap()).unwrap();
+        assert!(md.contains("showing: \"final\""), "{md}");
+    }
+
+    #[test]
+    fn undo_errors_change_nothing() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+
+        // Id inexistente.
+        assert!(HistoryManager::set_showing_with(&conn, Some(&store), 999, Showing::Raw).is_err());
+
+        // Entrada sem vínculo.
+        let unlinked = save(&conn, None, llm_entry("fala-1.wav"), 1);
+        assert!(
+            HistoryManager::set_showing_with(&conn, Some(&store), unlinked.id, Showing::Raw)
+                .is_err()
+        );
+
+        // Item sem edição.
+        let plain = save(
+            &conn,
+            Some(&store),
+            entry("fala-2.wav", "oi", "oi", false, None, None),
+            2,
+        );
+        let plain_id = link(&conn, plain.id).unwrap();
+        let plain_md = fs::read_to_string(env.md_of(&plain_id).unwrap()).unwrap();
+        assert!(
+            HistoryManager::set_showing_with(&conn, Some(&store), plain.id, Showing::Raw).is_err()
+        );
+        assert_eq!(store.get(&plain_id).unwrap().showing, Showing::Final);
+        assert_eq!(
+            fs::read_to_string(env.md_of(&plain_id).unwrap()).unwrap(),
+            plain_md
+        );
+
+        // Store fechado.
+        let edited = save(&conn, Some(&store), llm_entry("fala-3.wav"), 3);
+        let edited_id = link(&conn, edited.id).unwrap();
+        assert!(HistoryManager::set_showing_with(&conn, None, edited.id, Showing::Raw).is_err());
+        assert_eq!(store.get(&edited_id).unwrap().showing, Showing::Final);
+    }
+
+    #[test]
     fn entries_carry_their_dictation() {
         let env = scratch();
         let store = env.store();

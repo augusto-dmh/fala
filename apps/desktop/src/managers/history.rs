@@ -13,7 +13,7 @@ use tauri_specta::Event;
 
 use crate::managers::history_dictations::{self, HistoryDictation};
 use fala_core::{AppContext, Language};
-use fala_storage::Store;
+use fala_storage::{Showing, Store};
 
 /// Database migrations for transcription history.
 /// Each migration is applied in order. The library tracks which migrations
@@ -888,6 +888,45 @@ impl HistoryManager {
         )?;
 
         Ok(())
+    }
+
+    /// Undo (`Showing::Raw`) or redo (`Showing::Final`) the edit of an entry's dictation.
+    pub fn set_showing(&self, id: i64, showing: Showing) -> Result<HistoryEntry> {
+        let conn = self.get_connection()?;
+        let entry = {
+            let store = self.lock_store();
+            Self::set_showing_with(&conn, store.as_deref(), id, showing)?
+        };
+        if let Err(e) = (HistoryUpdatePayload::Updated {
+            entry: entry.clone(),
+        })
+        .emit(&self.app_handle)
+        {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+        Ok(entry)
+    }
+
+    pub(crate) fn set_showing_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        id: i64,
+        showing: Showing,
+    ) -> Result<HistoryEntry> {
+        let store = store.ok_or_else(|| anyhow!("fala.sqlite is not available"))?;
+        let mut entry = Self::get_entry_by_id_with(conn, id)?
+            .ok_or_else(|| anyhow!("History entry {} not found", id))?;
+        let dictation_id = entry
+            .dictation_id
+            .clone()
+            .ok_or_else(|| anyhow!("History entry {} has no dictation", id))?;
+        let record = match showing {
+            Showing::Raw => store.undo(&dictation_id),
+            Showing::Final => store.redo(&dictation_id),
+        }
+        .map_err(|e| anyhow!("{}", e))?;
+        entry.dictation = Some(HistoryDictation::from(&record));
+        Ok(entry)
     }
 
     fn format_timestamp_title(timestamp: i64) -> String {
