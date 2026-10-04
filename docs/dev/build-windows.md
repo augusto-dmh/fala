@@ -83,6 +83,17 @@ git rm -rq --cached .
 git reset --hard
 ```
 
+### `LNK1181: cannot open input file 'vulkan-1.lib'`
+
+Com `--features vulkan`, o link do binário pode falhar com esse erro: o `transcribe-cpp-sys` pede `vulkan-1.lib`, mas não passa a pasta do SDK ao linker. Ponha `%VULKAN_SDK%\Lib` no `LIB` antes da build:
+
+```powershell
+$env:LIB = "$env:VULKAN_SDK\Lib;$env:LIB"
+cargo build --release -p fala-cli --features vulkan
+```
+
+Visto em 2026-09-30 com o Vulkan SDK 1.4.357.0 e o Build Tools 2022 (MSVC 14.44).
+
 ### Camadas Vulkan implícitas
 
 O app define `VK_LOADER_LAYERS_DISABLE=~implicit~` ao iniciar, para evitar que overlays de terceiros (gravadores de tela, drivers) quebrem o backend Vulkan. Para depurar com essas camadas ligadas, defina `FALA_KEEP_VULKAN_IMPLICIT_LAYERS=1`.
