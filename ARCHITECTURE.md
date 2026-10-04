@@ -25,6 +25,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID) e modos |
 | `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |
+| `crates/mcp` | `fala-mcp` | servidor MCP local (stdio, só leitura, desligado sem `mcp.toml`) sobre o histórico do `storage`, servido por `fala-cli mcp` (ADR-0010, proposta) |
 | `apps/desktop` | `fala` (lib `fala_app_lib`) | casca Tauri 2: tray, pill, janelas, comandos e eventos |
 | `apps/cli` | `fala-cli` | `dictate`, `record`, `transcribe`, `bench`, `import`, para spikes, benchmark e uso headless |
 | `src/` | — | frontend React + TypeScript + Tailwind (Vite, Bun), servido pelo `apps/desktop` |
