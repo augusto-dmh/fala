@@ -23,11 +23,12 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
 | `crates/inject` | `fala-inject` | inserção no app ativo (clipboard + Ctrl+V com restore, SendInput) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
+| `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID) e modos |
 | `apps/desktop` | `fala` (lib `fala_app_lib`) | casca Tauri 2: tray, pill, janelas, comandos e eventos |
 | `apps/cli` | `fala-cli` | `dictate`, `record`, `transcribe`, `bench`, para spikes, benchmark e uso headless |
 | `src/` | — | frontend React + TypeScript + Tailwind (Vite, Bun), servido pelo `apps/desktop` |
 
-**Estado no dia 1:** os crates de `crates/` existem só como `//!`. Toda a lógica ainda vive em `apps/desktop/src`, herdada do Handy: `managers/` (audio, model, transcription, history), `audio_toolkit/` (captura, VAD, resample), `shortcut/`, `clipboard.rs` e `paste_tx/` (inserção), `overlay.rs` e `tray.rs`. A fase 1 move essa lógica para os crates, e os managers viram fachadas finas sobre eles. O crate `meeting` nasce na fase 2.
+**Estado no dia 1:** os crates de `crates/` existem só como `//!`. Toda a lógica ainda vive em `apps/desktop/src`, herdada do Handy: `managers/` (audio, model, transcription, history), `audio_toolkit/` (captura, VAD, resample), `shortcut/`, `clipboard.rs` e `paste_tx/` (inserção), `overlay.rs` e `tray.rs`. A fase 1 move essa lógica para os crates, e os managers viram fachadas finas sobre eles. O crate `meeting` nasceu antes da fase 2 só com a sessão (2.F1); calendário, detecção, importação e notas entram nele na fase 2.
 
 ## Invariantes
 
