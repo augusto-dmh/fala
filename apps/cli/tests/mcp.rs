@@ -1071,6 +1071,13 @@ fn default_log_level_never_prints_dictated_text() {
 
 #[test]
 fn default_data_dir_is_the_history_dir() {
+    // XDG_DATA_HOME only steers `dirs::data_dir()` on Linux. Elsewhere the default is the OS
+    // known folder, which an env var cannot redirect, so running this would write a test
+    // dictation into the real history of whoever runs the suite. Skip there, loudly.
+    if std::env::consts::OS != "linux" {
+        eprintln!("skipped: XDG_DATA_HOME does not redirect the default data dir on this OS");
+        return;
+    }
     let xdg = Data::new("xdg-default");
     let add = Command::new(env!("CARGO_BIN_EXE_fala-cli"))
         .args(["history", "add", "--raw", "ornitorrinco azul"])
