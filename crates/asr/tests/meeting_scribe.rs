@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use fala_asr::meeting::{
     CancelToken, ElevenLabsScribe, MeetingRecording, MeetingTranscriber, Progress, ScribeOptions,
@@ -119,6 +119,8 @@ enum Reply {
         body: String,
         delay: Duration,
     },
+    /// Lê a requisição e fecha sem responder.
+    Close,
 }
 
 fn ok() -> Reply {
@@ -216,17 +218,21 @@ fn handle(stream: TcpStream, seen: &Mutex<Vec<Recorded>>, reply: &Reply) {
         body,
     });
     let mut stream = stream;
-    let Reply::Json {
-        status,
-        body,
-        delay,
-    } = reply;
-    thread::sleep(*delay);
-    let response = format!(
-        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(response.as_bytes());
+    match reply {
+        Reply::Close => {}
+        Reply::Json {
+            status,
+            body,
+            delay,
+        } => {
+            thread::sleep(*delay);
+            let response = format!(
+                "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    }
 }
 
 /// Uma pasta de sessão com `mic.opus` e `sys.opus`.
@@ -409,5 +415,104 @@ mod request {
         );
         assert!(!err.to_string().contains(KEY), "{err}");
         assert!(!format!("{err:?}").contains(KEY), "{err:?}");
+    }
+}
+
+mod progress {
+    use super::*;
+
+    fn reply(status: u16) -> Reply {
+        Reply::Json {
+            status,
+            body: r#"{"detail":"x"}"#.to_string(),
+            delay: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn failures_keep_audio_and_classify_retry() {
+        let cases = [
+            ("429", reply(429), true, Some(429)),
+            ("503", reply(503), true, Some(503)),
+            ("closed", Reply::Close, true, None),
+            ("401", reply(401), false, Some(401)),
+            ("422", reply(422), false, Some(422)),
+        ];
+        for (name, reply, want_retriable, want_status) in cases {
+            let server = FakeServer::start(reply);
+            let recording = session(&format!("failure-{name}"), SessionMode::Meeting);
+            let err = run(&mut scribe(&server, no_keyterms()), &recording).unwrap_err();
+            match err {
+                AsrError::Network {
+                    retriable, status, ..
+                } => {
+                    assert_eq!(retriable, want_retriable, "{name}");
+                    if want_status.is_some() {
+                        assert_eq!(status, want_status, "{name}");
+                    }
+                }
+                other => panic!("{name}: esperava Network, veio {other:?}"),
+            }
+            assert_eq!(std::fs::read(recording.mic()).unwrap(), MIC_BYTES, "{name}");
+            assert_eq!(
+                std::fs::read(recording.system()).unwrap(),
+                SYS_BYTES,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn reports_at_least_every_second() {
+        let server = FakeServer::start(Reply::Json {
+            status: 200,
+            body: OK_JSON.to_string(),
+            delay: Duration::from_secs(3),
+        });
+        let recording = session("progress", SessionMode::SystemOnly);
+        let start = Instant::now();
+        let mut calls: Vec<Instant> = Vec::new();
+        scribe(&server, no_keyterms())
+            .transcribe_session(&recording, &CancelToken::new(), &mut |_: Progress| {
+                calls.push(Instant::now())
+            })
+            .unwrap();
+        let end = Instant::now();
+        assert_eq!(server.requests().len(), 1);
+        assert!(end - start >= Duration::from_secs(3));
+        assert!(calls.len() >= 3, "{} chamadas", calls.len());
+        let mut marks = vec![start];
+        marks.extend(&calls);
+        for pair in marks.windows(2) {
+            let gap = pair[1] - pair[0];
+            assert!(gap <= Duration::from_secs(1), "intervalo de {gap:?}");
+        }
+        // Do último sinal até a resposta também não passa de 1 s.
+        assert!(end - *calls.last().unwrap() <= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn cancel_returns_within_a_second() {
+        let server = FakeServer::start(Reply::Json {
+            status: 200,
+            body: OK_JSON.to_string(),
+            delay: Duration::from_secs(5),
+        });
+        let recording = session("cancel", SessionMode::Meeting);
+        let cancel = CancelToken::new();
+        let trigger = cancel.clone();
+        let start = Instant::now();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(500));
+            trigger.cancel();
+        });
+        let err = scribe(&server, no_keyterms())
+            .transcribe_session(&recording, &cancel, &mut |_: Progress| {})
+            .unwrap_err();
+        let elapsed = start.elapsed();
+        assert!(matches!(err, AsrError::Cancelled), "{err:?}");
+        assert!(elapsed < Duration::from_millis(1_500), "{elapsed:?}");
+        // Cancelado no mic: o sistema nem foi enviado.
+        assert_eq!(server.requests().len(), 1);
     }
 }

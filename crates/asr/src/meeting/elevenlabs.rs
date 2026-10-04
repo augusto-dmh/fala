@@ -6,8 +6,13 @@
 //! `language_code` (omitido em "detectar"), `diarize`, `timestamps_granularity` e um
 //! `keyterms` por termo do dicionário quando o ajuste está ligado. Nada mais.
 
+use std::io::{self, Read};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fala_core::{Dictionary, Language};
 use fala_meeting::SessionMode;
@@ -23,6 +28,10 @@ const PATH: &str = "/v1/speech-to-text";
 const MODEL_ID: &str = "scribe_v2";
 /// Teto do JSON de resposta: horas de palavras com tempos cabem com folga.
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+/// De quanto em quanto tempo a espera olha o cancelamento.
+const POLL: Duration = Duration::from_millis(100);
+/// Intervalo do progresso enquanto um canal sobe ou espera resposta (orçamento: ≤ 1 s).
+const HEARTBEAT: Duration = Duration::from_millis(500);
 
 /// Os ajustes que mudam a requisição.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,22 +107,56 @@ impl ElevenLabsScribe {
             path: path.to_path_buf(),
             reason: e.to_string(),
         })?;
-        let total = audio.len() as u64;
         let file_name = path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("audio.opus");
         let boundary = boundary_for(&audio);
         let body = multipart(&boundary, &self.fields(diarize), file_name, &audio);
+        let total = body.len() as u64;
         on_progress(Progress {
             channel,
             stage: Stage::Uploading { sent: 0, total },
         });
-        let raw = post(&self.url(), &self.key, &boundary, body)?;
-        on_progress(Progress {
-            channel,
-            stage: Stage::Uploading { sent: total, total },
-        });
+
+        // O ureq bloqueia até a resposta e não aborta uma requisição em voo: ela roda num
+        // thread, e este espera com batimento e cancelamento. Cancelada, a resposta é
+        // descartada quando chegar.
+        let sent = Arc::new(AtomicU64::new(0));
+        let (tx, rx) = mpsc::channel();
+        {
+            let (url, key, sent) = (self.url(), self.key.clone(), Arc::clone(&sent));
+            thread::spawn(move || {
+                let _ = tx.send(post(&url, &key, &boundary, body, &sent));
+            });
+        }
+        let mut last_beat = Instant::now();
+        let raw = loop {
+            if cancel.is_cancelled() {
+                return Err(AsrError::Cancelled);
+            }
+            match rx.recv_timeout(POLL) {
+                Ok(result) => break result?,
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(AsrError::Network {
+                        retriable: true,
+                        status: None,
+                        reason: "o envio parou sem resposta".to_string(),
+                    })
+                }
+            }
+            if last_beat.elapsed() >= HEARTBEAT {
+                last_beat = Instant::now();
+                let sent = sent.load(Ordering::SeqCst).min(total);
+                let stage = if sent < total {
+                    Stage::Uploading { sent, total }
+                } else {
+                    Stage::Waiting
+                };
+                on_progress(Progress { channel, stage });
+            }
+        };
         let response: ScribeResponse =
             serde_json::from_str(&raw).map_err(|e| AsrError::InvalidResponse(e.to_string()))?;
         Ok(group_words(&response.words))
@@ -204,7 +247,18 @@ fn multipart(
 
 /// Uma requisição. Erro de transporte, `429` e `5xx` podem ser repetidos; o resto não. O erro
 /// nunca carrega o corpo da resposta nem a chave.
-fn post(url: &str, key: &ApiKey, boundary: &str, body: Vec<u8>) -> Result<String, AsrError> {
+fn post(
+    url: &str,
+    key: &ApiKey,
+    boundary: &str,
+    body: Vec<u8>,
+    sent: &AtomicU64,
+) -> Result<String, AsrError> {
+    let length = body.len();
+    let mut reader = Counting {
+        body: io::Cursor::new(body),
+        sent,
+    };
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .build()
@@ -216,7 +270,8 @@ fn post(url: &str, key: &ApiKey, boundary: &str, body: Vec<u8>) -> Result<String
             "content-type",
             format!("multipart/form-data; boundary={boundary}"),
         )
-        .send(&body[..])
+        .header("content-length", length.to_string())
+        .send(ureq::SendBody::from_reader(&mut reader))
         .map_err(transport_error)?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
@@ -232,6 +287,20 @@ fn post(url: &str, key: &ApiKey, boundary: &str, body: Vec<u8>) -> Result<String
         .limit(MAX_RESPONSE_BYTES)
         .read_to_string()
         .map_err(transport_error)
+}
+
+/// O corpo da requisição, contando os bytes que o ureq já leu para o socket.
+struct Counting<'a> {
+    body: io::Cursor<Vec<u8>>,
+    sent: &'a AtomicU64,
+}
+
+impl Read for Counting<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.body.read(buf)?;
+        self.sent.fetch_add(n as u64, Ordering::SeqCst);
+        Ok(n)
+    }
 }
 
 fn transport_error(error: ureq::Error) -> AsrError {

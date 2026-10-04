@@ -53,13 +53,13 @@ Proof: `cargo test -p fala-asr --lib meeting::segments::tests::segment_serialize
 
 ### S4 - falha, progresso e cancelamento · ~2 files · ~15 KB · ~4k
 
-**C13** - Respostas `429`, `503` e conexão fechada sem resposta dão `Network { retriable: true }`; `401` e `422` dão `retriable: false` com o status; nos 5 casos, `mic.opus` e `sys.opus` têm o mesmo sha256 de antes (AC 13)
+**C13** - (built) Respostas `429`, `503` e conexão fechada sem resposta dão `Network { retriable: true }`; `401` e `422` dão `retriable: false` com o status; nos 5 casos, `mic.opus` e `sys.opus` têm o mesmo sha256 de antes (AC 13)
 Proof: `cargo test -p fala-asr --test meeting_scribe progress::failures_keep_audio_and_classify_retry -- --exact`
 
-**C14** - Servidor falso que responde depois de 3 s: o callback de progresso é chamado pelo menos 3 vezes e nenhum intervalo entre chamadas passa de 1 s (AC 14)
+**C14** - (built) Servidor falso que responde depois de 3 s: o callback de progresso é chamado pelo menos 3 vezes e nenhum intervalo entre chamadas passa de 1 s (AC 14)
 Proof: `cargo test -p fala-asr --test meeting_scribe progress::reports_at_least_every_second -- --exact`
 
-**C15** - Cancelar 500 ms depois do início, com o servidor demorando 5 s: `Cancelled` volta em menos de 1,5 s desde o início (AC 15)
+**C15** - (built) Cancelar 500 ms depois do início, com o servidor demorando 5 s: `Cancelled` volta em menos de 1,5 s desde o início (AC 15)
 Proof: `cargo test -p fala-asr --test meeting_scribe progress::cancel_returns_within_a_second -- --exact`
 
 ### S5 - fallback local · ~2 files · ~15 KB · ~4k

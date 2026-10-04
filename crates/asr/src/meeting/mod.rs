@@ -21,8 +21,9 @@ use crate::AsrError;
 
 /// Um backend de transcrição de reunião (Scribe na nuvem, Parakeet local em janelas).
 pub trait MeetingTranscriber: Send {
-    /// Transcreve os canais da sessão. `on_progress` é chamado no thread de quem chama;
-    /// `cancel` interrompe a espera.
+    /// Transcreve os canais da sessão. `on_progress` é chamado no thread de quem chama, com
+    /// intervalo de no máximo 1 s enquanto um canal está em andamento; `cancel` interrompe a
+    /// espera e devolve [`AsrError::Cancelled`].
     fn transcribe_session(
         &mut self,
         recording: &MeetingRecording,
@@ -58,7 +59,7 @@ pub struct Progress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
-    /// Bytes do arquivo do canal já entregues ao cliente HTTP.
+    /// Bytes da requisição do canal (multipart com o arquivo) já entregues ao cliente HTTP.
     Uploading { sent: u64, total: u64 },
     /// Corpo enviado; esperando a resposta do provedor.
     Waiting,
