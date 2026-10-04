@@ -1,9 +1,9 @@
 # shortcut-gestures verification
 
-**Verdict**: PASS - 22 of 23 checks proven at HEAD on Linux; C17 is deferred by design (TODO(windows), manual), see `## Deferred`
+**Verdict**: FAIL - round 2 (scoped, at `242e457`): 23 of 24 checks proven on Linux, C24 included. The one unproven check is C17 (`TODO(windows)`, manual). Round 1 listed it as deferred and still gave a pass. See `## Round 2 - scoped`
 **Profile**: light
-**Diff range**: 881e77c..001a553
-**Round**: 1 - full
+**Diff range**: 881e77c..001a553 (round 1); 001a553..242e457 (round 2: merge `b35e898` and fix `242e457`)
+**Round**: 2 - scoped (round 1 - full, at `001a553`, kept below as written)
 **Verifier**: independent sub-agent with a fresh context (author != verifier). The author is the desktop-phase1 executor sub-agent; this report was written by a separate Verifier sub-agent that did not build any of the 4 commits.
 
 Every proof ran at `001a553` (`feat/shortcut-gestures`, tree clean). Cargo ran with
@@ -99,3 +99,105 @@ None - not run under `light` (fault injection is a `standard`/`ui` step). Becaus
 `bun run check:translations` / `bun run lint` / `bunx tsc --noEmit` - exit 0 each
 grep/awk/python proofs for C15, C16, C22, C23 - 9 of 9 exit 0
 `cargo clippy -p fala --all-targets -- -D warnings` - exit 0; `scripts/check-brand.sh` - exit 0
+
+## Round 2 - scoped
+
+**Verdict**: FAIL - the only gap is C17 (`TODO(windows)`, manual, not run). C1-C16 and C18-C24 are proven at `242e457`
+**Profile**: light
+**Diff range**: 001a553..242e457 - merge `b35e898` (origin/main `62a9441` into the branch, through the report commit `907d447`) and fix `242e457` (`fix(ui): turn the pill red in the default double-tap mode`)
+**Round**: 2 - scoped
+**Verifier**: a new independent sub-agent with a fresh context (author != verifier). The author is the desktop-stack executor sub-agent. This Verifier did not write `242e457` or `b35e898` and did not write round 1.
+
+**Scope.** Round 2 covers the diff of `242e457`, the effect of `b35e898` on this feature's files, and
+every check that was not PASS in round 1 (C17). It also covers the new check C24. Every proof was
+re-run in full at `242e457` (detached scratch worktree, tree clean, `node_modules` symlinked from the
+main checkout). Cargo ran with `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`,
+one command at a time. No code, test, plan or checks file was changed.
+
+**Verdict change from round 1.** Round 1 gave a pass and moved C17 into a `## Deferred` table.
+`verify.md` says a check whose result is not PASS makes the verdict FAIL, and that a row is not
+softened to fit a verdict. C17 has no proof that runs here and no `file:line`, so it is Unproven. The
+FAIL above records only that. The `session-limit` report uses the same rule for its manual Windows
+check (C15). The code shows no regression. Once C17's Windows session is recorded, this feature has
+no open gap.
+
+### What the merge did to this feature's files (verified at 242e457)
+
+- `git diff --stat 907d447 b35e898`, limited to the feature files (`transcription_coordinator.rs`,
+  `settings.rs`, `utils.rs`, `ShortcutActivation.tsx`, `src/i18n`, `src/bindings.ts`, the feature's
+  `.specs`), touches only `apps/desktop/src/settings.rs` (+436/-5: the keyring `KeyVault` from main,
+  #35) and the two `translation.json` files (+1 each: `overlay.recording`). `transcription_coordinator.rs`,
+  `utils.rs`, `ShortcutActivation.tsx` and `bindings.ts` are byte-identical to round 1.
+- No line was removed from any test in those files. `git diff 907d447 242e457` over the feature files
+  plus `src/overlay` removes only non-test lines: 4 `store.set(... serde_json::to_value(...).unwrap())`
+  calls in `settings.rs`, now `to_store_value`, and the old overlay JSX in `RecordingOverlay.tsx`, which
+  main replaced with the `Pill`. The settings test module gains only the `mod key_vault` block.
+  `242e457` removes one line, the header comment of `pill.test.tsx`. No pill assertion changed.
+- `checks.md` changed in `242e457` by adding C24, one Coverage row and two `## Handoff` lines. No
+  existing check, proof or row was edited. The header still says "23 checks in 4 slices" and there
+  are now 24. That is a stale count, not a changed obligation.
+
+### Checks (verified at 242e457)
+
+Rust proofs, one invocation: `cargo test -p fala --lib -- transcription_coordinator settings::tests`
+reported 87 passed, 0 failed, 212 filtered out, exit 0. That is 49 `transcription_coordinator` tests,
+the same as round 1, and 38 `settings::tests`: round 1's 27 plus 11 from main's `key_vault`. Each named
+test below appears by name as `... ok`. The front-end proofs were `bun src/overlay/pill.test.tsx`
+(prints `C1 ok` .. `C14 ok`, `shortcut-gestures C24 ok`, `pill: all assertions passed`, exit 0),
+`bun run check:translations`, `bun run lint`, `bunx tsc --noEmit` and `bun run format:check`, each
+exit 0. The 9 grep/awk/python proofs of C15, C16, C22 and C23 each exit 0.
+
+| Check | Claim | Proof run | Evidence | Result |
+| --- | --- | --- | --- | --- |
+| C1-C13 | the double-tap gesture in the coordinator (AC 1-13) | each named `transcription_coordinator::tests::double_tap_*` / `next_deadline_is_the_earliest_pending` test ok in the run above | file not touched since round 1, so the round-1 citations still hold (carried from `001a553`, re-run at `242e457`): e.g. `apps/desktop/src/transcription_coordinator.rs:1784` - `assert_eq!(state.stage, Stage::Recording(BINDING.to_string()))` (C1), `:1835` - `assert!(state.is_locked())` (C4), `:2059` (C13) | PASS |
+| C14 | inherited coordinator tests green, no assertion edited | all 49 coordinator tests ok, including `failed_start_rolls_back_to_idle` | `transcription_coordinator.rs` unchanged by `b35e898` and `242e457` (absent from both diffs). The round-1 evidence holds: `transcription_coordinator.rs:1051` (the `drive` arm), `:1334` - `assert_eq!(state.stage, Stage::Idle)` | PASS |
+| C15 | `Effect::Discard` -> `abort_current_operation`, which never calls `notify_cancel` | both proofs exit 0 | `apps/desktop/src/transcription_coordinator.rs:807-810` (unchanged); `apps/desktop/src/utils.rs:104` - `pub fn abort_current_operation(app: &AppHandle) -> bool` (exactly 1 match, so the negated proof is not vacuous) | PASS |
+| C16 | cancel reuses `abort_current_operation`, then notifies | both proofs exit 0 | `apps/desktop/src/utils.rs:89` - `let recording_was_active = abort_current_operation(app);`; `:93` - `coordinator.notify_cancel(recording_was_active);` (file unchanged) | PASS |
+| C17 | Windows: a lone short tap pastes nothing and adds no history entry; Esc on a locked session does the same | not run - `TODO(windows)` manual (10 lone taps, 10 double-taps, 5 Esc); no Windows machine in this verification | no evidence - manual check pending | Unproven |
+| C18 | `get_default_settings()` and `from_value(json!({}))` both give `PushToTalkDoubleTap` | `settings::tests::default_shortcut_activation_is_push_to_talk_double_tap ... ok` | lines moved by the merge: `apps/desktop/src/settings.rs:1877-1880` - `assert_eq!(get_default_settings().shortcut_activation, ShortcutActivation::PushToTalkDoubleTap)`; `:1883-1886` - `assert_eq!(from_empty.shortcut_activation, ShortcutActivation::PushToTalkDoubleTap)`. The inherited `empty_store_parses_with_defaults` (`:1413-1416`) and `shortcut_activation_defaults_to_push_to_talk_double_tap_without_legacy_key` (`:1759-1762`) still assert `PushToTalkDoubleTap` and both ran ok | PASS |
+| C19 | serde round trip of `"push_to_talk_double_tap"` | `settings::tests::push_to_talk_double_tap_round_trips_through_serde ... ok` | `settings.rs:1892` - `assert_eq!(value, serde_json::json!("push_to_talk_double_tap"))`; `:1895` - `assert_eq!(parsed, ShortcutActivation::PushToTalkDoubleTap)` | PASS |
+| C20 | Windows/Linux default bindings `ctrl+shift+space` / `ctrl+space` | `settings::tests::default_bindings_put_dictation_on_ctrl_shift_space ... ok` (cfg windows/linux at `settings.rs:1898`, ran on Linux) | `settings.rs:1903-1904` - `assert_eq!(transcribe.default_binding, "ctrl+shift+space")` / `current_binding`; `:1906-1907` - `assert_eq!(post_process.default_binding, "ctrl+space")` / `current_binding` | PASS |
+| C21 | stored `hold_or_toggle` / `push_to_talk` / `toggle` load unchanged | `settings::tests::stored_activation_modes_load_unchanged ... ok` | `settings.rs:1930` - `assert_eq!(settings.shortcut_activation, expected, "stored '{stored}'")` over the 3-row table at `:1914-1917` | PASS |
+| C22 | selector default option, fallback, pt/en labels and descriptions | 3 grep/python proofs exit 0; `check:translations`, `lint`, `tsc --noEmit` exit 0 | `src/components/settings/ShortcutActivation.tsx:20` - `value: "push_to_talk_double_tap",`; `:52` - `"push_to_talk_double_tap") as ShortcutActivation;` (file unchanged); `src/i18n/locales/pt/translation.json:201` - `"pushToTalkDoubleTap": "Segurar ou dois toques"`; `src/i18n/locales/en/translation.json:201` - `"pushToTalkDoubleTap": "Hold or double-tap"`. The merge added `overlay.recording` near line 700, so these lines did not move | PASS |
+| C23 | generated `bindings.ts` has `"push_to_talk_double_tap"` | awk/grep proof exit 0 | `src/bindings.ts:1137` inside `export type ShortcutActivation =` at `:1117` (file unchanged) | PASS |
+| C24 | `isHoldToTalk("push_to_talk_double_tap")` is `true`, and the `Pill` with that activation has class `hold` | `bun src/overlay/pill.test.tsx` exit 0, prints `shortcut-gestures C24 ok` | `src/overlay/pill.test.tsx:290` - `assert.equal(isHoldToTalk("push_to_talk_double_tap"), true);`; `:291-295` - `assert.ok(classes(render({ holdToTalk: isHoldToTalk("push_to_talk_double_tap") })).includes("hold"))`. Under test: `src/overlay/pillModel.ts:38-46` - `isHoldToTalk` returns `activation === "push_to_talk" \|\| activation === "hold_or_toggle" \|\| activation === "push_to_talk_double_tap"`; `src/overlay/Pill.tsx:33` - `recording && holdToTalk ? "hold" : ""` | PASS |
+
+### Level and sampling (verified at 242e457)
+
+- C24 renders the real `Pill` with `renderToStaticMarkup` (`pill.test.tsx:18-28`, mode `recording`
+  by default) and reads the root `class` attribute (`:37-41`). It does not use a copy of the logic.
+  The production path from settings to `isHoldToTalk` is
+  `src/overlay/RecordingOverlay.tsx:83` - `setHoldToTalk(isHoldToTalk(settings.data.shortcut_activation));`.
+  The pill's own C14 asserts that line as source text (`pill.test.tsx:281`), so C24 does not cover the
+  wiring at runtime. The level gap is the same as the pill's.
+- Coverage row "pill red per mode that starts as a hold (3)": `push_to_talk` and `hold_or_toggle` at
+  `pill.test.tsx:141-142`, `push_to_talk_double_tap` at `:290`. The negative case still holds:
+  `isHoldToTalk("toggle") === false` at `:143` and `undefined` at `:144`. So the fix widened the list
+  by one member and did not turn the predicate into "always true".
+- Fault injection does not run under `light`, so nothing here shows C24 would fail if the member were
+  missing. The pre-fix code (`242e457^:src/overlay/pillModel.ts`, which has only the two older modes)
+  returns `false` for the new mode. `assert.equal(..., true)` at `:290` would then throw. That
+  conclusion comes from reading the code. The test was not run against the old code.
+
+### Swept existing / invariants (verified at 242e457)
+
+- The dependency-failure constraint is still present: `failed_start_rolls_back_to_idle ... ok`, and
+  `transcription_coordinator.rs` is unchanged.
+- `bun run format:check` (Prettier + `cargo fmt --all -- --check`) exit 0. `scripts/check-brand.sh`
+  printed "ok: no Handy branding outside the allowlist". `242e457` adds no `cfg`, no visible string
+  and no log line.
+
+### Carried from 001a553
+
+Binding sources (n/a under `light`), round 1's scrutiny rulings (a)-(c), the AGENTS.md invariants
+review of round-1 code, Test policy (none) and Faults (none, `light`). The merge and the fix did not
+touch the code those sections judged, except `settings.rs`. Its feature assertions are re-cited above.
+
+### Gate (verified at 242e457)
+
+- `cargo test -p fala --lib -- transcription_coordinator settings::tests`: 87 passed, 0 failed.
+- `bun src/overlay/pill.test.tsx`: 15 checks ok (pill C1-C14 and shortcut-gestures C24), exit 0.
+- `bun run check:translations`, `bun run lint`, `bunx tsc --noEmit`, `bun run format:check`: exit 0
+  each.
+- The grep/awk/python proofs for C15, C16, C22 and C23: 9 of 9 exit 0.
+- Unproven: C17 (`TODO(windows)`, manual).
