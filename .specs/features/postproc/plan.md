@@ -36,8 +36,8 @@ de `fala-core`; não reaproveita `apps/desktop/src/llm_client.rs` (preso ao Taur
 2. stdin → `fala-cli format [--llm] [--app NOME] [--model ID] [--lang pt-BR|en] [--dictionary ARQ] [--disable-app NOME]...` (subcomando novo, exists o binário) → monta `Transcript`, `AppContext`, `Dictionary` de `fala-core` (exists após S0)
 3. com `--llm`: `fala-secrets` (door 1) lê a chave `gemini` → `Option<ApiKey>`; sem chave, sai com 2 antes de formatar
 4. `fala-postproc` (exists, vazio) `Rules` (implementa `Formatter`, door 5): fillers, gaguejo, dicionário, espaços, maiúscula inicial → texto das regras
-5. `fala-postproc` `Postprocessor` decide: LLM ligado, chave presente, app fora da lista desligada e > 15 palavras → `Gemini` (implementa `Formatter`) faz `POST generateContent` com timeout de 2 s (door 4); senão, ou em timeout/erro, fica o texto das regras
-6. out: `Dictation` de `fala-core` (bruto, final, quem editou, app) mais o motivo do fallback; o CLI imprime o final no stdout e `editor: regras` ou `editor: llm` (e `fallback: <motivo>`) no stderr
+5. `fala-postproc` `Postprocessor` decide: LLM ligado, chave presente, app fora da lista desligada e > 15 palavras → `Gemini` (implementa `Formatter`) faz `POST generateContent` numa thread com prazo tardio de 10 s, e o `Postprocessor` espera a resposta por 2 s (door 4, door 6); senão, ou em timeout/erro, fica o texto das regras
+6. out: `Dictation` de `fala-core` (bruto, final, quem editou, app) mais o motivo do fallback e, quando o motivo é `timeout`, uma `LateEdit` que entrega ao chamador a resposta que chegar até o prazo tardio (door 6); o CLI imprime o final no stdout e `editor: regras` ou `editor: llm` (e `fallback: <motivo>`) no stderr e ignora a `LateEdit`
 
 Nenhum `#[cfg(target_os)]` em `fala-secrets` nem em `fala-postproc`: o `keyring` 4 com a feature
 `v1` escolhe o cofre por SO dentro dele (ADR-0007).
@@ -50,6 +50,7 @@ Nenhum `#[cfg(target_os)]` em `fala-secrets` nem em `fala-postproc`: o `keyring`
 | domain | novo termo: `Rules` - o `Formatter` local e determinístico; sempre roda, e é o fallback do LLM |
 | domain | novo termo: `ApiKey` - segredo de um provedor; sem `Display`, sem `Serialize`, `Debug` redigido; vive em `fala-secrets` |
 | domain | novo termo: `SecretStore` - lê, grava e apaga `ApiKey` por id de provedor; `KeyringStore` (SO) e `MemoryStore` (teste); vive em `fala-secrets` |
+| domain | novo termo: `LateEdit` - a resposta do LLM que chegou depois dos 2 s, entregue ao chamador para "aplicar edição" (ADR-0004); vive em `fala-postproc` |
 | domain | termo existente: `custom_words` do desktop é o `Dictionary` do S0 aqui; o desktop não muda e continua com o próprio matcher fuzzy até a ligação (duplicação aceita no handoff) |
 | stored data | nada a migrar em B: as entradas `br.com.augusto.fala`/`<provedor>` no keyring só nascem por `fala-cli key set`; o JSON do desktop é da trilha K |
 | build | crate novo `crates/secrets` (linha nova no Code Map do `ARCHITECTURE.md`); dependência nova `keyring` 4 (puxa `zbus-secret-service-keyring-store` no Linux, `zbus` 5 já está no lock, e `windows-native-keyring-store` no Windows); `ureq` 3 passa a ser dependência direta de `fala-postproc`; `fala-cli` ganha `fala-postproc` e `fala-secrets` |
@@ -87,6 +88,8 @@ Só os subcomandos que esta feature adiciona ao `fala-cli`.
 | 4. contrato com o Gemini | `POST {base}/v1beta/models/{model}:generateContent`, `base` padrão `https://generativelanguage.googleapis.com`; chave só no header `x-goog-api-key`, URL sem query string; corpo com exatamente `systemInstruction`, `contents` (1 parte `user`) e `generationConfig` (`temperature: 0`); texto lido de `candidates[0].content.parts[].text`; cliente `ureq` 3 bloqueante com `timeout_global` de 2 s | `?key=` na URL - a chave vaza em log de URL e em erro do cliente; endpoint OpenAI-compat do Gemini - a camada compat rejeita os campos de reasoning (comentário em `llm_client.rs`) e fica um degrau além da API documentada; `reqwest` assíncrono - põe runtime `tokio` e trait async em `fala-postproc`, e o `reqwest::blocking` entra em pânico dentro do runtime `tokio` do desktop quando a ligação acontecer (motivo confirmado pelo Lux em 2026-10-02) |
 | 5. trait `Formatter` (precedente que A e o desktop copiam) | `pub trait Formatter: Send + Sync { fn format(&self, text: &str, ctx: &FormatContext<'_>) -> Result<String, PostprocError>; }` com `FormatContext { app: &AppContext, dictionary: &Dictionary, language: &Language }`; síncrono; quem editou é decidido pelo `Postprocessor`, que compõe `Rules` + LLM opcional e devolve `Dictation` | trait async - força runtime em todo chamador; cada `Formatter` devolver `Dictation` - a atribuição "regras ou LLM" é do compositor, não de cada etapa |
 
+| 6. prazo duplo da resposta (emenda de 2026-10-02, pedida pelo Lux; substitui o `timeout_global` de 2 s da door 4 pelo prazo tardio) | uma request só, numa `std::thread`, com `timeout_global` = prazo tardio (padrão 10 s, `Postprocessor::with_late_deadline`); o `Postprocessor` espera num `mpsc::Receiver::recv_timeout(2 s)`; o retorno é `Formatted { dictation: Dictation, fallback: Option<Fallback>, late_edit: Option<LateEdit> }`, com `late_edit` só quando `fallback == Some(Fallback::Timeout)`; `LateEdit::wait(self) -> Result<String, Fallback>` bloqueia até a resposta ou o prazo tardio | segunda request depois do timeout - paga tokens e latência de novo e a resposta da primeira se perde; future/async - põe runtime em `fala-postproc` (door 4); descartar a resposta tardia - a ADR-0004 manda oferecer "aplicar edição" |
+
 - Nothing else in this change is hard to reverse (o texto do prompt, a lista de fillers e os nomes internos mudam num commit)
 
 ## Criteria
@@ -122,6 +125,9 @@ O LLM formata ditados longos e nunca segura o texto por mais de 2 s.
 14. IF Gemini has not answered within 2 s of the request start THEN the `Postprocessor` SHALL return the rules output with editor rules and fallback `timeout`, in under 2.5 s of wall time
 15. IF Gemini answers a non-2xx status, the connection fails, or the body has no non-empty `candidates[0].content.parts[].text` THEN the `Postprocessor` SHALL return the rules output with editor rules and fallback `http <status>`, `rede` or `resposta inválida` respectively
 16. The `PostprocError` and fallback messages SHALL not contain the dictated text or the key, even when the server echoes them in its error body
+29. IF Gemini answers after 2 s but before the late deadline (10 s from the request start by default) THEN the `Postprocessor` SHALL still return at 2 s with the rules output and fallback `timeout`, and its late edit SHALL yield the trimmed response text, with no second request
+30. IF Gemini has not answered by the late deadline, or the late answer is a non-2xx status, a connection failure or an invalid body, THEN the late edit SHALL yield the fallback `timeout`, `http <status>`, `rede` or `resposta inválida` respectively and no text
+31. WHEN the result's fallback is not `timeout` (LLM used, LLM skipped, or a non-timeout fallback) THEN the result SHALL carry no late edit
 
 **Independent test:** os testes de `fala-postproc` com o servidor falso: payload capturado, resposta lenta de 3 s e resposta 500.
 
@@ -159,7 +165,8 @@ A chave e o formatador são usáveis sem UI.
 
 | Excluded | Why |
 | --- | --- |
-| "aplicar edição" com o resultado tardio do LLM | precisa de histórico (trilha C) e de UI; B devolve o fallback e descarta a resposta tardia |
+| UI e histórico de "aplicar edição" | precisam da trilha C e de tela; B entrega a resposta tardia como `LateEdit` (AC 29-31, emenda de 2026-10-02) e quem chama decide o que oferecer |
+| `fala-cli format` esperar a `LateEdit` | o CLI insere nada; a edição tardia é provada no crate pelo servidor falso |
 | `fala-cli dictate --llm` | `dictate` é da trilha A, feita em paralelo; a ligação é uma linha depois que A e B entrarem |
 | casamento aproximado (fuzzy) do dicionário | decidido com o Augusto: exato nas regras, aproximado fica com o LLM |
 | API explícita de context caching do Gemini | o prefixo estável (prompt + dicionário primeiro) já serve ao cache implícito; cache explícito tem custo de armazenamento e TTL a decidir |
@@ -181,6 +188,8 @@ A chave e o formatador são usáveis sem UI.
 | `temperature` | `0` | formatação quer saída estável; nenhum outro campo de `generationConfig` (o 2.5 Flash-Lite já vem sem thinking) | y - delegado pelo Augusto em 2026-10-02, confirmado pelo Lux |
 | chave no stdin | primeira linha, sem o `\n` final; sem `rpassword` | evita dependência nova; quem digita interativamente vê o eco, documentado no `--help` | y - delegado pelo Augusto em 2026-10-02, confirmado pelo Lux |
 | tipos do S0 | `Transcript`, `AppContext`, `Dictionary`, `Editor`, `Dictation`, `Language` de `feat/core-contract` (91f4e0d); "editor regras" = `Editor::Rules`, "editor LLM" = `Editor::Llm`; "não pt-BR" = `Language::En` | conferido no S0 commitado; `crates/core` só é lido | y - delegado pelo Augusto em 2026-10-02, confirmado pelo Lux |
+| "inserir o texto bruto" da ADR-0004 | o fallback insere a saída das regras locais (sem edição do LLM), não o texto cru do ASR | a mesma ADR diz "fallback: regras locais" nas Consequências; as regras são locais, determinísticas e não saem da máquina; ambiguidade levantada pelo Verifier na rodada 1 | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
+| resposta tardia | prazo duplo: 2 s para inserir, 10 s para a `LateEdit`, uma request só (door 6) | pedido do Lux em 2026-10-02 a partir da ADR-0004 ("oferecer aplicar edição"); 10 s é quando a pessoa já seguiu adiante | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 
 **Open questions:**
 
@@ -206,6 +215,7 @@ A chave e o formatador são usáveis sem UI.
 | command `fala-cli format` | empty input | AC 8 |
 | outgoing request Gemini | error shape it returns | AC 15 |
 | outgoing request Gemini | rate limit behaviour | AC 15 - `429` é um non-2xx e cai no fallback `http 429` |
+| outgoing request Gemini | late answer after 2 s | AC 29, AC 30, AC 31 (door 6) |
 | outgoing request Gemini | versioning | Landing 4 - `v1beta` fixo, como na doc atual |
 
 ## Sources

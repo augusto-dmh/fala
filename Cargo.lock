@@ -1904,6 +1904,7 @@ dependencies = [
  "earshot",
  "enigo",
  "env_filter",
+ "fala-secrets",
  "ferrous-opencc",
  "flate2",
  "futures-util",
@@ -1985,10 +1986,15 @@ name = "fala-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "cpal",
+ "dirs 6.0.0",
  "env_logger",
  "fala-core",
+ "fala-postproc",
+ "fala-secrets",
+ "fala-storage",
  "hound",
  "icu_normalizer",
  "log",
@@ -2019,6 +2025,9 @@ name = "fala-inject"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "log",
+ "thiserror 2.0.18",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2036,6 +2045,11 @@ name = "fala-postproc"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "fala-secrets",
+ "log",
+ "serde_json",
+ "thiserror 2.0.18",
+ "ureq",
 ]
 
 [[package]]
