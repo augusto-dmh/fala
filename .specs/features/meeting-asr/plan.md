@@ -20,7 +20,7 @@ flowchart TD
     M --> J["merge por t0 (door 2)"]
     S --> J
     J --> OUT["Vec&lt;Segment&gt; (door 4) para a 2.F5"]
-    P -. "offline ou só local" .-> L["Parakeet (exists, trilha A) em janelas de 60 s"]
+    P -. "offline ou só local" .-> L["Parakeet (exists, trilha A) em janelas de 60 s; quem chama entrega a leitura do .opus"]
     L --> J
     P -. "progresso ≤ 1 s, cancelar" .-> UI["chamador (desktop, CLI)"]
 ```
@@ -149,6 +149,8 @@ Offline ou "só local", a mesma saída sai do Parakeet.
 | cancelar | a requisição roda numa thread; cancelar devolve `Cancelled` na hora e descarta a resposta quando chegar | o ureq 3 não aborta uma requisição em voo; o custo é uma requisição paga que ninguém usa | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 | `keyterms` | ligado por padrão, um campo por termo do `Dictionary` | pitch F4 ("atrás de um ajuste ligado por padrão", +US$ 0,05/h) | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 | mic nos modos sem mic (`system_only`, `import`) | `from_session_dir` exige os dois arquivos (AC 2, literal), mas a Scribe só recebe `mic.opus` quando `SessionMode::has_mic()`; nos outros modos sai uma requisição só, a do sistema | menos sai da máquina, nunca mais: o mic de um modo sem mic não é fala que a pessoa pediu para transcrever, e a requisição seria paga | y - delegado pelo Augusto, decidido pelo executor (build, 2026-10-04) |
+| quando o fallback entra | `transcribe_with_fallback(MeetingRoute::CloudThenLocal, ..)` cai no local em qualquer `AsrError::Network` (sem rede, `429`, `5xx`, `401`, `422`); `Cancelled` e os demais voltam como estão; `MeetingRoute::LocalOnly` nem chama a nuvem | quem pediu o fallback quer a transcrição; o erro da nuvem não apaga nada (AC 13) e a pessoa ainda pode repetir pela nuvem depois | y - delegado pelo Augusto, decidido pelo executor (build, 2026-10-04) |
+| leitura do `.opus` no caminho local | `LocalMeeting::new(transcriber, decode, language)`: `decode(&Path) -> Result<Vec<f32>, AsrError>` (mono, 16 kHz) vem de quem chama; um trecho por janela com texto, `t0_ms` = início da janela, `t1_ms` = fim | o gravador Opus (2.F3) ainda não existe; quem escreve o Opus fornece a leitura (ou o `ffmpeg` do `fala-media`), sem um decodificador novo no grafo de `fala-asr` | y - delegado pelo Augusto, decidido pelo executor (build, 2026-10-04) |
 | dependências de `fala-asr` | o teste `tests/manifest.rs` da trilha A (door 2 de `pipeline-headless`, que fixa a lista exata) passa a listar também `ureq`, `static_assertions` (dev) e o que o `Flow` reusa: `fala-meeting`, `fala-secrets`, `serde`, `serde_json` | a door 5 deste plano, aprovada depois, adiciona dependências ao mesmo crate; a lista continua exata, só cresce | y - delegado pelo Augusto, decidido pelo executor (build, 2026-10-04) |
 
 **Open questions:**
@@ -157,6 +159,7 @@ Offline ou "só local", a mesma saída sai do Parakeet.
 | --- | --- | --- | --- |
 | 1 | blocks go-live | Nomes exatos de campo e de modelo na Scribe v2 (`model_id=scribe_v2`, `keyterms`, `timestamps_granularity`, `language_code` em ISO 639-3 `por` ou `pt`), limite de termos e de tamanho do arquivo, conferidos na documentação oficial da ElevenLabs no começo do build | a door 3 fica como está e o servidor falso prova a forma; a chamada real não liga até a conferência |
 | 2 | open | A Scribe aceita Ogg Opus direto? | se não aceitar, o envio converte para outro contêiner antes; muda a door 3 (bytes do arquivo), não o que é retido |
+| 3 | open (achado no build) | O AC 8 agrupa só por falante: o mic fora do presencial (`diarize=false`, um falante) vira um segmento único da reunião inteira, e o merge por `t0` não intercala esse lado. Cortar também por pausa (ex.: ≥ 1,5 s entre palavras) ou por fim de frase pede um AC novo | o build segue o AC 8 literal; a 2.F5 recebe um segmento longo por canal sem diarização |
 
 ## Observable
 

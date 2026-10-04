@@ -64,11 +64,11 @@ Proof: `cargo test -p fala-asr --test meeting_scribe progress::cancel_returns_wi
 
 ### S5 - fallback local · ~2 files · ~15 KB · ~4k
 
-**C16** - Sessão "só local": o servidor falso recebe 0 conexões, e um áudio de 130 s vira janelas que começam em 0, 60 000 e 120 000 ms, com os `t0_ms` deslocados por isso (AC 16)
+**C16** - (built) Sessão "só local": o servidor falso recebe 0 conexões, e um áudio de 130 s vira janelas que começam em 0, 60 000 e 120 000 ms, com os `t0_ms` deslocados por isso (AC 16)
 Proof: `cargo test -p fala-asr --lib meeting::local::tests::windows_of_60_s_shift_timestamps -- --exact`
 Proof: `cargo test -p fala-asr --test meeting_scribe local::local_only_opens_no_connection -- --exact`
 
-**C17** - Depois de `Network { retriable: true }`, `transcribe_with_fallback` devolve os segmentos do caminho local (transcritor falso no lugar do Parakeet) (AC 17)
+**C17** - (built) Depois de `Network { retriable: true }`, `transcribe_with_fallback` devolve os segmentos do caminho local (transcritor falso no lugar do Parakeet) (AC 17)
 Proof: `cargo test -p fala-asr --lib meeting::local::tests::network_error_falls_back_to_local -- --exact`
 
 ## Coverage

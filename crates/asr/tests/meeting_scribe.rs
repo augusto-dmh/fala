@@ -516,3 +516,51 @@ mod progress {
         assert_eq!(server.requests().len(), 1);
     }
 }
+
+mod local {
+    use super::*;
+    use fala_asr::meeting::{transcribe_with_fallback, LocalMeeting, MeetingRoute};
+    use fala_asr::Transcriber;
+    use fala_core::{DictationAudio, Language, Transcript};
+
+    struct FakeParakeet;
+
+    impl Transcriber for FakeParakeet {
+        fn transcribe(
+            &mut self,
+            audio: &DictationAudio,
+            language: Language,
+        ) -> Result<Transcript, AsrError> {
+            Ok(Transcript {
+                text: format!("{} amostras", audio.samples().len()),
+                language,
+            })
+        }
+    }
+
+    #[test]
+    fn local_only_opens_no_connection() {
+        let server = FakeServer::start(ok());
+        let mut cloud = scribe(&server, no_keyterms());
+        let mut local = LocalMeeting::new(
+            FakeParakeet,
+            |_: &std::path::Path| Ok(vec![0.01_f32; 2 * 16_000]),
+            Language::PtBr,
+        );
+        let recording = session("local-only", SessionMode::Meeting);
+        let segments = transcribe_with_fallback(
+            MeetingRoute::LocalOnly,
+            &mut cloud,
+            &mut local,
+            &recording,
+            &CancelToken::new(),
+            &mut |_: Progress| {},
+        )
+        .unwrap();
+        assert_eq!(segments.len(), 2);
+        assert!(segments.iter().all(|s| s.text == "32000 amostras"));
+        thread::sleep(Duration::from_millis(200));
+        assert_eq!(server.connections(), 0);
+        assert!(server.requests().is_empty());
+    }
+}

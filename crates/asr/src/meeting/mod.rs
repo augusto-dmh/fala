@@ -8,6 +8,7 @@
 
 mod elevenlabs;
 mod guard;
+mod local;
 mod segments;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +16,7 @@ use std::sync::Arc;
 
 pub use elevenlabs::{ElevenLabsScribe, ScribeOptions, SCRIBE_BASE_URL};
 pub use guard::{MeetingRecording, MIC_FILE, SYSTEM_FILE};
+pub use local::{transcribe_with_fallback, LocalMeeting, MeetingRoute, WINDOW_MS};
 pub use segments::{Channel, Segment, Speaker};
 
 use crate::AsrError;
@@ -63,4 +65,6 @@ pub enum Stage {
     Uploading { sent: u64, total: u64 },
     /// Corpo enviado; esperando a resposta do provedor.
     Waiting,
+    /// Caminho local: áudio do canal já passado pelo modelo.
+    Transcribing { done_ms: u64, total_ms: u64 },
 }
