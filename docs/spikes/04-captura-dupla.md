@@ -1,6 +1,6 @@
 # Spike 04 — Captura dupla (mic + sistema) e drift
 
-**Fase:** 0 · **Status:** Linux medido; Windows pendente · **Risco:** design doc §7
+**Fase:** 0 · **Status:** Linux e Windows medidos · **Risco:** design doc §7
 
 ## Objetivo
 
@@ -139,25 +139,134 @@ o `drift_ms` pelos cliques ficou em 0.0 na rodada 3, abaixo de 50 ms; o `rel_dri
 
 ## Windows
 
-`TODO(windows)`: rodar no Alienware (Windows 11) depois do build por `docs/dev/build-windows.md`
-(`cargo build --release -p fala-cli`). No Windows, `--system` é parte do nome de um dispositivo
-de saída, aberto como loopback do WASAPI; `--mic` é parte do nome de uma entrada. Um nome que
-não bate sai com 2 e lista os disponíveis.
+Três rodadas de 60 min em 2026-09-29 no Alienware 16 (Windows 11 Pro 25H2, build
+10.0.26200.9457, Core 7 240H), build de release do `fala-cli` em `da03312`
+(`cargo build --release -p fala-cli`). Como reproduzir, com os nomes exatos desta máquina:
 
 ```powershell
-# 1. Fone comum (o uso real nas reuniões): sistema = saída do fone, mic = entrada padrão
-target\release\fala-cli record --system "<nome da saída do fone>" --duration 60m --out C:\fala-captura\fone-60min.wav
-target\release\fala-cli record --analyze C:\fala-captura\fone-60min.wav
-
-# 2. Voicemeeter VAIO como mic (o uso real ao ditar)
-target\release\fala-cli record --system "<nome da saída do fone>" --mic "Voicemeeter" --duration 60m --out C:\fala-captura\voicemeeter-60min.wav
-target\release\fala-cli record --analyze C:\fala-captura\voicemeeter-60min.wav
+target\release\fala-cli record --system "Voicemeeter Input (VB-Audio Voicemeeter VAIO)" `
+  --mic "Microfone (Realtek(R) Audio)" --duration 60m --out C:\fala-captura\r1-realtek-60min.wav
+target\release\fala-cli record --system "Voicemeeter Input (VB-Audio Voicemeeter VAIO)" `
+  --mic "Voicemeeter Out B2" --duration 60m --out C:\fala-captura\r2-voicemeeter-60min.wav
+target\release\fala-cli record --analyze C:\fala-captura\<arquivo>.wav
 ```
 
-Com fone, o clique não chega ao microfone pelo ar: segure o fone perto do microfone nos 15 s
-iniciais e finais, ou ajuste `--click-threshold` olhando o pico que o `--analyze` imprime.
+### Roteamento desta máquina
 
-O que registrar em cada rodada: data, nomes exatos dos dispositivos (`--system`, `--mic`), a
-tabela de resumo e a de análise, e se o WASAPI entregou o mic e o loopback na mesma taxa
-(`mic_ppm` e `sys_ppm` longe um do outro indicam clocks diferentes, que é o caso que o design
-doc §7 prevê).
+O áudio passa todo pelo Voicemeeter Banana, e isso decide o que dá para gravar:
+
+| Faixa do Voicemeeter | Dispositivo | Envia para |
+| --- | --- | --- |
+| Hardware Input 1 | `Microfone (Realtek(R) Audio)` (o mic físico; gate em 1.4) | B2 |
+| Virtual "Desktop" | `Voicemeeter Input` (a saída padrão do Windows) | A1, B1 |
+| Virtual "Communications" | `Voicemeeter AUX Input` | A1, B1 |
+| Bus A1 | `Fones de ouvido (JBL Tour Pro 3)` (Bluetooth) | - |
+
+A entrada padrão do Windows é `Voicemeeter Out B2`, que carrega só o mic físico. Lido pela API
+remota do Voicemeeter (`VoicemeeterRemote64.dll`) em 2026-09-29.
+
+O que não deu para gravar, e por quê:
+
+| Tentativa | Resultado |
+| --- | --- |
+| `--system "Fones de ouvido (JBL Tour Pro 3)"` | exit 1, `não consegui abrir o stream system: ... 0x8889000A` (`AUDCLNT_E_DEVICE_IN_USE`): o Voicemeeter segura o JBL como A1 |
+| `--mic "Headset (JBL Tour Pro 3)"` | exit 2, `o dispositivo não oferece 48000 Hz f32; oferece: 16000-16000 Hz ... 1 ch`: o mic do fone Bluetooth só abre a 16 kHz mono, e o `record` exige 48 kHz |
+| `--mic "Voicemeeter Out B1"` | o B1 recebe a faixa Desktop: 86 % das amostras de L e R iguais, R atrasado 960 frames; não é um mic |
+| `--system "Altofalantes (Realtek(R) Audio)"` com `--no-click` e nada tocando | exit 1 em 5 s, `o stream system não entrega frames há 5 s`: o loopback de um dispositivo sem stream ativo não entrega pacotes. O `Voicemeeter Input` entrega frames em silêncio (o Voicemeeter mantém o stream aberto) |
+| `--mic "Voicemeeter Out B2"` com o sistema em silêncio | exit 1 em 2 s, `a captura do sistema caiu no microfone: os primeiros 96000 frames de L e R são idênticos`: o gate zera o mic e os dois canais são zero digital. Por isso a rodada 2 tem uma entrevista tocando desde o início |
+
+Com o JBL no ouvido, o clique não chega ao mic físico. Para as rodadas 1 e 3 o Realtek é aberto
+direto (o Voicemeeter também o usa como Hardware Input 1, em paralelo).
+
+### Condições
+
+| Rodada | Horário (UTC) | `--mic` | Clique até o mic | O que tocava | Atividade no notebook |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 03:06:50 → 04:06:50 | `Microfone (Realtek(R) Audio)` | pelo ar: `Altofalantes (Realtek(R) Audio)` como A2 do Voicemeeter e Desktop→A2 ligado; `Voicemeeter Input` e alto-falantes com volume 1.00 e mic Realtek em 1.00 | só os cliques | o app Fala rodou os spikes 02 e 03 (03:13-03:24, 03:46-03:57, 03:57-04:07): ~1200 gravações curtas no `Voicemeeter Out B2` |
+| 2 | 04:09:35 → 05:09:35 | `Voicemeeter Out B2` | não chega (A2 desligado; JBL) | `audio-aula-2025-05-13` a partir de 600 s, no JBL | nenhuma |
+| 3 | 05:09:56 → 06:09:56 | `Microfone (Realtek(R) Audio)` | não chega (A2 desligado; JBL) | nada | nenhuma |
+
+Nas rodadas 2 e 3, o roteamento e os volumes estavam restaurados ao original: A2 sem
+dispositivo, `Voicemeeter Input` em 0.10, alto-falantes em 0.75, mic Realtek em 0.76 (o canal do
+sistema é gravado antes do volume: o clique aparece a 0.500 nas três rodadas).
+
+Duas partidas da rodada 2, às 04:08:18Z e 04:08:42Z, saíram com exit 1 em 2 s pelo guard acima,
+com `audio-aula-2025-05-02` tocando desde o começo: o arquivo está em silêncio digital a partir
+de ~5 s (-91 dB em 5 s e em 30 s, `ffmpeg -af volumedetect`), e as duas partidas caíram nesse
+trecho (mapa dos silêncios em `fala-research/benchmarks/README.md`). A rodada que valeu usa o
+`05-13`.
+
+### Resumo das gravações
+
+Rodada 1:
+
+| rate | wall_s | mic_frames | sys_frames | mic_ppm | sys_ppm | rel_drift_ms | dropped_mic | dropped_sys | stream_errors | click_1_s | click_2_s | mic_peak | mic_rms_dbfs | sys_peak | sys_rms_dbfs |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 48000 | 3600.003 | 172799040 | 172784064 | -6.4 | -93.1 | 312.0 | 0 | 0 | 0 | 2.010 | 3598.090 | 0.163 | -55.3 | 0.500 | -54.2 |
+
+Rodada 2:
+
+| rate | wall_s | mic_frames | sys_frames | mic_ppm | sys_ppm | rel_drift_ms | dropped_mic | dropped_sys | stream_errors | click_1_s | click_2_s | mic_peak | mic_rms_dbfs | sys_peak | sys_rms_dbfs |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 48000 | 3600.054 | 172802400 | 172803360 | -1.1 | 4.5 | -20.0 | 0 | 0 | 0 | 2.015 | 3598.043 | 0.050 | -78.5 | 0.987 | -23.5 |
+
+Rodada 3:
+
+| rate | wall_s | mic_frames | sys_frames | mic_ppm | sys_ppm | rel_drift_ms | dropped_mic | dropped_sys | stream_errors | click_1_s | click_2_s | mic_peak | mic_rms_dbfs | sys_peak | sys_rms_dbfs |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 48000 | 3600.099 | 172804320 | 172804320 | -2.4 | -2.4 | 0.0 | 0 | 0 | 0 | 2.012 | 3598.086 | 0.030 | -69.3 | 0.500 | -57.7 |
+
+### Análise dos cliques
+
+Nenhuma rodada deu análise completa:
+
+| Rodada | Saída do `--analyze` | Por quê |
+| --- | --- | --- |
+| 1 | exit 1 com 0.1, 0.05 e 0.03: `mic/start: nenhum onset ≥ … na janela; pico 0.017`; com 0.012 e 0.01 o onset do mic cai em 5.319 s e 1.407 s, antes do clique (ruído) | o clique inicial chegou ao mic a 0.017, perto do ruído; num teste de 20 s às 03:04 ele chegou a 0.056 e deu drift 1.0 ms com 0.05 |
+| 2 | exit 1 com 0.1 e 0.03: `mic/start: … pico 0.007` | o clique não chega ao mic por este caminho |
+| 3 | exit 1 com 0.1 e 0.03: `mic/start: … pico 0.001` | o clique não chega ao mic por este caminho |
+
+O clique final da rodada 1 aparece nos dois canais (limiar 0.012): mic em 3598.432 s, sistema em
+3597.912 s, offset de -519 ms (o mic chega depois).
+
+### Diferença `sys_frames − mic_frames` por minuto
+
+Rodada 1, os 59 valores (instante em s: frames):
+
+```
+60:960 120:960 180:480 240:960 300:960 360:480 420:960 480:1440 540:1440 600:960
+660:960 720:1440 780:960 840:1056 900:1056 960:576 1020:1056 1080:-768 1140:-768 1200:-288
+1260:-768 1320:-288 1380:-768 1440:-288 1500:-768 1560:-768 1620:-768 1681:-768 1741:-768 1801:-288
+1861:-768 1921:-768 1981:-768 2041:-288 2101:-288 2161:-768 2221:-288 2281:-768 2341:-768 2401:-768
+2461:-2112 2521:-2112 2581:-2112 2641:-2112 2701:-2112 2761:-4416 2821:-8448 2881:-8448 2941:-8448 3001:-8448
+3061:-8832 3121:-8832 3181:-8832 3241:-9312 3301:-11136 3361:-13248 3422:-14592 3482:-14592 3542:-14976
+```
+
+| Rodada | Valores (frames) | Em ms | Tendência |
+| --- | --- | --- | --- |
+| 1 | de +1440 a -14976 | +30 a -312 | estável por 40 min (-768 a +1440); depois cai em degraus: 1020→1080 s (-1824), 2401→2461 s (-1344), 2701→2821 s (-6336), 3241→3422 s (-5280) |
+| 2 | 480 em 57 minutos, 960 em 2 | 10 ou 20 | nenhuma |
+| 3 | 0 em 38 minutos, 480 em 18, -480 em 3 | -10 a +10 | nenhuma |
+
+Os degraus da rodada 1 caem nas janelas em que o app Fala abria e fechava gravações no
+`Voicemeeter Out B2`: fim da primeira rodada do spike 02 (03:24:20Z = 1050 s), repetição do spike
+02 (03:46:21Z-03:56:58Z = 2371-3008 s) e rodadas de pill do spike 03 (04:01:02Z-04:07:00Z =
+3252-3610 s). A rodada 1 não separa essa atividade do resto; a rodada 3 repete a rodada 1 sem
+ela.
+
+### Leitura dos números
+
+- Realtek aberto direto e sistema no `Voicemeeter Input`: a rodada 1 deu `mic_ppm` -6.4 e
+  `sys_ppm` -93.1; a rodada 3, os mesmos dois dispositivos sem o app rodando, deu -2.4 e -2.4 ppm,
+  o mesmo número de frames ao fim e diferença por minuto entre -480 e +480 frames (±10 ms) sem
+  tendência. Os -93 ppm e os degraus da rodada 1 não se repetiram com o notebook quieto.
+- Mic pelo Voicemeeter (`Out B2`, o uso real ao ditar): -1.1 e 4.5 ppm, e a diferença por minuto
+  fica em 480 frames (10 ms) em 57 dos 59 minutos.
+- Nenhuma das três rodadas descartou frame nem teve erro de stream.
+- Nesta máquina, mic e sistema passam pelo Voicemeeter ou por um dispositivo que ele também abre
+  (o Realtek); um Windows sem Voicemeeter não foi medido.
+
+Ao lado da linha do design doc §7, "Drift entre mic e loopback → correção por timestamp a cada N
+s": nas rodadas 2 e 3 a diferença entre os canais ficou em até 20 ms na hora, abaixo de 50 ms; na
+rodada 1 passou de 50 ms (-312 ms ao fim, em degraus nas janelas de atividade do app). Não houve
+`drift_ms` pelos cliques em nenhuma rodada.

@@ -1,0 +1,47 @@
+/* The phase 1 pill (pitch sketch): black capsule ~84×30, ten mirrored bars, red while
+   the key is held, still bars and a pulse while processing, no icon, no text. Colours
+   are literal on purpose: the pill is the same in light and dark themes. It sits inside
+   the existing 256×50 transparent overlay window (overlay.rs is unchanged). */
+.fpill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 84px;
+  height: 30px;
+  border-radius: 15px;
+  background: #000;
+  box-sizing: border-box;
+  transition: background 120ms ease-out;
+}
+.fpill.hold {
+  background: #e5322d;
+}
+.fpill i {
+  display: block;
+  width: 3px;
+  border-radius: 1.5px;
+  background: #fff;
+  transition: height 60ms linear;
+}
+.fpill.arming i {
+  opacity: 0.45;
+}
+.fpill.processing {
+  animation: fpill-pulse 1.2s ease-in-out infinite;
+}
+@keyframes fpill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fpill.processing {
+    animation: none;
+    opacity: 1;
+  }
+}
