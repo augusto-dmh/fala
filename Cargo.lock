@@ -1992,6 +1992,7 @@ dependencies = [
  "dirs 6.0.0",
  "env_logger",
  "fala-core",
+ "fala-media",
  "fala-postproc",
  "fala-secrets",
  "fala-storage",
@@ -2028,6 +2029,15 @@ dependencies = [
  "log",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "fala-media"
+version = "0.1.0"
+dependencies = [
+ "hound",
+ "log",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

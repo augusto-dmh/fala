@@ -6,6 +6,7 @@
 mod bench;
 mod format;
 mod history;
+mod import;
 mod key;
 mod record;
 
@@ -48,6 +49,8 @@ enum Command {
     History(history::HistoryArgs),
     /// Reconstrói o banco do histórico a partir dos `.md` de `Ditados/`.
     Reindex(history::DirArgs),
+    /// Converte um arquivo de áudio ou vídeo num WAV mono 48 kHz pelo ffmpeg do PATH.
+    Import(import::ImportArgs),
 }
 
 fn main() -> ExitCode {
@@ -94,6 +97,15 @@ fn main() -> ExitCode {
         }
         Command::History(args) => return history_exit(history::run(args)),
         Command::Reindex(dirs) => return history_exit(history::reindex(dirs)),
+        Command::Import(args) => {
+            return match import::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
     };
     log::error!("`{name}` ainda não foi implementado");
     ExitCode::FAILURE
