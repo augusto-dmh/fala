@@ -11,44 +11,44 @@ Escritos nesta rodada sem build: `crates/asr` é do painel `pipeline-audio` até
 
 ### S1 - só áudio de reunião chega à rede · ~2 files · ~10 KB · ~3k
 
-**C1** - `ElevenLabsScribe` não implementa `Transcriber` (`assert_not_impl_any!`), e `ElevenLabsScribe::transcribe_session` recebe `&MeetingRecording` (AC 1)
+**C1** - (built) `ElevenLabsScribe` não implementa `Transcriber` (`assert_not_impl_any!`), e `ElevenLabsScribe::transcribe_session` recebe `&MeetingRecording` (AC 1)
 Proof: `cargo test -p fala-asr --lib meeting::guard::tests::scribe_is_not_a_dictation_transcriber -- --exact`
 
-**C2** - `from_session_dir` com os dois arquivos devolve os caminhos `mic.opus`/`sys.opus` e o modo; sem `sys.opus` devolve `MissingChannel("sys.opus")`, sem `mic.opus` devolve `MissingChannel("mic.opus")` (AC 2)
+**C2** - (built) `from_session_dir` com os dois arquivos devolve os caminhos `mic.opus`/`sys.opus` e o modo; sem `sys.opus` devolve `MissingChannel("sys.opus")`, sem `mic.opus` devolve `MissingChannel("mic.opus")` (AC 2)
 Proof: `cargo test -p fala-asr --lib meeting::guard::tests::from_session_dir_needs_both_channels -- --exact`
 
 ### S2 - a requisição literal · ~3 files · ~25 KB · ~7k
 
-**C3** - Sessão `meeting` contra o servidor falso: 2 requisições `POST /v1/speech-to-text`; a do mic carrega os bytes de `mic.opus` e `diarize=false`, a do sistema os de `sys.opus` e `diarize=true`; as duas têm `model_id=scribe_v2`, `language_code=por`, `timestamps_granularity=word`, e o conjunto de nomes de campo é exatamente `{model_id, file, language_code, diarize, timestamps_granularity}` com `keyterms` desligado (AC 3)
+**C3** - (built) Sessão `meeting` contra o servidor falso: 2 requisições `POST /v1/speech-to-text`; a do mic carrega os bytes de `mic.opus` e `diarize=false`, a do sistema os de `sys.opus` e `diarize=true`; as duas têm `model_id=scribe_v2`, `language_code=por`, `timestamps_granularity=word`, e o conjunto de nomes de campo é exatamente `{model_id, file, language_code, diarize, timestamps_granularity}` com `keyterms` desligado (AC 3)
 Proof: `cargo test -p fala-asr --test meeting_scribe request::meeting_sends_exactly_the_enumerated_fields -- --exact`
 
-**C4** - Com `keyterms` ligado e dicionário `["Fala", "ADR"]`, cada requisição tem exatamente 2 campos `keyterms` com `Fala` e `ADR`; desligado, 0 (AC 4)
+**C4** - (built) Com `keyterms` ligado e dicionário `["Fala", "ADR"]`, cada requisição tem exatamente 2 campos `keyterms` com `Fala` e `ADR`; desligado, 0 (AC 4)
 Proof: `cargo test -p fala-asr --test meeting_scribe request::keyterms_follow_the_setting -- --exact`
 
-**C5** - Sessão `in_person`: a requisição do mic tem `diarize=true` (AC 5)
+**C5** - (built) Sessão `in_person`: a requisição do mic tem `diarize=true` (AC 5)
 Proof: `cargo test -p fala-asr --test meeting_scribe request::in_person_diarizes_the_mic -- --exact`
 
-**C6** - Idioma "detectar": nenhuma requisição tem o campo `language_code` (AC 6)
+**C6** - (built) Idioma "detectar": nenhuma requisição tem o campo `language_code` (AC 6)
 Proof: `cargo test -p fala-asr --test meeting_scribe request::auto_language_omits_language_code -- --exact`
 
-**C7** - A chave `sk-teste-123` aparece só no header `xi-api-key` da requisição crua (nem na URL nem no corpo), e o `to_string()` do erro de uma resposta `401` não contém `sk-teste-123` (AC 7)
+**C7** - (built) A chave `sk-teste-123` aparece só no header `xi-api-key` da requisição crua (nem na URL nem no corpo), e o `to_string()` do erro de uma resposta `401` não contém `sk-teste-123` (AC 7)
 Proof: `cargo test -p fala-asr --test meeting_scribe request::key_only_in_header_and_never_in_errors -- --exact`
 
 ### S3 - segmentos "Eu / Pessoa N" · ~2 files · ~15 KB · ~4k
 
-**C8** - Uma resposta com palavras de `speaker_0`, `speaker_0`, `speaker_1` e um `audio_event` vira 2 segmentos: o 1º com `t0_ms`/`t1_ms` da 1ª e da 2ª palavra, o 2º com a 3ª; o `audio_event` não cria falante (AC 8)
+**C8** - (built) Uma resposta com palavras de `speaker_0`, `speaker_0`, `speaker_1` e um `audio_event` vira 2 segmentos: o 1º com `t0_ms`/`t1_ms` da 1ª e da 2ª palavra, o 2º com a 3ª; o `audio_event` não cria falante (AC 8)
 Proof: `cargo test -p fala-asr --lib meeting::segments::tests::groups_consecutive_words_by_speaker -- --exact`
 
-**C9** - Modo `meeting`: todo segmento do mic tem `speaker = me`; no sistema, `speaker_7` e depois `speaker_2` viram `person 1` e `person 2` (AC 9)
+**C9** - (built) Modo `meeting`: todo segmento do mic tem `speaker = me`; no sistema, `speaker_7` e depois `speaker_2` viram `person 1` e `person 2` (AC 9)
 Proof: `cargo test -p fala-asr --lib meeting::segments::tests::mic_is_me_system_numbered_by_first_appearance -- --exact`
 
-**C10** - Modo `in_person` com 2 falantes no mic e 1 no sistema: mic vira `person 1` e `person 2`, sistema vira `person 3` (AC 10)
+**C10** - (built) Modo `in_person` com 2 falantes no mic e 1 no sistema: mic vira `person 1` e `person 2`, sistema vira `person 3` (AC 10)
 Proof: `cargo test -p fala-asr --lib meeting::segments::tests::in_person_numbering_continues_across_channels -- --exact`
 
-**C11** - Merge de mic `[0, 5000]`, `[9000]` e sistema `[2000]`, `[5000]`: ordem `t0` 0 (mic), 2000 (sys), 5000 (mic), 5000 (sys), 9000 (mic) (AC 11)
+**C11** - (built) Merge de mic `[0, 5000]`, `[9000]` e sistema `[2000]`, `[5000]`: ordem `t0` 0 (mic), 2000 (sys), 5000 (mic), 5000 (sys), 9000 (mic) (AC 11)
 Proof: `cargo test -p fala-asr --lib meeting::segments::tests::merge_orders_by_t0_mic_first_on_tie -- --exact`
 
-**C12** - `Segment` do mic com `me` serializa como `{"channel":"mic","speaker":"me","t0_ms":0,"t1_ms":1200,"text":"oi"}` e um do sistema com `person 2` como `{"channel":"system","speaker":{"person":2},...}`, e os dois voltam iguais (AC 12)
+**C12** - (built) `Segment` do mic com `me` serializa como `{"channel":"mic","speaker":"me","t0_ms":0,"t1_ms":1200,"text":"oi"}` e um do sistema com `person 2` como `{"channel":"system","speaker":{"person":2},...}`, e os dois voltam iguais (AC 12)
 Proof: `cargo test -p fala-asr --lib meeting::segments::tests::segment_serialized_form -- --exact`
 
 ### S4 - falha, progresso e cancelamento · ~2 files · ~15 KB · ~4k

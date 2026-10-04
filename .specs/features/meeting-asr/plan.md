@@ -15,7 +15,7 @@ Reusa o trait e o crate `fala-asr` da trilha A (o backend novo mora nele, ao lad
 ```mermaid
 flowchart TD
     IN["MeetingRecording: audio/&lt;id&gt;/mic.opus + sys.opus + modo (door 1)"] --> P["fala-asr::meeting (door 2)"]
-    P --> M["canal mic -> ElevenLabs Scribe v2 (door 3), diarize conforme o modo"]
+    P --> M["canal mic (só nos modos com mic) -> ElevenLabs Scribe v2 (door 3), diarize conforme o modo"]
     P --> S["canal sistema -> ElevenLabs Scribe v2 (door 3), diarize=true"]
     M --> J["merge por t0 (door 2)"]
     S --> J
@@ -148,6 +148,8 @@ Offline ou "só local", a mesma saída sai do Parakeet.
 | progresso | por canal: bytes enviados / total no upload e um batimento "aguardando resposta" a cada 500 ms | o ureq bloqueia na resposta; o batimento vem de uma thread do chamador | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 | cancelar | a requisição roda numa thread; cancelar devolve `Cancelled` na hora e descarta a resposta quando chegar | o ureq 3 não aborta uma requisição em voo; o custo é uma requisição paga que ninguém usa | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
 | `keyterms` | ligado por padrão, um campo por termo do `Dictionary` | pitch F4 ("atrás de um ajuste ligado por padrão", +US$ 0,05/h) | y - delegado pelo Augusto em 2026-10-02, decidido pelo painel |
+| mic nos modos sem mic (`system_only`, `import`) | `from_session_dir` exige os dois arquivos (AC 2, literal), mas a Scribe só recebe `mic.opus` quando `SessionMode::has_mic()`; nos outros modos sai uma requisição só, a do sistema | menos sai da máquina, nunca mais: o mic de um modo sem mic não é fala que a pessoa pediu para transcrever, e a requisição seria paga | y - delegado pelo Augusto, decidido pelo executor (build, 2026-10-04) |
+| dependências de `fala-asr` | o teste `tests/manifest.rs` da trilha A (door 2 de `pipeline-headless`, que fixa a lista exata) passa a listar também `ureq`, `static_assertions` (dev) e o que o `Flow` reusa: `fala-meeting`, `fala-secrets`, `serde`, `serde_json` | a door 5 deste plano, aprovada depois, adiciona dependências ao mesmo crate; a lista continua exata, só cresce | y - delegado pelo Augusto, decidido pelo executor (build, 2026-10-04) |
 
 **Open questions:**
 

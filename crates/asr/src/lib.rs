@@ -2,7 +2,8 @@
 //!
 //! Trait `Transcriber`: uma utterance de ditado entra, o texto bruto sai, no idioma pedido.
 //! Única implementação: Parakeet-TDT-0.6B-v3 int8 local pelo `transcribe-rs` (ADR-0003, com o
-//! runtime ajustado pela ADR-0009). Backends de nuvem, só para reunião (ADR-0005).
+//! runtime ajustado pela ADR-0009). Backends de nuvem, só para reunião (ADR-0005), no módulo
+//! [`meeting`], que nunca recebe áudio de ditado (ADR-0003).
 //! Trocar de backend não deve exigir mudança fora deste crate.
 //! Ainda por vir: `transcribe_file(path)`, quando houver decodificação de arquivo.
 
@@ -12,6 +13,8 @@ use fala_core::{DictationAudio, Language, Transcript};
 use transcribe_rs::onnx::parakeet::ParakeetModel;
 use transcribe_rs::onnx::Quantization;
 use transcribe_rs::{SpeechModel, TranscribeOptions};
+
+pub mod meeting;
 
 /// Utterances mais curtas que isto (100 ms a 16 kHz) nem chegam ao modelo.
 pub const MIN_SAMPLES: usize = 1_600;
@@ -32,6 +35,24 @@ pub enum AsrError {
     ModelLoad { path: PathBuf, reason: String },
     #[error("inferência: {0}")]
     Inference(String),
+    /// A pasta da sessão de reunião não tem um dos dois arquivos retidos.
+    #[error("falta {0} na pasta da sessão")]
+    MissingChannel(&'static str),
+    #[error("não consegui ler {}: {reason}", path.display())]
+    ReadAudio { path: PathBuf, reason: String },
+    /// O envio ao ASR de reunião falhou. `retriable` diz se repetir a mesma requisição pode
+    /// dar certo (`429`, `5xx`, conexão); `status` é o HTTP, quando houve resposta. Nunca
+    /// carrega o corpo da resposta nem a chave.
+    #[error("falha de rede no ASR de reunião: {reason}")]
+    Network {
+        retriable: bool,
+        status: Option<u16>,
+        reason: String,
+    },
+    #[error("resposta inválida do ASR de reunião: {0}")]
+    InvalidResponse(String),
+    #[error("transcrição cancelada")]
+    Cancelled,
 }
 
 /// Parakeet-TDT-0.6B-v3 int8. O modelo detecta o idioma sozinho; `language` só rotula o
