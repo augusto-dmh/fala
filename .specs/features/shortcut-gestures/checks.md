@@ -95,6 +95,9 @@ Proof: `bunx tsc --noEmit`
 **C23** - `src/bindings.ts`, regenerado pelo `tauri-specta` (export de `lib.rs` em build de debug) e não editado à mão, inclui `"push_to_talk_double_tap"` no tipo `ShortcutActivation` (door 1, Impact `generated`)
 Proof: `awk '/^export type ShortcutActivation/,/^export type ShortcutBinding/' src/bindings.ts | grep -q '"push_to_talk_double_tap"'`
 
+**C24** - Depois do merge do `main` com a pill da fase 1 (#28), `isHoldToTalk("push_to_talk_double_tap")` devolve `true` e a `Pill` com essa ativação tem a classe `hold` (vermelha), como em `push_to_talk` e `hold_or_toggle`: o modo padrão começa segurando (AC 16 com o AC 5 da pill)
+Proof: `bun src/overlay/pill.test.tsx`
+
 ## Coverage
 
 | Set (size) | Member -> proof | Unproven |
@@ -111,6 +114,7 @@ Proof: `awk '/^export type ShortcutActivation/,/^export type ShortcutBinding/' s
 | locales (2) | pt C22 · en C22 | - |
 | door 1 (valor do enum) (4) | serde C19 · padrão C18 · modos antigos intactos C14, C21 · tipo TS gerado C23 | - |
 | door 2 (atalhos padrão) (1) | C20 | - |
+| pill vermelha por modo que começa segurando (3) | `push_to_talk` C24 (pill C5) · `hold_or_toggle` C24 (pill C5) · `push_to_talk_double_tap` C24 | - |
 
 - Claims naming a value at a boundary: C2, C3, C4, C8 - each asserts both sides of its edge
 - C17 is the only check not settled on Linux; it is `TODO(windows)` and stays unchecked
@@ -134,3 +138,5 @@ Proof: `awk '/^export type ShortcutActivation/,/^export type ShortcutBinding/' s
 - **Settled mid-build:** o helper herdado `drive` (testes de #1539) faz `match` exaustivo sobre `Option<Effect>`; com a variante `Discard` ele não compilava. Ganhou um braço `Some(Effect::Discard { .. }) => panic!("push-to-talk never discards")`. Nenhuma asserção herdada mudou e o braço só torna o helper mais estrito; C14 deve ser lido como "nenhuma asserção herdada editada"
 - **Settled mid-build:** `src/bindings.ts` foi regenerado pelo export do `tauri-specta` rodando o binário de debug em modo portátil (`fala --list-models`, dados num diretório temporário, `LD_LIBRARY_PATH=apps/desktop/transcribe-libs`), sem `tauri dev`. O gerador no Linux também troca o comentário de `isLaptop` pelo do stub não-macOS; esse hunk, alheio à feature, foi descartado e só o hunk de `ShortcutActivation` entrou, idêntico à saída do gerador
 - **Boundary:** C1-C16 e C18-C23 fechados em `feat/shortcut-gestures`; C17 fica `TODO(windows)`
+- **Settled mid-build:** no merge do `main` (pill da fase 1, #28), `isHoldToTalk` só conhecia `push_to_talk` e `hold_or_toggle`, então a pill nunca ficava vermelha no modo padrão novo. O modo de dois toques começa segurando, como o `hold_or_toggle`, e entrou na lista (C24). Confirmed? y — delegado pelo Augusto, decidido pelo executor
+- **Boundary:** C24 fechado em `feat/shortcut-gestures`

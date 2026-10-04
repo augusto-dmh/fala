@@ -695,6 +695,7 @@
     }
   },
   "overlay": {
+    "recording": "Gravando",
     "transcribing": "Transcrevendo...",
     "processing": "Processando..."
   },
