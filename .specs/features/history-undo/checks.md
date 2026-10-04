@@ -172,3 +172,4 @@ Proof: `bun run check:translations`
 ## Handoff
 
 - S1 = 6k, S2 = 19k, S3 = 10k, S4 = 10k, S5 = 10k (+12k para ler o `bindings.ts` gerado), S6 = 6k = ~73k, em `crates/storage`, `apps/desktop` e no front, abaixo do budget de 150k - one builder
+- **Boundary:** C1-C4 fechados em `feat/history-undo`

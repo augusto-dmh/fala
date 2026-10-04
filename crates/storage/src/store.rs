@@ -177,6 +177,27 @@ impl Store {
         self.set_showing(id, Showing::Final)
     }
 
+    /// Apaga um item: a linha (o FTS sai pelo gatilho) e depois o `.md`.
+    ///
+    /// Id desconhecido devolve `NotFound` sem mudar nada; `.md` já ausente não é erro. Se só a
+    /// remoção do `.md` falhar, devolve `StorageError::Mirror` com a linha já apagada.
+    pub fn delete(&self, id: &str) -> Result<(), StorageError> {
+        let record = self.get(id)?;
+        self.conn
+            .execute("DELETE FROM dictations WHERE id = ?1", [id])?;
+        log::debug!("ditado {id} apagado");
+        let path = mirror::path_for(&self.notes_dir, &record);
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(StorageError::Mirror {
+                id: id.to_string(),
+                path,
+                source,
+            }),
+        }
+    }
+
     /// Reconstrói o banco a partir de `<notes_dir>/Ditados/**/*.md`, numa única transação.
     ///
     /// Um `.md` inválido ou com id repetido é ignorado e entra no relatório; os outros entram.
