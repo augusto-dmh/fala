@@ -3,7 +3,7 @@ use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::history::HistoryManager;
+use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
@@ -809,18 +809,24 @@ impl ShortcutAction for TranscribeAction {
 
                             // Save to history if WAV was saved — only through
                             // `deliver_unless_cancelled`, so a cancel either
-                            // suppresses both paste and history or neither.
+                            // suppresses both paste and history (history.db and
+                            // fala.sqlite) or neither.
                             let post_processed_text = processed.post_processed_text.clone();
                             let post_process_prompt = processed.post_process_prompt.clone();
+                            let pasted_text = processed.final_text.clone();
                             let save_history = move || {
                                 if wav_saved {
-                                    if let Err(err) = hm.save_entry(
+                                    if let Err(err) = hm.save_entry(NewEntry {
                                         file_name,
-                                        transcription,
-                                        post_process,
-                                        post_processed_text,
-                                        post_process_prompt,
-                                    ) {
+                                        post_process_requested: post_process,
+                                        texts: EntryTexts {
+                                            transcription_text: transcription,
+                                            post_processed_text,
+                                            post_process_prompt,
+                                            pasted_text,
+                                        },
+                                        app: fala_inject::foreground_app(),
+                                    }) {
                                         error!("Failed to save history entry: {}", err);
                                     }
                                 }
@@ -883,13 +889,17 @@ impl ShortcutAction for TranscribeAction {
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
                             if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
+                                if let Err(save_err) = hm.save_entry(NewEntry {
                                     file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
+                                    post_process_requested: post_process,
+                                    texts: EntryTexts {
+                                        transcription_text: String::new(),
+                                        post_processed_text: None,
+                                        post_process_prompt: None,
+                                        pasted_text: String::new(),
+                                    },
+                                    app: Default::default(),
+                                }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }

@@ -52,9 +52,9 @@ Proof: `awk '/let save_history = move \|\| \{/,/^                            \};
 Proof: `! grep -q "fala_storage" apps/desktop/src/actions.rs`
 Proof: `cargo test -p fala --lib actions::tests::delivery_is_all_or_nothing_after_the_last_check`
 
-**C12** - O closure `save_history` passa a `save_entry` o texto colado (`&pasted_text`) e `fala_inject::foreground_app()` (AC 10)
+**C12** - O closure `save_history` passa a `save_entry` o texto colado (`pasted_text`) e `fala_inject::foreground_app()` (AC 10)
 Proof: `awk '/let save_history = move \|\| \{/,/^                            \};/' apps/desktop/src/actions.rs | grep -q "fala_inject::foreground_app()"`
-Proof: `awk '/let save_history = move \|\| \{/,/^                            \};/' apps/desktop/src/actions.rs | grep -q "&pasted_text"`
+Proof: `awk '/let save_history = move \|\| \{/,/^                            \};/' apps/desktop/src/actions.rs | grep -q "pasted_text,"`
 
 **C13** - TODO(windows): no build do Windows com o LLM ligado, um ditado de mais de 15 palavras no Bloco de Notas aparece no histórico com o texto colado e "em notepad", e `fala-cli history search <palavra>` acha o mesmo item (AC 4, AC 10, AC 27 no app real)
 Proof: `TODO(windows)` manual - 1 ditado; registrar o texto mostrado, o app mostrado e a saída do `fala-cli history search`
@@ -173,3 +173,6 @@ Proof: `bun run check:translations`
 
 - S1 = 6k, S2 = 19k, S3 = 10k, S4 = 10k, S5 = 10k (+12k para ler o `bindings.ts` gerado), S6 = 6k = ~73k, em `crates/storage`, `apps/desktop` e no front, abaixo do budget de 150k - one builder
 - **Boundary:** C1-C4 fechados em `feat/history-undo`
+- **Boundary:** C5-C12, C14-C21 e C25 fechados em `feat/history-undo`; C13 fica `TODO(windows)`
+- **Settled mid-build:** C12 nomeava `&pasted_text`, pensando num `save_entry` com parâmetros soltos; com 7 campos, o `save_entry` passou a receber um `NewEntry` dono dos textos (o clippy barra mais de 7 argumentos), e o texto colado entra por `pasted_text,`. A segunda prova do C12 trocou `&pasted_text` por `pasted_text,`; a afirmação (o closure passa o texto colado) não mudou. Confirmed? y — delegado pelo Augusto, decidido pelo executor
+- **Settled mid-build:** o `setup_conn` dos testes herdados de `managers::history` cria a tabela à mão e ganhou a coluna `dictation_id`, e o helper `build_entry` dos testes do tray ganhou `dictation_id: None, dictation: None`; nenhuma asserção herdada mudou

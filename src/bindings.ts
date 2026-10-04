@@ -1019,7 +1019,27 @@ export type EngineType =
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
-export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
+/**
+ * O item de `fala.sqlite` ligado a uma linha do histórico.
+ */
+export type HistoryDictation = { raw_text: string; final_text: string; editor: HistoryEditor; showing: HistoryShowing; app_name: string | null }
+/**
+ * Quem produziu o texto final de um item, como o front o recebe.
+ */
+export type HistoryEditor = "none" | "rules" | "llm"
+export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
+/**
+ * The linked dictation in fala.sqlite, if any.
+ */
+dictation_id: string | null; 
+/**
+ * That dictation (raw, final, editor, what it shows, app), when the store can read it.
+ */
+dictation: HistoryDictation | null }
+/**
+ * Qual texto o item mostra agora: o final ou, depois de desfazer, o bruto.
+ */
+export type HistoryShowing = "final" | "raw"
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
  * Result of changing keyboard implementation

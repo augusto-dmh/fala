@@ -5,7 +5,8 @@
 //! Escrita no SQLite primeiro, espelho depois.
 //!
 //! O banco é `fala.sqlite`, separado do `history.db` do desktop: cada um tem o seu `user_version`.
-//! A cópia de `transcription_history` para cá fica para quando o desktop virar fachada.
+//! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
+//! na abertura e liga cada linha ao item por `dictation_id`.
 
 mod mirror;
 mod store;
