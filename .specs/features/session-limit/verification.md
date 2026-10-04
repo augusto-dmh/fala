@@ -113,3 +113,114 @@ tree's `git status --porcelain` matched the baseline (empty) before and after.
 
 1. C15 Unproven - manual 20-minute Windows session (`TODO(windows)`): warning instant (19:00 ± 1 s),
    cut instant (20:00 ± 1 s), non-empty paste in Notepad, one new history entry - no evidence.
+
+## Round 2 - scoped
+
+**Verdict**: FAIL - the only gap is still C15 (`TODO(windows)`, manual 20-minute session, not run). C1-C14 and C16-C18 are proven at `1b812da`
+**Profile**: light
+**Diff range**: 058ed22..1b812da - report commit `9b24041`, merge `119e038` (`feat/language-picker` into the branch, which brings main `62a9441` with the phase 1 pill #28, plus `feat/cancel-anywhere` and `feat/shortcut-gestures` up to `242e457`), and `1b812da` (`feat(ui): turn the pill amber close to the session limit`, new C18 and AC 15)
+**Round**: 2 - scoped
+**Verifier**: a new independent sub-agent with a fresh context (author != verifier). The author is the desktop-stack executor sub-agent. This Verifier did not write `119e038` or `1b812da` and did not write round 1.
+
+**Scope.** Round 2 covers the diff of `1b812da`, the effect of `119e038` on this feature's files,
+round 1's one non-PASS check (C15), and the new check C18. Every proof was re-run in full at
+`1b812da` (detached scratch worktree, tree clean, `node_modules` symlinked from the main checkout).
+Cargo ran with `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`, one command
+at a time. No code, test, plan or checks file was changed, and no round-1 row was moved or edited.
+
+### What the merge and the fix did to this feature's files (verified at 1b812da)
+
+- `git diff --stat 9b24041 119e038` over the feature files (`transcription_coordinator.rs`,
+  `audio_feedback.rs`, `overlay.rs`, `utils.rs`, `actions.rs`, `src/overlay`, the feature's `.specs`)
+  touches only `src/overlay`: `Pill.css`, `Pill.tsx`, `pill.test.tsx` and `pillModel.ts` are new from
+  #28, and `RecordingOverlay.tsx` is +21/-13. The only lines removed are the old minimal-overlay JSX
+  (`scard compact` with `listeningRow(false, true)`), which main replaced with `<Pill>`. The Rust
+  files behind C1-C14 are byte-identical to round 1, so their round-1 citations still hold.
+- That removal is why C18 exists. The minimal branch no longer draws the left `.sdot`, so C16's amber
+  dot now shows only in the Live overlay. There, `listeningRow` is still used (`RecordingOverlay.tsx:294`)
+  and still carries the `limit` class (`:225`). C16's claim is still true of the code that exists. The
+  minimal pill gets its own amber state through C18.
+- `1b812da` touches only `src/overlay` (Pill, pillModel, the pill test, and one line in
+  `RecordingOverlay.tsx`) plus the feature's `checks.md` and `plan.md`. In `checks.md`, C18, two
+  Coverage rows and two Handoff lines were added, and the header count went from 17 to 18. No existing
+  check, proof or row was edited. In `plan.md`, Flow hop 5 and the `ui` row of Impact were updated to
+  the new pill (those sections are kept true). AC 15 and a Surface row were added. AC 13 and AC 14
+  were left unchanged. In `pill.test.tsx`, only the two header comment lines and the import line
+  changed. Every pill-redesign assertion and shortcut-gestures C24 are unchanged and still print `ok`.
+
+### Checks (verified at 1b812da)
+
+Proofs re-run:
+
+- `cargo test -p fala --lib -- transcription_coordinator actions::tests::delivery_is_all_or_nothing_after_the_last_check`:
+  63 passed, 0 failed (62 coordinator + 1 delivery). Each of the 10 named tests appears by name as
+  `... ok`.
+- `cargo test -p fala --lib -- transcription_coordinator`, as the orchestrator asked: 62 passed,
+  0 failed, 258 filtered out. That is the same 62 as round 1.
+- `bun src/overlay/pill.test.tsx`, exit 0. It prints `C1 ok` .. `C14 ok`, `shortcut-gestures C24 ok`,
+  `session-limit C18 ok` and `pill: all assertions passed`.
+- The 13 grep/awk proofs of C6, C12 (5), C13 (2), C14 (first) and C16 (4), each exit 0.
+- `bun run lint`, `bunx tsc --noEmit`, `bun run format:check` and `bun run check:translations`, each
+  exit 0.
+
+| Check | Claim | Proof run | Evidence | Result |
+| --- | --- | --- | --- | --- |
+| C1-C10 | the session deadline in the coordinator (AC 1-9) | each named `transcription_coordinator::tests::session_limit_*` / `wake_deadline_*` / `session_deadline_*` / `drained_*` / `*_after_limit_cut_*` test ok in the run above | carried from `058ed22`, re-run at `1b812da`: `transcription_coordinator.rs` is unchanged by `119e038` and `1b812da`, so the round-1 citations hold, e.g. `apps/desktop/src/transcription_coordinator.rs:2351` - `assert_eq!(state.on_deadline(t0 + mins(19)), limit_warning(), ..)` (C1), `:2397` (C3), `:768` (C6 grep hit) | PASS |
+| C11 | inherited coordinator tests green, no assertion edited | `cargo test -p fala --lib -- transcription_coordinator`: 62 passed, 0 failed | file unchanged since round 1 (absent from both diffs); round-1 evidence at `transcription_coordinator.rs:1165`-`:1167` still holds | PASS |
+| C12 | `LimitWarning` -> `play_limit_warning` + `emit_recording_limit_warning`; two chimes 150 ms apart | 5 grep/awk proofs exit 0 | files unchanged: `apps/desktop/src/transcription_coordinator.rs:922`-`:923`; `apps/desktop/src/audio_feedback.rs:82`-`:84` (`grep -c '^pub fn play_limit_warning'` = 1, so the negated proof is not vacuous) | PASS |
+| C13 | emitter skips when the overlay is disabled, otherwise emits only to `recording_overlay` | 2 awk/grep proofs exit 0 | file unchanged: `apps/desktop/src/overlay.rs:617`, `:622` | PASS |
+| C14 | the cut is the shortcut's `Stop`; all-or-nothing delivery still green | grep proof exit 0; `actions::tests::delivery_is_all_or_nothing_after_the_last_check ... ok` | `transcription_coordinator.rs:914` - `} => stop(app, &binding_id, &hotkey_string),`; `apps/desktop/src/actions.rs:1076`-`:1087` (files unchanged) | PASS |
+| C15 | Windows: amber state and two chimes at 19:00, cut at 20:00, text in Notepad, 1 history entry | not run - `TODO(windows)` manual 20-minute session; no Windows machine in this verification | no evidence - manual check pending | Unproven |
+| C16 | listener sets `limit` on `.sdot`; reset on show recording/streaming and on hide; `.sdot.limit` uses `--color-warning` with its own animation | 4 grep/awk proofs exit 0; `bun run lint` exit 0; `bunx tsc --noEmit` exit 0 | lines moved by the merge: `src/overlay/RecordingOverlay.tsx:108-109` - `listen("recording-limit-warning", () => { setLimitWarning(true); })`; `:72` (inside `if (overlayState === "recording" \|\| overlayState === "streaming")` at `:70`) and `:105` (inside `listen("hide-overlay"` at `:102`) - `setLimitWarning(false);`; `:225` - `` className={`sdot ${captureReady ? "ready" : "arming"}${limitWarning ? " limit" : ""}`} ``, in `listeningRow`, used by the Live overlay at `:294`; `src/overlay/RecordingOverlay.css:338` - `background: var(--color-warning);`, `:340` - `animation: sdot-limit-pulse 0.9s infinite;` (CSS unchanged) | PASS |
+| C17 | front end formatted, translations complete | `bun run format:check` exit 0 ("All matched files use Prettier code style!" and `cargo fmt --all -- --check`); `bun run check:translations` exit 0 ("All 1 languages have complete translations!") | `1b812da` adds no visible string: `git show 1b812da -- src/` adds only a prop, a class, CSS and test code. The pill's `label` uses the existing `overlay.recording`/`overlay.processing` keys (`RecordingOverlay.tsx:316-319`) | PASS |
+| C18 | `pillTone` gives `limit` when recording with the warning (held or not), `hold` when held without it, `null` otherwise and `null` when processing; `Pill` with `limit` has class `limit` and no `hold`, 10 bars, no text; processing has no `limit` and keeps its fixed shape; `.fpill.limit` is `#d97706` with `fpill-limit-pulse 0.9s infinite` between 1 and 0.6 and no animation under reduced motion; `RecordingOverlay` passes `limit={limitWarning}` | `bun src/overlay/pill.test.tsx` exit 0, prints `session-limit C18 ok` | `src/overlay/pill.test.tsx:302-307` - `assert.equal(pillTone("recording", false, true), "limit")`, `("recording", true, true) -> "limit"`, `("recording", true, false) -> "hold"`, `("recording", false, false) -> null`, `("processing", true, true) -> null`, `("processing", false, true) -> null`; `:309-315` - `toggle.includes("limit")`, `held.includes("limit")`, `!held.includes("hold")`, and no `limit` for `{}` or `{ limit: false }`; `:316-318` - processing with `limit` has no `limit` class, and `assert.deepEqual(bars(processing), [5, 7, 9, 11, 13, 13, 11, 9, 7, 5])`; `:320-323` - `assert.equal(text(amber), "")`, `onlyBars(amber)`, `assert.deepEqual(bars(amber), Array(10).fill(18))`; `:325-334` - `has(body, "background: #d97706", ...)`, `/animation:\s*fpill-limit-pulse\s+0\.9s\b[^;]*\binfinite\b/`, keyframes `opacity: 1` and `opacity: 0.6`; `:339-341` - in `@media (prefers-reduced-motion: reduce)`, `.fpill.limit` has `animation: none` and `opacity: 1`; `:343-346` - `overlaySource.includes("limit={limitWarning}")`. Under test: `src/overlay/pillModel.ts:53-61` (`pillTone`), `src/overlay/Pill.tsx:43` - `pillTone(mode, holdToTalk, limit) ?? ""`, `src/overlay/Pill.css:21-23` and `:61-63`, `src/overlay/RecordingOverlay.tsx:313` - `limit={limitWarning}` | PASS |
+
+### Level and sampling (verified at 1b812da)
+
+- C18's two Coverage rows were recomputed from the code, beyond what `light` requires, because they
+  are small. `pillTone`'s inputs (`mode` recording/processing × `holdToTalk` × `limit`) have 8
+  combinations and the test asserts 6 of them. The 2 it skips are processing with `limit = false`.
+  `pillTone` returns `null` for those through the same first branch
+  (`if (mode !== "recording") return null`), and the existing pill-redesign tests already check that
+  processing draws no `hold`. That is not a member the claim names.
+- C18 checks CSS by reading text from `Pill.css` (regex over the rule bodies), which is the level the
+  pill-redesign checks also use. Nothing here renders it in a browser, so the actual colour and the
+  pulse on screen belong to C15's Windows session. The `limit={limitWarning}` wiring is a
+  source-text assertion (`pill.test.tsx:343-346`), not a runtime one.
+- AC 15's "over the hold red" is settled by `pillTone("recording", true, true) === "limit"`
+  (`:303`) and by `!held.includes("hold")` (`:313`). The amber and red classes cannot both be on the
+  element.
+- Fault injection does not run under `light`. The pre-fix `Pill.tsx` (`1b812da^`) has no `limit` prop
+  and `pillModel.ts` has no `pillTone`, so before the fix the test could not even import its subject.
+  That conclusion comes from reading the code. No mutant was run in this round.
+
+### Swept existing (verified at 1b812da)
+
+- The dependency-failure constraint (`play_sound_blocking` logs and does not block the cut) and
+  the all-or-nothing delivery path are in files the merge and the fix did not touch. They are carried
+  from `058ed22`, and `delivery_is_all_or_nothing_after_the_last_check` re-ran ok at `1b812da`.
+
+### Carried from 058ed22
+
+Binding sources (none under `light`), the structural proofs shown to fail under faults (C6, C12, C13,
+C14, C16 a-d), and the orchestrator's scrutiny of `run_effect`, `overlay.rs` and the AGENTS.md
+invariants. Those sections judged Rust files and `RecordingOverlay.css`, which are unchanged. C16's
+TSX proofs moved with the merge and were re-run above. The faults injected against them were not
+repeated.
+
+### Gate (verified at 1b812da)
+
+- `cargo test -p fala --lib -- transcription_coordinator actions::tests::delivery_is_all_or_nothing_after_the_last_check`:
+  63 passed, 0 failed.
+- `cargo test -p fala --lib -- transcription_coordinator`: 62 passed, 0 failed.
+- `bun src/overlay/pill.test.tsx`: 16 checks ok (pill C1-C14, shortcut-gestures C24, session-limit
+  C18), exit 0.
+- `bun run lint`, `bunx tsc --noEmit`, `bun run format:check`, `bun run check:translations` and
+  `scripts/check-brand.sh`: exit 0 each.
+- The grep/awk proofs for C6, C12, C13, C14 and C16: 13 of 13 exit 0.
+
+### Ranked gaps
+
+1. C15 Unproven - the manual 20-minute Windows session (`TODO(windows)`) has not been recorded. With
+   C18 it also has to look at the minimal pill's capsule turning amber at 19:00, not only the Live
+   overlay's dot. That is a note for whoever runs it, not a change to C15.
