@@ -1,4 +1,5 @@
-// Prova dos checks da pill (`.specs/features/pill-redesign/checks.md`).
+// Prova dos checks da pill (`.specs/features/pill-redesign/checks.md`) e do vermelho no modo
+// padrão de dois toques (`.specs/features/shortcut-gestures/checks.md`, C24).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -282,6 +283,17 @@ function ok(id: string) {
     "a ativação das settings precisa chegar ao estado holdToTalk",
   );
   ok("C14");
+}
+
+// shortcut-gestures C24 - o modo padrão de dois toques começa segurando: a pill fica vermelha.
+{
+  assert.equal(isHoldToTalk("push_to_talk_double_tap"), true);
+  assert.ok(
+    classes(
+      render({ holdToTalk: isHoldToTalk("push_to_talk_double_tap") }),
+    ).includes("hold"),
+  );
+  ok("shortcut-gestures C24");
 }
 
 console.log("pill: all assertions passed");
