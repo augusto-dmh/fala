@@ -2,6 +2,9 @@ import { listen } from "@tauri-apps/api/event";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
+import "./Pill.css";
+import { Pill } from "./Pill";
+import { isHoldToTalk, toPillMode } from "./pillModel";
 import { commands, events } from "@/bindings";
 import type {
   StreamPhase,
@@ -34,6 +37,8 @@ const RecordingOverlay: React.FC = () => {
     committed: "",
     tentative: "",
   });
+  // Push-to-talk style activation: the minimal pill turns red while recording.
+  const [holdToTalk, setHoldToTalk] = useState(false);
   const [phase, setPhase] = useState<StreamPhase>("listening");
   const [workKind, setWorkKind] = useState<StreamWorkKind>("transcribing");
   const [elapsed, setElapsed] = useState(0);
@@ -79,6 +84,7 @@ const RecordingOverlay: React.FC = () => {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
+            setHoldToTalk(isHoldToTalk(settings.data.shortcut_activation));
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -291,25 +297,27 @@ const RecordingOverlay: React.FC = () => {
     );
   }
 
-  // ---- Minimal overlay: exactly one row at a time — waveform (recording), or a
-  // spinner + label (transcribing / processing). Never both. The pill animates its
-  // width between them; the cancel button is in both rows so it stays put.
-  const working = state === "transcribing" || state === "processing";
-  const workLabel =
-    state === "processing"
-      ? t("overlay.processing")
-      : t("overlay.transcribing");
+  // ---- Minimal overlay: the phase 1 pill. Recording draws ten bars that follow
+  // the mic (red while the key is held); transcribing and processing share one
+  // still, pulsing state. No icon and no text; cancelling stays on Esc.
+  const pillMode = toPillMode(state) ?? "recording";
 
   return (
     <div
       dir={direction}
       className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
     >
-      <div
-        className={`scard compact ${working && isVisible ? "cworking" : ""}`}
-      >
-        {working ? workingRow(workLabel, true) : listeningRow(false, true)}
-      </div>
+      <Pill
+        mode={pillMode}
+        holdToTalk={holdToTalk}
+        ready={captureReady}
+        levels={levels}
+        label={
+          pillMode === "recording"
+            ? t("overlay.recording")
+            : t("overlay.processing")
+        }
+      />
     </div>
   );
 };
