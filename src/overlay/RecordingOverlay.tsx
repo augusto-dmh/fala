@@ -310,6 +310,7 @@ const RecordingOverlay: React.FC = () => {
       <Pill
         mode={pillMode}
         holdToTalk={holdToTalk}
+        limit={limitWarning}
         ready={captureReady}
         levels={levels}
         label={

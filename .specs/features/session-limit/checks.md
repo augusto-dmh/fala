@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/session-limit/plan.md`
 
-17 checks in 3 slices · 0 one-way doors · 0 open, of which 0 block
+18 checks in 3 slices · 0 one-way doors · 0 open, of which 0 block
 
 Comandos de cargo com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`,
 rodados na raiz do worktree. Os testes do coordenador usam o relógio sintético da 1.F1 (`Instant`
@@ -80,6 +80,9 @@ Proof: `bunx tsc --noEmit`
 Proof: `bun run format:check`
 Proof: `bun run check:translations`
 
+**C18** - Na pill mínima da fase 1 (#28), `pillTone` devolve `limit` gravando com o aviso (com ou sem a tecla segurada), `hold` gravando segurado sem aviso, `null` gravando sem os dois e `null` processando com o aviso; a `Pill` com `limit` põe a classe `limit` (sem `hold`), mantém as 10 barras e nenhum texto; processando com `limit` segue sem a classe e com a forma fixa; `.fpill.limit` tem `background: #d97706` e `fpill-limit-pulse 0.9s infinite` entre opacidade 1 e 0,6, sem animação em `prefers-reduced-motion`; `RecordingOverlay` passa `limit={limitWarning}` à pill (AC 15, AC 13 e AC 14 na pill nova)
+Proof: `bun src/overlay/pill.test.tsx`
+
 ## Coverage
 
 | Set (size) | Member -> proof | Unproven |
@@ -96,6 +99,8 @@ Proof: `bun run check:translations`
 | saídas do aviso (2) | som C12 · evento da pill C13, C16 | - |
 | estado do overlay (2) | pill ligada: evento C13 · pill desligada: nada emitido C13 | - |
 | volta do ponto ao normal (3) | `show-overlay` recording C16 · `show-overlay` streaming C16 · `hide-overlay` C16 | - |
+| cor da pill mínima gravando (3) | âmbar com aviso C18 · vermelho segurado sem aviso C18 · preto C18 | - |
+| pill mínima com aviso por modo (2) | `recording` âmbar C18 · `processing` preta C18 | - |
 
 - Claims naming a value at a boundary: C1, C3 - each asserts both sides of its edge
 - C15 is the only check not settled on Linux; it is `TODO(windows)` and stays unchecked
@@ -120,3 +125,5 @@ Proof: `bun run check:translations`
 - **Settled mid-build:** o corte também zera uma carência de soltura ainda pendente (`pending_release`), porque essa soltura pertence à sessão cortada; sem isso, uma repetição de key-down durante o processamento seria engolida como cancelamento da soltura
 - **Abandoned:** somar a marca da sessão a `next_deadline()`; testes da 1.F1 afirmam `next_deadline() == None` com a sessão travada e durante o auto-repeat, então o laço passou a usar `wake_deadline()` e `next_deadline()` ficou como estava
 - **Boundary:** C1-C14, C16 e C17 fechados em `feat/session-limit`; C15 fica `TODO(windows)`
+- **Settled mid-build:** depois do merge do `main` com a pill nova (#28), o ramo mínimo do overlay deixou de ter o ponto da esquerda, e o âmbar só aparecia no overlay Live. A cápsula da pill mínima passou a ficar âmbar gravando com o aviso (AC 15, C18), com cor literal porque `Pill.css` não usa variáveis de tema (C12 da pill). Confirmed? y — delegado pelo Augusto, decidido pelo executor
+- **Boundary:** C18 fechado em `feat/session-limit`

@@ -34,7 +34,7 @@ cria uma thread de timer nem um segundo caminho de parada.
 2. laço do `TranscriptionCoordinator` (exists) - `recv_timeout` passa a dormir até `wake_deadline()`, o menor entre `next_deadline()` (carência e janela de dois toques, com o sentido da 1.F1) e `session_deadline()`
 3. `CoordinatorState::on_deadline` (exists) - aos 19 min emite o efeito novo `LimitWarning` uma vez e segue gravando; aos 20 min emite `Stop` com o binding e o atalho da gravação e vai a `Processing`
 4. `run_effect` (exists) - `LimitWarning` toca o aviso por `audio_feedback` (exists) e emite `recording-limit-warning` à janela do overlay por `overlay` (exists); `Stop` segue para `TranscribeAction::stop` (exists, sem mudança)
-5. `RecordingOverlay` (exists, front) - recebe o evento e põe o ponto da pill em âmbar até esconder ou até a próxima gravação
+5. `RecordingOverlay` (exists, front) - recebe o evento e liga `limitWarning` até esconder ou até a próxima gravação; no overlay Live o ponto da esquerda fica âmbar, e na pill mínima da fase 1 (`Pill`, exists desde #28) a cápsula gravando fica âmbar por `pillTone` (`pillModel.ts`, exists)
 6. out: o ditado cortado é transcrito, colado e gravado no histórico por `deliver_unless_cancelled` (exists, 1.F2), com o som de fim conforme `audio_feedback`
 
 ## Impact
@@ -45,7 +45,7 @@ cria uma thread de timer nem um segundo caminho de parada.
 | domain | termo novo: `LimitWarning` - efeito do coordenador que anuncia o corte próximo sem mudar o estágio. Só `run_effect` o consome; o helper de teste herdado `drive`, que faz `match` exaustivo em `Effect`, ganha um braço `panic!` como a 1.F1 fez para `Discard` |
 | domain | termo existente: o laço do coordenador dormia até `next_deadline()` e passa a dormir até `wake_deadline()`. `next_deadline()` mantém o sentido da 1.F1 (carência e janela) porque testes da 1.F1 afirmam `None` com a gravação travada; quem ramifica nele hoje é só o laço e esses testes |
 | behaviour | não existe mais gravação de ditado com mais de 20 min; uma sessão esquecida é encerrada e colada aos 20 min. O mesmo vale para push-to-talk segurado, `hold_or_toggle` e `toggle` |
-| ui | a pill ganha um estado âmbar no ponto da esquerda (`--color-warning`, que já existe no tema), sem texto; o vocabulário visual final é da feature E |
+| ui | o overlay Live ganha um estado âmbar no ponto da esquerda (`--color-warning`, que já existe no tema), e a pill mínima da fase 1 (#28) ganha a cápsula âmbar `#d97706` (o mesmo âmbar do tema claro, literal porque a pill tem as mesmas cores nos dois temas), por cima do vermelho da tecla segurada; sem texto. O vocabulário visual final é da feature E |
 | stored data | nada a migrar; nenhuma chave nova no store |
 
 ## Relations
@@ -103,8 +103,9 @@ cortar.
 
 13. WHEN the overlay receives `recording-limit-warning` THEN the pill's left dot SHALL turn amber (`--color-warning`) with a faster pulse
 14. WHEN the overlay hides, or shows a new `recording` or `streaming` session THEN the dot SHALL return to the regular accent
+15. WHILE the minimal pill (#28) is recording after `recording-limit-warning`, the system SHALL draw the capsule amber (`#d97706`, over the hold red) with a 0.9 s pulse between opacity 1 and 0.6 (still under `prefers-reduced-motion`), SHALL keep the ten bars and no text, and SHALL draw the processing pill black as before
 
-**Independent test:** `bun run lint`, `bunx tsc --noEmit`; visual na sessão Windows.
+**Independent test:** `bun run lint`, `bunx tsc --noEmit`, `bun src/overlay/pill.test.tsx`; visual na sessão Windows.
 
 ## Out of scope
 
@@ -142,6 +143,7 @@ cortar.
 | som | o que se ouve no corte | existing - o som de fim de `TranscribeAction::stop`, conforme `audio_feedback` |
 | pill (overlay) | estado de aviso | AC 13 |
 | pill (overlay) | volta ao normal | AC 14 |
+| pill mínima (#28) | estado de aviso | AC 15 |
 | pill (overlay) | pill desligada (padrão no Linux) | AC 11 (sem evento); o som do AC 10 cobre |
 | pill (overlay) | texto visível novo | n/a - o aviso não tem texto, então não há chave de i18n |
 | ação destrutiva | confirmação antes do corte | n/a - o corte não destrói nada: entrega o texto como um encerramento normal |

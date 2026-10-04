@@ -1,11 +1,12 @@
-// Prova dos checks da pill (`.specs/features/pill-redesign/checks.md`) e do vermelho no modo
-// padrão de dois toques (`.specs/features/shortcut-gestures/checks.md`, C24).
+// Prova dos checks da pill (`.specs/features/pill-redesign/checks.md`), do vermelho no modo
+// padrão de dois toques (`.specs/features/shortcut-gestures/checks.md`, C24) e do estado âmbar
+// do limite de sessão (`.specs/features/session-limit/checks.md`, C18).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Pill, type PillProps } from "./Pill";
-import { isHoldToTalk, pillBars, toPillMode } from "./pillModel";
+import { isHoldToTalk, pillBars, pillTone, toPillMode } from "./pillModel";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -294,6 +295,56 @@ function ok(id: string) {
     ).includes("hold"),
   );
   ok("shortcut-gestures C24");
+}
+
+// session-limit C18 - perto do limite a cápsula gravando fica âmbar e pulsa; processando não.
+{
+  assert.equal(pillTone("recording", false, true), "limit");
+  assert.equal(pillTone("recording", true, true), "limit");
+  assert.equal(pillTone("recording", true, false), "hold");
+  assert.equal(pillTone("recording", false, false), null);
+  assert.equal(pillTone("processing", true, true), null);
+  assert.equal(pillTone("processing", false, true), null);
+
+  const toggle = classes(render({ limit: true }));
+  assert.ok(toggle.includes("limit"), toggle.join(" "));
+  const held = classes(render({ limit: true, holdToTalk: true }));
+  assert.ok(held.includes("limit"), held.join(" "));
+  assert.ok(!held.includes("hold"), held.join(" "));
+  assert.ok(!classes(render({})).includes("limit"));
+  assert.ok(!classes(render({ limit: false })).includes("limit"));
+  const processing = render({ mode: "processing", limit: true });
+  assert.ok(!classes(processing).includes("limit"), processing);
+  assert.deepEqual(bars(processing), [5, 7, 9, 11, 13, 13, 11, 9, 7, 5]);
+
+  const amber = render({ limit: true, levels: loud });
+  assert.equal(text(amber), "");
+  onlyBars(amber);
+  assert.deepEqual(bars(amber), Array(10).fill(18));
+
+  const body = rule(css, ".fpill.limit");
+  has(body, "background: #d97706", ".fpill.limit");
+  assert.ok(
+    /animation:\s*fpill-limit-pulse\s+0\.9s\b[^;]*\binfinite\b/.test(body),
+    `.fpill.limit sem o pulso: ${body}`,
+  );
+  const frames = css.match(/@keyframes\s+fpill-limit-pulse\s*\{([\s\S]*?)\n\}/);
+  assert.ok(frames, "sem @keyframes fpill-limit-pulse");
+  assert.ok(/opacity:\s*1\s*;/.test(frames[1]), frames[1]);
+  assert.ok(/opacity:\s*0\.6\s*;/.test(frames[1]), frames[1]);
+  const media = css.match(
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/,
+  );
+  assert.ok(media, "sem @media (prefers-reduced-motion: reduce)");
+  const still = rule(media[1], ".fpill.limit");
+  has(still, "animation: none", "reduced-motion limit");
+  has(still, "opacity: 1", "reduced-motion limit");
+
+  assert.ok(
+    overlaySource.includes("limit={limitWarning}"),
+    "o estado do recording-limit-warning precisa chegar à pill",
+  );
+  ok("session-limit C18");
 }
 
 console.log("pill: all assertions passed");

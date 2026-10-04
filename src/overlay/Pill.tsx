@@ -2,6 +2,7 @@ import {
   PILL_BARS,
   PROCESSING_BARS,
   pillBars,
+  pillTone,
   type PillMode,
 } from "./pillModel";
 
@@ -9,6 +10,8 @@ export interface PillProps {
   mode: PillMode;
   /** Push-to-talk style activation: the capsule turns red while recording. */
   holdToTalk: boolean;
+  /** The recording is close to the session limit (`recording-limit-warning`). */
+  limit?: boolean;
   /** Microphone samples are flowing (`recording-ready`). */
   ready: boolean;
   /** Smoothed `mic-level` buckets. */
@@ -20,7 +23,14 @@ export interface PillProps {
 const RESTING = Array<number>(PILL_BARS).fill(3);
 
 /** The phase 1 pill: a black capsule with ten mirrored bars, no icon, no text. */
-export function Pill({ mode, holdToTalk, ready, levels, label }: PillProps) {
+export function Pill({
+  mode,
+  holdToTalk,
+  limit = false,
+  ready,
+  levels,
+  label,
+}: PillProps) {
   const recording = mode === "recording";
   const heights = !recording
     ? PROCESSING_BARS
@@ -30,7 +40,7 @@ export function Pill({ mode, holdToTalk, ready, levels, label }: PillProps) {
   const className = [
     "fpill",
     mode,
-    recording && holdToTalk ? "hold" : "",
+    pillTone(mode, holdToTalk, limit) ?? "",
     recording && !ready ? "arming" : "",
   ]
     .filter(Boolean)
