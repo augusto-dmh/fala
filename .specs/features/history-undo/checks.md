@@ -178,3 +178,5 @@ Proof: `bun run check:translations`
 - **Settled mid-build:** o `setup_conn` dos testes herdados de `managers::history` cria a tabela à mão e ganhou a coluna `dictation_id`, e o helper `build_entry` dos testes do tray ganhou `dictation_id: None, dictation: None`; nenhuma asserção herdada mudou
 - **Boundary:** C22-C24 e C26 fechados em `feat/history-undo`
 - **Settled mid-build:** `src/bindings.ts` foi regenerado pelo export do `tauri-specta` rodando o binário de debug copiado para uma pasta temporária com o marcador `portable` (`fala --list-models`, `LD_LIBRARY_PATH=apps/desktop/transcribe-libs`), sem `tauri dev`; como na 1.F1, o hunk do comentário de `isLaptop`, alheio à feature, foi descartado
+- **Boundary:** C27-C30 fechados em `feat/history-undo`
+- **Settled mid-build:** a troca de texto mora numa função pura `switchText` (comandos e área de transferência injetados), para o C29 testar o comportamento e não só o código-fonte; se a cópia falhar depois de trocar, a entrada é trocada e o aviso é o `settings.history.copyError` herdado. Confirmed? y — delegado pelo Augusto, decidido pelo executor
