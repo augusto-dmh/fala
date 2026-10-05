@@ -2069,6 +2069,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fala-notes"
+version = "0.1.0"
+dependencies = [
+ "fala-core",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "ureq",
+]
+
+[[package]]
 name = "fala-postproc"
 version = "0.1.0"
 dependencies = [
