@@ -7,6 +7,10 @@ all-features = false
 # Unmaintained crates deep in the Tauri tree are upstream's to replace; flag only our direct deps.
 unmaintained = "workspace"
 ignore = [
+  # audiopus_sys (libopus binding behind `opus`) is unmaintained and does not build with CMake 4.
+  # Unmaintained is not a vulnerability: libopus itself is maintained and vendored statically.
+  # If a build hits CMake 4, ADR-0014's FLAC fallback applies; revisit when it does.
+  { id = "RUSTSEC-2026-0150", reason = "unmaintained binding, no known vulnerability; FLAC fallback in ADR-0014" },
   # quick-xml 0.38 comes in only through plist and wayland-scanner, both parsing trusted XML at
   # build time. The fix needs a semver bump in those crates; revisit on the next Tauri update.
   { id = "RUSTSEC-2026-0194", reason = "build-time parsing of trusted XML (plist, wayland-scanner)" },
