@@ -1,4 +1,5 @@
-//! As dependências de `fala-audio` são exatamente as da door 1 do plano `pipeline-headless`.
+//! As dependências de `fala-audio` são exatamente as da door 1 do plano `pipeline-headless`, mais o
+//! `hound` da door 4 do plano `meeting-recorder`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -29,6 +30,7 @@ fn dependencies_match_door_1() {
         [
             "cpal",
             "fala-core",
+            "hound",
             "log",
             "rtrb",
             "rubato",
@@ -45,8 +47,8 @@ fn dependencies_match_door_1() {
         spec("vad-rs"),
         "{ git = \"https://github.com/cjpais/vad-rs\", default-features = false }"
     );
-    let dev = section(manifest, "[dev-dependencies]");
-    assert_eq!(dev, [("hound".to_owned(), "\"3.5.1\"".to_owned())]);
+    assert_eq!(spec("hound"), "\"3.5.1\"");
+    assert!(!manifest.contains("[dev-dependencies]"));
     assert!(!manifest.contains("sherpa"));
     assert!(!manifest.contains("tauri"));
 }

@@ -4,10 +4,13 @@
 //! `DictationCapture` reamostra para 16 kHz com `rubato`, mantém o pré-buffer de 300 ms e usa o
 //! Silero VAD v4 (`vad-rs`, ADR-0009) para fechar utterances de até 15 s, entregues como
 //! `fala_core::DictationAudio` (que não implementa serialização, ADR-0003).
-//! Ainda por vir: loopback do sistema e o gravador WAV/Opus de reunião (fase 2), e o
-//! `audio_toolkit` do desktop, que migra para cá quando o desktop for ligado aos crates.
+//! Reunião: `meeting::MeetingRecorder` grava mic e sistema (`SystemAudio`) num WAV estéreo 48 kHz
+//! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo).
+//! Ainda por vir: Opus no fim da reunião, e o `audio_toolkit` do desktop, que migra para cá
+//! quando o desktop for ligado aos crates.
 
 mod capture;
+mod meeting;
 mod mic;
 mod resample;
 mod vad;
@@ -17,6 +20,10 @@ use std::path::PathBuf;
 pub use capture::{
     DictationCapture, HANGOVER_FRAMES, MAX_UTTERANCE_SAMPLES, ONSET_FRAMES, PREBUFFER_SAMPLES,
     PRE_ROLL_FRAMES,
+};
+pub use meeting::{
+    ChannelStats, MeetingRecorder, MeetingWav, SystemAudio, FLUSH_EVERY, LAG_FRAMES,
+    MAX_BACKLOG_FRAMES, MEETING_RATE,
 };
 pub use mic::Mic;
 pub use resample::{Resampler, OUT_RATE};
@@ -40,6 +47,13 @@ pub enum AudioError {
     Device(String),
     #[error("configuração do dispositivo: {0}")]
     UnsupportedConfig(String),
-    #[error("stream do microfone: {0}")]
+    #[error("stream: {0}")]
     Stream(String),
+    #[error("áudio do sistema `{name}` não encontrado; disponíveis:\n  {}", available.join("\n  "))]
+    NoSystem {
+        name: String,
+        available: Vec<String>,
+    },
+    #[error("WAV {}: {reason}", path.display())]
+    Wav { path: PathBuf, reason: String },
 }
