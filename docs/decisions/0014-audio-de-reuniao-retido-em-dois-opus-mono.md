@@ -20,7 +20,7 @@ Encoder: o pitch da fase 2 (D2) compara libopus por bindings compilado do fonte,
 ### Consequências
 * Bom: "eu vs eles" preservado por construção; cada arquivo vai direto ao ASR; ~11 MB/h por canal; o Ogg Opus toca em navegadores e players comuns.
 * Ruim: dois arquivos por sessão em vez de um; uma dependência C (libopus) no build, com CMake no Windows (MSVC) e no CI.
-* Ruim, conhecido em 2026-10-04: o `audiopus_sys` 0.2 (binding do libopus usado pelo crate `opus`) está sem manutenção (RUSTSEC-2026-0150, aceito no `deny.toml` com justificativa) e não compila com CMake 4. Se o build no Windows ou no CI esbarrar no CMake 4, vale a saída por FLAC desta ADR.
+* Ruim, conhecido em 2026-10-04: o `audiopus_sys` 0.2 (binding do libopus usado pelo crate `opus`) está sem manutenção (RUSTSEC-2026-0150, aceito no `deny.toml` com justificativa) e não compila com CMake 4 sem ajuda: o CI Windows reprovou com "Compatibility with CMake < 3.5 has been removed". O `.cargo/config.toml` define `CMAKE_POLICY_VERSION_MINIMUM=3.5`, que o CMake 4 lê do ambiente. Se isso deixar de funcionar, vale a saída por FLAC desta ADR.
 * Obrigatório: o WAV de trabalho só é apagado depois de os dois Opus serem decodificados de volta e a contagem de amostras conferir com a do WAV; os arquivos são escritos como `.part` e renomeados só depois da validação. Se o libopus não compilar no CI Windows (trilha G) em 2 dias, a saída é FLAC mono por canal (Rust puro, ~50 % do WAV) até o milestone de qualidade da fase 3, por ADR nova.
 
 ## Confirmação
