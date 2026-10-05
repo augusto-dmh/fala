@@ -23,6 +23,7 @@ fala-storage = { path = "crates/storage" }
 fala-meeting = { path = "crates/meeting" }
 fala-media = { path = "crates/media" }
 fala-mcp = { path = "crates/mcp" }
+fala-notes = { path = "crates/notes" }
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
