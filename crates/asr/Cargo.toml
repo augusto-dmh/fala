@@ -9,12 +9,19 @@ publish.workspace = true
 
 [dependencies]
 fala-core.workspace = true
+fala-meeting.workspace = true
+fala-secrets.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 # O runtime que o desktop e o `fala-cli bench` já usam (ADR-0009).
 transcribe-rs = { version = "0.3.8", features = ["onnx"] }
+# Cliente HTTP da Scribe (reunião, ADR-0005): bloqueante e sem runtime tokio próprio.
+ureq.workspace = true
 
 [dev-dependencies]
 hound = "3.5.1"
+static_assertions.workspace = true
 
 [lints]
 workspace = true

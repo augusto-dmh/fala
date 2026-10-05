@@ -1983,9 +1983,15 @@ name = "fala-asr"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "fala-meeting",
+ "fala-secrets",
  "hound",
+ "serde",
+ "serde_json",
+ "static_assertions",
  "thiserror 2.0.18",
  "transcribe-rs",
+ "ureq",
 ]
 
 [[package]]
