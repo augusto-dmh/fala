@@ -17,14 +17,39 @@ fala-hotkey = { path = "crates/hotkey" }
 fala-audio = { path = "crates/audio" }
 fala-asr = { path = "crates/asr" }
 fala-postproc = { path = "crates/postproc" }
+fala-secrets = { path = "crates/secrets" }
 fala-inject = { path = "crates/inject" }
 fala-storage = { path = "crates/storage" }
+fala-meeting = { path = "crates/meeting" }
+fala-media = { path = "crates/media" }
+fala-mcp = { path = "crates/mcp" }
+fala-notes = { path = "crates/notes" }
+fala-retention = { path = "crates/retention" }
 anyhow = "1"
+chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
+dirs = "6"
+log = "0.4"
+# Só stdio: sem macros (syn 3, darling 0.24) e sem nenhuma feature de rede. Minor fixa: o SDK
+# teve três majors em cinco meses.
+rmcp = { version = "~3.5", default-features = false, features = ["server", "transport-io"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+# Feature padrão `v1`: escolhe o cofre por SO (Credential Manager, Secret Service) sem `cfg` nosso.
+keyring = "4"
+getrandom = "0.3"
+audiopus_sys = { version = "0.2", features = ["static"] }
+hound = "3.5"
+ogg = "0.9"
+opus = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 static_assertions = "1"
+tempfile = "3"
 thiserror = "2"
+tokio = { version = "1", features = ["rt", "time"] }
+toml = { version = "0.9", default-features = false, features = ["std", "parse", "serde"] }
+uuid = { version = "1", features = ["v7"] }
+ureq = "3"
 
 # Opted into by crates/* and apps/cli. apps/desktop (inherited upstream code) does not
 # opt in yet; it moves to these lints as its logic migrates into crates/ in phase 1.
