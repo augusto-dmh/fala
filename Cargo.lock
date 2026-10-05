@@ -402,6 +402,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "audiopus_sys"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62314a1546a2064e033665d658e88c620a62904be945f8147e6b16c3db9f8651"
+dependencies = [
+ "cmake",
+ "log",
+ "pkg-config",
+]
+
+[[package]]
 name = "auto-launch"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1972,13 +1983,29 @@ name = "fala-asr"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "fala-meeting",
+ "fala-secrets",
+ "hound",
+ "serde",
+ "serde_json",
+ "static_assertions",
+ "thiserror 2.0.18",
+ "transcribe-rs",
+ "ureq",
 ]
 
 [[package]]
 name = "fala-audio"
 version = "0.1.0"
 dependencies = [
+ "cpal",
  "fala-core",
+ "hound",
+ "log",
+ "rtrb",
+ "rubato",
+ "thiserror 2.0.18",
+ "vad-rs",
 ]
 
 [[package]]
@@ -1991,7 +2018,10 @@ dependencies = [
  "cpal",
  "dirs 6.0.0",
  "env_logger",
+ "fala-asr",
+ "fala-audio",
  "fala-core",
+ "fala-mcp",
  "fala-media",
  "fala-postproc",
  "fala-secrets",
@@ -2000,6 +2030,8 @@ dependencies = [
  "icu_normalizer",
  "log",
  "rtrb",
+ "rusqlite",
+ "serde_json",
  "transcribe-cpp",
  "transcribe-rs",
 ]
@@ -2032,6 +2064,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fala-mcp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fala-core",
+ "fala-storage",
+ "log",
+ "rmcp",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "fala-media"
 version = "0.1.0"
 dependencies = [
@@ -2051,6 +2098,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fala-notes"
+version = "0.1.0"
+dependencies = [
+ "fala-core",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "ureq",
+]
+
+[[package]]
 name = "fala-postproc"
 version = "0.1.0"
 dependencies = [
@@ -2060,6 +2119,21 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "ureq",
+]
+
+[[package]]
+name = "fala-retention"
+version = "0.1.0"
+dependencies = [
+ "audiopus_sys",
+ "fala-meeting",
+ "hound",
+ "ogg",
+ "opus",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4441,6 +4515,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ogg"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdab8dcd8d4052eaacaf8fb07a3ccd9a6e26efadb42878a413c68fc4af1dee2b"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4519,6 +4602,15 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "opus"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d3809943dff6fbad5f0484449ea26bdb9cb7d8efdf26ed50d3c7f227f69eb5c"
+dependencies = [
+ "audiopus_sys",
+]
 
 [[package]]
 name = "ordered-stream"
@@ -4659,6 +4751,12 @@ name = "pastey"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
+
+[[package]]
+name = "pastey"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pathdiff"
@@ -5553,6 +5651,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmcp"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fae7019994ae0fe4ada40b732f798f3ff26f0f04facb1477f1bf37eb4f18a2d3"
+dependencies = [
+ "chrono",
+ "futures",
+ "indexmap 2.13.0",
+ "pastey 0.2.3",
+ "pin-project-lite",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "rodio"
 version = "0.20.1"
 source = "git+https://github.com/cjpais/rodio.git#fed30292db417cb95305c118c0e1d804fb74cbff"
@@ -5785,7 +5904,7 @@ checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
  "dyn-clone",
  "indexmap 1.9.3",
- "schemars_derive",
+ "schemars_derive 0.8.22",
  "serde",
  "serde_json",
  "url",
@@ -5810,8 +5929,10 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "ref-cast",
+ "schemars_derive 1.2.1",
  "serde",
  "serde_json",
 ]
@@ -5821,6 +5942,18 @@ name = "schemars_derive"
 version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6861,7 +6994,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "pastey",
+ "pastey 0.1.1",
  "tauri",
 ]
 
