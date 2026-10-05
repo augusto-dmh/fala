@@ -16,8 +16,7 @@ rubato = "0.16.2"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 log = "0.4"
 thiserror.workspace = true
-
-[dev-dependencies]
+# O WAV de reunião (door 3 do plano `meeting-recorder`).
 hound = "3.5.1"
 
 [lints]

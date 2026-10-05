@@ -31,6 +31,10 @@ impl Mic {
 
     /// Abre a entrada cujo nome contém `needle`, ou a entrada padrão.
     pub fn open(needle: Option<&str>) -> Result<Self, AudioError> {
+        // Nunca abrir o mic enquanto as variáveis do monitor do PipeWire estão no ambiente.
+        let _guard = crate::meeting::ENV_OPEN
+            .lock()
+            .map_err(|_| AudioError::Device("trava do ambiente envenenada".to_owned()))?;
         let host = cpal::default_host();
         let device = match needle {
             Some(needle) => find(&host, needle)?,
