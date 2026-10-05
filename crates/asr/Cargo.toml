@@ -9,6 +9,12 @@ publish.workspace = true
 
 [dependencies]
 fala-core.workspace = true
+thiserror.workspace = true
+# O runtime que o desktop e o `fala-cli bench` já usam (ADR-0009).
+transcribe-rs = { version = "0.3.8", features = ["onnx"] }
+
+[dev-dependencies]
+hound = "3.5.1"
 
 [lints]
 workspace = true
