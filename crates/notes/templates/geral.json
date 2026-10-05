@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "geral",
+  "name": "Reunião geral",
+  "purpose": "Notas de uma reunião de trabalho com várias pessoas. Quem lê não esteve na reunião, ou esteve e quer lembrar o que foi combinado sem reler a transcrição.",
+  "style": "Frases curtas e diretas, uma ideia por linha. Mantenha nomes, números, datas e valores exatamente como foram ditos. Prefira o que foi decidido ao que foi só discutido. Não invente nada que não esteja na transcrição ou nas anotações.",
+  "sections": [
+    {
+      "title": "Resumo",
+      "instruction": "Três a cinco linhas com o assunto da reunião e o resultado principal."
+    },
+    {
+      "title": "Decisões",
+      "instruction": "Uma linha por decisão tomada, com quem decidiu quando estiver claro. Se nada foi decidido, deixe a seção sem linhas."
+    },
+    {
+      "title": "Próximos passos",
+      "instruction": "Uma linha por tarefa combinada, no formato \"Dono: tarefa (prazo)\". Use \"sem dono\" ou \"sem prazo\" quando a reunião não definiu."
+    }
+  ]
+}

@@ -1,1 +1,7 @@
 [build]
+
+[env]
+# audiopus_sys (libopus, ADR-0014) ships a CMakeLists that declares a minimum below 3.5, which
+# CMake 4 refuses. CMake 4 reads this variable from the environment and configures anyway.
+# If this stops working, ADR-0014's FLAC fallback applies.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

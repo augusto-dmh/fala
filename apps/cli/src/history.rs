@@ -9,7 +9,7 @@ use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
 use fala_storage::{DictationRecord, Store};
 
 /// A pasta do identifier do `tauri.conf.json`, a mesma `app_data_dir` do desktop.
-const APP_DIR: &str = "br.com.augusto.fala";
+pub(crate) const APP_DIR: &str = "br.com.augusto.fala";
 
 /// Falha com o código de saída do contrato: 1 banco ou espelho, 2 entrada inválida.
 pub struct Failure {
