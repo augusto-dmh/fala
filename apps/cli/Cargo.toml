@@ -21,6 +21,7 @@ fala-audio.workspace = true
 fala-asr.workspace = true
 fala-postproc.workspace = true
 fala-secrets.workspace = true
+fala-mcp.workspace = true
 fala-storage.workspace = true
 fala-media.workspace = true
 # Código de spike da fase 0 (`bench`): os dois runtimes de ASR que o desktop já embarca.
@@ -35,6 +36,11 @@ hound = "3.5.1"
 icu_normalizer = { version = "2.1.1", default-features = false, features = ["compiled_data"] }
 log = "0.4.25"
 env_logger = "0.10"
+
+[dev-dependencies]
+# `tests/mcp.rs`: fala JSON-RPC com o binário e quebra o banco no meio de uma sessão.
+rusqlite.workspace = true
+serde_json.workspace = true
 
 [features]
 # GPU só por feature de build; o default é CPU.

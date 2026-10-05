@@ -9,6 +9,7 @@ mod format;
 mod history;
 mod import;
 mod key;
+mod mcp;
 mod record;
 
 use std::io;
@@ -52,6 +53,10 @@ enum Command {
     Reindex(history::DirArgs),
     /// Converte um arquivo de áudio ou vídeo num WAV mono 48 kHz pelo ffmpeg do PATH.
     Import(import::ImportArgs),
+    /// Serve o histórico a assistentes de IA por MCP (stdio, só leitura).
+    ///
+    /// Desligado até `<data-dir>/mcp.toml` ter `enabled = true`. Ditados sensíveis nunca saem.
+    Mcp(mcp::McpArgs),
 }
 
 fn main() -> ExitCode {
@@ -115,6 +120,7 @@ fn main() -> ExitCode {
                 }
             };
         }
+        Command::Mcp(args) => return history_exit(mcp::run(args)),
     };
     log::error!("`{name}` ainda não foi implementado");
     ExitCode::FAILURE
