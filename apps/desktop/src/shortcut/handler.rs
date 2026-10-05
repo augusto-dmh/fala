@@ -4,11 +4,9 @@
 //! used by both the Tauri and handy-keys implementations.
 
 use log::warn;
-use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 use crate::actions::ACTION_MAP;
-use crate::managers::audio::AudioRecordingManager;
 use crate::settings::get_settings;
 use crate::transcription_coordinator::is_transcribe_binding;
 use crate::TranscriptionCoordinator;
@@ -17,7 +15,7 @@ use crate::TranscriptionCoordinator;
 ///
 /// This function contains the shared logic for:
 /// - Looking up the action in ACTION_MAP
-/// - Handling the cancel binding (only fires when recording)
+/// - Handling the cancel binding (only fires while a dictation is in flight)
 /// - Routing transcribe bindings to the coordinator, which applies the
 ///   configured activation mode (toggle / push-to-talk / hold-or-toggle)
 ///
@@ -58,10 +56,13 @@ pub fn handle_shortcut_event(
         return;
     };
 
-    // Cancel binding: only fires when recording and key is pressed
+    // Cancel binding: fires on press while a dictation is in flight —
+    // recording, transcribing or post-processing — and never after it ended.
     if binding_id == "cancel" {
-        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-        if audio_manager.is_recording() && is_pressed {
+        let busy = app
+            .try_state::<TranscriptionCoordinator>()
+            .is_some_and(|c| c.is_busy());
+        if cancel_key_fires(is_pressed, busy) {
             action.start(app, binding_id, hotkey_string);
         }
         return;
@@ -72,5 +73,33 @@ pub fn handle_shortcut_event(
         action.start(app, binding_id, hotkey_string);
     } else {
         action.stop(app, binding_id, hotkey_string);
+    }
+}
+
+/// Whether a cancel key event cancels: a press while the coordinator has a
+/// dictation in flight. Releases and presses with nothing in flight do nothing.
+fn cancel_key_fires(is_pressed: bool, busy: bool) -> bool {
+    is_pressed && busy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cancel_key_fires;
+
+    #[test]
+    fn cancel_key_fires_only_on_press_while_busy() {
+        let cases = [
+            (true, true, true),
+            (true, false, false),
+            (false, true, false),
+            (false, false, false),
+        ];
+        for (is_pressed, busy, expected) in cases {
+            assert_eq!(
+                cancel_key_fires(is_pressed, busy),
+                expected,
+                "is_pressed={is_pressed} busy={busy}"
+            );
+        }
     }
 }

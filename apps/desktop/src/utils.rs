@@ -1,6 +1,5 @@
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::shortcut;
 use crate::TranscriptionCoordinator;
 use log::info;
 use std::sync::Arc;
@@ -102,8 +101,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
 /// could reset a recording started by a press queued meanwhile. Returns
 /// whether a recording was active.
 pub fn abort_current_operation(app: &AppHandle) -> bool {
-    // Unregister the cancel shortcut asynchronously
-    shortcut::unregister_cancel_shortcut(app);
+    // The cancel shortcut is disarmed by the coordinator once it goes idle.
 
     // Cancel any ongoing recording
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();

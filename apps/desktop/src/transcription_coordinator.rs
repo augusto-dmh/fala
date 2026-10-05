@@ -2,6 +2,7 @@ use crate::actions::ACTION_MAP;
 use crate::managers::audio::AudioRecordingManager;
 use crate::settings::ShortcutActivation;
 use log::{debug, error, warn};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -270,6 +271,12 @@ impl CoordinatorState {
             (Some(grace), Some(tap)) => Some(grace.min(tap)),
             (grace, tap) => grace.or(tap),
         }
+    }
+
+    /// A dictation is in flight: recording, or the pipeline still processing
+    /// it. The cancel key is armed exactly while this holds.
+    fn is_busy(&self) -> bool {
+        !matches!(self.stage, Stage::Idle)
     }
 
     /// A short tap is waiting for its second press (double-tap mode).
@@ -655,6 +662,29 @@ impl CoordinatorState {
 /// returned [`Effect`]s.
 pub struct TranscriptionCoordinator {
     tx: Sender<Command>,
+    /// Mirror of [`CoordinatorState::is_busy`] after the last command, for
+    /// the cancel key handler on other threads.
+    busy: Arc<AtomicBool>,
+}
+
+/// Whether the cancel key must be registered or unregistered, given whether
+/// it is armed now and whether a dictation is in flight. `None` leaves it.
+fn cancel_key_change(armed: bool, busy: bool) -> Option<bool> {
+    (armed != busy).then_some(busy)
+}
+
+/// Arm the cancel key while a dictation is in flight and disarm it when the
+/// coordinator goes idle. Evaluated once per command, so a drain that starts
+/// a remembered press goes from processing to recording without a disarm and
+/// rearm whose asynchronous registrations could land out of order.
+fn sync_cancel_key(app: &AppHandle, armed: &mut bool, busy_flag: &AtomicBool, busy: bool) {
+    busy_flag.store(busy, Ordering::SeqCst);
+    match cancel_key_change(*armed, busy) {
+        Some(true) => crate::shortcut::register_cancel_shortcut(app),
+        Some(false) => crate::shortcut::unregister_cancel_shortcut(app),
+        None => return,
+    }
+    *armed = busy;
 }
 
 pub fn is_transcribe_binding(id: &str) -> bool {
@@ -664,10 +694,13 @@ pub fn is_transcribe_binding(id: &str) -> bool {
 impl TranscriptionCoordinator {
     pub fn new(app: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel();
+        let busy = Arc::new(AtomicBool::new(false));
+        let busy_flag = Arc::clone(&busy);
 
         thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut state = CoordinatorState::new();
+                let mut cancel_key_armed = false;
 
                 loop {
                     let cmd = if let Some(deadline) = state.next_deadline() {
@@ -677,6 +710,12 @@ impl TranscriptionCoordinator {
                                 if let Some(effect) = state.on_deadline(Instant::now()) {
                                     run_effect(&app, &mut state, effect);
                                 }
+                                sync_cancel_key(
+                                    &app,
+                                    &mut cancel_key_armed,
+                                    &busy_flag,
+                                    state.is_busy(),
+                                );
                                 continue;
                             }
                             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -703,6 +742,7 @@ impl TranscriptionCoordinator {
                             }
                         }
                     }
+                    sync_cancel_key(&app, &mut cancel_key_armed, &busy_flag, state.is_busy());
                 }
                 debug!("Transcription coordinator exited");
             }));
@@ -711,7 +751,13 @@ impl TranscriptionCoordinator {
             }
         });
 
-        Self { tx }
+        Self { tx, busy }
+    }
+
+    /// Whether a dictation is in flight (recording or processing), as of the
+    /// last command the coordinator handled. The cancel key acts only then.
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::SeqCst)
     }
 
     /// Send a keyboard input event for a transcribe binding. `hold_threshold`
@@ -2057,5 +2103,118 @@ mod tests {
 
         state.pending_release = None;
         assert_eq!(state.next_deadline(), Some(window), "only the window");
+    }
+
+    // ---------------------------------------------------------------------
+    // cancel-anywhere: the stage arms the cancel key while a dictation is in
+    // flight (recording or processing), and only a change touches it.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn is_busy_follows_the_stage() {
+        let t0 = Instant::now();
+
+        // Idle -> Recording -> Processing -> Idle.
+        let mut state = CoordinatorState::new();
+        assert!(!state.is_busy(), "a new coordinator is idle");
+        assert!(matches!(
+            state.on_input(dt(true), t0),
+            Some(Effect::Start { .. })
+        ));
+        assert!(state.is_busy(), "recording is busy");
+        assert!(state.on_input(dt(false), t0 + ms(400)).is_none());
+        assert!(matches!(
+            state.on_deadline(t0 + ms(400) + RELEASE_GRACE),
+            Some(Effect::Stop { .. })
+        ));
+        assert_eq!(state.stage, Stage::Processing);
+        assert!(state.is_busy(), "processing is busy");
+        assert!(state.on_processing_finished().is_none());
+        assert!(!state.is_busy(), "drained pipeline is idle");
+
+        // A lone tap discarded when its window runs out.
+        let mut state = CoordinatorState::new();
+        assert!(dt_tap(&mut state, t0, ms(100)).is_none());
+        assert!(state.is_busy(), "the open double-tap window still records");
+        assert!(matches!(
+            state.on_deadline(t0 + DOUBLE_TAP_WINDOW),
+            Some(Effect::Discard { .. })
+        ));
+        assert!(!state.is_busy(), "a discard leaves the coordinator idle");
+
+        // A cancel while recording.
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_input(dt(true), t0),
+            Some(Effect::Start { .. })
+        ));
+        state.on_cancel(true);
+        assert!(!state.is_busy(), "a cancel while recording leaves it idle");
+
+        // A start the microphone refused.
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_input(dt(true), t0),
+            Some(Effect::Start { .. })
+        ));
+        state.on_start_result(BINDING, false);
+        assert!(!state.is_busy(), "a failed start rolls back to idle");
+    }
+
+    #[test]
+    fn cancel_during_processing_stays_busy_until_drained() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        hold_or_toggle_into_processing(&mut state, t0);
+        // A press remembered while busy, then the cancel.
+        assert!(state
+            .on_input(input(ShortcutActivation::HoldOrToggle, true), t0 + ms(1000))
+            .is_none());
+
+        state.on_cancel(false);
+        assert!(
+            state.is_busy(),
+            "the pipeline is still running; the coordinator waits for it"
+        );
+
+        assert!(
+            state.on_processing_finished().is_none(),
+            "the cancel abandoned the remembered press"
+        );
+        assert!(!state.is_busy());
+    }
+
+    #[test]
+    fn drain_with_remembered_press_stays_busy() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        hold_or_toggle_into_processing(&mut state, t0);
+        assert!(state.on_input(ptt_input(true), t0 + ms(1000)).is_none());
+        assert!(state.is_busy());
+
+        let effect = state.on_processing_finished();
+        assert!(matches!(effect, Some(Effect::Start { .. })));
+        assert_eq!(state.stage, Stage::Recording(BINDING.to_string()));
+        assert!(
+            state.is_busy(),
+            "processing went straight to recording; the cancel key stays armed"
+        );
+    }
+
+    #[test]
+    fn cancel_key_changes_only_when_busy_flips() {
+        let cases = [
+            (false, false, None),
+            (false, true, Some(true)),
+            (true, false, Some(false)),
+            (true, true, None),
+        ];
+        for (armed, busy, expected) in cases {
+            assert_eq!(
+                cancel_key_change(armed, busy),
+                expected,
+                "armed={armed} busy={busy}"
+            );
+        }
     }
 }
