@@ -2,7 +2,10 @@
 
 Pré-requisitos e problemas conhecidos para compilar o Fala no Windows 11 (alvo da fase 1). Podado do `BUILD.md` do upstream; as partes de macOS e empacotamento Linux ficaram de fora.
 
-TODO(windows): este guia ainda não foi executado numa máquina Windows limpa. Revisar na primeira build.
+Executado em 2026-09-29 num Alienware 16 (Windows 11 Pro 25H2, build 10.0.26200.9457) com Rust
+1.98.1, Bun 1.4.2, CMake 4.4.3 e Vulkan SDK 1.4.357.0: `cargo build --release -p fala-cli` em
+2 min 18 s e `bun run tauri build` em 12 min 8 s (instaladores NSIS e MSI), sem erro de path-limit
+e sem `CARGO_TARGET_DIR` curto. A máquina não era limpa (as ferramentas já estavam instaladas).
 
 ## Pré-requisitos
 
@@ -56,6 +59,29 @@ $env:CARGO_TARGET_DIR = "C:\f"
 ```
 
 Para fixar a variável para todos os terminais: `[Environment]::SetEnvironmentVariable('CARGO_TARGET_DIR', 'C:\f', 'User')`. Isso redireciona a build de todos os projetos Rust, não só a do Fala.
+
+### `bunx: command not found` nos hooks
+
+O Bun instalado pelo `winget` (`Oven-sh.Bun`) traz só o `bun.exe`, e o `lefthook` chama `bunx`.
+Na instalação oficial, o `bunx.exe` é um hardlink do `bun.exe` (o Bun decide o que fazer pelo nome
+do executável). Crie o mesmo na pasta do Bun:
+
+```powershell
+$d = Split-Path (Get-Command bun).Source
+New-Item -ItemType HardLink -Path "$d\bunx.exe" -Target "$d\bun.exe"
+```
+
+### `prettier --check` reprova arquivos que você não tocou
+
+O Git for Windows grava `core.autocrlf=true` no gitconfig do sistema, e o checkout sai com CRLF. O
+Prettier do hook de pre-commit exige LF e reprova o repositório inteiro. Desligue a conversão só
+neste clone, antes do primeiro commit (o `reset --hard` descarta mudanças não commitadas):
+
+```powershell
+git config --local core.autocrlf false
+git rm -rq --cached .
+git reset --hard
+```
 
 ### `LNK1181: cannot open input file 'vulkan-1.lib'`
 
