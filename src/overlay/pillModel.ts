@@ -31,11 +31,18 @@ export function toPillMode(event: OverlayEvent): PillMode | null {
   }
 }
 
-/** Red while the key is held: push-to-talk, and hold-or-toggle (which starts as a hold). */
+/**
+ * Red while the key is held: push-to-talk, and the modes that start as a hold
+ * (hold-or-toggle and the default hold-or-double-tap).
+ */
 export function isHoldToTalk(
   activation: ShortcutActivation | undefined,
 ): boolean {
-  return activation === "push_to_talk" || activation === "hold_or_toggle";
+  return (
+    activation === "push_to_talk" ||
+    activation === "hold_or_toggle" ||
+    activation === "push_to_talk_double_tap"
+  );
 }
 
 function barHeight(level: number | undefined): number {
