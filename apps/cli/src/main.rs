@@ -4,10 +4,13 @@
 //! Os subcomandos são stubs no dia 1; cada um ganha implementação na fase 0 ou 1.
 
 mod bench;
+mod dictate;
 mod format;
 mod history;
 mod import;
 mod key;
+mod mcp;
+mod meeting;
 mod record;
 
 use std::io;
@@ -30,8 +33,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Grava do microfone até Enter, transcreve e imprime o texto.
-    Dictate,
+    /// Dita pelo microfone (Enter começa, Enter termina) ou por um WAV e imprime o texto.
+    Dictate(dictate::DictateArgs),
+    /// Grava uma reunião: mic e áudio do sistema num WAV estéreo até Enter.
+    Meeting(meeting::MeetingArgs),
     /// Grava microfone e áudio do sistema em dois canais e mede o drift entre eles.
     Record(record::RecordArgs),
     /// Transcreve um arquivo de áudio.
@@ -51,13 +56,34 @@ enum Command {
     Reindex(history::DirArgs),
     /// Converte um arquivo de áudio ou vídeo num WAV mono 48 kHz pelo ffmpeg do PATH.
     Import(import::ImportArgs),
+    /// Serve o histórico a assistentes de IA por MCP (stdio, só leitura).
+    ///
+    /// Desligado até `<data-dir>/mcp.toml` ter `enabled = true`. Ditados sensíveis nunca saem.
+    Mcp(mcp::McpArgs),
 }
 
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
     let name = match cli.command {
-        Command::Dictate => "dictate",
+        Command::Dictate(args) => {
+            return match dictate::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
+        Command::Meeting(args) => {
+            return match meeting::run(args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(failure) => {
+                    log::error!("{:#}", failure.error);
+                    ExitCode::from(failure.code)
+                }
+            };
+        }
         Command::Record(args) => {
             return match record::run(args) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -106,6 +132,7 @@ fn main() -> ExitCode {
                 }
             };
         }
+        Command::Mcp(args) => return history_exit(mcp::run(args)),
     };
     log::error!("`{name}` ainda não foi implementado");
     ExitCode::FAILURE

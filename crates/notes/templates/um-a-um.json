@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "um-a-um",
+  "name": "1:1",
+  "purpose": "Notas de uma conversa individual recorrente entre duas pessoas, em geral liderança e liderado. Servem para acompanhar a pessoa entre um 1:1 e o seguinte.",
+  "style": "Tom neutro e respeitoso, sem julgamento. Registre o que a pessoa disse com as palavras dela quando o ponto for sensível. Não invente nada que não esteja na transcrição ou nas anotações.",
+  "sections": [
+    {
+      "title": "Como a pessoa está",
+      "instruction": "Duas a três linhas sobre ânimo, carga de trabalho e o que preocupa, só se aparecer na conversa."
+    },
+    {
+      "title": "Assuntos",
+      "instruction": "Uma linha por tema discutido, com o ponto principal de cada um."
+    },
+    {
+      "title": "Feedback",
+      "instruction": "Feedback dado ou recebido, em qualquer direção, uma linha por item."
+    },
+    {
+      "title": "Combinados",
+      "instruction": "Uma linha por compromisso, no formato \"Dono: compromisso (prazo)\"."
+    }
+  ]
+}
