@@ -1983,13 +1983,23 @@ name = "fala-asr"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "hound",
+ "thiserror 2.0.18",
+ "transcribe-rs",
 ]
 
 [[package]]
 name = "fala-audio"
 version = "0.1.0"
 dependencies = [
+ "cpal",
  "fala-core",
+ "hound",
+ "log",
+ "rtrb",
+ "rubato",
+ "thiserror 2.0.18",
+ "vad-rs",
 ]
 
 [[package]]
@@ -2002,6 +2012,8 @@ dependencies = [
  "cpal",
  "dirs 6.0.0",
  "env_logger",
+ "fala-asr",
+ "fala-audio",
  "fala-core",
  "fala-mcp",
  "fala-media",
@@ -2077,6 +2089,18 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "fala-notes"
+version = "0.1.0"
+dependencies = [
+ "fala-core",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "ureq",
 ]
 
 [[package]]

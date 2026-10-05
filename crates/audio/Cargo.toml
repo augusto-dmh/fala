@@ -9,6 +9,16 @@ publish.workspace = true
 
 [dependencies]
 fala-core.workspace = true
+# As mesmas versões e a mesma fonte git que o `apps/desktop` usa (ADR-0009).
+cpal = "0.16.0"
+rtrb = "0.4.0"
+rubato = "0.16.2"
+vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
+log = "0.4"
+thiserror.workspace = true
+
+[dev-dependencies]
+hound = "3.5.1"
 
 [lints]
 workspace = true

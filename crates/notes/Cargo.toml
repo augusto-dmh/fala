@@ -1,6 +1,6 @@
 [package]
-name = "fala-asr"
-description = "Reconhecimento de fala plugável."
+name = "fala-notes"
+description = "Notas de reunião geradas por LLM a partir da transcrição e das anotações."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,11 @@ publish.workspace = true
 
 [dependencies]
 fala-core.workspace = true
+log = "0.4"
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
-# O runtime que o desktop e o `fala-cli bench` já usam (ADR-0009).
-transcribe-rs = { version = "0.3.8", features = ["onnx"] }
-
-[dev-dependencies]
-hound = "3.5.1"
+ureq = "3"
 
 [lints]
 workspace = true
