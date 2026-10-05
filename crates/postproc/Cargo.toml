@@ -9,6 +9,11 @@ publish.workspace = true
 
 [dependencies]
 fala-core.workspace = true
+fala-secrets.workspace = true
+log = "0.4"
+serde_json.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
 
 [lints]
 workspace = true

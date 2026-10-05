@@ -26,7 +26,7 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": false,
-    "targets": "all",
+    "targets": ["nsis", "deb", "rpm", "appimage"],
     "resources": ["resources/**/*"],
     "license": "MIT",
     "icon": [
@@ -70,8 +70,14 @@
       }
     },
     "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
       "nsis": {
-        "template": "nsis/installer.nsi"
+        "template": "nsis/installer.nsi",
+        "installMode": "currentUser",
+        "languages": ["PortugueseBR", "English"],
+        "displayLanguageSelector": false
       }
     }
   },

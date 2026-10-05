@@ -228,9 +228,20 @@ fn click_output_failure_exits_2() {
         .env("ALSA_CONFIG_PATH", "/nonexistent/alsa.conf")
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
-    assert!(stderr(&o).contains("--no-click"), "{}", stderr(&o));
+    let err = stderr(&o);
+    assert_eq!(o.status.code(), Some(2), "{err}");
     assert!(!wav.exists(), "recording started");
+    // `ALSA_CONFIG_PATH` só derruba o áudio onde o host do cpal é o ALSA. Em outro host (WASAPI) a
+    // saída do clique abre e a execução para depois, no `--system x`, listando saídas reais: ali
+    // não há falha do clique para conferir. Com o áudio derrubado, a lista sai vazia ou nem sai.
+    let real_outputs = err
+        .lines()
+        .skip_while(|l| !l.contains("saídas disponíveis:"))
+        .skip(1)
+        .any(|l| !l.trim().is_empty());
+    if !real_outputs {
+        assert!(err.contains("--no-click"), "{err}");
+    }
 }
 
 #[test]
