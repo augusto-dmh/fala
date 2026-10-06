@@ -2,6 +2,9 @@ import { listen } from "@tauri-apps/api/event";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
+import "./Pill.css";
+import { Pill } from "./Pill";
+import { isHoldToTalk, toPillMode } from "./pillModel";
 import { commands, events } from "@/bindings";
 import type {
   StreamPhase,
@@ -26,11 +29,16 @@ const RecordingOverlay: React.FC = () => {
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
   const [captureReady, setCaptureReady] = useState(false);
+  // The recording is close to the session limit (19 of 20 minutes): the dot
+  // turns amber until the overlay hides or a new session shows.
+  const [limitWarning, setLimitWarning] = useState(false);
   const [levels, setLevels] = useState<number[]>(Array(WAVE_BARS).fill(0));
   const [streamText, setStreamText] = useState<StreamTextEvent>({
     committed: "",
     tentative: "",
   });
+  // Push-to-talk style activation: the minimal pill turns red while recording.
+  const [holdToTalk, setHoldToTalk] = useState(false);
   const [phase, setPhase] = useState<StreamPhase>("listening");
   const [workKind, setWorkKind] = useState<StreamWorkKind>("transcribing");
   const [elapsed, setElapsed] = useState(0);
@@ -61,6 +69,7 @@ const RecordingOverlay: React.FC = () => {
         // them would overwrite that event and leave the overlay stuck arming.
         if (overlayState === "recording" || overlayState === "streaming") {
           setCaptureReady(false);
+          setLimitWarning(false);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
           setStreamText({ committed: "", tentative: "" });
@@ -75,6 +84,7 @@ const RecordingOverlay: React.FC = () => {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
+            setHoldToTalk(isHoldToTalk(settings.data.shortcut_activation));
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -92,6 +102,11 @@ const RecordingOverlay: React.FC = () => {
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
+        setLimitWarning(false);
+      });
+
+      const unlistenLimit = await listen("recording-limit-warning", () => {
+        setLimitWarning(true);
       });
 
       const unlistenReady = await listen("recording-ready", () => {
@@ -125,6 +140,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenShow();
         unlistenHide();
         unlistenReady();
+        unlistenLimit();
         unlistenLevel();
         unlistenStream();
         unlistenPhase();
@@ -205,7 +221,9 @@ const RecordingOverlay: React.FC = () => {
   const listeningRow = (showTimer: boolean, showCancel: boolean) => (
     <div className="sbase">
       <div className="sbase-l">
-        <span className={`sdot ${captureReady ? "ready" : "arming"}`} />
+        <span
+          className={`sdot ${captureReady ? "ready" : "arming"}${limitWarning ? " limit" : ""}`}
+        />
       </div>
       {waveform}
       <div className="sbase-r">
@@ -279,25 +297,28 @@ const RecordingOverlay: React.FC = () => {
     );
   }
 
-  // ---- Minimal overlay: exactly one row at a time — waveform (recording), or a
-  // spinner + label (transcribing / processing). Never both. The pill animates its
-  // width between them; the cancel button is in both rows so it stays put.
-  const working = state === "transcribing" || state === "processing";
-  const workLabel =
-    state === "processing"
-      ? t("overlay.processing")
-      : t("overlay.transcribing");
+  // ---- Minimal overlay: the phase 1 pill. Recording draws ten bars that follow
+  // the mic (red while the key is held); transcribing and processing share one
+  // still, pulsing state. No icon and no text; cancelling stays on Esc.
+  const pillMode = toPillMode(state) ?? "recording";
 
   return (
     <div
       dir={direction}
       className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
     >
-      <div
-        className={`scard compact ${working && isVisible ? "cworking" : ""}`}
-      >
-        {working ? workingRow(workLabel, true) : listeningRow(false, true)}
-      </div>
+      <Pill
+        mode={pillMode}
+        holdToTalk={holdToTalk}
+        limit={limitWarning}
+        ready={captureReady}
+        levels={levels}
+        label={
+          pillMode === "recording"
+            ? t("overlay.recording")
+            : t("overlay.processing")
+        }
+      />
     </div>
   );
 };

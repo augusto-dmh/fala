@@ -891,6 +891,28 @@ async retryHistoryEntryTranscription(id: number) : Promise<Result<null, string>>
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * "Desfazer edição da IA": the entry's dictation shows its raw text again.
+ */
+async undoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("undo_history_entry_edit", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Reaplicar edição da IA": the entry's dictation shows its edited text again.
+ */
+async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("redo_history_entry_edit", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateHistoryLimit(limit: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_history_limit", { limit }) };
@@ -1019,7 +1041,27 @@ export type EngineType =
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
-export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
+/**
+ * O item de `fala.sqlite` ligado a uma linha do histórico.
+ */
+export type HistoryDictation = { raw_text: string; final_text: string; editor: HistoryEditor; showing: HistoryShowing; app_name: string | null }
+/**
+ * Quem produziu o texto final de um item, como o front o recebe.
+ */
+export type HistoryEditor = "none" | "rules" | "llm"
+export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
+/**
+ * The linked dictation in fala.sqlite, if any.
+ */
+dictation_id: string | null; 
+/**
+ * That dictation (raw, final, editor, what it shows, app), when the store can read it.
+ */
+dictation: HistoryDictation | null }
+/**
+ * Qual texto o item mostra agora: o final ou, depois de desfazer, o bruto.
+ */
+export type HistoryShowing = "final" | "raw"
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
  * Result of changing keyboard implementation
@@ -1128,7 +1170,13 @@ export type ShortcutActivation =
  * next press. Which one it was is decided by how long the key was held
  * (`hold_threshold_ms`).
  */
-"hold_or_toggle"
+"hold_or_toggle" | 
+/**
+ * Hold to record and release to stop; two taps within 500 ms keep
+ * recording until the next press; a lone short tap (`hold_threshold_ms`)
+ * is discarded without transcribing.
+ */
+"push_to_talk_double_tap"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**

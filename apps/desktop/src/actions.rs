@@ -3,12 +3,11 @@ use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::history::HistoryManager;
+use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
-use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
@@ -113,6 +112,24 @@ where
             return Some(result);
         }
     }
+}
+
+/// The last cancellation check of a dictation: a cancel that landed before it
+/// leaves no trace (nothing pasted, no history entry); otherwise the text is
+/// pasted first and the history entry saved after it. Returns whether the
+/// dictation was delivered.
+fn deliver_unless_cancelled<C, P, S>(is_cancelled: C, paste: P, save: S) -> bool
+where
+    C: FnOnce() -> bool,
+    P: FnOnce(),
+    S: FnOnce(),
+{
+    if is_cancelled() {
+        return false;
+    }
+    paste();
+    save();
+    true
 }
 
 fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool {
@@ -597,10 +614,9 @@ impl ShortcutAction for TranscribeAction {
             }
         }
 
-        if recording_error.is_none() {
-            // Dynamically register the cancel shortcut in a separate task to avoid deadlock
-            shortcut::register_cancel_shortcut(app);
-        } else {
+        // The cancel shortcut is armed by the transcription coordinator for as
+        // long as the dictation is in flight, not here.
+        if recording_error.is_some() {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
             tm.cancel_stream();
@@ -635,9 +651,6 @@ impl ShortcutAction for TranscribeAction {
         // after the user has already requested stop.
         app.state::<Arc<AudioRecordingManager>>()
             .invalidate_recording_readiness();
-
-        // Unregister the cancel shortcut when transcription stops
-        shortcut::unregister_cancel_shortcut(app);
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
@@ -794,20 +807,37 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
-                            // Save to history if WAV was saved
-                            if wav_saved {
-                                if let Err(err) = hm.save_entry(
-                                    file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
-                                    error!("Failed to save history entry: {}", err);
+                            // Save to history if WAV was saved — only through
+                            // `deliver_unless_cancelled`, so a cancel either
+                            // suppresses both paste and history (history.db and
+                            // fala.sqlite) or neither.
+                            let post_processed_text = processed.post_processed_text.clone();
+                            let post_process_prompt = processed.post_process_prompt.clone();
+                            let pasted_text = processed.final_text.clone();
+                            let save_history = move || {
+                                if wav_saved {
+                                    if let Err(err) = hm.save_entry(NewEntry {
+                                        file_name,
+                                        post_process_requested: post_process,
+                                        texts: EntryTexts {
+                                            transcription_text: transcription,
+                                            post_processed_text,
+                                            post_process_prompt,
+                                            pasted_text,
+                                        },
+                                        app: fala_inject::foreground_app(),
+                                    }) {
+                                        error!("Failed to save history entry: {}", err);
+                                    }
                                 }
-                            }
+                            };
 
                             if processed.final_text.is_empty() {
+                                deliver_unless_cancelled(
+                                    || rm.was_cancelled_since(cancel_generation),
+                                    || {},
+                                    save_history,
+                                );
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                             } else {
@@ -816,22 +846,22 @@ impl ShortcutAction for TranscribeAction {
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
                                 ah.run_on_main_thread(move || {
-                                    if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                    let delivered = deliver_unless_cancelled(
+                                        || rm_for_paste.was_cancelled_since(cancel_generation),
+                                        || match utils::paste(final_text, ah_clone.clone()) {
+                                            Ok(()) => debug!(
+                                                "Text pasted successfully in {:?}",
+                                                paste_time.elapsed()
+                                            ),
+                                            Err(e) => {
+                                                error!("Failed to paste transcription: {}", e);
+                                                let _ = ah_clone.emit("paste-error", ());
+                                            }
+                                        },
+                                        save_history,
+                                    );
+                                    if !delivered {
                                         debug!("Transcription operation cancelled before paste");
-                                        utils::hide_recording_overlay(&ah_clone);
-                                        set_tray_state(&ah_clone, TrayIconState::Idle);
-                                        return;
-                                    }
-
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
-                                        Err(e) => {
-                                            error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
-                                        }
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
@@ -859,13 +889,17 @@ impl ShortcutAction for TranscribeAction {
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
                             if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
+                                if let Err(save_err) = hm.save_entry(NewEntry {
                                     file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
+                                    post_process_requested: post_process,
+                                    texts: EntryTexts {
+                                        transcription_text: String::new(),
+                                        post_processed_text: None,
+                                        post_process_prompt: None,
+                                        pasted_text: String::new(),
+                                    },
+                                    app: Default::default(),
+                                }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }
@@ -953,8 +987,8 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        complete_unless_cancelled, deliver_unless_cancelled, is_blank_transcription,
+        should_use_streaming_overlay, strip_think_block,
     };
     use crate::settings::OverlayStyle;
     use std::future;
@@ -1036,5 +1070,30 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    #[test]
+    fn delivery_is_all_or_nothing_after_the_last_check() {
+        use std::cell::RefCell;
+
+        // Cancelled before the last check: nothing pasted, nothing saved.
+        let calls = RefCell::new(Vec::new());
+        let delivered = deliver_unless_cancelled(
+            || true,
+            || calls.borrow_mut().push("paste"),
+            || calls.borrow_mut().push("save"),
+        );
+        assert!(!delivered);
+        assert!(calls.borrow().is_empty(), "got {:?}", calls.borrow());
+
+        // Not cancelled: paste, then save, once each.
+        let calls = RefCell::new(Vec::new());
+        let delivered = deliver_unless_cancelled(
+            || false,
+            || calls.borrow_mut().push("paste"),
+            || calls.borrow_mut().push("save"),
+        );
+        assert!(delivered);
+        assert_eq!(*calls.borrow(), vec!["paste", "save"]);
     }
 }

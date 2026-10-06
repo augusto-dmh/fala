@@ -15,6 +15,7 @@ apps/desktop/gen
 # Generated files
 src/bindings.ts
 apps/desktop/src/catalog/catalog.json
+.specs/lessons.json
 
 # Misc
 .DS_Store

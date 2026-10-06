@@ -5,6 +5,9 @@
     "copyLastTranscript": "Copiar última transcrição",
     "unloadModel": "Descarregar modelo",
     "model": "Modelo",
+    "dictationLanguage": "Idioma do ditado",
+    "languagePtBr": "Português (Brasil)",
+    "languageEn": "Inglês",
     "quit": "Sair",
     "cancel": "Cancelar",
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
@@ -198,11 +201,13 @@
         "title": "Comportamento do atalho",
         "description": "Escolha como o atalho de transcrição inicia e para a gravação.",
         "options": {
+          "pushToTalkDoubleTap": "Segurar ou dois toques",
           "holdOrToggle": "Automático",
           "pushToTalk": "Segurar",
           "toggle": "Alternar"
         },
         "descriptions": {
+          "push_to_talk_double_tap": "Segure para gravar e solte para parar. Toque duas vezes para gravar sem segurar e toque de novo para parar. Um toque só é ignorado",
           "hold_or_toggle": "Segure para gravar ou toque para alternar",
           "push_to_talk": "Grava enquanto você mantém o atalho pressionado",
           "toggle": "Toque no atalho para começar a gravar, toque novamente para parar"
@@ -468,7 +473,13 @@
       "retranscribe": "Re-transcrever",
       "retranscribeError": "Falha ao re-transcrever. Por favor, tente novamente.",
       "transcribing": "Transcrevendo...",
-      "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente."
+      "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente.",
+      "undoAiEdit": "Desfazer edição da IA",
+      "redoAiEdit": "Reaplicar edição da IA",
+      "originalCopied": "Texto original copiado",
+      "editedCopied": "Texto editado copiado",
+      "editToggleError": "Não foi possível trocar o texto",
+      "inApp": "em {{app}}"
     },
     "debug": {
       "title": "Depuração",
@@ -693,6 +704,7 @@
     }
   },
   "overlay": {
+    "recording": "Gravando",
     "transcribing": "Transcrevendo...",
     "processing": "Processando..."
   },
