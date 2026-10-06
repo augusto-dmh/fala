@@ -5,6 +5,9 @@
     "copyLastTranscript": "Copiar última transcrição",
     "unloadModel": "Descarregar modelo",
     "model": "Modelo",
+    "dictationLanguage": "Idioma do ditado",
+    "languagePtBr": "Português (Brasil)",
+    "languageEn": "Inglês",
     "quit": "Sair",
     "cancel": "Cancelar",
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"

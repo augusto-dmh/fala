@@ -322,6 +322,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "quit" => {
                 app.exit(0);
             }
+            id if id.starts_with(tray::LANGUAGE_ITEM_PREFIX) => {
+                if let Some(tag) = tray::parse_language_item(id) {
+                    if let Err(e) =
+                        shortcut::change_selected_language_setting(app.clone(), tag.to_string())
+                    {
+                        log::error!("Failed to change the dictation language via tray: {}", e);
+                    }
+                }
+            }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
