@@ -1,10 +1,13 @@
 use crate::utils;
+use fala_secrets::{validate_provider, ApiKey, KeyringStore, SecretStore};
 use log::{debug, warn};
+use once_cell::sync::Lazy;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -167,8 +170,12 @@ pub enum ShortcutActivation {
     /// Hold to record and release to stop, or tap to keep recording until the
     /// next press. Which one it was is decided by how long the key was held
     /// (`hold_threshold_ms`).
-    #[default]
     HoldOrToggle,
+    /// Hold to record and release to stop; two taps within 500 ms keep
+    /// recording until the next press; a lone short tap (`hold_threshold_ms`)
+    /// is discarded without transcribing.
+    #[default]
+    PushToTalkDoubleTap,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
@@ -351,6 +358,125 @@ impl std::ops::DerefMut for SecretMap {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
+}
+
+/// The post-processing API keys live in the OS keyring (ADR-0008), under the same entries as
+/// `fala-cli key set`; `settings_store.json` keeps `""` for each one. In memory (and over IPC to
+/// the UI) `post_process_api_keys` still carries the values, so callers do not change.
+struct KeyVault {
+    store: Arc<dyn SecretStore>,
+    /// What this process knows is in the keyring per provider (`""` = absent or unreadable).
+    known: Mutex<HashMap<String, String>>,
+}
+
+static KEY_VAULT: Lazy<KeyVault> = Lazy::new(|| KeyVault::new(Arc::new(KeyringStore)));
+
+impl KeyVault {
+    fn new(store: Arc<dyn SecretStore>) -> Self {
+        Self {
+            store,
+            known: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Fills every empty key with the keyring's. A non-empty key from the JSON wins: it is
+    /// either a legacy plaintext key or one the keyring refused, and `to_disk` migrates it.
+    fn hydrate(&self, keys: &mut SecretMap) {
+        let Ok(mut known) = self.known.lock() else {
+            return;
+        };
+        for (provider, value) in keys.iter_mut() {
+            if !value.is_empty() || validate_provider(provider).is_err() {
+                continue;
+            }
+            if let Some(cached) = known.get(provider) {
+                value.clone_from(cached);
+                continue;
+            }
+            let found = match self.store.get(provider) {
+                Ok(Some(key)) => key.expose().to_string(),
+                Ok(None) => String::new(),
+                Err(error) => {
+                    warn!("Could not read the {provider} API key from the OS keyring: {error}");
+                    String::new()
+                }
+            };
+            value.clone_from(&found);
+            known.insert(provider.clone(), found);
+        }
+    }
+
+    /// Writes changed keys to the keyring and returns the map for the JSON: `""` for every key
+    /// the keyring confirmed, the plaintext only where the keyring refused it. A key is never
+    /// blanked before it is read back equal from the keyring.
+    fn to_disk(&self, keys: &SecretMap) -> SecretMap {
+        let mut disk = keys.clone();
+        let Ok(mut known) = self.known.lock() else {
+            return disk;
+        };
+        for (provider, value) in disk.iter_mut() {
+            if validate_provider(provider).is_err() {
+                if !value.is_empty() {
+                    warn!("{}", key_kept_warning(provider, "invalid provider id"));
+                }
+                continue;
+            }
+            let previous = known.get(provider).cloned().unwrap_or_default();
+            if value.is_empty() {
+                // Only delete a key this process saw in the keyring and the user then cleared.
+                if !previous.is_empty() {
+                    match self.store.delete(provider) {
+                        Ok(()) => {
+                            known.insert(provider.clone(), String::new());
+                        }
+                        Err(error) => warn!(
+                            "Could not delete the {provider} API key from the OS keyring: {error}"
+                        ),
+                    }
+                }
+                continue;
+            }
+            if *value == previous {
+                value.clear();
+                continue;
+            }
+            match self.store_confirmed(provider, value) {
+                Ok(()) => {
+                    known.insert(provider.clone(), value.clone());
+                    value.clear();
+                }
+                Err(reason) => warn!("{}", key_kept_warning(provider, &reason)),
+            }
+        }
+        disk
+    }
+
+    /// `set`, then `get` must return the same value.
+    fn store_confirmed(&self, provider: &str, value: &str) -> Result<(), String> {
+        let key = ApiKey::new(value).map_err(|e| e.to_string())?;
+        self.store.set(provider, &key).map_err(|e| e.to_string())?;
+        match self.store.get(provider) {
+            Ok(Some(read)) if read == key => Ok(()),
+            Ok(_) => Err("the keyring returned a different value".to_string()),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
+/// Names the provider and the reason, never the key.
+fn key_kept_warning(provider: &str, reason: &str) -> String {
+    format!("API key for {provider} stays in {SETTINGS_STORE_PATH}: {reason}")
+}
+
+/// The `settings` value written to the store: the API keys go to the keyring first.
+fn to_store_value(settings: &AppSettings) -> serde_json::Value {
+    store_value(&KEY_VAULT, settings)
+}
+
+fn store_value(vault: &KeyVault, settings: &AppSettings) -> serde_json::Value {
+    let mut on_disk = settings.clone();
+    on_disk.post_process_api_keys = vault.to_disk(&settings.post_process_api_keys);
+    serde_json::to_value(&on_disk).unwrap()
 }
 
 /* still fala for composing the initial JSON in the store ------------- */
@@ -559,7 +685,8 @@ fn default_whats_new_last_seen_version() -> String {
 }
 
 fn default_selected_language() -> String {
-    "auto".to_string()
+    // The phase 1 pitch dictates in pt-BR; the tag matches the S0 contract.
+    "pt-BR".to_string()
 }
 
 fn default_overlay_position() -> OverlayPosition {
@@ -856,14 +983,16 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
+    // Dictation sits on <mod>+shift+space, the gesture of the phase 1 pitch;
+    // the post-processing binding takes the plain <mod>+space it replaced.
     #[cfg(target_os = "windows")]
-    let default_shortcut = "ctrl+space";
+    let default_shortcut = "ctrl+shift+space";
     #[cfg(target_os = "macos")]
-    let default_shortcut = "option+space";
+    let default_shortcut = "option+shift+space";
     #[cfg(target_os = "linux")]
-    let default_shortcut = "ctrl+space";
+    let default_shortcut = "ctrl+shift+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_shortcut = "alt+space";
+    let default_shortcut = "alt+shift+space";
 
     let mut bindings = HashMap::new();
     bindings.insert(
@@ -877,13 +1006,13 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     #[cfg(target_os = "windows")]
-    let default_post_process_shortcut = "ctrl+shift+space";
+    let default_post_process_shortcut = "ctrl+space";
     #[cfg(target_os = "macos")]
-    let default_post_process_shortcut = "option+shift+space";
+    let default_post_process_shortcut = "option+space";
     #[cfg(target_os = "linux")]
-    let default_post_process_shortcut = "ctrl+shift+space";
+    let default_post_process_shortcut = "ctrl+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_post_process_shortcut = "alt+shift+space";
+    let default_post_process_shortcut = "alt+space";
 
     bindings.insert(
         "transcribe_with_post_process".to_string(),
@@ -928,7 +1057,7 @@ pub fn get_default_settings() -> AppSettings {
         clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
-        selected_language: "auto".to_string(),
+        selected_language: default_selected_language(),
         overlay_position: default_overlay_position(),
         debug_mode: false,
         log_level: default_log_level(),
@@ -1028,6 +1157,16 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
                 }
             };
 
+        // A non-empty key in the JSON is plaintext still to migrate to the keyring.
+        if settings
+            .post_process_api_keys
+            .values()
+            .any(|v| !v.is_empty())
+        {
+            updated = true;
+        }
+        KEY_VAULT.hydrate(&mut settings.post_process_api_keys);
+
         if apply_settings_migrations(&mut settings, &settings_value) {
             updated = true;
         }
@@ -1042,18 +1181,20 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         }
 
         if updated {
-            store.set("settings", serde_json::to_value(&settings).unwrap());
+            store.set("settings", to_store_value(&settings));
         }
 
         settings
     } else {
-        let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
+        let mut default_settings = get_default_settings();
+        KEY_VAULT.hydrate(&mut default_settings.post_process_api_keys);
+        store.set("settings", to_store_value(&default_settings));
         default_settings
     };
 
     if ensure_post_process_defaults(&mut settings) {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+        KEY_VAULT.hydrate(&mut settings.post_process_api_keys);
+        store.set("settings", to_store_value(&settings));
     }
 
     settings
@@ -1211,7 +1352,7 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
 
-    store.set("settings", serde_json::to_value(&settings).unwrap());
+    store.set("settings", to_store_value(&settings));
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -1272,7 +1413,7 @@ mod tests {
             .expect("all AppSettings fields need serde defaults");
         assert_eq!(
             settings.shortcut_activation,
-            ShortcutActivation::HoldOrToggle
+            ShortcutActivation::PushToTalkDoubleTap
         );
         assert_eq!(settings.hold_threshold_ms, default_hold_threshold_ms());
         assert!(!settings.audio_feedback);
@@ -1611,14 +1752,14 @@ mod tests {
     }
 
     #[test]
-    fn shortcut_activation_defaults_to_hold_or_toggle_without_legacy_key() {
+    fn shortcut_activation_defaults_to_push_to_talk_double_tap_without_legacy_key() {
         let mut settings = get_default_settings();
         let raw = serde_json::json!({ "selected_model": "" });
 
         apply_settings_migrations(&mut settings, &raw);
         assert_eq!(
             settings.shortcut_activation,
-            ShortcutActivation::HoldOrToggle
+            ShortcutActivation::PushToTalkDoubleTap
         );
     }
 
@@ -1730,5 +1871,385 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn default_shortcut_activation_is_push_to_talk_double_tap() {
+        assert_eq!(
+            get_default_settings().shortcut_activation,
+            ShortcutActivation::PushToTalkDoubleTap
+        );
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(
+            from_empty.shortcut_activation,
+            ShortcutActivation::PushToTalkDoubleTap
+        );
+    }
+
+    #[test]
+    fn push_to_talk_double_tap_round_trips_through_serde() {
+        let value = serde_json::to_value(ShortcutActivation::PushToTalkDoubleTap).unwrap();
+        assert_eq!(value, serde_json::json!("push_to_talk_double_tap"));
+        let parsed: ShortcutActivation =
+            serde_json::from_value(serde_json::json!("push_to_talk_double_tap")).unwrap();
+        assert_eq!(parsed, ShortcutActivation::PushToTalkDoubleTap);
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn default_bindings_put_dictation_on_ctrl_shift_space() {
+        let bindings = get_default_settings().bindings;
+        let transcribe = &bindings["transcribe"];
+        assert_eq!(transcribe.default_binding, "ctrl+shift+space");
+        assert_eq!(transcribe.current_binding, "ctrl+shift+space");
+        let post_process = &bindings["transcribe_with_post_process"];
+        assert_eq!(post_process.default_binding, "ctrl+space");
+        assert_eq!(post_process.current_binding, "ctrl+space");
+    }
+
+    /// Stores hold every field explicitly, so a stored mode is a choice we
+    /// cannot tell from an untouched default: none of them is migrated.
+    #[test]
+    fn stored_activation_modes_load_unchanged() {
+        for (stored, expected) in [
+            ("hold_or_toggle", ShortcutActivation::HoldOrToggle),
+            ("push_to_talk", ShortcutActivation::PushToTalk),
+            ("toggle", ShortcutActivation::Toggle),
+        ] {
+            let raw = serde_json::json!({
+                "settings_schema_version": 2,
+                "selected_model": "",
+                "onboarding_completed": true,
+                "whats_new_last_seen_version": "",
+                "overlay_style": "live",
+                "shortcut_activation": stored
+            });
+            let mut settings: AppSettings = serde_json::from_value(raw.clone())
+                .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
+            apply_settings_migrations(&mut settings, &raw);
+            assert_eq!(settings.shortcut_activation, expected, "stored '{stored}'");
+        }
+    }
+
+    #[test]
+    fn default_selected_language_is_pt_br() {
+        assert_eq!(get_default_settings().selected_language, "pt-BR");
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(from_empty.selected_language, "pt-BR");
+    }
+
+    #[test]
+    fn stored_selected_language_loads_unchanged() {
+        for stored in ["auto", "pt", "es"] {
+            let raw = serde_json::json!({
+                "settings_schema_version": 2,
+                "selected_model": "",
+                "onboarding_completed": true,
+                "whats_new_last_seen_version": "",
+                "overlay_style": "live",
+                "selected_language": stored
+            });
+            let mut settings: AppSettings = serde_json::from_value(raw.clone())
+                .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
+            apply_settings_migrations(&mut settings, &raw);
+            assert_eq!(settings.selected_language, stored, "stored '{stored}'");
+        }
+    }
+
+    mod key_vault {
+        use super::*;
+        use fala_secrets::{MemoryStore, SecretError};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        /// A `MemoryStore` that counts calls per provider.
+        #[derive(Default)]
+        struct CountingStore {
+            inner: MemoryStore,
+            sets: AtomicUsize,
+            calls: Mutex<Vec<String>>,
+        }
+
+        impl CountingStore {
+            fn record(&self, provider: &str) {
+                self.calls.lock().unwrap().push(provider.to_string());
+            }
+            fn calls_for(&self, provider: &str) -> usize {
+                self.calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|p| *p == provider)
+                    .count()
+            }
+        }
+
+        impl SecretStore for CountingStore {
+            fn get(&self, provider: &str) -> Result<Option<ApiKey>, SecretError> {
+                self.record(provider);
+                self.inner.get(provider)
+            }
+            fn set(&self, provider: &str, key: &ApiKey) -> Result<(), SecretError> {
+                self.record(provider);
+                self.sets.fetch_add(1, Ordering::SeqCst);
+                self.inner.set(provider, key)
+            }
+            fn delete(&self, provider: &str) -> Result<(), SecretError> {
+                self.record(provider);
+                self.inner.delete(provider)
+            }
+        }
+
+        /// A keyring that is unreachable for writes.
+        struct UnavailableStore;
+
+        impl SecretStore for UnavailableStore {
+            fn get(&self, _: &str) -> Result<Option<ApiKey>, SecretError> {
+                Ok(None)
+            }
+            fn set(&self, _: &str, _: &ApiKey) -> Result<(), SecretError> {
+                Err(SecretError::Unavailable)
+            }
+            fn delete(&self, _: &str) -> Result<(), SecretError> {
+                Err(SecretError::Unavailable)
+            }
+        }
+
+        /// A keyring that accepts the write and then reads back something else.
+        struct LyingStore;
+
+        impl SecretStore for LyingStore {
+            fn get(&self, _: &str) -> Result<Option<ApiKey>, SecretError> {
+                Ok(Some(ApiKey::new("outra-coisa").unwrap()))
+            }
+            fn set(&self, _: &str, _: &ApiKey) -> Result<(), SecretError> {
+                Ok(())
+            }
+            fn delete(&self, _: &str) -> Result<(), SecretError> {
+                Ok(())
+            }
+        }
+
+        /// A keyring whose reads fail; writes and deletes succeed and are counted.
+        #[derive(Default)]
+        struct UnreadableStore {
+            sets: AtomicUsize,
+            deletes: AtomicUsize,
+        }
+
+        impl SecretStore for UnreadableStore {
+            fn get(&self, _: &str) -> Result<Option<ApiKey>, SecretError> {
+                Err(SecretError::Unavailable)
+            }
+            fn set(&self, _: &str, _: &ApiKey) -> Result<(), SecretError> {
+                self.sets.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+            fn delete(&self, _: &str) -> Result<(), SecretError> {
+                self.deletes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        fn keys(pairs: &[(&str, &str)]) -> SecretMap {
+            SecretMap(
+                pairs
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            )
+        }
+
+        fn stored(store: &dyn SecretStore, provider: &str) -> Option<String> {
+            store
+                .get(provider)
+                .unwrap()
+                .map(|key| key.expose().to_string())
+        }
+
+        #[test]
+        fn migrates_plaintext_key_to_store() {
+            let store = Arc::new(CountingStore::default());
+            let vault = KeyVault::new(store.clone());
+            let mut memory = keys(&[("openai", "sk-teste"), ("groq", "")]);
+            vault.hydrate(&mut memory);
+            let disk = vault.to_disk(&memory);
+            assert_eq!(stored(&*store, "openai").as_deref(), Some("sk-teste"));
+            assert_eq!(disk.get("openai").map(String::as_str), Some(""));
+            assert_eq!(disk.get("groq").map(String::as_str), Some(""));
+            assert_eq!(memory.get("openai").map(String::as_str), Some("sk-teste"));
+        }
+
+        #[test]
+        fn failed_store_keeps_plaintext() {
+            let unavailable = KeyVault::new(Arc::new(UnavailableStore));
+            let disk = unavailable.to_disk(&keys(&[("openai", "sk-teste")]));
+            assert_eq!(disk.get("openai").map(String::as_str), Some("sk-teste"));
+
+            let lying = KeyVault::new(Arc::new(LyingStore));
+            let disk = lying.to_disk(&keys(&[("openai", "sk-teste")]));
+            assert_eq!(disk.get("openai").map(String::as_str), Some("sk-teste"));
+
+            let warning = key_kept_warning("openai", &SecretError::Unavailable.to_string());
+            assert!(warning.contains("openai"), "{warning}");
+            assert!(!warning.contains("sk-teste"), "{warning}");
+        }
+
+        #[test]
+        fn invalid_provider_stays_in_json() {
+            let store = Arc::new(CountingStore::default());
+            let vault = KeyVault::new(store.clone());
+            let mut memory = keys(&[("Bad-Id", "valor")]);
+            vault.hydrate(&mut memory);
+            let disk = vault.to_disk(&memory);
+            assert_eq!(disk.get("Bad-Id").map(String::as_str), Some("valor"));
+            assert_eq!(store.calls_for("Bad-Id"), 0);
+        }
+
+        #[test]
+        fn second_load_does_not_rewrite() {
+            let store = Arc::new(CountingStore::default());
+            let vault = KeyVault::new(store.clone());
+            let mut json = keys(&[("openai", "sk-teste")]);
+            for _ in 0..2 {
+                let mut memory = json.clone();
+                vault.hydrate(&mut memory);
+                assert_eq!(memory.get("openai").map(String::as_str), Some("sk-teste"));
+                json = vault.to_disk(&memory);
+                assert_eq!(json.get("openai").map(String::as_str), Some(""));
+            }
+            assert_eq!(store.sets.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn hydrate_reads_store_and_json_wins() {
+            let store = Arc::new(CountingStore::default());
+            store
+                .inner
+                .set("openai", &ApiKey::new("sk-teste").unwrap())
+                .unwrap();
+            let vault = KeyVault::new(store.clone());
+            let mut memory = keys(&[("openai", "")]);
+            vault.hydrate(&mut memory);
+            assert_eq!(memory.get("openai").map(String::as_str), Some("sk-teste"));
+
+            let store = Arc::new(CountingStore::default());
+            store
+                .inner
+                .set("openai", &ApiKey::new("velha").unwrap())
+                .unwrap();
+            let vault = KeyVault::new(store.clone());
+            let mut memory = keys(&[("openai", "nova")]);
+            vault.hydrate(&mut memory);
+            assert_eq!(memory.get("openai").map(String::as_str), Some("nova"));
+        }
+
+        #[test]
+        fn write_updates_and_deletes_store() {
+            let store = Arc::new(CountingStore::default());
+            let vault = KeyVault::new(store.clone());
+            let mut memory = keys(&[("openai", "sk-teste")]);
+            vault.hydrate(&mut memory);
+            vault.to_disk(&memory);
+
+            memory.insert("openai".to_string(), "outra".to_string());
+            let disk = vault.to_disk(&memory);
+            assert_eq!(stored(&*store, "openai").as_deref(), Some("outra"));
+            assert_eq!(disk.get("openai").map(String::as_str), Some(""));
+
+            memory.insert("openai".to_string(), String::new());
+            let disk = vault.to_disk(&memory);
+            assert_eq!(stored(&*store, "openai"), None);
+            assert_eq!(disk.get("openai").map(String::as_str), Some(""));
+        }
+
+        #[test]
+        fn store_value_has_no_confirmed_key() {
+            let store = Arc::new(CountingStore::default());
+            let vault = KeyVault::new(store.clone());
+            let mut settings = get_default_settings();
+            settings
+                .post_process_api_keys
+                .insert("openai".to_string(), "sk-proj-confirmada-1".to_string());
+            settings
+                .post_process_api_keys
+                .insert("groq".to_string(), "gsk-confirmada-2".to_string());
+            let value = store_value(&vault, &settings);
+            let text = value.to_string();
+            assert!(!text.contains("sk-proj-confirmada-1"));
+            assert!(!text.contains("gsk-confirmada-2"));
+
+            let mut plain = serde_json::to_value(&settings).unwrap();
+            let mut stripped = value.clone();
+            plain
+                .as_object_mut()
+                .unwrap()
+                .remove("post_process_api_keys");
+            stripped
+                .as_object_mut()
+                .unwrap()
+                .remove("post_process_api_keys");
+            assert_eq!(plain, stripped);
+        }
+
+        #[test]
+        fn unreadable_keyring_never_deletes() {
+            let store = Arc::new(UnreadableStore::default());
+            let vault = KeyVault::new(store.clone());
+            let mut memory = keys(&[("openai", "")]);
+            vault.hydrate(&mut memory);
+            assert_eq!(memory.get("openai").map(String::as_str), Some(""));
+            let disk = vault.to_disk(&memory);
+            assert_eq!(disk.get("openai").map(String::as_str), Some(""));
+            assert_eq!(store.deletes.load(Ordering::SeqCst), 0);
+
+            let counting = Arc::new(CountingStore::default());
+            counting
+                .inner
+                .set("openai", &ApiKey::new("sk-teste").unwrap())
+                .unwrap();
+            let fresh = KeyVault::new(counting.clone());
+            fresh.to_disk(&keys(&[("openai", "")]));
+            assert_eq!(
+                stored(&counting.inner, "openai").as_deref(),
+                Some("sk-teste")
+            );
+        }
+
+        #[test]
+        fn hydrate_reads_each_provider_once() {
+            let store = Arc::new(CountingStore::default());
+            store
+                .inner
+                .set("openai", &ApiKey::new("sk-teste").unwrap())
+                .unwrap();
+            let vault = KeyVault::new(store.clone());
+            for _ in 0..3 {
+                let mut memory = keys(&[("openai", ""), ("groq", "")]);
+                vault.hydrate(&mut memory);
+                assert_eq!(memory.get("openai").map(String::as_str), Some("sk-teste"));
+            }
+            assert_eq!(store.calls_for("openai"), 1);
+            assert_eq!(store.calls_for("groq"), 1);
+        }
+
+        #[test]
+        fn failed_read_back_keeps_plaintext() {
+            let store = Arc::new(UnreadableStore::default());
+            let vault = KeyVault::new(store.clone());
+            let disk = vault.to_disk(&keys(&[("openai", "sk-teste")]));
+            assert_eq!(store.sets.load(Ordering::SeqCst), 1);
+            assert_eq!(disk.get("openai").map(String::as_str), Some("sk-teste"));
+        }
+
+        #[test]
+        fn blank_key_stays_in_json() {
+            let store = Arc::new(CountingStore::default());
+            let vault = KeyVault::new(store.clone());
+            let disk = vault.to_disk(&keys(&[("openai", "   ")]));
+            assert_eq!(disk.get("openai").map(String::as_str), Some("   "));
+            assert_eq!(store.sets.load(Ordering::SeqCst), 0);
+        }
     }
 }

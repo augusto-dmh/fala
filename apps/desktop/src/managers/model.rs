@@ -2715,6 +2715,15 @@ mod tests {
     }
 
     #[test]
+    fn test_effective_language_resolves_pt_br_intent_to_model_pt() {
+        // The tray stores `pt-BR`; multilingual models advertise bare `pt`.
+        let languages = vec!["en".to_string(), "pt".to_string()];
+
+        assert_eq!(effective_language("pt-BR", &languages, true), "pt");
+        assert_eq!(effective_language("pt-BR", &languages, false), "pt");
+    }
+
+    #[test]
     fn test_effective_language_preserves_chinese_script_intent_for_locale_model() {
         // Script intents survive so Simplified/Traditional output conversion
         // still fires, even when the model advertises a regioned Chinese code.

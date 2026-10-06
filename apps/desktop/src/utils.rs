@@ -1,6 +1,5 @@
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::shortcut;
 use crate::TranscriptionCoordinator;
 use log::info;
 use std::sync::Arc;
@@ -86,8 +85,23 @@ fn native_windows_machine() -> Option<u16> {
 pub fn cancel_current_operation(app: &AppHandle) {
     info!("Initiating operation cancellation...");
 
-    // Unregister the cancel shortcut asynchronously
-    shortcut::unregister_cancel_shortcut(app);
+    let recording_was_active = abort_current_operation(app);
+
+    // Notify coordinator so it can keep lifecycle state coherent.
+    if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
+        coordinator.notify_cancel(recording_was_active);
+    }
+
+    info!("Operation cancellation completed - returned to idle state");
+}
+
+/// The teardown of [`cancel_current_operation`] without notifying the
+/// transcription coordinator. The coordinator calls it itself to discard a
+/// lone short tap, after it has already moved to idle; a cancel reported back
+/// could reset a recording started by a press queued meanwhile. Returns
+/// whether a recording was active.
+pub fn abort_current_operation(app: &AppHandle) -> bool {
+    // The cancel shortcut is disarmed by the coordinator once it goes idle.
 
     // Cancel any ongoing recording
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
@@ -105,12 +119,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // Unload model if immediate unload is enabled
     tm.maybe_unload_immediately("cancellation");
 
-    // Notify coordinator so it can keep lifecycle state coherent.
-    if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
-        coordinator.notify_cancel(recording_was_active);
-    }
-
-    info!("Operation cancellation completed - returned to idle state");
+    recording_was_active
 }
 
 /// Check if using the Wayland display server protocol

@@ -5,6 +5,9 @@
     "copyLastTranscript": "Copy Last Transcript",
     "unloadModel": "Unload Model",
     "model": "Model",
+    "dictationLanguage": "Dictation language",
+    "languagePtBr": "Portuguese (Brazil)",
+    "languageEn": "English",
     "quit": "Quit",
     "cancel": "Cancel",
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
@@ -198,11 +201,13 @@
         "title": "Shortcut Behavior",
         "description": "Choose how the transcribe shortcut starts and stops recording.",
         "options": {
+          "pushToTalkDoubleTap": "Hold or double-tap",
           "holdOrToggle": "Auto",
           "pushToTalk": "Hold",
           "toggle": "Toggle"
         },
         "descriptions": {
+          "push_to_talk_double_tap": "Hold to record and release to stop. Double-tap to record hands-free and tap again to stop. A single tap is ignored",
           "hold_or_toggle": "Hold to record or tap to toggle",
           "push_to_talk": "Records while you hold the shortcut",
           "toggle": "Tap the shortcut to start recording, tap again to stop"
@@ -468,7 +473,13 @@
       "retranscribe": "Re-transcribe",
       "retranscribeError": "Failed to re-transcribe. Please try again.",
       "transcribing": "Transcribing...",
-      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
+      "undoAiEdit": "Undo AI edit",
+      "redoAiEdit": "Reapply AI edit",
+      "originalCopied": "Original text copied",
+      "editedCopied": "Edited text copied",
+      "editToggleError": "Couldn't switch the text",
+      "inApp": "in {{app}}"
     },
     "debug": {
       "title": "Debug",
@@ -696,6 +707,7 @@
     }
   },
   "overlay": {
+    "recording": "Recording",
     "transcribing": "Transcribing...",
     "processing": "Processing..."
   },

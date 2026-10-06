@@ -322,6 +322,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "quit" => {
                 app.exit(0);
             }
+            id if id.starts_with(tray::LANGUAGE_ITEM_PREFIX) => {
+                if let Some(tag) = tray::parse_language_item(id) {
+                    if let Err(e) =
+                        shortcut::change_selected_language_setting(app.clone(), tag.to_string())
+                    {
+                        log::error!("Failed to change the dictation language via tray: {}", e);
+                    }
+                }
+            }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
@@ -761,6 +770,8 @@ pub fn run(cli_args: CliArgs) {
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,
             commands::history::retry_history_entry_transcription,
+            commands::history::undo_history_entry_edit,
+            commands::history::redo_history_entry_edit,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,
