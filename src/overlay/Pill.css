@@ -17,6 +17,20 @@
 .fpill.hold {
   background: #e5322d;
 }
+/* Close to the session limit (19 of 20 minutes): amber with a faster pulse, over the red. */
+.fpill.limit {
+  background: #d97706;
+  animation: fpill-limit-pulse 0.9s ease-in-out infinite;
+}
+@keyframes fpill-limit-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
 .fpill i {
   display: block;
   width: 3px;
@@ -41,6 +55,10 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .fpill.processing {
+    animation: none;
+    opacity: 1;
+  }
+  .fpill.limit {
     animation: none;
     opacity: 1;
   }

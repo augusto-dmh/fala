@@ -45,6 +45,21 @@ export function isHoldToTalk(
   );
 }
 
+/**
+ * The capsule's colour while it draws: amber close to the session limit (`recording-limit-warning`,
+ * over the red of a held key), red while the key is held, black otherwise (`null`). Processing is
+ * always black: the recording is over.
+ */
+export function pillTone(
+  mode: PillMode,
+  holdToTalk: boolean,
+  limit: boolean,
+): "limit" | "hold" | null {
+  if (mode !== "recording") return null;
+  if (limit) return "limit";
+  return holdToTalk ? "hold" : null;
+}
+
 function barHeight(level: number | undefined): number {
   const v = Math.max(0, Math.min(1, level ?? 0));
   return MIN_BAR_PX + Math.pow(v, 0.7) * (MAX_BAR_PX - MIN_BAR_PX);

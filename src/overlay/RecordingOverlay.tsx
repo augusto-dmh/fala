@@ -29,6 +29,9 @@ const RecordingOverlay: React.FC = () => {
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
   const [captureReady, setCaptureReady] = useState(false);
+  // The recording is close to the session limit (19 of 20 minutes): the dot
+  // turns amber until the overlay hides or a new session shows.
+  const [limitWarning, setLimitWarning] = useState(false);
   const [levels, setLevels] = useState<number[]>(Array(WAVE_BARS).fill(0));
   const [streamText, setStreamText] = useState<StreamTextEvent>({
     committed: "",
@@ -66,6 +69,7 @@ const RecordingOverlay: React.FC = () => {
         // them would overwrite that event and leave the overlay stuck arming.
         if (overlayState === "recording" || overlayState === "streaming") {
           setCaptureReady(false);
+          setLimitWarning(false);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
           setStreamText({ committed: "", tentative: "" });
@@ -98,6 +102,11 @@ const RecordingOverlay: React.FC = () => {
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
+        setLimitWarning(false);
+      });
+
+      const unlistenLimit = await listen("recording-limit-warning", () => {
+        setLimitWarning(true);
       });
 
       const unlistenReady = await listen("recording-ready", () => {
@@ -131,6 +140,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenShow();
         unlistenHide();
         unlistenReady();
+        unlistenLimit();
         unlistenLevel();
         unlistenStream();
         unlistenPhase();
@@ -211,7 +221,9 @@ const RecordingOverlay: React.FC = () => {
   const listeningRow = (showTimer: boolean, showCancel: boolean) => (
     <div className="sbase">
       <div className="sbase-l">
-        <span className={`sdot ${captureReady ? "ready" : "arming"}`} />
+        <span
+          className={`sdot ${captureReady ? "ready" : "arming"}${limitWarning ? " limit" : ""}`}
+        />
       </div>
       {waveform}
       <div className="sbase-r">
@@ -298,6 +310,7 @@ const RecordingOverlay: React.FC = () => {
       <Pill
         mode={pillMode}
         holdToTalk={holdToTalk}
+        limit={limitWarning}
         ready={captureReady}
         levels={levels}
         label={

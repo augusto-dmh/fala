@@ -1,7 +1,7 @@
 use crate::actions::ACTION_MAP;
 use crate::managers::audio::AudioRecordingManager;
 use crate::settings::ShortcutActivation;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
@@ -15,6 +15,11 @@ const RELEASE_GRACE: Duration = Duration::from_millis(50);
 /// the first one locks the session hands-free. Without it, a short tap is
 /// discarded when the window ends.
 const DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(500);
+/// A continuous recording, counted from the key-down that opened it, warns
+/// at `SESSION_WARNING` and is cut at `SESSION_LIMIT`. The cut is a regular
+/// stop: what was said is transcribed and delivered, never discarded.
+const SESSION_WARNING: Duration = Duration::from_secs(19 * 60);
+const SESSION_LIMIT: Duration = Duration::from_secs(20 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PttAction {
@@ -88,6 +93,10 @@ struct Hold {
     /// Push-to-talk with double-tap, after a short tap: a second key-down up to
     /// this instant locks the session; reaching it without one discards it.
     tap_deadline: Option<Instant>,
+    /// The hotkey that started the recording, for the stop at the session limit.
+    hotkey_string: String,
+    /// The session-limit warning has been given for this recording.
+    limit_warned: bool,
 }
 
 /// What to do with an input that arrives while the pipeline is busy
@@ -185,6 +194,8 @@ enum Effect {
     /// End the recording without processing it: a lone short tap whose
     /// double-tap window ran out.
     Discard { binding_id: String },
+    /// The recording is about to reach the session limit; it keeps going.
+    LimitWarning { binding_id: String },
 }
 
 /// Commands processed sequentially by the coordinator thread.
@@ -273,6 +284,30 @@ impl CoordinatorState {
         }
     }
 
+    /// The next session mark of the live recording: the warning until it has
+    /// been given, then the cut. `None` unless recording.
+    fn session_deadline(&self) -> Option<Instant> {
+        if !matches!(self.stage, Stage::Recording(_)) {
+            return None;
+        }
+        let hold = self.hold.as_ref()?;
+        let mark = if hold.limit_warned {
+            SESSION_LIMIT
+        } else {
+            SESSION_WARNING
+        };
+        Some(hold.pressed_at + mark)
+    }
+
+    /// When the coordinator thread must wake up: the earliest input deadline
+    /// ([`CoordinatorState::next_deadline`]) or the session mark.
+    fn wake_deadline(&self) -> Option<Instant> {
+        match (self.next_deadline(), self.session_deadline()) {
+            (Some(input), Some(session)) => Some(input.min(session)),
+            (input, session) => input.or(session),
+        }
+    }
+
     /// A dictation is in flight: recording, or the pipeline still processing
     /// it. The cancel key is armed exactly while this holds.
     fn is_busy(&self) -> bool {
@@ -297,7 +332,32 @@ impl CoordinatorState {
         {
             return self.on_tap_window_expired();
         }
+        if self.session_deadline().is_some_and(|d| d <= now) {
+            return self.on_session_mark(now);
+        }
         None
+    }
+
+    /// The recording reached a session mark: warn once at `SESSION_WARNING`,
+    /// and at `SESSION_LIMIT` stop it like the shortcut would, so it is
+    /// processed and delivered. A thread that wakes past the limit without
+    /// having warned cuts straight away.
+    fn on_session_mark(&mut self, now: Instant) -> Option<Effect> {
+        let Stage::Recording(binding_id) = &self.stage else {
+            return None;
+        };
+        let binding_id = binding_id.clone();
+        let hold = self.hold.as_mut()?;
+        if now.saturating_duration_since(hold.pressed_at) >= SESSION_LIMIT {
+            let hotkey_string = hold.hotkey_string.clone();
+            info!("Recording for '{binding_id}' reached the session limit: stopping to process it");
+            // A release still in its grace belongs to the session being cut.
+            self.pending_release = None;
+            return Some(self.begin_processing(binding_id, hotkey_string));
+        }
+        hold.limit_warned = true;
+        debug!("Recording for '{binding_id}' is close to the session limit");
+        Some(Effect::LimitWarning { binding_id })
     }
 
     /// The double-tap window ran out with no second press: the lone tap is
@@ -630,6 +690,8 @@ impl CoordinatorState {
             pressed_at,
             locked,
             tap_deadline: None,
+            hotkey_string: hotkey_string.clone(),
+            limit_warned: false,
         });
         Effect::Start {
             binding_id,
@@ -703,7 +765,7 @@ impl TranscriptionCoordinator {
                 let mut cancel_key_armed = false;
 
                 loop {
-                    let cmd = if let Some(deadline) = state.next_deadline() {
+                    let cmd = if let Some(deadline) = state.wake_deadline() {
                         match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                             Ok(cmd) => cmd,
                             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -854,6 +916,11 @@ fn run_effect(app: &AppHandle, state: &mut CoordinatorState, effect: Effect) {
             debug!("Discarding the recording for '{binding_id}'");
             // The machine is already idle: tear down without notifying it.
             crate::utils::abort_current_operation(app);
+        }
+        Effect::LimitWarning { binding_id } => {
+            debug!("Warning that the recording for '{binding_id}' will be cut soon");
+            crate::audio_feedback::play_limit_warning(app);
+            crate::utils::emit_recording_limit_warning(app);
         }
     }
 }
@@ -1095,6 +1162,9 @@ mod tests {
                 Some(Effect::Start { .. }) => starts += 1,
                 Some(Effect::Stop { .. }) => stops += 1,
                 Some(Effect::Discard { .. }) => panic!("push-to-talk never discards"),
+                Some(Effect::LimitWarning { .. }) => {
+                    panic!("these sequences never reach the session limit")
+                }
                 None => {}
             }
         }
@@ -2216,5 +2286,289 @@ mod tests {
                 "armed={armed} busy={busy}"
             );
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // session-limit: every continuous recording warns at 19 minutes and is
+    // cut at 20 with a regular `Stop`, so what was said is still processed.
+    // Synthetic clock: `t0 + 20 min` is arithmetic, no test waits.
+    // ---------------------------------------------------------------------
+
+    const LIMITED_MODES: [ShortcutActivation; 4] = [
+        ShortcutActivation::PushToTalk,
+        ShortcutActivation::PushToTalkDoubleTap,
+        ShortcutActivation::HoldOrToggle,
+        ShortcutActivation::Toggle,
+    ];
+
+    fn mins(n: u64) -> Duration {
+        Duration::from_secs(n * 60)
+    }
+
+    /// A recording that keeps going on its own from `t0`: push-to-talk with
+    /// the key held, double-tap locked by two taps, hold-or-toggle locked by a
+    /// tap, or toggle.
+    fn start_continuous(state: &mut CoordinatorState, mode: ShortcutActivation, t0: Instant) {
+        match mode {
+            ShortcutActivation::PushToTalkDoubleTap => dt_locked(state, t0, 300),
+            ShortcutActivation::HoldOrToggle => {
+                assert!(matches!(
+                    state.on_input(input(mode, true), t0),
+                    Some(Effect::Start { .. })
+                ));
+                assert!(state.on_input(input(mode, false), t0 + ms(100)).is_none());
+                assert!(state.on_deadline(t0 + ms(100) + RELEASE_GRACE).is_none());
+                assert!(state.is_locked());
+            }
+            ShortcutActivation::PushToTalk | ShortcutActivation::Toggle => {
+                assert!(matches!(
+                    state.on_input(input(mode, true), t0),
+                    Some(Effect::Start { .. })
+                ));
+            }
+        }
+        assert_eq!(state.stage, Stage::Recording(BINDING.to_string()));
+    }
+
+    fn limit_warning() -> Option<Effect> {
+        Some(Effect::LimitWarning {
+            binding_id: BINDING.to_string(),
+        })
+    }
+
+    #[test]
+    fn session_limit_warns_at_nineteen_minutes_in_every_mode() {
+        for mode in LIMITED_MODES {
+            let mut state = CoordinatorState::new();
+            let t0 = Instant::now();
+            start_continuous(&mut state, mode, t0);
+
+            assert_eq!(
+                state.on_deadline(t0 + mins(19) - ms(1)),
+                None,
+                "{mode:?}: nothing a millisecond before 19 minutes"
+            );
+            assert_eq!(
+                state.on_deadline(t0 + mins(19)),
+                limit_warning(),
+                "{mode:?}: the warning at 19 minutes"
+            );
+            assert_eq!(
+                state.stage,
+                Stage::Recording(BINDING.to_string()),
+                "{mode:?}: the warning does not stop the recording"
+            );
+        }
+    }
+
+    #[test]
+    fn session_limit_warns_once() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        dt_locked(&mut state, t0, 300);
+
+        assert_eq!(state.on_deadline(t0 + mins(19)), limit_warning());
+        assert_eq!(
+            state.on_deadline(t0 + mins(19) + Duration::from_secs(1)),
+            None
+        );
+        assert_eq!(
+            state.on_deadline(t0 + mins(19) + Duration::from_secs(30)),
+            None
+        );
+        assert_eq!(state.session_deadline(), Some(t0 + mins(20)));
+    }
+
+    #[test]
+    fn session_limit_cuts_at_twenty_minutes_with_stop() {
+        for mode in LIMITED_MODES {
+            let mut state = CoordinatorState::new();
+            let t0 = Instant::now();
+            start_continuous(&mut state, mode, t0);
+            let mut effects = Vec::new();
+
+            effects.extend(state.on_deadline(t0 + mins(19)));
+            assert_eq!(
+                state.on_deadline(t0 + mins(20) - ms(1)),
+                None,
+                "{mode:?}: nothing a millisecond before 20 minutes"
+            );
+            let cut = state.on_deadline(t0 + mins(20));
+            assert_eq!(
+                cut,
+                Some(Effect::Stop {
+                    binding_id: BINDING.to_string(),
+                    hotkey_string: BINDING.to_string(),
+                }),
+                "{mode:?}: the cut is a regular stop"
+            );
+            effects.extend(cut);
+            assert_eq!(state.stage, Stage::Processing, "{mode:?}");
+            assert!(
+                !effects.iter().any(|e| matches!(e, Effect::Discard { .. })),
+                "{mode:?}: never discarded: {effects:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn session_limit_overslept_cuts_without_warning() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        dt_locked(&mut state, t0, 300);
+
+        assert!(
+            matches!(state.on_deadline(t0 + mins(25)), Some(Effect::Stop { .. })),
+            "waking past 20 minutes cuts straight away"
+        );
+        assert_eq!(state.stage, Stage::Processing);
+        assert_eq!(state.on_deadline(t0 + mins(25) + ms(1)), None);
+    }
+
+    #[test]
+    fn wake_deadline_is_the_earliest_of_input_and_session() {
+        let t0 = Instant::now();
+        let ptt = ShortcutActivation::PushToTalk;
+
+        // Push-to-talk held, nothing pending: only the session mark.
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_input(input(ptt, true), t0),
+            Some(Effect::Start { .. })
+        ));
+        assert_eq!(state.next_deadline(), None);
+        assert_eq!(state.wake_deadline(), Some(t0 + mins(19)));
+        // A deferred release is earlier.
+        assert!(state.on_input(input(ptt, false), t0 + ms(1000)).is_none());
+        assert_eq!(
+            state.wake_deadline(),
+            Some(t0 + ms(1000) + RELEASE_GRACE),
+            "the release grace is earlier"
+        );
+
+        // The double-tap window is earlier.
+        let mut state = CoordinatorState::new();
+        assert!(dt_tap(&mut state, t0, ms(100)).is_none());
+        assert_eq!(state.wake_deadline(), Some(t0 + ms(500)));
+
+        // Locked: no input deadline, the session mark is still there.
+        let mut state = CoordinatorState::new();
+        dt_locked(&mut state, t0, 300);
+        assert_eq!(
+            state.next_deadline(),
+            None,
+            "next_deadline keeps its F1 meaning"
+        );
+        assert_eq!(state.wake_deadline(), Some(t0 + mins(19)));
+        // After the warning, the cut.
+        assert_eq!(state.on_deadline(t0 + mins(19)), limit_warning());
+        assert_eq!(state.wake_deadline(), Some(t0 + mins(20)));
+    }
+
+    #[test]
+    fn session_deadline_clears_when_the_recording_ends() {
+        let t0 = Instant::now();
+        let ptt = ShortcutActivation::PushToTalk;
+        assert_eq!(CoordinatorState::new().session_deadline(), None);
+
+        // Stopped by releasing the key.
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_input(input(ptt, true), t0),
+            Some(Effect::Start { .. })
+        ));
+        assert!(state.on_input(input(ptt, false), t0 + ms(1000)).is_none());
+        assert!(matches!(
+            state.on_deadline(t0 + ms(1000) + RELEASE_GRACE),
+            Some(Effect::Stop { .. })
+        ));
+        assert_eq!(state.session_deadline(), None, "stop");
+        assert_eq!(state.on_deadline(t0 + mins(20)), None, "stop");
+
+        // Discarded when the double-tap window ran out.
+        let mut state = CoordinatorState::new();
+        assert!(dt_tap(&mut state, t0, ms(100)).is_none());
+        assert!(matches!(
+            state.on_deadline(t0 + DOUBLE_TAP_WINDOW),
+            Some(Effect::Discard { .. })
+        ));
+        assert_eq!(state.session_deadline(), None, "discard");
+        assert_eq!(state.on_deadline(t0 + mins(20)), None, "discard");
+
+        // Cancelled while recording.
+        let mut state = CoordinatorState::new();
+        dt_locked(&mut state, t0, 300);
+        state.on_cancel(true);
+        assert_eq!(state.session_deadline(), None, "cancel");
+        assert_eq!(state.on_deadline(t0 + mins(20)), None, "cancel");
+
+        // A start the microphone refused.
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_input(input(ptt, true), t0),
+            Some(Effect::Start { .. })
+        ));
+        state.on_start_result(BINDING, false);
+        assert_eq!(state.session_deadline(), None, "failed start");
+        assert_eq!(state.on_deadline(t0 + mins(20)), None, "failed start");
+    }
+
+    #[test]
+    fn drained_recording_measures_limit_from_key_down() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        hold_or_toggle_into_processing(&mut state, t0);
+        let t1 = t0 + ms(1000);
+        assert!(state.on_input(ptt_input(true), t1).is_none());
+
+        // The pipeline drains later (about two seconds); no clock is passed.
+        assert!(matches!(
+            state.on_processing_finished(),
+            Some(Effect::Start { .. })
+        ));
+        assert_eq!(state.session_deadline(), Some(t1 + mins(19)));
+        assert_eq!(state.on_deadline(t1 + mins(19)), limit_warning());
+        assert!(matches!(
+            state.on_deadline(t1 + mins(20)),
+            Some(Effect::Stop { .. })
+        ));
+    }
+
+    #[test]
+    fn release_after_limit_cut_starts_nothing() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        let ptt = ShortcutActivation::PushToTalk;
+        start_continuous(&mut state, ptt, t0);
+        assert_eq!(state.on_deadline(t0 + mins(19)), limit_warning());
+        assert!(matches!(
+            state.on_deadline(t0 + mins(20)),
+            Some(Effect::Stop { .. })
+        ));
+
+        let released = t0 + mins(20) + Duration::from_secs(5);
+        assert_eq!(state.on_input(input(ptt, false), released), None);
+        assert_eq!(state.on_deadline(released + RELEASE_GRACE), None);
+        assert_eq!(state.on_processing_finished(), None);
+        assert_eq!(state.stage, Stage::Idle);
+    }
+
+    #[test]
+    fn tap_after_limit_cut_starts_nothing() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        dt_locked(&mut state, t0, 300);
+        assert_eq!(state.on_deadline(t0 + mins(19)), limit_warning());
+        assert!(matches!(
+            state.on_deadline(t0 + mins(20)),
+            Some(Effect::Stop { .. })
+        ));
+
+        let tap = t0 + mins(20) + Duration::from_secs(2);
+        assert_eq!(state.on_input(dt(true), tap), None);
+        assert_eq!(state.on_input(dt(false), tap + ms(100)), None);
+        assert_eq!(state.on_deadline(tap + ms(100) + RELEASE_GRACE), None);
+        assert_eq!(state.on_processing_finished(), None);
+        assert_eq!(state.stage, Stage::Idle);
     }
 }
