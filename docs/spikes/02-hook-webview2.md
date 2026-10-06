@@ -1,6 +1,6 @@
 # Spike 02 — Hook de teclado com a WebView2 em foco
 
-**Fase:** 0 · **Status:** protocolo e script prontos; medição no Windows pendente · **Risco:** design doc §7
+**Fase:** 0 · **Status:** modo `auto` medido no Windows; modo `manual` pendente · **Risco:** design doc §7
 
 ## Objetivo
 
@@ -64,12 +64,33 @@ antes disso, então a contagem não depende do modelo.
 
 ## Evidência medida
 
-`TODO(windows)`: rodar os dois modos na máquina Windows e colar aqui as tabelas que o script
-imprime, com data, versão do Windows e da WebView2 (`edge://version` ou o registro).
+Modo `auto` medido em 2026-09-29 no Alienware 16 (Windows 11 Pro 25H2, build 10.0.26200.9457;
+WebView2 Runtime 153.0.4234.48, lido do registro do EdgeUpdate), com o app de
+`bun run tauri build` em `da03312` rodando como `fala.exe --debug`. Configuração: binding
+`transcribe` = `f9`, `shortcut_activation` = `push_to_talk` (em Settings: Geral → Comportamento
+do atalho → Segurar), `paste_method` = `ctrl_v`, `clipboard_handling` = `dont_modify`,
+`reliable_paste` = `false`, modelo `parakeet-unified-en-0.6b` Q8_0 carregado. O script rodou no
+Windows PowerShell 5.1 (`powershell.exe`): esta máquina não tem o PowerShell 7.
+
+Rodada de 03:46:21Z a 03:56:58Z, três rotações do `fala.log` no meio (exit 0):
 
 | mode | presses_sent | pressed_logged | released_logged | first_gap_at | foreground_at_end |
 | --- | ---: | ---: | ---: | --- | --- |
-| auto | | | | | |
+| auto | 300 | 300 | 300 | - | Fala |
+
+Uma rodada anterior, de 03:13:41Z a 03:24:20Z, deu 299/299 com `first_gap_at` = 03:14:24.918Z e
+`foreground_at_end` = `Windows Default Lock Screen` (exit 1). No segundo do buraco, um processo
+`powershell.exe` foi aberto na mesma sessão para ler o progresso, e a tela estava bloqueada ao
+fim (a sessão foi bloqueada durante a rodada; o desligamento de vídeo por inatividade está em
+"nunca"). Pela regra acima (rotação e contagem diferente), a rodada foi repetida sem nenhum
+outro processo aberto e com a tela mantida ligada (`SetThreadExecutionState`); a tabela é a da
+repetição.
+
+`TODO(windows)`: modo `manual` (10 min digitando na janela do Fala), que precisa do teclado
+físico:
+
+| mode | presses_sent | pressed_logged | released_logged | first_gap_at | foreground_at_end |
+| --- | ---: | ---: | ---: | --- | --- |
 | manual | | | | | |
 
 `first_gap_at` é o instante (UTC) do primeiro toque sem `Pressed` no log; `foreground_at_end`
