@@ -49,6 +49,10 @@ serde = { version = "1", features = ["derive"] }
 [dependencies]
 # Chaves de API no keyring do SO (ADR-0008).
 fala-secrets = { workspace = true }
+# Histórico de ditados em fala.sqlite com espelho Markdown (ADR-0006) e o app em foco.
+fala-core = { workspace = true }
+fala-inject = { workspace = true }
+fala-storage = { workspace = true }
 once_cell = "1"
 tauri = { version = "2.11.5", features = [
   "protocol-asset",

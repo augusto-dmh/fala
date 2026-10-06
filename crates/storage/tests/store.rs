@@ -394,3 +394,74 @@ fn fts_table_shape() {
         "{sql}"
     );
 }
+
+#[test]
+fn delete_removes_row_fts_and_mirror() {
+    let env = env("delete_removes_row_fts_and_mirror");
+    let store = env.open();
+    let kept = store.add(&unedited("caju maduro"), at(11, 0, 0)).unwrap();
+    let gone = store
+        .add(&unedited("jabuticaba no pé"), at(11, 0, 1))
+        .unwrap();
+    let gone_md = md_of(&env, &gone.id);
+
+    store.delete(&gone.id).unwrap();
+
+    assert!(matches!(store.get(&gone.id), Err(StorageError::NotFound(id)) if id == gone.id));
+    assert!(store.search("jabuticaba", 10).unwrap().is_empty());
+    assert!(!gone_md.exists(), "o .md apagado ainda existe: {gone_md:?}");
+    assert_eq!(store.get(&kept.id).unwrap(), kept);
+    assert!(md_of(&env, &kept.id).exists());
+}
+
+#[test]
+fn delete_unknown_id_is_not_found() {
+    let env = env("delete_unknown_id_is_not_found");
+    let store = env.open();
+    let kept = store.add(&unedited("pitanga"), at(11, 5, 0)).unwrap();
+    let kept_md = fs::read_to_string(md_of(&env, &kept.id)).unwrap();
+    let unknown = uuid::Uuid::now_v7().hyphenated().to_string();
+
+    let err = store.delete(&unknown).unwrap_err();
+
+    assert!(
+        matches!(err, StorageError::NotFound(ref id) if *id == unknown),
+        "{err:?}"
+    );
+    assert_eq!(store.get(&kept.id).unwrap(), kept);
+    assert_eq!(fs::read_to_string(md_of(&env, &kept.id)).unwrap(), kept_md);
+    assert_eq!(store.search("pitanga", 10).unwrap().len(), 1);
+}
+
+#[test]
+fn reindex_after_delete_does_not_resurrect() {
+    let env = env("reindex_after_delete_does_not_resurrect");
+    let mut store = env.open();
+    store.add(&unedited("acerola"), at(11, 10, 0)).unwrap();
+    let gone = store.add(&unedited("graviola"), at(11, 10, 1)).unwrap();
+    store.delete(&gone.id).unwrap();
+
+    let report = store.reindex().unwrap();
+
+    assert_eq!(report.indexed, 1);
+    assert!(report.skipped.is_empty(), "{:?}", report.skipped);
+    assert!(matches!(
+        store.get(&gone.id),
+        Err(StorageError::NotFound(_))
+    ));
+}
+
+#[test]
+fn delete_tolerates_missing_mirror() {
+    let env = env("delete_tolerates_missing_mirror");
+    let store = env.open();
+    let gone = store.add(&unedited("umbu"), at(11, 15, 0)).unwrap();
+    fs::remove_file(md_of(&env, &gone.id)).unwrap();
+
+    store.delete(&gone.id).unwrap();
+
+    assert!(matches!(
+        store.get(&gone.id),
+        Err(StorageError::NotFound(_))
+    ));
+}

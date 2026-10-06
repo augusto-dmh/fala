@@ -1,7 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  FolderOpen,
+  Redo2,
+  RotateCcw,
+  Star,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -15,6 +24,13 @@ import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
 import { copyToClipboard } from "./clipboard";
+import {
+  appName,
+  editAction,
+  shownText,
+  switchText,
+  type EditAction,
+} from "./historyModel";
 
 const IconButton: React.FC<{
   onClick: () => void;
@@ -209,6 +225,23 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
+  const switchEntryText = async (entry: HistoryEntry, action: EditAction) => {
+    const outcome = await switchText(entry, action, {
+      undo: commands.undoHistoryEntryEdit,
+      redo: commands.redoHistoryEntryEdit,
+      copy: copyToClipboard,
+    });
+    if (outcome.entry) {
+      const replaced = outcome.entry;
+      setEntries((prev) =>
+        prev.map((e) => (e.id === replaced.id ? replaced : e)),
+      );
+    }
+    outcome.success
+      ? toast.success(t(outcome.toastKey))
+      : toast.error(t(outcome.toastKey));
+  };
+
   const retryHistoryEntry = async (id: number) => {
     const result = await commands.retryHistoryEntryTranscription(id);
     if (result.status !== "ok") {
@@ -251,7 +284,8 @@ export const HistorySettings: React.FC = () => {
                 key={entry.id}
                 entry={entry}
                 onToggleSaved={() => toggleSaved(entry.id)}
-                onCopyText={() => copyToClipboard(entry.transcription_text)}
+                onCopyText={() => copyToClipboard(shownText(entry))}
+                onSwitchText={(action) => switchEntryText(entry, action)}
                 getAudioUrl={getAudioUrl}
                 deleteAudio={deleteAudioEntry}
                 retryTranscription={retryHistoryEntry}
@@ -291,6 +325,7 @@ interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
   onCopyText: () => Promise<boolean>;
+  onSwitchText: (action: EditAction) => Promise<void>;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
   retryTranscription: (id: number) => Promise<void>;
@@ -300,6 +335,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   entry,
   onToggleSaved,
   onCopyText,
+  onSwitchText,
   getAudioUrl,
   deleteAudio,
   retryTranscription,
@@ -308,7 +344,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const [showCopied, setShowCopied] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
-  const hasTranscription = entry.transcription_text.trim().length > 0;
+  const hasTranscription = shownText(entry).trim().length > 0;
+  const action = editAction(entry);
+  const app = appName(entry);
 
   const handleLoadAudio = useCallback(
     () => getAudioUrl(entry.file_name),
@@ -356,7 +394,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   return (
     <div className="px-4 py-2 pb-5 flex flex-col gap-3">
       <div className="flex justify-between items-center">
-        <p className="text-sm font-medium">{formattedDate}</p>
+        <p className="text-sm font-medium">
+          {formattedDate}
+          {app && (
+            <span className="ms-2 text-xs font-normal text-text/50">
+              {t("settings.history.inApp", { app })}
+            </span>
+          )}
+        </p>
         <div className="flex items-center">
           <IconButton
             onClick={handleCopyText}
@@ -369,6 +414,23 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
               <Copy width={16} height={16} />
             )}
           </IconButton>
+          {action && (
+            <IconButton
+              onClick={() => onSwitchText(action)}
+              disabled={retrying}
+              title={
+                action === "undo"
+                  ? t("settings.history.undoAiEdit")
+                  : t("settings.history.redoAiEdit")
+              }
+            >
+              {action === "undo" ? (
+                <Undo2 width={16} height={16} />
+              ) : (
+                <Redo2 width={16} height={16} />
+              )}
+            </IconButton>
+          )}
           <IconButton
             onClick={onToggleSaved}
             disabled={retrying}
@@ -435,7 +497,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
         {retrying
           ? t("settings.history.transcribing")
           : hasTranscription
-            ? entry.transcription_text
+            ? shownText(entry)
             : t("settings.history.transcriptionFailed")}
       </p>
 

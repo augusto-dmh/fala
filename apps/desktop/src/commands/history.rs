@@ -1,8 +1,9 @@
 use crate::actions::process_transcription_output;
 use crate::managers::{
-    history::{HistoryManager, PaginatedHistory},
+    history::{HistoryEntry, HistoryManager, PaginatedHistory},
     transcription::TranscriptionManager,
 };
+use fala_storage::Showing;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -101,8 +102,35 @@ pub async fn retry_history_entry_transcription(
             transcription,
             processed.post_processed_text,
             processed.post_process_prompt,
+            processed.final_text,
         )
         .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// "Desfazer edição da IA": the entry's dictation shows its raw text again.
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_history_entry_edit(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+) -> Result<HistoryEntry, String> {
+    history_manager
+        .set_showing(id, Showing::Raw)
+        .map_err(|e| e.to_string())
+}
+
+/// "Reaplicar edição da IA": the entry's dictation shows its edited text again.
+#[tauri::command]
+#[specta::specta]
+pub async fn redo_history_entry_edit(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+) -> Result<HistoryEntry, String> {
+    history_manager
+        .set_showing(id, Showing::Final)
         .map_err(|e| e.to_string())
 }
 

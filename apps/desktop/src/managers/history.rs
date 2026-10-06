@@ -6,9 +6,14 @@ use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 use tauri::AppHandle;
 use tauri_specta::Event;
+
+use crate::managers::history_dictations::{self, HistoryDictation};
+use fala_core::{AppContext, Language};
+use fala_storage::{Showing, Store};
 
 /// Database migrations for transcription history.
 /// Each migration is applied in order. The library tracks which migrations
@@ -17,7 +22,7 @@ use tauri_specta::Event;
 /// Note: For users upgrading from tauri-plugin-sql, migrate_from_tauri_plugin_sql()
 /// converts the old _sqlx_migrations table tracking to the user_version pragma,
 /// ensuring migrations don't re-run on existing databases.
-static MIGRATIONS: &[M] = &[
+pub(crate) static MIGRATIONS: &[M] = &[
     M::up(
         "CREATE TABLE IF NOT EXISTS transcription_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +36,9 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
+    // The id of the matching dictation in fala.sqlite (fala-storage); null when the
+    // transcription failed or the store was unavailable.
+    M::up("ALTER TABLE transcription_history ADD COLUMN dictation_id TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -63,12 +71,35 @@ pub struct HistoryEntry {
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     pub post_process_requested: bool,
+    /// The linked dictation in fala.sqlite, if any.
+    pub dictation_id: Option<String>,
+    /// That dictation (raw, final, editor, what it shows, app), when the store can read it.
+    pub dictation: Option<HistoryDictation>,
+}
+
+/// The texts of one dictation, as the pipeline produced them.
+pub struct EntryTexts {
+    pub transcription_text: String,
+    pub post_processed_text: Option<String>,
+    pub post_process_prompt: Option<String>,
+    /// The text that was pasted (the pipeline's final text); empty when transcription failed.
+    pub pasted_text: String,
+}
+
+/// A history entry about to be saved.
+pub struct NewEntry {
+    pub file_name: String,
+    pub post_process_requested: bool,
+    pub texts: EntryTexts,
+    /// The app that had focus when the text was delivered.
+    pub app: AppContext,
 }
 
 pub struct HistoryManager {
     app_handle: AppHandle,
     recordings_dir: PathBuf,
     db_path: PathBuf,
+    store: Option<Mutex<Store>>,
 }
 
 impl HistoryManager {
@@ -84,16 +115,50 @@ impl HistoryManager {
             debug!("Created recordings directory: {:?}", recordings_dir);
         }
 
+        let store = history_dictations::open_store(
+            &app_data_dir.join("fala.sqlite"),
+            &app_data_dir.join("notas"),
+        );
+
         let manager = Self {
             app_handle: app_handle.clone(),
             recordings_dir,
             db_path,
+            store: store.map(Mutex::new),
         };
 
         // Initialize database and run migrations synchronously
         manager.init_database()?;
+        manager.backfill_dictations();
 
         Ok(manager)
+    }
+
+    fn lock_store(&self) -> Option<MutexGuard<'_, Store>> {
+        self.store
+            .as_ref()
+            .map(|m| m.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+    }
+
+    fn selected_language(&self) -> Language {
+        history_dictations::language_from_setting(
+            &crate::settings::get_settings(&self.app_handle).selected_language,
+        )
+    }
+
+    /// Copies the rows that predate fala.sqlite into it, once; a failure is logged and retried
+    /// on the next start.
+    fn backfill_dictations(&self) {
+        let Some(store) = self.lock_store() else {
+            return;
+        };
+        let language = self.selected_language();
+        let result = self
+            .get_connection()
+            .and_then(|conn| history_dictations::backfill(&conn, &store, language));
+        if let Err(e) = result {
+            error!("History backfill to fala.sqlite failed: {}", e);
+        }
     }
 
     fn init_database(&self) -> Result<()> {
@@ -207,6 +272,8 @@ impl HistoryManager {
             post_processed_text: row.get("post_processed_text")?,
             post_process_prompt: row.get("post_process_prompt")?,
             post_process_requested: row.get("post_process_requested")?,
+            dictation_id: row.get("dictation_id")?,
+            dictation: None,
         })
     }
 
@@ -214,53 +281,15 @@ impl HistoryManager {
         &self.recordings_dir
     }
 
-    /// Save a new history entry to the database.
+    /// Save a new history entry to the database, with its dictation in fala.sqlite.
     /// The WAV file should already have been written to the recordings directory.
-    pub fn save_entry(
-        &self,
-        file_name: String,
-        transcription_text: String,
-        post_process_requested: bool,
-        post_processed_text: Option<String>,
-        post_process_prompt: Option<String>,
-    ) -> Result<HistoryEntry> {
+    pub fn save_entry(&self, entry: NewEntry) -> Result<HistoryEntry> {
         let timestamp = Utc::now().timestamp();
-        let title = self.format_timestamp_title(timestamp);
-
+        let language = self.selected_language();
         let conn = self.get_connection()?;
-        conn.execute(
-            "INSERT INTO transcription_history (
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                &file_name,
-                timestamp,
-                false,
-                &title,
-                &transcription_text,
-                &post_processed_text,
-                &post_process_prompt,
-                post_process_requested,
-            ],
-        )?;
-
-        let entry = HistoryEntry {
-            id: conn.last_insert_rowid(),
-            file_name,
-            timestamp,
-            saved: false,
-            title,
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-            post_process_requested,
+        let entry = {
+            let store = self.lock_store();
+            Self::save_entry_with(&conn, store.as_deref(), entry, language, timestamp)?
         };
 
         debug!("Saved history entry with id {}", entry.id);
@@ -279,6 +308,73 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    pub(crate) fn save_entry_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        entry: NewEntry,
+        language: Language,
+        timestamp: i64,
+    ) -> Result<HistoryEntry> {
+        let NewEntry {
+            file_name,
+            post_process_requested,
+            texts,
+            app,
+        } = entry;
+        let title = Self::format_timestamp_title(timestamp);
+        let llm_produced = post_process_requested && texts.post_processed_text.is_some();
+        let dictation_id = store.and_then(|store| {
+            let dictation = history_dictations::dictation_for(
+                &texts.transcription_text,
+                &texts.pasted_text,
+                llm_produced,
+                language,
+                app,
+            )?;
+            history_dictations::add_dictation(store, &dictation, timestamp)
+        });
+
+        conn.execute(
+            "INSERT INTO transcription_history (
+                file_name,
+                timestamp,
+                saved,
+                title,
+                transcription_text,
+                post_processed_text,
+                post_process_prompt,
+                post_process_requested,
+                dictation_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                &file_name,
+                timestamp,
+                false,
+                &title,
+                &texts.transcription_text,
+                &texts.post_processed_text,
+                &texts.post_process_prompt,
+                post_process_requested,
+                &dictation_id,
+            ],
+        )?;
+
+        let dictation = history_dictations::view(store, dictation_id.as_deref());
+        Ok(HistoryEntry {
+            id: conn.last_insert_rowid(),
+            file_name,
+            timestamp,
+            saved: false,
+            title,
+            transcription_text: texts.transcription_text,
+            post_processed_text: texts.post_processed_text,
+            post_process_prompt: texts.post_process_prompt,
+            post_process_requested,
+            dictation_id,
+            dictation,
+        })
+    }
+
     /// Update an existing history entry with new transcription results (used by retry).
     pub fn update_transcription(
         &self,
@@ -286,33 +382,20 @@ impl HistoryManager {
         transcription_text: String,
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
+        pasted_text: String,
     ) -> Result<HistoryEntry> {
+        let language = self.selected_language();
         let conn = self.get_connection()?;
-        let updated = conn.execute(
-            "UPDATE transcription_history
-             SET transcription_text = ?1,
-                 post_processed_text = ?2,
-                 post_process_prompt = ?3
-             WHERE id = ?4",
-            params![
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                id
-            ],
-        )?;
-
-        if updated == 0 {
-            return Err(anyhow!("History entry {} not found", id));
-        }
-
-        let entry = conn
-            .query_row(
-                "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
-                 FROM transcription_history WHERE id = ?1",
-                params![id],
-                Self::map_history_entry,
-            )?;
+        let texts = EntryTexts {
+            transcription_text,
+            post_processed_text,
+            post_process_prompt,
+            pasted_text,
+        };
+        let entry = {
+            let store = self.lock_store();
+            Self::update_transcription_with(&conn, store.as_deref(), id, texts, language)?
+        };
 
         debug!("Updated transcription for history entry {}", id);
 
@@ -324,6 +407,73 @@ impl HistoryManager {
             error!("Failed to emit history-updated event: {}", e);
         }
 
+        Ok(entry)
+    }
+
+    /// Retry: rewrites the texts and replaces the linked dictation with one built from them,
+    /// keeping the previous dictation's app.
+    pub(crate) fn update_transcription_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        id: i64,
+        texts: EntryTexts,
+        language: Language,
+    ) -> Result<HistoryEntry> {
+        let updated = conn.execute(
+            "UPDATE transcription_history
+             SET transcription_text = ?1,
+                 post_processed_text = ?2,
+                 post_process_prompt = ?3
+             WHERE id = ?4",
+            params![
+                texts.transcription_text,
+                texts.post_processed_text,
+                texts.post_process_prompt,
+                id
+            ],
+        )?;
+
+        if updated == 0 {
+            return Err(anyhow!("History entry {} not found", id));
+        }
+
+        if let Some(store) = store {
+            let (old_link, timestamp, requested): (Option<String>, i64, bool) = conn.query_row(
+                "SELECT dictation_id, timestamp, post_process_requested
+                 FROM transcription_history WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+            let app = old_link
+                .as_deref()
+                .and_then(|old| store.get(old).ok())
+                .map(|record| record.dictation.app)
+                .unwrap_or_default();
+            let llm_produced = requested && texts.post_processed_text.is_some();
+            let new_link = history_dictations::dictation_for(
+                &texts.transcription_text,
+                &texts.pasted_text,
+                llm_produced,
+                language,
+                app,
+            )
+            .and_then(|dictation| history_dictations::add_dictation(store, &dictation, timestamp));
+            if let Some(new_link) = new_link {
+                conn.execute(
+                    "UPDATE transcription_history SET dictation_id = ?1 WHERE id = ?2",
+                    params![new_link, id],
+                )?;
+                if let Some(old) = old_link {
+                    if let Err(e) = history_dictations::delete_dictation(store, &old) {
+                        error!("Failed to delete replaced dictation {}: {}", old, e);
+                    }
+                }
+            }
+        }
+
+        let mut entry = Self::get_entry_by_id_with(conn, id)?
+            .ok_or_else(|| anyhow!("History entry {} not found", id))?;
+        entry.dictation = history_dictations::view(store, entry.dictation_id.as_deref());
         Ok(entry)
     }
 
@@ -347,15 +497,31 @@ impl HistoryManager {
         }
     }
 
-    fn delete_entries_and_files(&self, entries: &[(i64, String)]) -> Result<usize> {
+    /// Deletes each entry's dictation, row and WAV. An entry whose dictation cannot be
+    /// deleted stays for the next cleanup.
+    fn delete_entries_and_files_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        recordings_dir: &Path,
+        entries: &[(i64, String, Option<String>)],
+    ) -> Result<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
 
-        let conn = self.get_connection()?;
         let mut deleted_count = 0;
 
-        for (id, file_name) in entries {
+        for (id, file_name, dictation_id) in entries {
+            if let (Some(store), Some(dictation_id)) = (store, dictation_id) {
+                if let Err(e) = history_dictations::delete_dictation(store, dictation_id) {
+                    error!(
+                        "Keeping history entry {}: its dictation could not be deleted: {}",
+                        id, e
+                    );
+                    continue;
+                }
+            }
+
             // Delete database entry
             conn.execute(
                 "DELETE FROM transcription_history WHERE id = ?1",
@@ -363,7 +529,7 @@ impl HistoryManager {
             )?;
 
             // Delete WAV file
-            let file_path = self.recordings_dir.join(file_name);
+            let file_path = recordings_dir.join(file_name);
             if file_path.exists() {
                 if let Err(e) = fs::remove_file(&file_path) {
                     error!("Failed to delete WAV file {}: {}", file_name, e);
@@ -379,24 +545,42 @@ impl HistoryManager {
 
     fn cleanup_by_count(&self, limit: usize) -> Result<()> {
         let conn = self.get_connection()?;
+        let store = self.lock_store();
+        Self::cleanup_by_count_with(&conn, store.as_deref(), &self.recordings_dir, limit)
+    }
 
+    pub(crate) fn cleanup_by_count_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        recordings_dir: &Path,
+        limit: usize,
+    ) -> Result<()> {
         // Get all entries that are not saved, ordered by timestamp desc
         let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE saved = 0 ORDER BY timestamp DESC"
+            "SELECT id, file_name, dictation_id FROM transcription_history WHERE saved = 0 ORDER BY timestamp DESC"
         )?;
 
         let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>("id")?, row.get::<_, String>("file_name")?))
+            Ok((
+                row.get::<_, i64>("id")?,
+                row.get::<_, String>("file_name")?,
+                row.get::<_, Option<String>>("dictation_id")?,
+            ))
         })?;
 
-        let mut entries: Vec<(i64, String)> = Vec::new();
+        let mut entries: Vec<(i64, String, Option<String>)> = Vec::new();
         for row in rows {
             entries.push(row?);
         }
 
         if entries.len() > limit {
             let entries_to_delete = &entries[limit..];
-            let deleted_count = self.delete_entries_and_files(entries_to_delete)?;
+            let deleted_count = Self::delete_entries_and_files_with(
+                conn,
+                store,
+                recordings_dir,
+                entries_to_delete,
+            )?;
 
             if deleted_count > 0 {
                 debug!("Cleaned up {} old history entries by count", deleted_count);
@@ -421,21 +605,41 @@ impl HistoryManager {
             _ => unreachable!("Should not reach here"),
         };
 
+        let store = self.lock_store();
+        Self::cleanup_by_time_with(
+            &conn,
+            store.as_deref(),
+            &self.recordings_dir,
+            cutoff_timestamp,
+        )
+    }
+
+    pub(crate) fn cleanup_by_time_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        recordings_dir: &Path,
+        cutoff_timestamp: i64,
+    ) -> Result<()> {
         // Get all unsaved entries older than the cutoff timestamp
         let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE saved = 0 AND timestamp < ?1",
+            "SELECT id, file_name, dictation_id FROM transcription_history WHERE saved = 0 AND timestamp < ?1",
         )?;
 
         let rows = stmt.query_map(params![cutoff_timestamp], |row| {
-            Ok((row.get::<_, i64>("id")?, row.get::<_, String>("file_name")?))
+            Ok((
+                row.get::<_, i64>("id")?,
+                row.get::<_, String>("file_name")?,
+                row.get::<_, Option<String>>("dictation_id")?,
+            ))
         })?;
 
-        let mut entries_to_delete: Vec<(i64, String)> = Vec::new();
+        let mut entries_to_delete: Vec<(i64, String, Option<String>)> = Vec::new();
         for row in rows {
             entries_to_delete.push(row?);
         }
 
-        let deleted_count = self.delete_entries_and_files(&entries_to_delete)?;
+        let deleted_count =
+            Self::delete_entries_and_files_with(conn, store, recordings_dir, &entries_to_delete)?;
 
         if deleted_count > 0 {
             debug!(
@@ -453,13 +657,24 @@ impl HistoryManager {
         limit: Option<usize>,
     ) -> Result<PaginatedHistory> {
         let conn = self.get_connection()?;
+        let store = self.lock_store();
+        Self::page_with(&conn, store.as_deref(), cursor, limit)
+    }
+
+    /// One page of entries, newest first, each linked entry carrying its dictation.
+    pub(crate) fn page_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        cursor: Option<i64>,
+        limit: Option<usize>,
+    ) -> Result<PaginatedHistory> {
         let limit = limit.map(|l| l.min(100));
 
         let mut entries: Vec<HistoryEntry> = match (cursor, limit) {
             (Some(cursor_id), Some(lim)) => {
                 let fetch_count = (lim + 1) as i64;
                 let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, dictation_id
                      FROM transcription_history
                      WHERE id < ?1
                      ORDER BY id DESC
@@ -473,7 +688,7 @@ impl HistoryManager {
             (None, Some(lim)) => {
                 let fetch_count = (lim + 1) as i64;
                 let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, dictation_id
                      FROM transcription_history
                      ORDER BY id DESC
                      LIMIT ?1",
@@ -485,7 +700,7 @@ impl HistoryManager {
             }
             (_, None) => {
                 let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, dictation_id
                      FROM transcription_history
                      ORDER BY id DESC",
                 )?;
@@ -499,6 +714,9 @@ impl HistoryManager {
         let has_more = limit.is_some_and(|lim| entries.len() > lim);
         if has_more {
             entries.pop();
+        }
+        for entry in &mut entries {
+            entry.dictation = history_dictations::view(store, entry.dictation_id.as_deref());
         }
 
         Ok(PaginatedHistory { entries, has_more })
@@ -516,7 +734,8 @@ impl HistoryManager {
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
-                post_process_requested
+                post_process_requested,
+                dictation_id
              FROM transcription_history
              ORDER BY timestamp DESC
              LIMIT 1",
@@ -543,7 +762,8 @@ impl HistoryManager {
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
-                post_process_requested
+                post_process_requested,
+                dictation_id
              FROM transcription_history
              WHERE transcription_text != ''
              ORDER BY timestamp DESC
@@ -587,6 +807,10 @@ impl HistoryManager {
 
     pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
+        Self::get_entry_by_id_with(&conn, id)
+    }
+
+    fn get_entry_by_id_with(conn: &Connection, id: i64) -> Result<Option<HistoryEntry>> {
         let mut stmt = conn.prepare(
             "SELECT
                 id,
@@ -597,7 +821,8 @@ impl HistoryManager {
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
-                post_process_requested
+                post_process_requested,
+                dictation_id
              FROM transcription_history
              WHERE id = ?1",
         )?;
@@ -609,11 +834,45 @@ impl HistoryManager {
 
     pub async fn delete_entry(&self, id: i64) -> Result<()> {
         let conn = self.get_connection()?;
+        {
+            let store = self.lock_store();
+            Self::delete_entry_with(&conn, store.as_deref(), &self.recordings_dir, id)?;
+        }
 
+        debug!("Deleted history entry with id: {}", id);
+
+        // Emit history updated event
+        if let Err(e) = (HistoryUpdatePayload::Deleted { id }).emit(&self.app_handle) {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+
+        Ok(())
+    }
+
+    /// Deletes the linked dictation first; if that fails, the row and the WAV stay.
+    pub(crate) fn delete_entry_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        recordings_dir: &Path,
+        id: i64,
+    ) -> Result<()> {
         // Get the entry to find the file name
-        if let Some(entry) = self.get_entry_by_id(id).await? {
+        if let Some(entry) = Self::get_entry_by_id_with(conn, id)? {
+            if let Some(dictation_id) = entry.dictation_id.as_deref() {
+                match store {
+                    Some(store) => history_dictations::delete_dictation(store, dictation_id)
+                        .map_err(|e| {
+                            anyhow!("Failed to delete dictation {}: {}", dictation_id, e)
+                        })?,
+                    None => error!(
+                        "Dictation {} stays in fala.sqlite: the store is unavailable",
+                        dictation_id
+                    ),
+                }
+            }
+
             // Delete the audio file first
-            let file_path = self.get_audio_file_path(&entry.file_name);
+            let file_path = recordings_dir.join(&entry.file_name);
             if file_path.exists() {
                 if let Err(e) = fs::remove_file(&file_path) {
                     error!("Failed to delete audio file {}: {}", entry.file_name, e);
@@ -628,17 +887,49 @@ impl HistoryManager {
             params![id],
         )?;
 
-        debug!("Deleted history entry with id: {}", id);
-
-        // Emit history updated event
-        if let Err(e) = (HistoryUpdatePayload::Deleted { id }).emit(&self.app_handle) {
-            error!("Failed to emit history-updated event: {}", e);
-        }
-
         Ok(())
     }
 
-    fn format_timestamp_title(&self, timestamp: i64) -> String {
+    /// Undo (`Showing::Raw`) or redo (`Showing::Final`) the edit of an entry's dictation.
+    pub fn set_showing(&self, id: i64, showing: Showing) -> Result<HistoryEntry> {
+        let conn = self.get_connection()?;
+        let entry = {
+            let store = self.lock_store();
+            Self::set_showing_with(&conn, store.as_deref(), id, showing)?
+        };
+        if let Err(e) = (HistoryUpdatePayload::Updated {
+            entry: entry.clone(),
+        })
+        .emit(&self.app_handle)
+        {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+        Ok(entry)
+    }
+
+    pub(crate) fn set_showing_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        id: i64,
+        showing: Showing,
+    ) -> Result<HistoryEntry> {
+        let store = store.ok_or_else(|| anyhow!("fala.sqlite is not available"))?;
+        let mut entry = Self::get_entry_by_id_with(conn, id)?
+            .ok_or_else(|| anyhow!("History entry {} not found", id))?;
+        let dictation_id = entry
+            .dictation_id
+            .clone()
+            .ok_or_else(|| anyhow!("History entry {} has no dictation", id))?;
+        let record = match showing {
+            Showing::Raw => store.undo(&dictation_id),
+            Showing::Final => store.redo(&dictation_id),
+        }
+        .map_err(|e| anyhow!("{}", e))?;
+        entry.dictation = Some(HistoryDictation::from(&record));
+        Ok(entry)
+    }
+
+    fn format_timestamp_title(timestamp: i64) -> String {
         if let Some(utc_datetime) = DateTime::from_timestamp(timestamp, 0) {
             // Convert UTC to local timezone
             let local_datetime = utc_datetime.with_timezone(&Local);
@@ -666,7 +957,8 @@ mod tests {
                 transcription_text TEXT NOT NULL,
                 post_processed_text TEXT,
                 post_process_prompt TEXT,
-                post_process_requested BOOLEAN NOT NULL DEFAULT 0
+                post_process_requested BOOLEAN NOT NULL DEFAULT 0,
+                dictation_id TEXT
             );",
         )
         .expect("create transcription_history table");
@@ -697,6 +989,44 @@ mod tests {
             ],
         )
         .expect("insert history entry");
+    }
+
+    #[test]
+    fn migration_five_adds_nullable_dictation_id() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        Migrations::new(MIGRATIONS[..4].to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to version 4");
+        insert_entry(&conn, 100, "antes", None);
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+
+        Migrations::new(MIGRATIONS.to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to latest");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 5);
+        let notnull: i64 = conn
+            .query_row(
+                "SELECT \"notnull\" FROM pragma_table_info('transcription_history') WHERE name = 'dictation_id'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("dictation_id column exists");
+        assert_eq!(notnull, 0);
+        let link: Option<String> = conn
+            .query_row(
+                "SELECT dictation_id FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(link, None);
     }
 
     #[test]
