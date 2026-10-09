@@ -63,7 +63,7 @@ Proof: `cargo test -p fala settings::tests::gemini_provider_is_added_to_old_stor
 **C15** - `bun run lint`, `bun run format:check` e `bun run check:translations` saem com 0; as chaves `settings.llm.*` existem em `pt` e `en` (AC 14)
 Proof: `bun run lint && bun run format:check && bun run check:translations`
 
-**C16** - em `bun run tauri dev` no Windows, o grupo "IA" aparece nos settings gerais; desligar o interruptor, digitar uma chave e editar a lista persistem depois de reabrir o app; com a chave e um ditado de mais de 15 palavras no Bloco de Notas, o texto entra formatado (AC 14, AC 1; `TODO(windows)`: manual)
+**C16** - em `bun run tauri dev` no Windows, o grupo "IA" aparece nos settings gerais; desligar o interruptor, digitar uma chave e editar a lista persistem depois de reabrir o app; na página herdada de pós-processamento, dar uma tecla ao segundo atalho e depois "restaurar" deixa o campo vazio e a tecla para de disparar; com a chave e um ditado de mais de 15 palavras no Bloco de Notas, o texto entra formatado (AC 14, AC 1; `TODO(windows)`: manual)
 Proof: manual, registrado no PR
 
 ### Gate

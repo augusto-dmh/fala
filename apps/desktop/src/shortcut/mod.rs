@@ -165,10 +165,12 @@ pub fn change_binding(
         }
     }
 
-    // Unregister the existing binding
-    if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
-        let error_msg = format!("Failed to unregister shortcut: {}", e);
-        error!("change_binding error: {}", error_msg);
+    // Unregister the existing binding (an unset one was never registered)
+    if !binding_is_unset(&binding_to_modify) {
+        if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
+            let error_msg = format!("Failed to unregister shortcut: {}", e);
+            error!("change_binding error: {}", error_msg);
+        }
     }
 
     // Validate the new shortcut for the current keyboard implementation
@@ -213,6 +215,9 @@ pub fn change_binding(
 /// Best-effort re-register of the previous binding after a failed change,
 /// so a failure leaves the user's shortcut working exactly as before.
 fn restore_registration(app: &AppHandle, binding: &ShortcutBinding) {
+    if binding_is_unset(binding) {
+        return;
+    }
     if let Err(e) = register_shortcut(app, binding.clone()) {
         error!(
             "Failed to restore previous binding '{}' ({}): {}",
@@ -225,7 +230,35 @@ fn restore_registration(app: &AppHandle, binding: &ShortcutBinding) {
 #[specta::specta]
 pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, String> {
     let binding = settings::get_stored_binding(&settings::get_settings(&app), &id)?;
+    if binding.default_binding.trim().is_empty() {
+        return clear_binding(&app, id, binding);
+    }
     change_binding(app, id, binding.default_binding)
+}
+
+/// Resets a binding whose default is no key (the legacy post-processing one): unregisters it
+/// and leaves it unset, which `change_binding` refuses as input.
+fn clear_binding(
+    app: &AppHandle,
+    id: String,
+    binding: ShortcutBinding,
+) -> Result<BindingResponse, String> {
+    if !binding_is_unset(&binding) {
+        if let Err(e) = unregister_shortcut(app, binding.clone()) {
+            warn!("clear_binding: could not unregister '{}': {}", id, e);
+        }
+    }
+    let mut cleared = binding;
+    cleared.current_binding.clear();
+    let mut settings = settings::get_settings(app);
+    settings.bindings.insert(id, cleared.clone());
+    settings::write_settings(app, settings);
+    crate::secure_input::reconcile_fallback(app);
+    Ok(BindingResponse {
+        success: true,
+        binding: Some(cleared),
+        error: None,
+    })
 }
 
 /// Unregister every binding while the user is recording a new shortcut in
@@ -246,13 +279,18 @@ pub fn suspend_all_shortcuts(app: &AppHandle) {
     }
 }
 
+/// A binding with no key (the legacy post-processing one by default) is never registered.
+pub(crate) fn binding_is_unset(binding: &ShortcutBinding) -> bool {
+    binding.current_binding.trim().is_empty()
+}
+
 /// Re-register every binding from settings after shortcut recording ends.
 /// Registering an already-registered shortcut fails cleanly in both
 /// implementations, so this is idempotent and safe on every exit path.
 pub fn resume_all_shortcuts(app: &AppHandle) {
     let settings = get_settings(app);
     for (id, binding) in &settings.bindings {
-        if id == "cancel" {
+        if id == "cancel" || binding_is_unset(binding) {
             continue;
         }
         if id == "transcribe_with_post_process" && !settings.post_process_enabled {
@@ -456,6 +494,9 @@ fn register_all_shortcuts_for_implementation(
             .get(id)
             .cloned()
             .unwrap_or_else(|| default_binding.clone());
+        if binding_is_unset(&binding) {
+            continue;
+        }
 
         // Validate the shortcut for the target implementation
         if let Err(e) =
@@ -1022,7 +1063,9 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
         .cloned()
     {
         if enabled {
-            let _ = register_shortcut(&app, binding);
+            if !binding_is_unset(&binding) {
+                let _ = register_shortcut(&app, binding);
+            }
         } else {
             let _ = unregister_shortcut(&app, binding);
         }
@@ -1418,6 +1461,20 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 mod tests {
     use handy_keys::Hotkey;
     use tauri_plugin_global_shortcut::Shortcut;
+
+    #[test]
+    fn empty_binding_is_unset() {
+        let binding = |current: &str| crate::settings::ShortcutBinding {
+            id: "transcribe_with_post_process".to_string(),
+            name: String::new(),
+            description: String::new(),
+            default_binding: String::new(),
+            current_binding: current.to_string(),
+        };
+        assert!(super::binding_is_unset(&binding("")));
+        assert!(super::binding_is_unset(&binding("  ")));
+        assert!(!super::binding_is_unset(&binding("ctrl+space")));
+    }
 
     #[test]
     fn compound_shortcut_keys_parse_on_both_backends() {
