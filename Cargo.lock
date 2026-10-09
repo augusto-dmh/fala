@@ -2055,6 +2055,9 @@ name = "fala-hotkey"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "handy-keys",
+ "log",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
