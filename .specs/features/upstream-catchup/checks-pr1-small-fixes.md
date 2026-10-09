@@ -12,14 +12,19 @@ frase quando um filler maiúsculo é removido (#2157, que no Fala também mora e
 transcribe-cpp no início a frio (#2160), o instalador NSIS sem o ícone do app (#2117) e a lista de
 sons custom lida só na montagem do seletor (#1941). Com este PR, o atalho sem modelo não abre o
 mic, "Isso funciona. Uhm, deixa eu ver" vira "Isso funciona. Deixa eu ver" nos dois filtros, o
-instalador mostra o ícone do Fala e o seletor de som relê a pasta ao abrir.
+instalador mostra o ícone do Fala e o seletor de som relê a pasta ao abrir. Depois da rodada 1 do
+Verifier entrou também a issue do upstream #1384 (aberta lá, bug confirmado no Fala): o
+`assetProtocol` com `allow: ["**"]` deixava a WebView ler qualquer arquivo; passa a ler só a
+pasta de gravações (o relatório agrupa este item com o `installerIcon`, para a release Windows).
 
 Decisões (Confirmed? y — delegado): cherry-pick `-x` com a autoria do upstream onde aplica limpo;
 a regra do postproc é reimplementada sobre tokens, e só um filler que já vinha maiúsculo passa a
 maiúscula adiante (mesma regra do upstream); do #2117 só a linha `installerIcon`, sem
-`signCommand` (ADR-0008 adia a assinatura).
+`signCommand` (ADR-0008 adia a assinatura); o escopo do `assetProtocol` fica em
+`$APPDATA/recordings/**` no `tauri.conf.json` e o `HistoryManager` libera em runtime a pasta de
+gravações que de fato usa, porque o modo portátil a move para perto do executável.
 
-10 checks in 1 slice · 0 one-way doors · 0 open, of which 0 block
+11 checks in 1 slice · 0 one-way doors · 0 open, of which 0 block
 
 Comandos de cargo com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`, na
 raiz do worktree.
@@ -50,7 +55,7 @@ e um filler minúsculo depois do ponto não cria maiúscula
 Proof: `cargo test -p fala-postproc rules::tests::keeps_sentence_capital_after_removed_filler`
 
 **C5** - Os testes de fillers que já existiam no postproc continuam verdes sem asserção editada
-Proof: `cargo test -p fala-postproc rules::tests::removes_pt_br_fillers rules::tests::en_keeps_pt_only_fillers`
+Proof: `cargo test -p fala-postproc -- rules::tests::removes_pt_br_fillers rules::tests::en_keeps_pt_only_fillers`
 
 **C6** - Em inglês, "Ha Long Bay is beautiful." sai igual: "ha" não está mais na lista `en` (upstream #2156)
 Proof: `cargo test -p fala --lib audio_toolkit::text::tests::test_filter_keeps_ha_in_english`
@@ -73,11 +78,19 @@ Proof: `bun run lint && bun run build`
 **C10** - Nenhuma marca do Handy entra no código
 Proof: `scripts/check-brand.sh`
 
+**C11** - `app.security.assetProtocol.scope.allow` é exatamente `["$APPDATA/recordings/**"]` com
+`enable: true`, e `HistoryManager::new` chama `asset_protocol_scope().allow_directory` com a pasta
+`recordings` que criou, recursiva (upstream issue #1384)
+Proof: `cargo test -p fala --lib -- managers::history::tests::asset_protocol_reads_only_the_recordings_folder`
+Proof: `awk '/pub fn new\(app_handle: &AppHandle\)/{f=1} f&&/allow_recordings_in_asset_scope\(app_handle, &recordings_dir\)/{ok=1; exit} END{exit !ok}' apps/desktop/src/managers/history.rs && grep -q '.allow_directory(recordings_dir, true)' apps/desktop/src/managers/history.rs`
+
 ## Coverage
 
 | Set (size) | Member -> proof | Unproven |
 | --- | --- | --- |
 | commits do upstream neste PR (6) | #2161 C1, C2 · #2157 C3, C4 · #2156 C6 · #2160 C7 · #2117 C8 · #1941 C9 | - |
+| issues do upstream neste PR (1) | #1384 C11 | - |
+| lugares que dão escopo ao asset protocol (2 assemblies) | `tauri.conf.json` estático C11 · `HistoryManager::new` em runtime C11 | - |
 | filtros que removem filler (2 lugares) | `audio_toolkit/text.rs` C3 · `crates/postproc/src/rules.rs` C4 | - |
 | fins de frase que abrem a próxima (4) | `.` C3, C4 · `!` C4 · `?` C4 · `…` C4 | - |
 | posição do filler maiúsculo (3) | início do texto C3 · depois de fim de frase C3, C4 · meio da frase C3, C4 | - |
@@ -92,7 +105,7 @@ Proof: `scripts/check-brand.sh`
 - validation: C8 (configuração do bundle)
 - failure modes: C1 (sem modelo), C2 (start que não gravou)
 - idempotency: n/a - nenhuma operação repetível nova
-- authorization: n/a - nada de acesso novo
+- authorization: C11 (a WebView só lê a pasta de gravações)
 - concurrency: C7 (a enumeração sai da thread principal)
 - data lifecycle: n/a - nenhum dado persistido muda
 - dependency failure: C1 (modelo ausente no disco)
