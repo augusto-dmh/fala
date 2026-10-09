@@ -7,11 +7,11 @@ Plan: none - cada PR cabe numa frase; a especificação é a Parte 3 do relatór
 
 O Fala ainda tem a cara do Handy: a paleta rosa, a sidebar de configurações, o cartão de settings com título em caixa-alta e "?" com tooltip, o footer com seletor de modelo e a janela 680×570. Com estes três PRs, o app passa a usar tokens de tinta (neutros e semânticas, sem cor de marca), linhas de configuração no padrão do app Configurações do Windows 11, e abre em Início (os ditados) com um rail de três destinos.
 
-24 checks in 2 slices · 0 one-way doors · 0 open, of which 0 block
+34 checks in 3 slices · 0 one-way doors · 0 open, of which 0 block
 
 O repositório não tem vitest. A prova segue o padrão de `src/overlay/pill.test.tsx`: um script `node:assert` rodado pelo `bun`, que lê o CSS e o TSX como texto, imprime `<id> ok` por check e sai com código diferente de 0 na primeira falha. Os portões do frontend são comandos do `package.json` e do CI.
 
-`T1` = `bun src/styles/tokens.test.ts`. `T2` = `bun src/components/ui/controls.test.tsx` (renderiza os controles com `react-dom/server` e lê as classes).
+`T1` = `bun src/styles/tokens.test.ts`. `T2` = `bun src/components/ui/controls.test.tsx` (renderiza os controles com `react-dom/server` e lê as classes). `T3` = `bun src/components/shell.test.tsx` (renderiza o `Rail`, testa as funções puras de `settingsNav.ts` e lê `App.tsx`, os locales e as telas como texto; sem i18next inicializado, os rótulos aparecem como chaves).
 
 Decisões delegadas (Confirmed? y — delegado), uma linha cada:
 
@@ -25,6 +25,13 @@ Decisões delegadas (Confirmed? y — delegado), uma linha cada:
 - D8: `descriptionMode` e `tooltipPosition` continuam aceitos (mesma API) e não mudam mais nada: a descrição é sempre visível; um `icon` opcional entra na API (aditivo). Confirmed? y — delegado
 - D9: campos de texto (`Input`, `Select`) marcam o foco com o sublinhado de tinta do Fluent (borda inferior + 1 px interno), não com o anel duplo; botões, toggle, slider e o gatilho do `Dropdown` usam o anel duplo (`focus-visible:focus-ring`). Confirmed? y — delegado
 - D10: `Textarea`, `ResetButton`, `Tooltip` e os demais `ui/*` fora da lista da 3.6 ficam como estão (herdam pelos aliases). Confirmed? y — delegado
+- D11: Configurações é uma página com três abas (Geral, Avançado, Sobre); Modelos, Pós-processamento (só com `post_process_enabled`) e Depuração (só com `debug_mode`) descem para linhas "Mais opções" no fim de Avançado e abrem uma subpágina com breadcrumb "Avançado › X". A reorganização das seções por ordem de uso (Ditado, IA, Aparência e app) fica para depois: Geral e Avançado mantêm o conteúdo herdado. Confirmed? y — delegado
+- D12: o rail tem Início e Dicionário no topo e Configurações no rodapé, junto do estado do modelo (como Wispr Flow e Granola: Settings no rodapé). Ícones lucide `House`, `BookA`, `Settings` a 20 px, traço 1.5. Confirmed? y — delegado
+- D13: o estado do modelo no rodapé é o `ModelSelector` com uma variante `status` (bolinha + texto, sem dropdown nem seta; o texto vira `sr-only` com o rail recolhido); o clique abre Configurações › Avançado › Modelos. Assim os listeners herdados (troca automática de modelo ao fim do download) continuam montados uma única vez. As cores da bolinha passam a ser semânticas (`ok`, `warn`, `danger`, `text-2`, `text-3`). Confirmed? y — delegado
+- D14: `UPDATER_ENABLED = false` em `src/lib/updater.ts` esconde o `WhatsNewGate`, a opção "mostrar novidades" em Sobre e, em Depuração, a prévia de novidades e o toggle de verificação de atualizações; o `UpdateChecker` some com o footer. Os arquivos ficam, para religar junto com o updater (ADR-0008). Confirmed? y — delegado
+- D15: `CustomWords` sai de Avançado › Transcrição e passa a viver só em Dicionário; Início é, por enquanto, a tela de histórico herdada sob o cabeçalho "Início" (o feed por dia é o PR 4). O bloco `sidebar` dos locales sai; entram `rail`, `dictionary` e `settingsPage`. Confirmed? y — delegado
+- D16: a prova de C13 (sidebar) passa a ler o componente de navegação que existir (`Sidebar.tsx` até o PR 2, `Rail.tsx` a partir do PR 3), porque o PR 3 apaga a sidebar; o item ativo do rail é provado em C26. Confirmed? y — delegado
+- D17: o item "Verificar atualizações" do tray (Rust, `tray.rs`) continua ligado por padrão e, sem o `UpdateChecker`, não faz nada; escondê-lo é mudança em `apps/desktop` fora da linha de tamanho da janela permitida neste PR, então fica registrado como follow-up no corpo do PR. Confirmed? y — delegado
 
 ## Checks
 
@@ -71,7 +78,7 @@ Proof: `T1` imprime `C12 ok`
 
 **C13** - Nenhuma linha de `.tsx` em `src/` põe `text-white` junto de um fundo sólido `bg-logo-primary`, `bg-background-ui` ou `bg-accent`; o `Badge` primário é `bg-accent text-on-accent`; a bolinha do toggle ligado é `peer-checked:after:bg-on-accent`; o item ativo da sidebar não é mais `bg-logo-primary/80`; o PR 1 não muda nenhuma string (`git diff origin/main...HEAD -- src/i18n` vazio)
 Proof: `T1` imprime `C13 ok`
-Proof: `git diff --exit-code origin/main...HEAD -- src/i18n` sai com 0
+Proof: `git diff --exit-code origin/main...style/ui-ink-tokens -- src/i18n` sai com 0 (ponta do PR 1 fixada: o PR 3 muda os locales)
 
 **C14** - Portões do frontend: `bun run lint`, `bun run format:check`, `bun run check:translations`, `bunx tsc --noEmit`, `bun run build` e `scripts/check-brand.sh` saem com 0
 Proof: os seis comandos, cada um com exit 0
@@ -107,8 +114,42 @@ Proof: `T2` imprime `C23 ok`
 
 **C24** - Nenhum dos 8 arquivos restilizados (`SettingsGroup`, `SettingContainer`, `Button`, `ToggleSwitch`, `Input`, `Select`, `Dropdown`, `Slider`) cita `logo-primary`, `background-ui`, `mid-gray`, `bg-background` ou `--color-background`; o PR 2 não toca nenhuma tela de configuração nem string (diff de `src/components/settings` e `src/i18n` desde a base do PR 2 vazio) e todos os chamadores compilam sem edição; os portões do frontend (C14) e os testes `T1` e da pill continuam verdes
 Proof: `T2` imprime `C24 ok`
-Proof: `git diff --exit-code style/ui-ink-tokens...HEAD -- src/components/settings src/i18n` sai com 0
+Proof: `git diff --exit-code style/ui-ink-tokens...style/ui-fluent-controls -- src/components/settings src/i18n` sai com 0 (pontas do PR 1 e do PR 2 fixadas: o PR 3 muda essas pastas)
 Proof: `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`, `bun run check:translations`, `bun run build`, `scripts/check-brand.sh`, `T1` e `bun src/overlay/pill.test.tsx` saem com 0
+
+### S3 - PR 3, rail e abertura em Início · 20 files · ~90 KB · ~25k
+
+**C25** - O `Rail` tem `RAIL_ITEMS` = `home`, `dictionary` no topo e o item `settings` no rodapé (depois de um bloco `mt-auto`), dentro de um `<nav aria-label="rail.navigation">` de `w-[220px]` que vira `max-[840px]:w-[48px]` com os rótulos `max-[840px]:hidden`; o wordmark "Fala" é `text-subtitle font-semibold text-text` ao lado da pill em miniatura (`fill-black`/`fill-white`); ícones de 20 px com `stroke-width` 1.5
+Proof: `T3` imprime `C25 ok`
+
+**C26** - Para cada destino ativo (`home`, `dictionary`, `settings`), exatamente o botão desse destino tem `aria-current="page"`, `bg-text/5` e a barra de 3 px (`before:w-[3px] before:bg-accent`); os outros dois não; nenhum cita `logo-primary`
+Proof: `T3` imprime `C26 ok`
+
+**C27** - O app abre em Início: `App.tsx` começa com `useState<RailDestination>("home")` e renderiza `HomePage` (que contém `<HistorySettings />`) e `DictionaryPage` pelos destinos; `App.tsx` não cita `Sidebar`, `Footer` nem `SECTIONS_CONFIG`; `src/components/Sidebar.tsx` e `src/components/footer/` não existem
+Proof: `T3` imprime `C27 ok`
+
+**C28** - Navegação de Configurações: `visibleAdvancedPages` dá `models` sempre, `postprocessing` só com `post_process_enabled` e `debug` só com `debug_mode` (as 4 combinações e `null`); `resolveSettingsView` mapeia `general`/`advanced`/`about` para si mesmos sem subpágina, `models`/`postprocessing`/`debug` alcançáveis para a subpágina com a aba `advanced`, e `postprocessing`/`debug` inalcançáveis para `advanced`; a `SettingsPage` tem `role="tablist"`, `role="tab"` com `aria-selected` e as três abas, e renderiza `GeneralSettings`, `ModelsSettings`, `PostProcessingSettings`, `DebugSettings` e `AboutSettings` pela visão atual
+Proof: `T3` imprime `C28 ok`
+
+**C29** - Dicionário é um destino próprio: `DictionaryPage` renderiza `<CustomWords grouped />` e `AdvancedSettings` não cita mais `CustomWords`
+Proof: `T3` imprime `C29 ok`
+
+**C30** - O rodapé do rail mostra só o estado do modelo: `<ModelSelector variant="status" onOpen={onOpenModels} />`; o ramo `status` do `ModelSelector` chama `onOpen?.()`, não renderiza `ModelDropdown` e passa `compact`; o `ModelStatusButton` compacto esconde a seta (`{!compact && (`) e põe o texto em `max-[840px]:sr-only`; no `App.tsx`, `onOpenModels` leva a `setDestination("settings")` e `setSettingsView("models")`
+Proof: `T3` imprime `C30 ok`
+
+**C31** - Com o updater desligado, `UPDATER_ENABLED` é `false` e condiciona o `WhatsNewGate` no `App.tsx`, o `ShowWhatsNewOnUpdate` em `AboutSettings` e o `WhatsNewPreview` e o `UpdateChecksToggle` em `DebugSettings`
+Proof: `T3` imprime `C31 ok`
+
+**C32** - As strings novas existem em `pt` (fonte) e `en`: `rail.navigation` "Navegação principal", `rail.home` "Início"/"Home", `rail.dictionary` "Dicionário"/"Dictionary", `rail.settings` "Configurações"/"Settings", `settingsPage.tabs.*` "Geral"/"Avançado"/"Sobre", `settingsPage.advancedPages.title` "Mais opções", títulos "Modelos", "Pós-processamento", "Depuração", e as descrições de `dictionary` e das três subpáginas nos dois idiomas; o bloco `sidebar` não existe em nenhum dos dois
+Proof: `T3` imprime `C32 ok`
+Proof: `bun run check:translations` sai com 0
+
+**C33** - A janela principal abre com 960×640 e tem mínimo de 720×520 (`apps/desktop/src/lib.rs`: `.inner_size(960.0, 640.0)` e `.min_inner_size(720.0, 520.0)`), e o crate do desktop compila
+Proof: `grep -n "inner_size(960.0, 640.0)" apps/desktop/src/lib.rs && grep -n "min_inner_size(720.0, 520.0)" apps/desktop/src/lib.rs` sai com 0
+Proof: `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2 cargo check -p fala` sai com 0
+
+**C34** - Portões e provas anteriores continuam verdes no PR 3: `bun run lint` (nenhum literal em JSX), `bunx prettier --check .`, `bun run check:translations`, `bunx tsc --noEmit`, `bun run build`, `scripts/check-brand.sh`, `T1` (com C13 lendo o rail, D16), `T2`, `bun src/overlay/pill.test.tsx` e `bun src/components/settings/history/historyModel.test.ts`
+Proof: os dez comandos, cada um com exit 0
 
 ## Coverage
 
@@ -128,6 +169,12 @@ Proof: `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`, `bun run che
 | tamanhos do `Button` (3) | `sm` C18 · `md` C18 · `lg` C18 | - |
 | altura da linha (2) | sem descrição 56 px C17 · com descrição 68 px C17 | - |
 | estados do toggle (2) | desligado C19 · ligado C19 | - |
+| destinos do rail (3) | `home` C25, C26 · `dictionary` C25, C26 · `settings` C25, C26 | - |
+| páginas que saem do primeiro nível (4) | Modelos C28 · Pós-processamento C28 · Depuração C28 · Sobre C28 | - |
+| combinações de `post_process_enabled` × `debug_mode` (4) | C28, table-driven sobre as 4 | - |
+| visões de Configurações (6) | `general` C28 · `advanced` C28 · `about` C28 · `models` C28 · `postprocessing` C28 · `debug` C28 | - |
+| superfícies do updater escondidas (4) | `WhatsNewGate` C31 · `ShowWhatsNewOnUpdate` C31 · `WhatsNewPreview` C31 · `UpdateChecksToggle` C31 | - |
+| itens do PR 3 na 3.10 (7) | `Rail` C25 · destinos C26 · footer removido C27 · estado do modelo no rodapé C30 · páginas descem C28 · janela C33 · i18n C32 | - |
 
 ## Swept
 
@@ -151,3 +198,5 @@ Proof: `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`, `bun run che
 - S1 = ~15k (theme.css 6 KB, App.css 6 KB, App.tsx 13 KB, RecordingOverlay.css 14 KB, 9 componentes com troca de uma classe ~25 KB) - um builder, sob o orçamento de 150k
 - S2 = ~10k (8 arquivos de `ui/` ~30 KB + o teste) - acumulado ~25k, um builder
 - **Boundary:** C1-C14 fechados em `c0ed440` (PASS do Verifier; `6dff00f` só acrescenta o relatório)
+- **Boundary:** C15-C24 fechados em `f109ade` (PASS do Verifier na rodada 2, depois de tirar `inline-flex gap-2` da base do `Button`; `bc612ad` só acrescenta o relatório)
+- S3 = ~25k (App.tsx 13 KB, 6 arquivos novos ~20 KB, ModelSelector 10 KB, locales, lib.rs só 2 linhas) - acumulado ~50k, um builder
