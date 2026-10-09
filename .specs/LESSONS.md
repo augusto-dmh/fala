@@ -42,6 +42,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: Windows CI on main after #34 and #33 (fixed by #41, #42) (tests)
 - last seen: 2026-10-04T19:55:48Z
 
+### L-006 - A diff proof scoped to the feature must compare from the merge-base (origin/main...HEAD), never two-dot, or a moving main makes it fail on commits the branch never touched
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `proofs` · harmful: 0
+- features: hotkey-inject-traits
+- evidence: C22 - .specs/features/hotkey-inject-traits/verification.md round 1 finding 1 (proofs)
+- last seen: 2026-10-09T19:33:29Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
