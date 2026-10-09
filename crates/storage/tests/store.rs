@@ -193,7 +193,7 @@ fn open_sets_wal_timeout_and_version() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 
     // Um escritor segurando o lock por 300 ms não faz o `add` falhar: ele espera.
     let db = env.db.clone();
@@ -464,4 +464,111 @@ fn delete_tolerates_missing_mirror() {
         store.get(&gone.id),
         Err(StorageError::NotFound(_))
     ));
+}
+
+fn pragma(db: &std::path::Path, name: &str) -> i64 {
+    Connection::open(db)
+        .unwrap()
+        .pragma_query_value(None, name, |r| r.get(0))
+        .unwrap()
+}
+
+/// Deixa o banco como um `fala.sqlite` da versão 1: o mesmo schema, sem `auto_vacuum`.
+fn downgrade_to_schema_1(db: &std::path::Path) {
+    Connection::open(db)
+        .unwrap()
+        .execute_batch("PRAGMA auto_vacuum = NONE; VACUUM; PRAGMA user_version = 1;")
+        .unwrap();
+    assert_eq!(pragma(db, "auto_vacuum"), 0);
+    assert_eq!(pragma(db, "user_version"), 1);
+}
+
+#[test]
+fn new_db_has_incremental_auto_vacuum() {
+    let env = env("new_db_has_incremental_auto_vacuum");
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 2);
+}
+
+#[test]
+fn schema_1_db_is_vacuumed_once() {
+    let env = env("schema_1_db_is_vacuumed_once");
+    let id = env
+        .open()
+        .add(&unedited("reunião de orçamento"), at(9, 0, 0))
+        .unwrap()
+        .id;
+    downgrade_to_schema_1(&env.db);
+
+    let store = env.open();
+    assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(
+        store.get(&id).unwrap().dictation.final_text,
+        "reunião de orçamento"
+    );
+    let hits = store.search("orcamento", 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, id);
+}
+
+#[test]
+fn busy_vacuum_keeps_version_1() {
+    let env = env("busy_vacuum_keeps_version_1");
+    drop(env.open());
+    downgrade_to_schema_1(&env.db);
+
+    // Um escritor segura o banco por mais que o `busy_timeout` de 5 s.
+    let db = env.db.clone();
+    let (locked, wait_lock) = std::sync::mpsc::channel();
+    let (done, wait_done) = std::sync::mpsc::channel::<()>();
+    let handle = thread::spawn(move || {
+        let mut other = Connection::open(&db).unwrap();
+        let tx = other
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        locked.send(()).unwrap();
+        wait_done.recv().unwrap();
+        tx.commit().unwrap();
+    });
+    wait_lock.recv().unwrap();
+    let store = env.open();
+    done.send(()).unwrap();
+    handle.join().unwrap();
+    assert_eq!(pragma(&env.db, "user_version"), 1);
+    store
+        .add(&unedited("depois da trava"), at(10, 0, 0))
+        .unwrap();
+    drop(store);
+
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
+}
+
+#[test]
+fn reopen_releases_free_pages() {
+    let env = env("reopen_releases_free_pages");
+    let store = env.open();
+    let filler = "palavra ".repeat(256);
+    let ids: Vec<String> = (0..200)
+        .map(|i| {
+            store
+                .add(&unedited(&format!("{i} {filler}")), at(11, 0, 0))
+                .unwrap()
+                .id
+        })
+        .collect();
+    for id in &ids {
+        store.delete(id).unwrap();
+    }
+    drop(store);
+    assert!(pragma(&env.db, "freelist_count") > 0);
+    let before = fs::metadata(&env.db).unwrap().len();
+
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "freelist_count"), 0);
+    let after = fs::metadata(&env.db).unwrap().len();
+    assert!(after < before, "{after} >= {before}");
 }

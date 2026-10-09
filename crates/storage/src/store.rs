@@ -11,7 +11,9 @@ use crate::mirror::{self, DITADOS};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
 /// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
-const SCHEMA_VERSION: i64 = 1;
+///
+/// 1: as tabelas de `SCHEMA_1`. 2: as mesmas, com `auto_vacuum = INCREMENTAL`.
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_1: &str = "
 CREATE TABLE dictations (
@@ -53,18 +55,38 @@ pub struct Store {
 
 impl Store {
     /// Abre (ou cria) o banco em WAL com `busy_timeout` de 5 s e aplica o schema.
+    ///
+    /// Banco novo nasce com `auto_vacuum = INCREMENTAL`, que só vale antes da primeira tabela.
+    /// Banco na versão 1 passa por um `VACUUM` uma vez; se outro processo o segura, a migração
+    /// fica para a próxima abertura. Com a versão em dia, as páginas livres voltam ao SO.
     pub fn open(db: &Path, notes_dir: &Path) -> Result<Self, StorageError> {
         if let Some(dir) = db.parent().filter(|d| !d.as_os_str().is_empty()) {
             fs::create_dir_all(dir)?;
         }
         let conn = Connection::open(db)?;
         conn.busy_timeout(std::time::Duration::from_millis(5000))?;
-        conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version < SCHEMA_VERSION {
-            conn.execute_batch(&format!(
+        if version == 0 {
+            conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+        }
+        conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
+        match version {
+            0 => conn.execute_batch(&format!(
                 "BEGIN; {SCHEMA_1} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
-            ))?;
+            ))?,
+            1 => {
+                // `VACUUM` não roda dentro de transação; se cair entre ele e a versão, roda de novo.
+                let vacuumed = conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL; VACUUM;");
+                match vacuumed {
+                    Ok(()) => conn.pragma_update(None, "user_version", SCHEMA_VERSION)?,
+                    Err(e) => log::warn!("fala.sqlite: VACUUM da migração adiado: {e}"),
+                }
+            }
+            _ => {
+                if let Err(e) = incremental_vacuum(&conn) {
+                    log::warn!("fala.sqlite: incremental_vacuum adiado: {e}");
+                }
+            }
         }
         Ok(Store {
             conn,
@@ -263,6 +285,14 @@ impl Store {
             source,
         })
     }
+}
+
+/// Devolve todas as páginas livres. O pragma libera uma página por passo, então é lido até o fim.
+fn incremental_vacuum(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA incremental_vacuum")?;
+    let mut rows = stmt.query([])?;
+    while rows.next()?.is_some() {}
+    Ok(())
 }
 
 fn insert(conn: &Connection, record: &DictationRecord) -> Result<(), StorageError> {
