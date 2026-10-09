@@ -26,6 +26,7 @@ import {
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { WhatsNewGate } from "./components/whats-new";
+import { requestConsent } from "./components/meeting/meetingModel";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
@@ -138,6 +139,24 @@ function App() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [settings?.debug_mode, updateSetting]);
+
+  // The tray asked to record before the third-party notice was accepted: open the Meetings
+  // page, which shows the notice (ADR-0005).
+  // An open page shows the notice from its own listener; only a page about to mount needs
+  // the request, so the two listeners never race over it.
+  const sectionRef = useRef(currentSection);
+  sectionRef.current = currentSection;
+  useEffect(() => {
+    const unlisten = listen("meeting-consent-required", () => {
+      if (sectionRef.current !== "meetings") {
+        requestConsent();
+        setCurrentSection("meetings");
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Listen for recording errors from the backend and show a toast
   useEffect(() => {
