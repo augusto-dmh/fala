@@ -234,6 +234,25 @@
       },
       "noModelsMatch": "No models match this filter."
     },
+    "llm": {
+      "title": "AI",
+      "enabled": {
+        "label": "Format dictations with AI",
+        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does."
+      },
+      "apiKey": {
+        "title": "Gemini key",
+        "description": "Kept in the system password vault. Without a key, only the local rules format the text.",
+        "placeholder": "Paste the API key"
+      },
+      "disabledApps": {
+        "title": "Apps without AI",
+        "description": "Text typed into these apps is never sent to Gemini. Use the executable name, such as chrome or code.",
+        "placeholder": "App name",
+        "add": "Add",
+        "remove": "Remove {{app}}"
+      }
+    },
     "sound": {
       "title": "Sound",
       "microphone": {
