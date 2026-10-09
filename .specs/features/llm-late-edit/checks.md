@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/llm-late-edit/plan.md`
 
-10 checks in 2 slices · 1 one-way door · 0 open, of which 0 block
+11 checks in 2 slices · 1 one-way door · 0 open, of which 0 block
 
 Comandos reais do repositório: `cargo test -p fala --lib <filtro>` (o pacote de `apps/desktop` é `fala`),
 `cargo test -p fala-storage --test store <filtro>`, `bun <arquivo>.test.ts` (padrão de `historyModel.test.ts`),
@@ -19,6 +19,9 @@ Comandos reais do repositório: `cargo test -p fala --lib <filtro>` (o pacote de
 **C1** - With `app_name` in `llm_disabled_apps` (the list `["keepassxc"]`, the app `"KeePassXC"`, case-insensitive) the dictation is added through `Store::add_sensitive` and `Store::get` returns `sensitive = true`; with `"notepad"`, `sensitive = false` (AC 1)
 Proof: `cargo test -p fala --lib managers::history_dictations::tests::disabled_app_marks_sensitive` (two cases)
 
+**C11** - Retranscribing an entry from the history (`update_transcription_with`) replaces its dictation with one that keeps the old dictation's `sensitive`: `true` stays `true`, `false` stays `false` (AC 1, the retry path that also adds a dictation)
+Proof: `cargo test -p fala --lib managers::history_dictations::tests::retry_keeps_sensitive` (two cases)
+
 **C2** - `editAction` offers `undo` only for `editor === "llm"` with `showing === "final"`, and nothing for `rules` (final or raw), `none` (final or raw) or an unlinked entry (AC 2)
 Proof: `bun src/components/settings/history/historyModel.test.ts` (prints `C2 ok`; the file is a script that exits non-zero at the first failure)
 
@@ -30,7 +33,7 @@ Proof: `cargo test -p fala-storage --test store -- --exact apply_late_edit_sets_
 **C4** - After `apply_late_edit` the item's `.md` frontmatter has `edited_by: "llm"` and `showing: "raw"` and its body is the new final text; `reindex` over that `.md` yields the same record (AC 3)
 Proof: `cargo test -p fala-storage --test store -- --exact apply_late_edit_rewrites_mirror_and_survives_reindex`
 
-**C5** - `apply_late_edit` with an unknown id returns `StorageError::NotFound` with that id and no row or `.md` changes; with `""` or `"   "` it returns an error and the row and `.md` are unchanged; with the `dictations` table gone it returns `StorageError::Db` (AC 4, Surface `Database`)
+**C5** - `apply_late_edit` with an unknown id returns `StorageError::NotFound` with that id and no row or `.md` changes; with `""` or `"   "` it returns `StorageError::EmptyEdit` with that id and the row and `.md` are unchanged; with the `dictations` table gone it returns `StorageError::Db` (AC 4, Surface `Database`)
 Proof: `cargo test -p fala-storage --test store -- --exact apply_late_edit_rejects_unknown_id_and_blank_text` (four cases)
 
 **C6** - When the fake Gemini answers 3 s after the request, `llm_auto::format_with_late_edit` returns the rules text with `llm_produced = false` in under 2.5 s together with `Some(LateEdit)`; the entry saved with that text is then updated by `finish_late_edit` with `HistoryManager::apply_late_edit_with`: `Store::get(dictation_id)` shows `final_text` = the server's answer, `editor = Llm`, `showing = Raw`; the `history.db` row's `post_processed_text` still equals the pasted rules text; and the announce callback (the `history-update-payload` `Updated` emitter in the app) runs once with that entry (AC 5)
@@ -46,13 +49,14 @@ Proof: `bun src/components/settings/history/historyModel.test.ts` (prints `C8 ap
 Proof: `bun src/components/settings/history/historyModel.test.ts` (prints `C9 switchText redo ok` and `C9 undo after apply offers apply again ok`) and `cargo test -p fala --lib managers::history_dictations::tests::undo_after_late_edit`
 
 **C10** - `settings.history.applyAiEdit` exists exactly once in each locale and `redoAiEdit` appears nowhere under `src/`; both locales have the same keys and the ESLint rule for literal JSX passes (AC 9)
-Proof: `grep -c '"applyAiEdit"' src/i18n/locales/pt/translation.json src/i18n/locales/en/translation.json | grep -c ':1$' | xargs test 2 -eq` and `test "$(grep -rc 'redoAiEdit' src/ | grep -v ':0$' | wc -l)" -eq 0` and `bun run check:translations` and `bun run lint`
+Proof: `grep -c '"applyAiEdit"' src/i18n/locales/pt/translation.json src/i18n/locales/en/translation.json | grep -c ':1$' | xargs test 2 -eq` and `test -f src/i18n/locales/pt/translation.json && test "$(grep -rc 'redoAiEdit' src/ | grep -v ':0$' | wc -l)" -eq 0` (fails when `src/` is absent, lesson L-002) and `bun run check:translations` and `bun run lint`
 
 ## Coverage
 
 | Set (size) | Member -> proof | Unproven |
 | --- | --- | --- |
-| `sensitive` (2) | `true` C1 · `false` C1 | - |
+| `sensitive` (2) | `true` C1, C11 · `false` C1, C11 | - |
+| paths that add a dictation with a known app (2) | stop path C1 · retry C11 (the failed transcription adds no dictation and the backfill has no app: existing `failed_transcription_saves_unlinked_row`, `backfill_maps_rows_by_door_four`) | - |
 | late answer outcomes (4) | applied C6 · error C7 · after deadline C7 · entry deleted C7 | - |
 | `Store::apply_late_edit` statuses (5) | `Ok` C3, C4 · `NotFound` C5 · `EmptyEdit` C5 · `Mirror` C4 (the mirror write path; the error is propagated by `write_mirror` as in `set_showing`) · `Database` C5 | - |
 | `showing` × `editor` for the history button (6) | `llm`+`final` → undo C2 · `llm`+`raw` → apply C8 · `rules`+`final` → none C2 · `rules`+`raw` → none C2 · `none`+any → none C2 · unlinked → none C2 | - |
@@ -87,3 +91,4 @@ Proof: `grep -c '"applyAiEdit"' src/i18n/locales/pt/translation.json src/i18n/lo
 - **Settled mid-build:** o C1 calcula `sensitive` com `llm_auto::is_disabled_app` (comparação sem caixa, como o `Postprocessor`) sobre o `AppContext` lido ao soltar a tecla, uma vez em `TranscribeAction::stop`, para os dois atalhos (assunção 3); o `NewEntry` ganhou `sensitive`, e o item da transcrição que falhou passa `false`
 - **Boundary:** C2, C8, a metade front do C9 e C10 fechados em `feat/llm-late-edit`
 - **Settled mid-build:** a assunção 1 troca o rótulo e o C10 exige que `redoAiEdit` suma de `src/`; as asserções C28 e C30 da history-undo em `historyModel.test.ts` que liam `redoAiEdit` / "Reaplicar edição da IA" passaram a ler `applyAiEdit` / "Aplicar edição da IA", e a ausência da chave antiga fica só com o `grep` do C10 (uma asserção de ausência no script contaria como ocorrência). Confirmed? y — delegado pelo Augusto, decidido pelo executor
+- **Settled mid-build (round 1 do Verifier):** o retry do histórico (`update_transcription_with`) também grava um ditado e gravava sempre `sensitive = false`, contra o AC 1 e a assunção 3; agora herda o `sensitive` do ditado que substitui, provado pelo C11 novo (acrescentado, nenhum check existente mudou de sentido). O C5 passou a fixar `StorageError::EmptyEdit` com o id (era só `is_err()`), e a negação do C10 passou a falhar sem `src/` (L-002). Os itens do `TODO(windows)` sobre o fio do `AppHandle` valem em qualquer SO; ficam na lista por serem manuais. Confirmed? y — delegado pelo Augusto, decidido pelo executor

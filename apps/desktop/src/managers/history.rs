@@ -434,10 +434,11 @@ impl HistoryManager {
                 params![id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
-            let app = old_link
+            // The replacement keeps the app and the sensitive mark of the dictation it replaces.
+            let (app, sensitive) = old_link
                 .as_deref()
                 .and_then(|old| store.get(old).ok())
-                .map(|record| record.dictation.app)
+                .map(|record| (record.dictation.app, record.sensitive))
                 .unwrap_or_default();
             let new_link = history_dictations::dictation_for(
                 &texts.transcription_text,
@@ -447,7 +448,7 @@ impl HistoryManager {
                 app,
             )
             .and_then(|dictation| {
-                history_dictations::add_dictation(store, &dictation, timestamp, false)
+                history_dictations::add_dictation(store, &dictation, timestamp, sensitive)
             });
             if let Some(new_link) = new_link {
                 conn.execute(

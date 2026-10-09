@@ -412,6 +412,47 @@ mod tests {
     }
 
     #[test]
+    fn retry_keeps_sensitive() {
+        for sensitive in [true, false] {
+            let env = scratch();
+            let store = env.store();
+            let conn = history();
+            let mut e = entry(
+                "fala-1.wav",
+                "velho",
+                "Velho",
+                false,
+                None,
+                Some("keepassxc"),
+            );
+            e.sensitive = sensitive;
+            let saved = save(&conn, Some(&store), e, 1);
+            let old = link(&conn, saved.id).unwrap();
+
+            HistoryManager::update_transcription_with(
+                &conn,
+                Some(&store),
+                saved.id,
+                EntryTexts {
+                    transcription_text: "novo".to_string(),
+                    post_processed_text: Some("Novo".to_string()),
+                    post_process_prompt: None,
+                    pasted_text: "Novo".to_string(),
+                    llm_produced: false,
+                },
+                Language::PtBr,
+            )
+            .unwrap();
+
+            let new = link(&conn, saved.id).unwrap();
+            assert_ne!(new, old);
+            let record = store.get(&new).unwrap();
+            assert_eq!(record.dictation.final_text, "Novo", "{sensitive}");
+            assert_eq!(record.sensitive, sensitive, "{sensitive}");
+        }
+    }
+
+    #[test]
     fn undo_after_late_edit() {
         let env = scratch();
         let store = env.store();
