@@ -11,10 +11,12 @@
 
 mod cap;
 mod id;
+mod mute;
 mod session;
 
 pub use cap::RecordingCap;
 pub use id::{SessionId, SessionMode};
+pub use mute::{MuteWatch, Muted, MUTE_WARN_AFTER};
 pub use session::{
     Effect, Gap, GapKind, Indicator, IndicatorKind, Input, Levels, MeetingSession, SessionConfig,
     SessionState, StopReason, UnixMillis, UserAction, LOW_DISK_WARN_BYTES, MIN_FREE_DISK_BYTES,
