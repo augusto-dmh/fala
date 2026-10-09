@@ -539,7 +539,10 @@ fn apply_late_edit_rejects_unknown_id_and_blank_text() {
     assert_eq!(common::files_under(&env.ditados()).len(), 1);
 
     for blank in ["", "   "] {
-        assert!(store.apply_late_edit(&r.id, blank).is_err(), "{blank:?}");
+        assert!(
+            matches!(store.apply_late_edit(&r.id, blank), Err(StorageError::EmptyEdit(id)) if id == r.id),
+            "{blank:?}"
+        );
         assert_eq!(store.get(&r.id).unwrap(), r, "{blank:?}");
         assert_eq!(fs::read_to_string(&path).unwrap(), md_before, "{blank:?}");
     }
