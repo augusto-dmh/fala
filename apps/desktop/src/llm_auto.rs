@@ -39,18 +39,9 @@ fn postprocessor_at(settings: &AppSettings, base_url: &str) -> Postprocessor {
 }
 
 /// Formats one dictation. Blocks for at most `fala_postproc::INSERT_DEADLINE` when the LLM is
-/// asked; past that, the rules text stays.
-pub(crate) fn format(
-    postprocessor: &Postprocessor,
-    text: &str,
-    language: Language,
-    app: AppContext,
-) -> AutoFormatted {
-    format_with_late_edit(postprocessor, text, language, app).0
-}
-
-/// `format`, plus the LLM answer still on its way when the 2 s passed: it may arrive until the
-/// late deadline and become "Aplicar edição da IA" on the saved entry (ADR-0004).
+/// asked; past that, the rules text stays, and the LLM answer still on its way comes back as a
+/// `LateEdit`: it may arrive until the late deadline and become "Aplicar edição da IA" on the
+/// saved entry (ADR-0004).
 pub(crate) fn format_with_late_edit(
     postprocessor: &Postprocessor,
     text: &str,
@@ -218,12 +209,13 @@ mod tests {
         text: &str,
         app: AppContext,
     ) -> AutoFormatted {
-        format(
+        format_with_late_edit(
             &postprocessor_at(settings, &server.base_url),
             text,
             Language::PtBr,
             app,
         )
+        .0
     }
 
     #[test]
