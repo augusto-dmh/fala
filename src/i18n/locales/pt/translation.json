@@ -725,7 +725,9 @@
   "overlay": {
     "recording": "Gravando",
     "transcribing": "Transcrevendo...",
-    "processing": "Processando..."
+    "processing": "Processando...",
+    "loadingModel": "Carregando modelo…",
+    "recordingLoadingModel": "Gravando, carregando modelo…"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
