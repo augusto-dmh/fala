@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rusqlite::{params, Connection, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use specta::Type;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::managers::history_dictations::{self, HistoryDictation};
@@ -116,6 +116,7 @@ impl HistoryManager {
             fs::create_dir_all(&recordings_dir)?;
             debug!("Created recordings directory: {:?}", recordings_dir);
         }
+        allow_recordings_in_asset_scope(app_handle, &recordings_dir);
 
         let store = history_dictations::open_store(
             &app_data_dir.join("fala.sqlite"),
@@ -926,10 +927,39 @@ impl HistoryManager {
     }
 }
 
+/// The history plays recordings in the WebView through the asset protocol. Its
+/// static scope (tauri.conf.json) only covers `$APPDATA/recordings`; this adds the
+/// folder actually in use, which portable mode moves next to the executable.
+/// Nothing else on disk is readable from the WebView (cjpais/Handy#1384).
+fn allow_recordings_in_asset_scope(app_handle: &AppHandle, recordings_dir: &Path) {
+    if let Err(e) = app_handle
+        .asset_protocol_scope()
+        .allow_directory(recordings_dir, true)
+    {
+        warn!(
+            "Could not allow the recordings folder in the asset scope: {}",
+            e
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusqlite::{params, Connection};
+
+    #[test]
+    fn asset_protocol_reads_only_the_recordings_folder() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).expect("tauri.conf.json");
+        let scope = &conf["app"]["security"]["assetProtocol"]["scope"];
+        assert_eq!(
+            scope["allow"],
+            serde_json::json!(["$APPDATA/recordings/**"]),
+            "{scope}"
+        );
+        assert_eq!(conf["app"]["security"]["assetProtocol"]["enable"], true);
+    }
 
     fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open in-memory db");
