@@ -30,7 +30,7 @@ from_tray = occurrences(r"start_from_tray\(\)")
 if [p for p, _ in from_tray] != ["apps/desktop/src/lib.rs"]:
     fail(f"start_from_tray called outside the tray item: {from_tray}")
 lib = production(DESKTOP / "lib.rs")
-arm = lib[lib.find('"meeting_start" =>') :][:200]
+arm = lib[lib.find("\"meeting_start\" =>") :][:400]
 if "start_from_tray" not in arm:
     fail("the meeting_start tray item does not call start_from_tray")
 ok("start is reached only from start_meeting and the meeting_start tray item")
