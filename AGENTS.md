@@ -19,7 +19,7 @@ Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` n
 ## Invariantes
 
 - Nada em `crates/` depende de `tauri`, nem de forma transitiva. A casca Tauri é `apps/desktop` (ADR-0002).
-- O áudio de ditado nunca sai da máquina; só texto vai ao LLM (ADR-0003, ADR-0004).
+- O áudio de ditado nunca sai da máquina; só texto vai ao LLM (ADR-0009, ADR-0004).
 - Nenhuma chave de API no código, em config versionada ou em log. As chaves vivem no keyring do SO (ADR-0008).
 - A gravação de reunião só começa por ação explícita e mostra um indicador enquanto dura (ADR-0005).
 - `#[cfg(windows)]`/`#[cfg(target_os = ...)]` só dentro dos crates de plataforma (`hotkey`, `audio`, `inject`) e de `apps/desktop` (ADR-0007).

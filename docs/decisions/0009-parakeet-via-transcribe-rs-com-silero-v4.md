@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-02
 ---
 # ASR do ditado roda localmente: Silero VAD v4 + Parakeet-TDT-0.6B-v3 int8 via transcribe-rs
