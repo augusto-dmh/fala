@@ -635,6 +635,14 @@ impl AudioRecordingManager {
     }
 
     pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
+        // A recording meeting owns the mic: one stream per device (ADR-0015). Every path that
+        // opens the dictation stream (always-on mode, device change) waits for it to end;
+        // `restore_microphone_after_meeting` reopens it then.
+        if crate::meeting::indicator() != crate::meeting::MeetingIndicator::None {
+            return Err(anyhow::anyhow!(
+                "the microphone is held by a meeting recording"
+            ));
+        }
         let mut open_flag = self.is_open.lock().unwrap();
         if *open_flag {
             // `is_open` only records that we opened a stream at some point, not
@@ -773,6 +781,30 @@ impl AudioRecordingManager {
         debug!("Microphone stream stopped");
     }
 
+    /// Closes the dictation stream so a meeting recording owns the microphone: one stream per
+    /// device (ADR-0015). Dictation is refused while the meeting records, so nothing reopens it.
+    pub fn release_microphone_for_meeting(&self) {
+        if self.is_recording() {
+            return;
+        }
+        // Invalidate a pending lazy close, as `update_mode` does.
+        self.close_generation.fetch_add(1, Ordering::SeqCst);
+        self.stop_microphone_stream();
+    }
+
+    /// Reopens the dictation stream after a meeting when the microphone is always on.
+    pub fn restore_microphone_after_meeting(&self) -> Result<(), anyhow::Error> {
+        let always_on = self
+            .mode
+            .lock()
+            .map(|mode| matches!(*mode, MicrophoneMode::AlwaysOn))
+            .unwrap_or(false);
+        if always_on {
+            self.start_microphone_stream()?;
+        }
+        Ok(())
+    }
+
     /* ---------- mode switching --------------------------------------------- */
 
     pub fn update_mode(&self, new_mode: MicrophoneMode) -> Result<(), anyhow::Error> {
@@ -787,7 +819,11 @@ impl AudioRecordingManager {
             }
             (MicrophoneMode::OnDemand, MicrophoneMode::AlwaysOn) => {
                 self.close_generation.fetch_add(1, Ordering::SeqCst);
-                self.start_microphone_stream()?;
+                // During a meeting the mode is stored and the stream opens when it ends
+                // (`restore_microphone_after_meeting`), so the setting and the manager agree.
+                if crate::meeting::indicator() == crate::meeting::MeetingIndicator::None {
+                    self.start_microphone_stream()?;
+                }
             }
             _ => {}
         }

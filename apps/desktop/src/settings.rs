@@ -647,6 +647,10 @@ pub struct AppSettings {
     /// Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
     #[serde(default = "default_llm_disabled_apps")]
     pub llm_disabled_apps: Vec<String>,
+    /// When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
+    /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
+    #[serde(default)]
+    pub meeting_consent_accepted_at: Option<String>,
 }
 
 fn default_model() -> String {
@@ -1121,6 +1125,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
+        meeting_consent_accepted_at: None,
     }
 }
 
