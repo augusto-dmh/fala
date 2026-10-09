@@ -17,7 +17,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 |---|---|---|
 | `crates/core` | `fala-core` | tipos (`Event`, `Settings`, `Utterance`, `Session`), config, dicionário pessoal, erros |
 | `crates/hotkey` | `fala-hotkey` | atalho global com press/release. Windows: hook de teclado. Linux: portal GlobalShortcuts |
-| `crates/audio` | `fala-audio` | captura (cpal, loopback WASAPI, PipeWire), VAD Silero, resample, gravador de reunião |
+| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013), VAD Silero, resample, gravador de reunião |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
