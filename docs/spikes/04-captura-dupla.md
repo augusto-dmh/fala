@@ -270,3 +270,41 @@ Ao lado da linha do design doc §7, "Drift entre mic e loopback → correção p
 s": nas rodadas 2 e 3 a diferença entre os canais ficou em até 20 ms na hora, abaixo de 50 ms; na
 rodada 1 passou de 50 ms (-312 ms ao fim, em degraus nas janelas de atividade do app). Não houve
 `drift_ms` pelos cliques em nenhuma rodada.
+
+### `fala-cli meeting` (o `MeetingRecorder` de `fala-audio`), 2026-10-09
+
+Duas rodadas no mesmo notebook, com o `fala-cli` de release em `447fb46`. O `meeting` não toca
+clique, então não mede drift; o que se confere é o WAV (48 kHz, 2 canais, L = mic, R = sistema),
+o sinal nos dois canais e o arquivo depois de o processo morrer no meio. Mudou o mic físico desde
+2026-09-29: o Hardware Input 1 do Voicemeeter agora é `Microfone (Fifine Microphone)`, ainda
+enviado só ao B2.
+
+```powershell
+target\release\fala-cli meeting --out C:\fala-spikes\w3-bench\meeting-voicemeeter.wav --system "Voicemeeter Input"
+target\release\fala-cli meeting --out C:\fala-spikes\w3-bench\meeting-killed.wav --system "Voicemeeter Input" --mic Fifine
+```
+
+| Rodada | Horário (UTC) | `--mic` | Fim | Linha final do log | WAV |
+| --- | --- | --- | --- | --- | --- |
+| A | 03:13:23 → 03:23:33 | padrão = `Voicemeeter Out B2`, 2 ch | Enter, exit 0 | `wall_s=609.8 frames=29242752 mic_filled=28675 mic_dropped=0 sys_filled=29827 sys_dropped=0 ring_dropped_mic=0 ring_dropped_sys=0` | 609.821 s pelo `ffprobe`, igual ao tamanho do arquivo |
+| B | 03:24:08 → 03:27:08.210 | `Microfone (Fifine Microphone)` direto, 1 ch | `Stop-Process -Force` aos ~180 s | nenhuma (processo morto) | dados em disco: 179.68 s; `data_size` do cabeçalho: 178.83 s (`ffprobe`: 178.826 s); `ffmpeg -v error -i <wav> -f null -` sem erro |
+
+Na rodada B o cabeçalho ficou 0,85 s atrás dos dados, dentro do "cabeçalho reescrito pelo menos
+a cada segundo" de `crates/audio/src/meeting/wav.rs` (design doc §3.4).
+
+Pico por minuto da rodada A, em dBFS (`ffmpeg astats`; o último minuto é parcial):
+
+| Canal | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| L (mic) | -11.3 | -10.4 | -12.3 | -10.7 | -17.2 | -15.4 | -14.3 | -inf | -inf | -14.2 | -inf |
+| R (sistema) | -15.7 | -21.5 | -24.5 | -27.6 | -24.0 | -28.1 | -28.5 | -26.5 | -28.6 | -26.9 | -30.1 |
+
+Os minutos `-inf` do mic são minutos sem fala: o gate do Voicemeeter (1.4) zera o B2 em silêncio,
+o mesmo zero digital da tabela de tentativas acima. Na rodada B, com o Fifine aberto direto, o
+mic ficou entre -48 e -66 dBFS nos 70 s sem fala (ruído da sala, sem gate) e entre -13 e -25 com
+fala; o sistema ficou mudo nos primeiros 60 s (nada tocando) e entre -15 e -34 com o vídeo.
+
+Uma partida anterior da rodada A, às 03:05:17Z, foi sobrescrita pela repetição: o canal do sistema
+ficou entre -38 e -48 dBFS porque o navegador tocava baixo na faixa Desktop (o medidor da faixa no
+Voicemeeter também quase não se mexia); com o volume do navegador alto, o canal subiu. O JBL não
+pode ser o `--system` com o Voicemeeter aberto, pelo mesmo `0x8889000A` da tabela acima.
