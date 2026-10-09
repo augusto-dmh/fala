@@ -4,7 +4,7 @@ Codemap vivo. Muda no mesmo commit que cria, move ou remove um crate. O porquê 
 
 ## Visão geral
 
-O Fala captura áudio (microfone e, na fase 2, áudio do sistema), segmenta com VAD e transcreve localmente (Parakeet). Opcionalmente formata o texto com um LLM e insere o resultado no app ativo. Tudo roda na máquina do usuário e não há backend. As chamadas de rede opcionais são três, todas desligáveis: texto do ditado para o LLM, áudio de reunião para o ASR em nuvem, transcrição para o LLM de notas.
+O Fala captura áudio (microfone e, na fase 2, áudio do sistema), segmenta com VAD e transcreve localmente (Parakeet). Opcionalmente formata o texto com um LLM e insere o resultado no app ativo. Tudo roda na máquina do usuário e não há backend. As chamadas de rede opcionais são três, todas desligáveis: texto do ditado para o LLM; áudio de reunião para o ASR em nuvem; transcrição, anotações e os campos enumerados na ADR-0016 para o LLM de notas, nunca em sessão só local.
 
 ```
 hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc ─▶ inject ─▶ app ativo
