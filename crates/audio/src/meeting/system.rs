@@ -58,6 +58,27 @@ impl SystemAudio {
         find_output(&host, name).map(|_| ())
     }
 
+    /// O nome da saída padrão, no formato que [`SystemAudio::open`] aceita: no ALSA, o
+    /// `node.name` do sink padrão do PipeWire (pela saída de `pw-metadata`, das mesmas
+    /// ferramentas do `pw-dump` que o [`SystemAudio::check`] já usa); nos
+    /// outros hosts, o nome do dispositivo de saída padrão.
+    pub fn default_name() -> Result<String, AudioError> {
+        let host = cpal::default_host();
+        if is_alsa(&host) {
+            let out = Command::new("pw-metadata")
+                .args(["0", "default.audio.sink"])
+                .output()
+                .map_err(|e| AudioError::Device(format!("pw-metadata: {e}")))?;
+            return parse_default_sink(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| {
+                AudioError::Device("o PipeWire não informou um sink padrão".to_owned())
+            });
+        }
+        host.default_output_device()
+            .and_then(|d| d.name().ok())
+            .filter(|n| !n.is_empty())
+            .ok_or_else(|| AudioError::Device("não há saída padrão".to_owned()))
+    }
+
     pub fn open(name: &str) -> Result<Self, AudioError> {
         let host = cpal::default_host();
         let (producer, consumer) = RingBuffer::new(192_000 * RING_SECONDS);
@@ -139,6 +160,19 @@ fn with_monitor_env<T>(name: &str, open: impl FnOnce() -> T) -> Result<T, AudioE
     Ok(opened)
 }
 
+/// O `name` do valor JSON de `default.audio.sink` na saída de `pw-metadata`, numa linha como
+/// `update: id:0 key:'default.audio.sink' value:'{"name":"alsa_output..."}' type:'...'`.
+fn parse_default_sink(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .filter(|line| line.contains("key:'default.audio.sink'"))
+        .find_map(|line| {
+            let rest = &line[line.find("\"name\":\"")? + "\"name\":\"".len()..];
+            let name = &rest[..rest.find('"')?];
+            (!name.is_empty()).then(|| name.to_owned())
+        })
+}
+
 fn find_output(host: &cpal::Host, name: &str) -> Result<cpal::Device, AudioError> {
     let devices: Vec<cpal::Device> = host
         .output_devices()
@@ -208,6 +242,19 @@ fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_default_sink_from_pw_metadata() {
+        let out = "Found \"default\" metadata 40\n\
+            update: id:0 key:'default.audio.sink' \
+            value:'{\"name\":\"alsa_output.pci-0000_00_1f.3.analog-stereo\"}' type:'Spa:String:JSON'\n";
+        assert_eq!(
+            parse_default_sink(out).as_deref(),
+            Some("alsa_output.pci-0000_00_1f.3.analog-stereo")
+        );
+        assert_eq!(parse_default_sink("Found \"default\" metadata 40\n"), None);
+        assert_eq!(parse_default_sink(""), None);
+    }
 
     #[test]
     fn monitor_env_is_set_only_while_opening_under_the_lock() {

@@ -215,7 +215,7 @@ Product capabilities only. Process and harness rules live in AGENTS.md or as Obs
 | --- | --- | --- | --- |
 | transcrição automática ao parar | sim, quando a chave `elevenlabs` existe; sem chave, fica o botão | o slice do pitch transcreve ao parar; o aviso aceito cobre o envio | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
 | notas automáticas | não; botão "Gerar notas" com o template escolhido | o template é escolha do usuário e a chamada é paga | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
-| dispositivo do sistema | a saída padrão: `pactl get-default-sink` no host ALSA (PipeWire), `default_output_device` nos outros, por uma função nova `SystemAudio::default_name` em `fala-audio` | sem seletor nesta parte; `SystemAudio::open` exige um nome | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
+| dispositivo do sistema | a saída padrão: `pw-metadata 0 default.audio.sink` no host ALSA (PipeWire), `default_output_device` nos outros, por uma função nova `SystemAudio::default_name` em `fala-audio` | sem seletor nesta parte; `SystemAudio::open` exige um nome | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
 | título | opcional na página, vazio no tray; a UI mostra "Reunião" + data quando vazio | gravar não pode esperar digitação | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
 | teto | `RecordingCap::default()` (3 h), sem ajuste na UI | ajuste é Settings da parte 2 | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
 | espaço livre | medido em `<app_data>/audio`; falha na medição vale como desconhecido e não bloqueia (log `warn`) | bloquear por erro de medição perderia a reunião | y - delegado pelo Augusto em 2026-10-09, decidido pelo painel |
