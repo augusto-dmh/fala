@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 6,
+  "next_id": 7,
   "lessons": [
     {
       "id": "L-001",
@@ -96,6 +96,24 @@
       ],
       "created": "2026-10-04T19:55:48Z",
       "last_seen": "2026-10-04T19:55:48Z"
+    },
+    {
+      "id": "L-006",
+      "key": "spec_precision_gap::a diff proof scoped to the feature must compare from the merge base origin main head never two dot or a moving main makes it fail on commits the branch never touched",
+      "text": "A diff proof scoped to the feature must compare from the merge-base (origin/main...HEAD), never two-dot, or a moving main makes it fail on commits the branch never touched",
+      "signal": "spec_precision_gap",
+      "scope": "proofs",
+      "status": "candidate",
+      "features": [
+        "hotkey-inject-traits"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "C22 - .specs/features/hotkey-inject-traits/verification.md round 1 finding 1 (proofs)"
+      ],
+      "created": "2026-10-09T19:33:29Z",
+      "last_seen": "2026-10-09T19:33:29Z"
     }
   ]
 }
