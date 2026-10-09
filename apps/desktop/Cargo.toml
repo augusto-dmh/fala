@@ -55,9 +55,11 @@ fala-inject = { workspace = true }
 # Regras locais e o Gemini automático no ditado (ADR-0004).
 fala-postproc = { workspace = true }
 fala-storage = { workspace = true }
-# Meeting recording (phase 2): session, capture and retained audio.
+# Meeting recording (phase 2): session, capture, retained audio, cloud ASR and notes.
+fala-asr = { workspace = true }
 fala-audio = { workspace = true }
 fala-meeting = { workspace = true }
+fala-notes = { workspace = true }
 fala-retention = { workspace = true }
 once_cell = "1"
 tauri = { version = "2.11.5", features = [
