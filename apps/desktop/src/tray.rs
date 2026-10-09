@@ -23,6 +23,7 @@
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
+use crate::meeting::MeetingIndicator;
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
 use log::{debug, error, info, trace, warn};
@@ -65,6 +66,27 @@ struct MenuInputs {
     update_checks_enabled: bool,
     /// Which dictation language item is checked, from [`tray_language_choice`].
     language_choice: Option<&'static str>,
+    /// The meeting items follow the meeting indicator.
+    meeting: MeetingIndicator,
+}
+
+/// The meeting items of the menu for each indicator state.
+fn meeting_menu_ids(meeting: MeetingIndicator) -> &'static [&'static str] {
+    match meeting {
+        MeetingIndicator::None => &["meeting_start"],
+        MeetingIndicator::Recording => &["meeting_pause", "meeting_stop"],
+        MeetingIndicator::Paused => &["meeting_resume", "meeting_stop"],
+    }
+}
+
+/// The icon state the tray shows: a recording meeting shows the recording icon even with no
+/// dictation in flight (ADR-0005).
+fn effective_icon_state(icon_state: TrayIconState, meeting: MeetingIndicator) -> TrayIconState {
+    if icon_state == TrayIconState::Idle && meeting != MeetingIndicator::None {
+        TrayIconState::Recording
+    } else {
+        icon_state
+    }
 }
 
 /// The dictation languages the tray offers, as the tags stored in
@@ -352,8 +374,9 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
         .collect();
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
 
+    let meeting = crate::meeting::indicator();
     TrayDesired {
-        icon_path: get_icon_path(theme, icon_state, warning),
+        icon_path: get_icon_path(theme, effective_icon_state(icon_state, meeting), warning),
         menu: MenuInputs {
             busy: icon_state.is_busy(),
             warning,
@@ -363,6 +386,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
             language_choice: tray_language_choice(&settings.selected_language),
+            meeting,
         },
     }
 }
@@ -540,6 +564,18 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     )?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
     let separator = || PredefinedMenuItem::separator(app);
+    let meeting_items = meeting_menu_ids(inputs.meeting)
+        .iter()
+        .map(|id| {
+            let label = match *id {
+                "meeting_start" => &strings.record_meeting,
+                "meeting_pause" => &strings.pause_meeting,
+                "meeting_resume" => &strings.resume_meeting,
+                _ => &strings.stop_meeting,
+            };
+            MenuItem::with_id(app, *id, label, true, None::<&str>)
+        })
+        .collect::<tauri::Result<Vec<_>>>()?;
 
     let menu = if inputs.busy {
         let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
@@ -622,6 +658,14 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             ],
         )?
     };
+
+    // The meeting items open both layouts, right below the version line: recording a meeting is
+    // the gesture, and while one records, pause and stop must be one click away.
+    let meeting_separator = separator()?;
+    menu.insert(&meeting_separator, 2)?;
+    for (offset, item) in meeting_items.iter().enumerate() {
+        menu.insert(item, 2 + offset)?;
+    }
 
     // When update checks are forced off (e.g. FALA_DISABLE_UPDATER, set by
     // the Nix package), the item is dropped from the menu rather than shown
@@ -719,11 +763,13 @@ pub fn copy_last_transcript(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    use super::{effective_icon_state, meeting_menu_ids};
     use super::{
         language_item_id, last_transcript_text, load_tray_icon, parse_language_item,
         tray_language_choice, MenuInputs, TrayDesired, TrayIconState,
     };
     use crate::managers::history::HistoryEntry;
+    use crate::meeting::MeetingIndicator;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
         HistoryEntry {
@@ -751,7 +797,37 @@ mod tests {
             locale: "en".to_string(),
             update_checks_enabled: true,
             language_choice: Some("pt-BR"),
+            meeting: MeetingIndicator::None,
         }
+    }
+
+    #[test]
+    fn meeting_items_follow_state() {
+        assert_eq!(meeting_menu_ids(MeetingIndicator::None), ["meeting_start"]);
+        assert_eq!(
+            meeting_menu_ids(MeetingIndicator::Recording),
+            ["meeting_pause", "meeting_stop"]
+        );
+        assert_eq!(
+            meeting_menu_ids(MeetingIndicator::Paused),
+            ["meeting_resume", "meeting_stop"]
+        );
+        assert_eq!(
+            effective_icon_state(TrayIconState::Idle, MeetingIndicator::Recording),
+            TrayIconState::Recording
+        );
+        assert_eq!(
+            effective_icon_state(TrayIconState::Idle, MeetingIndicator::Paused),
+            TrayIconState::Recording
+        );
+        assert_eq!(
+            effective_icon_state(TrayIconState::Idle, MeetingIndicator::None),
+            TrayIconState::Idle
+        );
+        // A different meeting state rebuilds the menu.
+        let mut recording = inputs(false);
+        recording.meeting = MeetingIndicator::Recording;
+        assert_ne!(inputs(false), recording);
     }
 
     #[test]

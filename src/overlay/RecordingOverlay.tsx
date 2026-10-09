@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
 import "./Pill.css";
 import { Pill } from "./Pill";
+import { MeetingPill } from "./MeetingPill";
 import { isHoldToTalk, toPillMode } from "./pillModel";
 import { commands, events } from "@/bindings";
 import type {
@@ -15,7 +16,13 @@ import type {
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
-type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
+type OverlayState =
+  | "recording"
+  | "streaming"
+  | "transcribing"
+  | "processing"
+  | "meeting"
+  | "meeting_paused";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -42,6 +49,9 @@ const RecordingOverlay: React.FC = () => {
   const [phase, setPhase] = useState<StreamPhase>("listening");
   const [workKind, setWorkKind] = useState<StreamWorkKind>("transcribing");
   const [elapsed, setElapsed] = useState(0);
+  // The meeting indicator: recorded time and the silent-channel warning, from `MeetingStatus`.
+  const [meetingMs, setMeetingMs] = useState(0);
+  const [meetingMuted, setMeetingMuted] = useState(false);
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
   const [session, setSession] = useState(0);
@@ -126,6 +136,11 @@ const RecordingOverlay: React.FC = () => {
         setLevels(smoothed.slice(0, WAVE_BARS));
       });
 
+      const unlistenMeeting = await events.meetingStatus.listen((event) => {
+        setMeetingMs(event.payload.recorded_ms);
+        setMeetingMuted(event.payload.muted_mic || event.payload.muted_system);
+      });
+
       const unlistenStream = await events.streamTextEvent.listen((event) => {
         setStreamText(event.payload);
       });
@@ -143,6 +158,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenLimit();
         unlistenLevel();
         unlistenStream();
+        unlistenMeeting();
         unlistenPhase();
       };
     };
@@ -300,6 +316,26 @@ const RecordingOverlay: React.FC = () => {
   // ---- Minimal overlay: the phase 1 pill. Recording draws ten bars that follow
   // the mic (red while the key is held); transcribing and processing share one
   // still, pulsing state. No icon and no text; cancelling stays on Esc.
+  if (state === "meeting" || state === "meeting_paused") {
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <MeetingPill
+          paused={state === "meeting_paused"}
+          recordedMs={meetingMs}
+          muted={meetingMuted}
+          label={
+            state === "meeting"
+              ? t("overlay.meeting")
+              : t("overlay.meetingPaused")
+          }
+        />
+      </div>
+    );
+  }
+
   const pillMode = toPillMode(state) ?? "recording";
 
   return (

@@ -6,7 +6,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Pill, type PillProps } from "./Pill";
-import { isHoldToTalk, pillBars, pillTone, toPillMode } from "./pillModel";
+import {
+  formatElapsed,
+  isHoldToTalk,
+  pillBars,
+  pillTone,
+  toPillMode,
+} from "./pillModel";
+import { MeetingPill } from "./MeetingPill";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -345,6 +352,50 @@ function ok(id: string) {
     "o estado do recording-limit-warning precisa chegar à pill",
   );
   ok("session-limit C18");
+}
+
+// Pill da reunião (`.specs/features/meeting-panel/checks.md`, C15 e C25).
+{
+  const meeting = (paused: boolean, muted: boolean, recordedMs = 725_000) =>
+    renderToStaticMarkup(
+      <MeetingPill
+        paused={paused}
+        recordedMs={recordedMs}
+        muted={muted}
+        label="reunião"
+      />,
+    );
+  const live = meeting(false, false);
+  assert.equal(text(live), "12:05", live);
+  assert.ok(classes(live).includes("meeting"), live);
+  assert.ok(classes(live).includes("live"), live);
+  assert.ok(live.includes('class="dot"'), live);
+  assert.ok(live.includes('role="status"'), live);
+  const paused = meeting(true, true);
+  assert.ok(classes(paused).includes("paused"), paused);
+  assert.equal(text(paused), "12:05");
+  assert.equal(formatElapsed(3_723_000), "1:02:03");
+  assert.equal(formatElapsed(0), "00:00");
+  assert.equal(toPillMode("meeting"), null);
+  assert.equal(toPillMode("meeting_paused"), null);
+  has(rule(css, ".fpill.meeting .dot"), "background: #e5322d", "dot");
+  has(rule(css, ".fpill.meeting.paused .dot"), "background: #9ca3af", "paused");
+  assert.ok(
+    overlaySource.includes('state === "meeting" || state === "meeting_paused"'),
+    "o overlay precisa desenhar a pill da reunião nos dois estados",
+  );
+  ok("meeting-pill");
+
+  const muted = meeting(false, true);
+  assert.ok(classes(muted).includes("muted"), muted);
+  has(rule(css, ".fpill.meeting.muted .dot"), "background: #d97706", "muted");
+  assert.ok(
+    overlaySource.includes(
+      "event.payload.muted_mic || event.payload.muted_system",
+    ),
+    "o aviso de canal mudo precisa chegar à pill",
+  );
+  ok("meeting-muted");
 }
 
 console.log("pill: all assertions passed");

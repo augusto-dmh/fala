@@ -10,7 +10,11 @@
     "languageEn": "Inglês",
     "quit": "Sair",
     "cancel": "Cancelar",
-    "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
+    "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input",
+    "recordMeeting": "Gravar reunião",
+    "pauseMeeting": "Pausar reunião",
+    "resumeMeeting": "Retomar reunião",
+    "stopMeeting": "Parar reunião"
   },
   "sidebar": {
     "general": "Geral",
@@ -726,7 +730,9 @@
   "overlay": {
     "recording": "Gravando",
     "transcribing": "Transcrevendo...",
-    "processing": "Processando..."
+    "processing": "Processando...",
+    "meeting": "Gravando reunião",
+    "meetingPaused": "Reunião pausada"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"

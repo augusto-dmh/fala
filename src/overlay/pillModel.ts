@@ -8,7 +8,9 @@ export type OverlayEvent =
   | "recording"
   | "streaming"
   | "transcribing"
-  | "processing";
+  | "processing"
+  | "meeting"
+  | "meeting_paused";
 
 export const PILL_BARS = 10;
 
@@ -27,8 +29,32 @@ export function toPillMode(event: OverlayEvent): PillMode | null {
     case "processing":
       return "processing";
     case "streaming":
+    case "meeting":
+    case "meeting_paused":
       return null;
   }
+}
+
+/** `mm:ss`, or `h:mm:ss` from one hour on: the recorded time the meeting pill shows. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
+}
+
+/**
+ * The meeting pill's dot: grey while paused, amber while a channel has been silent for two
+ * minutes (the capture may be failing), red while recording.
+ */
+export function meetingTone(
+  paused: boolean,
+  muted: boolean,
+): "paused" | "muted" | "live" {
+  if (paused) return "paused";
+  return muted ? "muted" : "live";
 }
 
 /**
