@@ -663,7 +663,7 @@ fn default_llm_disabled_apps() -> Vec<String> {
         .to_vec()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -1032,15 +1032,8 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_shortcut.to_string(),
         },
     );
-    #[cfg(target_os = "windows")]
-    let default_post_process_shortcut = "ctrl+space";
-    #[cfg(target_os = "macos")]
-    let default_post_process_shortcut = "option+space";
-    #[cfg(target_os = "linux")]
-    let default_post_process_shortcut = "ctrl+space";
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_post_process_shortcut = "alt+space";
-
+    // The dictation LLM is automatic on `transcribe`, so the legacy post-processing
+    // binding has no key until the user picks one; its code stays.
     bindings.insert(
         "transcribe_with_post_process".to_string(),
         ShortcutBinding {
@@ -1048,8 +1041,8 @@ pub fn get_default_settings() -> AppSettings {
             name: "Transcribe with Post-Processing".to_string(),
             description: "Converts your speech into text and applies AI post-processing."
                 .to_string(),
-            default_binding: default_post_process_shortcut.to_string(),
-            current_binding: default_post_process_shortcut.to_string(),
+            default_binding: String::new(),
+            current_binding: String::new(),
         },
     );
     bindings.insert(
@@ -1325,6 +1318,11 @@ fn apply_settings_migrations(
         // transcribe.cpp 0.2 replaced integer registry indices with opaque
         // process-local handles. Clear every old index once.
         settings.transcribe_gpu_device = default_transcribe_gpu_device();
+    }
+    if stored_schema_version < 3 {
+        unbind_legacy_post_process_shortcut(settings);
+    }
+    if stored_schema_version < u64::from(CURRENT_SETTINGS_SCHEMA_VERSION) {
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
@@ -1357,6 +1355,24 @@ fn apply_settings_migrations(
     }
 
     updated
+}
+
+/// Schema 3 (D6): the legacy post-processing binding loses its default key. A key the user
+/// chose is kept; `transcribe` is never touched.
+fn unbind_legacy_post_process_shortcut(settings: &mut AppSettings) {
+    #[cfg(target_os = "macos")]
+    let legacy_default = "option+space";
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    let legacy_default = "ctrl+space";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let legacy_default = "alt+space";
+
+    if let Some(binding) = settings.bindings.get_mut("transcribe_with_post_process") {
+        if binding.current_binding == legacy_default {
+            binding.current_binding.clear();
+        }
+        binding.default_binding.clear();
+    }
 }
 
 /// Update checks are forced off (without touching the persisted setting) when
@@ -1933,19 +1949,80 @@ mod tests {
         assert_eq!(transcribe.default_binding, "ctrl+shift+space");
         assert_eq!(transcribe.current_binding, "ctrl+shift+space");
         let post_process = &bindings["transcribe_with_post_process"];
-        assert_eq!(post_process.default_binding, "ctrl+space");
-        assert_eq!(post_process.current_binding, "ctrl+space");
+        assert_eq!(post_process.default_binding, "");
+        assert_eq!(post_process.current_binding, "");
+    }
+
+    fn schema_2_store(post_process_binding: &str) -> serde_json::Value {
+        serde_json::json!({
+            "settings_schema_version": 2,
+            "selected_model": "",
+            "onboarding_completed": true,
+            "whats_new_last_seen_version": "",
+            "overlay_style": "live",
+            "bindings": {
+                "transcribe": {
+                    "id": "transcribe",
+                    "name": "Transcribe",
+                    "description": "Converts your speech into text.",
+                    "default_binding": "ctrl+shift+space",
+                    "current_binding": "ctrl_left+space"
+                },
+                "transcribe_with_post_process": {
+                    "id": "transcribe_with_post_process",
+                    "name": "Transcribe with Post-Processing",
+                    "description": "Converts your speech into text and applies AI post-processing.",
+                    "default_binding": "ctrl+space",
+                    "current_binding": post_process_binding
+                }
+            }
+        })
+    }
+
+    fn migrated(raw: serde_json::Value) -> AppSettings {
+        let mut settings: AppSettings =
+            serde_json::from_value(raw.clone()).expect("the store must parse strictly");
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        settings
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn untouched_post_process_binding_is_unbound() {
+        let settings = migrated(schema_2_store("ctrl+space"));
+        let post_process = &settings.bindings["transcribe_with_post_process"];
+        assert_eq!(post_process.current_binding, "");
+        assert_eq!(post_process.default_binding, "");
+        let transcribe = &settings.bindings["transcribe"];
+        assert_eq!(transcribe.current_binding, "ctrl_left+space");
+        assert_eq!(transcribe.default_binding, "ctrl+shift+space");
+        assert_eq!(settings.settings_schema_version, 3);
+
+        // Converged: a second read of the migrated store changes nothing.
+        let raw = serde_json::to_value(&settings).expect("settings serialize");
+        let mut again = settings.clone();
+        assert!(!apply_settings_migrations(&mut again, &raw));
+        assert_eq!(
+            again.bindings["transcribe_with_post_process"].current_binding,
+            ""
+        );
+    }
+
+    #[test]
+    fn chosen_post_process_binding_is_kept() {
+        let settings = migrated(schema_2_store("alt+p"));
+        let post_process = &settings.bindings["transcribe_with_post_process"];
+        assert_eq!(post_process.current_binding, "alt+p");
+        assert_eq!(post_process.default_binding, "");
+        assert_eq!(
+            settings.bindings["transcribe"].current_binding,
+            "ctrl_left+space"
+        );
     }
 
     #[test]
     fn store_without_llm_fields_gets_defaults() {
-        let raw = serde_json::json!({
-            "settings_schema_version": 2,
-            "selected_model": "",
-            "onboarding_completed": true
-        });
-        let settings: AppSettings =
-            serde_json::from_value(raw).expect("the store must parse strictly");
+        let settings = migrated(schema_2_store("ctrl+space"));
         assert!(settings.llm_enabled);
         assert_eq!(
             settings.llm_disabled_apps,
@@ -1964,7 +2041,7 @@ mod tests {
             "https://generativelanguage.googleapis.com/v1beta/openai"
         );
 
-        let mut settings = get_default_settings();
+        let mut settings = migrated(schema_2_store("ctrl+space"));
         settings
             .post_process_providers
             .retain(|p| p.id != GEMINI_PROVIDER_ID);

@@ -443,6 +443,9 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
             .get(&id)
             .cloned()
             .unwrap_or(default_binding);
+        if super::binding_is_unset(&binding) {
+            continue;
+        }
 
         if let Err(e) = state.register(&binding) {
             error!(
