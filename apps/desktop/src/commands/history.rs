@@ -1,8 +1,10 @@
-use crate::actions::process_transcription_output;
+use crate::actions::{process_transcription_output, OutputMode};
 use crate::managers::{
-    history::{HistoryEntry, HistoryManager, PaginatedHistory},
+    history::{EntryTexts, HistoryEntry, HistoryManager, PaginatedHistory},
+    history_dictations::HistoryDictation,
     transcription::TranscriptionManager,
 };
+use fala_core::AppContext;
 use fala_storage::Showing;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -94,18 +96,34 @@ pub async fn retry_history_entry_transcription(
         return Err("Recording contains no speech".to_string());
     }
 
-    let processed =
-        process_transcription_output(&app, &transcription, entry.post_process_requested).await;
+    let mode = retry_mode(entry.post_process_requested, entry.dictation.as_ref());
+    let processed = process_transcription_output(&app, &transcription, mode).await;
     history_manager
         .update_transcription(
             id,
-            transcription,
-            processed.post_processed_text,
-            processed.post_process_prompt,
-            processed.final_text,
+            EntryTexts {
+                transcription_text: transcription,
+                post_processed_text: processed.post_processed_text,
+                post_process_prompt: processed.post_process_prompt,
+                pasted_text: processed.final_text,
+                llm_produced: processed.llm_produced,
+            },
         )
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// How a retry formats: the legacy binding again, or the automatic path for the recorded app.
+/// An entry without a dictation (the first transcription failed) never recorded its app, so
+/// the LLM stays off rather than risk a disabled app (ADR-0004).
+fn retry_mode(post_process_requested: bool, dictation: Option<&HistoryDictation>) -> OutputMode {
+    match (post_process_requested, dictation) {
+        (true, _) => OutputMode::Legacy,
+        (false, Some(dictation)) => OutputMode::Auto(AppContext {
+            app_name: dictation.app_name.clone(),
+        }),
+        (false, None) => OutputMode::RulesOnly,
+    }
 }
 
 /// "Desfazer edição da IA": the entry's dictation shows its raw text again.
@@ -179,4 +197,38 @@ pub async fn update_recording_retention_period(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::retry_mode;
+    use crate::actions::OutputMode;
+    use crate::managers::history_dictations::{HistoryDictation, HistoryEditor, HistoryShowing};
+    use fala_core::AppContext;
+
+    fn dictation(app_name: Option<&str>) -> HistoryDictation {
+        HistoryDictation {
+            raw_text: "oi".to_string(),
+            final_text: "Oi.".to_string(),
+            editor: HistoryEditor::Rules,
+            showing: HistoryShowing::Final,
+            app_name: app_name.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn retry_without_a_recorded_app_never_asks_the_llm() {
+        assert_eq!(retry_mode(false, None), OutputMode::RulesOnly);
+        assert_eq!(
+            retry_mode(false, Some(&dictation(Some("keepassxc")))),
+            OutputMode::Auto(AppContext {
+                app_name: Some("keepassxc".to_string())
+            })
+        );
+        assert_eq!(
+            retry_mode(false, Some(&dictation(None))),
+            OutputMode::Auto(AppContext::default())
+        );
+        assert_eq!(retry_mode(true, None), OutputMode::Legacy);
+    }
 }
