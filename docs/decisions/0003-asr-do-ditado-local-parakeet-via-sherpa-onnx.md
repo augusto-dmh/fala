@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0009
 date: 2026-09-26
 ---
 # ASR do ditado roda localmente: Silero VAD + Parakeet-TDT-0.6B-v3 via sherpa-onnx
