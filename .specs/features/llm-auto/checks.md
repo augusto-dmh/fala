@@ -37,33 +37,33 @@ Proof: `cargo test -p fala commands::history::tests::retry_without_a_recorded_ap
 
 ### S2 - settings e o segundo atalho
 
-**C8** - um store JSON sem `llm_enabled` e `llm_disabled_apps` carrega `true` e `["1password", "bitwarden", "keepass", "keepassxc"]` (AC 8, door 1)
+**C8** - um store JSON sem `llm_enabled` e `llm_disabled_apps` carrega `true` e `["1password", "bitwarden", "keepass", "keepassxc"]` (AC 9, door 1)
 Proof: `cargo test -p fala settings::tests::store_without_llm_fields_gets_defaults -- --exact`
 
-**C9** - um store de schema 2 com `transcribe = ctrl_left+space` e `transcribe_with_post_process` em `ctrl+space`/`ctrl+space` sai da migração com `transcribe` em `ctrl_left+space`, `transcribe_with_post_process` em `""`/`""` e schema 3 (AC 9, door 3)
+**C9** - um store de schema 2 com `transcribe = ctrl_left+space` e `transcribe_with_post_process` em `ctrl+space`/`ctrl+space` sai da migração com `transcribe` em `ctrl_left+space`, `transcribe_with_post_process` em `""`/`""` e schema 3 (AC 10, door 3)
 Proof: `cargo test -p fala settings::tests::untouched_post_process_binding_is_unbound -- --exact`
 
-**C10** - um store de schema 2 com `transcribe_with_post_process` em `alt+p` mantém `current_binding = "alt+p"` e fica com `default_binding = ""` (AC 10, door 3)
+**C10** - um store de schema 2 com `transcribe_with_post_process` em `alt+p` mantém `current_binding = "alt+p"` e fica com `default_binding = ""` (AC 11, door 3)
 Proof: `cargo test -p fala settings::tests::chosen_post_process_binding_is_kept -- --exact`
 
 **C11** - os defaults de fresh install: `transcribe` em `ctrl+shift+space`, `transcribe_with_post_process` em `""`/`""` (door 3; substitui o teste `default_bindings_put_dictation_on_ctrl_shift_space`)
 Proof: `cargo test -p fala settings::tests::default_bindings_put_dictation_on_ctrl_shift_space -- --exact`
 
-**C12** - `normalize_apps([" Chrome.exe ", "chrome", "", "C:\\Tools\\Slack.exe"])` devolve `["chrome", "slack"]` (AC 11)
+**C12** - `normalize_apps([" Chrome.exe ", "chrome", "", "C:\\Tools\\Slack.exe"])` devolve `["chrome", "slack"]` (AC 12)
 Proof: `cargo test -p fala llm_auto::tests::disabled_apps_are_normalized -- --exact`
 
-**C13** - os três pontos que registram atalhos (`shortcut/mod.rs` init e troca de implementação, `fala_keys.rs`, `tauri_impl.rs`) e o `secure_input.rs` pulam um binding vazio pela mesma função `binding_is_unset` (AC 12)
+**C13** - os três pontos que registram atalhos (`shortcut/mod.rs` init e troca de implementação, `fala_keys.rs`, `tauri_impl.rs`) e o `secure_input.rs` pulam um binding vazio pela mesma função `binding_is_unset` (AC 13)
 Proof: `cargo test -p fala shortcut::tests::empty_binding_is_unset -- --exact` e `grep -n "binding_is_unset" apps/desktop/src/shortcut/*.rs apps/desktop/src/secure_input.rs` com uma chamada em cada um dos quatro arquivos
 
-**C14** - `default_post_process_providers()` contém `gemini` com o `base_url` da door 2, e um store sem ele ganha o provedor e a entrada vazia em `post_process_api_keys` na leitura (AC 13, door 2)
+**C14** - `default_post_process_providers()` contém `gemini` com o `base_url` da door 2, e um store sem ele ganha o provedor e a entrada vazia em `post_process_api_keys` na leitura (AC 14, door 2)
 Proof: `cargo test -p fala settings::tests::gemini_provider_is_added_to_old_stores -- --exact`
 
 ### S3 - UI
 
-**C15** - `bun run lint`, `bun run format:check` e `bun run check:translations` saem com 0; as chaves `settings.llm.*` existem em `pt` e `en` (AC 14)
+**C15** - `bun run lint`, `bun run format:check` e `bun run check:translations` saem com 0; as chaves `settings.llm.*` existem em `pt` e `en` (AC 15)
 Proof: `bun run lint && bun run format:check && bun run check:translations`
 
-**C16** - em `bun run tauri dev` no Windows, o grupo "IA" aparece nos settings gerais; desligar o interruptor, digitar uma chave e editar a lista persistem depois de reabrir o app; na página herdada de pós-processamento, dar uma tecla ao segundo atalho e depois "restaurar" deixa o campo vazio e a tecla para de disparar; com a chave e um ditado de mais de 15 palavras no Bloco de Notas, o texto entra formatado (AC 14, AC 1; `TODO(windows)`: manual)
+**C16** - em `bun run tauri dev` no Windows, o grupo "IA" aparece nos settings gerais; desligar o interruptor, digitar uma chave e editar a lista persistem depois de reabrir o app; na página herdada de pós-processamento, dar uma tecla ao segundo atalho e depois "restaurar" deixa o campo vazio e a tecla para de disparar; com a chave e um ditado de mais de 15 palavras no Bloco de Notas, o texto entra formatado (AC 15, AC 1; `TODO(windows)`: manual)
 Proof: manual, registrado no PR
 
 ### Gate

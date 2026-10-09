@@ -234,6 +234,25 @@
         "tooltip": "Reescaneia em busca de modelos adicionados à pasta de modelos ou ao cache do Hugging Face fora do Fala"
       }
     },
+    "llm": {
+      "title": "IA",
+      "enabled": {
+        "label": "Formatar ditados com IA",
+        "description": "Acima de 15 palavras, o Gemini formata o texto ditado. Só o texto e o nome do app saem da máquina; o áudio nunca sai."
+      },
+      "apiKey": {
+        "title": "Chave do Gemini",
+        "description": "Fica no cofre de senhas do sistema. Sem chave, só as regras locais formatam o texto.",
+        "placeholder": "Cole a chave da API"
+      },
+      "disabledApps": {
+        "title": "Apps sem IA",
+        "description": "Nesses apps o texto não vai ao Gemini. Use o nome do executável, como chrome ou code.",
+        "placeholder": "Nome do app",
+        "add": "Adicionar",
+        "remove": "Remover {{app}}"
+      }
+    },
     "sound": {
       "title": "Som",
       "microphone": {

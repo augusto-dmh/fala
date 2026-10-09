@@ -136,6 +136,21 @@ const settingUpdaters: {
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),
   custom_words: (value) => commands.updateCustomWords(value as string[]),
+  llm_enabled: (value) => commands.changeLlmEnabledSetting(value as boolean),
+  llm_disabled_apps: async (value) => {
+    const result = await commands.changeLlmDisabledAppsSetting(
+      value as string[],
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    // Show the list as stored: one app name per entry, without repeats.
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, llm_disabled_apps: result.data }
+        : null,
+    }));
+  },
   word_correction_threshold: (value) =>
     commands.changeWordCorrectionThresholdSetting(value as number),
   paste_delay_ms: (value) =>

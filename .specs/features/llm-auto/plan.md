@@ -80,16 +80,16 @@ Reusa `Postprocessor`, `LlmConfig`, `Gemini` (`fala-postproc`, exists), `foregro
 
 **Acceptance Criteria**
 
-8. WHEN um store sem `llm_enabled` e `llm_disabled_apps` é lido THEN `apps/desktop` SHALL usar `true` e a lista padrão da door 1
-9. WHEN um store com schema 2 tem `transcribe_with_post_process` no default antigo THEN a migração SHALL deixá-lo com `current_binding = ""` e `default_binding = ""`, e o `transcribe` com o valor que tinha
-10. WHEN um store com schema 2 tem `transcribe_with_post_process` numa tecla escolhida pela pessoa THEN a migração SHALL manter essa tecla e só zerar o `default_binding`
-11. WHEN `change_llm_disabled_apps_setting` recebe `[" Chrome.exe ", "chrome", "", "C:\\Tools\\Slack.exe"]` THEN `apps/desktop` SHALL gravar `["chrome", "slack"]`
-12. The registro de atalhos SHALL pular um binding com `current_binding` vazio, nas duas implementações (Tauri e `fala_keys`)
-13. The `post_process_providers` padrão SHALL ter o provedor `gemini`, e um store antigo SHALL ganhá-lo na leitura
+9. WHEN um store sem `llm_enabled` e `llm_disabled_apps` é lido THEN `apps/desktop` SHALL usar `true` e a lista padrão da door 1
+10. WHEN um store com schema 2 tem `transcribe_with_post_process` no default antigo THEN a migração SHALL deixá-lo com `current_binding = ""` e `default_binding = ""`, e o `transcribe` com o valor que tinha
+11. WHEN um store com schema 2 tem `transcribe_with_post_process` numa tecla escolhida pela pessoa THEN a migração SHALL manter essa tecla e só zerar o `default_binding`
+12. WHEN `change_llm_disabled_apps_setting` recebe `[" Chrome.exe ", "chrome", "", "C:\\Tools\\Slack.exe"]` THEN `apps/desktop` SHALL gravar `["chrome", "slack"]`
+13. The registro de atalhos SHALL pular um binding com `current_binding` vazio, nas duas implementações (Tauri e `fala_keys`)
+14. The `post_process_providers` padrão SHALL ter o provedor `gemini`, e um store antigo SHALL ganhá-lo na leitura
 
 ### S3: UI (P2)
 
-14. The settings gerais SHALL mostrar o grupo "IA" com o interruptor, o campo da chave do Gemini e a lista de apps, com todas as strings em `pt` e `en`
+15. The settings gerais SHALL mostrar o grupo "IA" com o interruptor, o campo da chave do Gemini e a lista de apps, com todas as strings em `pt` e `en`
 
 **Independent test:** `bun run lint`, `bun run check:translations`; visual em `bun run tauri dev` (`TODO(windows)`, manual)
 

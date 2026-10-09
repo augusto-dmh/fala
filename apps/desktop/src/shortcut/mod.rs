@@ -889,6 +889,29 @@ pub fn update_custom_words(app: AppHandle, words: Vec<String>) -> Result<(), Str
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_llm_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.llm_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Stores the list in the form `fala-inject` reports app names and returns what was stored.
+#[tauri::command]
+#[specta::specta]
+pub fn change_llm_disabled_apps_setting(
+    app: AppHandle,
+    apps: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let mut settings = settings::get_settings(&app);
+    settings.llm_disabled_apps = crate::llm_auto::normalize_apps(apps);
+    let stored = settings.llm_disabled_apps.clone();
+    settings::write_settings(&app, settings);
+    Ok(stored)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_word_correction_threshold_setting(
     app: AppHandle,
     threshold: f64,

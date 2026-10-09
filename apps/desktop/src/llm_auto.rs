@@ -57,6 +57,20 @@ pub(crate) fn format(
     }
 }
 
+/// The disabled-apps list as stored: each item reduced to the app name `fala-inject` reports,
+/// blanks and repeats dropped, order kept.
+pub(crate) fn normalize_apps(apps: Vec<String>) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for app in apps {
+        if let Some(name) = fala_inject::app_name_from_exe_path(app.trim()) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +290,13 @@ mod tests {
             );
             assert!(!processed.llm_produced, "{case}");
         }
+    }
+
+    #[test]
+    fn disabled_apps_are_normalized() {
+        let apps = [" Chrome.exe ", "chrome", "", "C:\\Tools\\Slack.exe"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(normalize_apps(apps), ["chrome", "slack"]);
     }
 }
