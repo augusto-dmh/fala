@@ -75,6 +75,7 @@
       },
       "nsis": {
         "template": "nsis/installer.nsi",
+        "installerIcon": "icons/icon.ico",
         "installMode": "currentUser",
         "languages": ["PortugueseBR", "English"],
         "displayLanguageSelector": false
