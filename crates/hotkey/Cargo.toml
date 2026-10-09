@@ -9,6 +9,11 @@ publish.workspace = true
 
 [dependencies]
 fala-core.workspace = true
+log = "0.4"
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+handy-keys = "0.3.4"
 
 [lints]
 workspace = true

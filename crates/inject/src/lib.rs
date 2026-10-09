@@ -4,20 +4,26 @@
 //! nome do app vai ao LLM). Windows pergunta ao sistema; as outras plataformas, GNOME Wayland
 //! incluído, devolvem app desconhecido, com o motivo em `InjectError::Unsupported`.
 //!
-//! Inserção: trait `Injector` com um adaptador por sistema operacional.
-//! Windows: clipboard + `SendInput` Ctrl+V com restore; Unicode direto para textos curtos.
-//! Falha de inserção deixa o texto no clipboard e a UI oferece "Colar".
-//! `apps/desktop/src/clipboard.rs` e `paste_tx` migram na fase 1.
+//! Inserção: [`platform_injector`] devolve o [`Injector`] do sistema operacional, que cola por
+//! clipboard + acorde ([`PasteChord`], Ctrl+V por padrão) e devolve ao clipboard o que estava
+//! nele, a sequência que o spike 03 mediu.
+//! Se o acorde falha, o clipboard volta ao conteúdo de antes e `insert` devolve
+//! `InjectError::Keystroke`; quem chama ainda tem o texto para oferecer "Colar".
+//! Windows: `arboard` e `enigo`. As outras plataformas devolvem `Unsupported`; o portal
+//! RemoteDesktop é a fase 3 (ADR-0007). O desktop ainda usa `apps/desktop/src/clipboard.rs`; a
+//! troca é uma feature própria.
 
 mod foreground;
+mod paste;
 
 pub use foreground::{app_name_from_exe_path, foreground_app, try_foreground_app};
+pub use paste::{platform_injector, Injector, PasteChord, PasteConfig};
 
 /// Erros de `fala-inject`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InjectError {
-    /// A plataforma não deixa um app comum saber qual app está em foco.
-    #[error("detecção do app em foco indisponível: {0}")]
+    /// A plataforma não deixa um app comum saber qual app está em foco, ou colar nele.
+    #[error("indisponível nesta plataforma: {0}")]
     Unsupported(&'static str),
     /// Não há janela em primeiro plano (troca de foco em curso, tela de bloqueio).
     #[error("nenhuma janela em primeiro plano")]
@@ -25,4 +31,10 @@ pub enum InjectError {
     /// Uma chamada do sistema falhou; `code` é o código de erro dele.
     #[error("{call} falhou com o código {code}")]
     Os { call: &'static str, code: u32 },
+    /// Ler, escrever ou limpar o clipboard falhou.
+    #[error("falha no clipboard: {0}")]
+    Clipboard(String),
+    /// O acorde de colar não foi enviado.
+    #[error("falha ao enviar o acorde de colar: {0}")]
+    Keystroke(String),
 }
