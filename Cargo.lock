@@ -2055,12 +2055,17 @@ name = "fala-hotkey"
 version = "0.1.0"
 dependencies = [
  "fala-core",
+ "handy-keys",
+ "log",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "fala-inject"
 version = "0.1.0"
 dependencies = [
+ "arboard",
+ "enigo",
  "fala-core",
  "log",
  "thiserror 2.0.18",

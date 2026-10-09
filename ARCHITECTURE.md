@@ -16,12 +16,12 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | Caminho | Pacote | O que é |
 |---|---|---|
 | `crates/core` | `fala-core` | tipos (`Event`, `Settings`, `Utterance`, `Session`), config, dicionário pessoal, erros |
-| `crates/hotkey` | `fala-hotkey` | atalho global com press/release. Windows: hook de teclado. Linux: portal GlobalShortcuts |
+| `crates/hotkey` | `fala-hotkey` | atalho global com press/release: trait `GlobalHotkey` e `platform_hotkey`. Windows: hook `WH_KEYBOARD_LL` do `handy-keys`. Linux: `Unsupported` até o portal GlobalShortcuts da fase 3 |
 | `crates/audio` | `fala-audio` | captura (cpal, loopback WASAPI, PipeWire), VAD Silero, resample, gravador de reunião |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
-| `crates/inject` | `fala-inject` | inserção no app ativo (clipboard + Ctrl+V com restore, SendInput) |
+| `crates/inject` | `fala-inject` | inserção no app ativo: trait `Injector` e `platform_injector` (clipboard + Ctrl+V com restore; Windows por `arboard` e `enigo`, Linux `Unsupported` até a fase 3) e o app em primeiro plano (`foreground_app`) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID) e modos |
 | `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |
@@ -32,7 +32,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `apps/cli` | `fala-cli` | `dictate`, `record`, `transcribe`, `bench`, `import`, para spikes, benchmark e uso headless |
 | `src/` | — | frontend React + TypeScript + Tailwind (Vite, Bun), servido pelo `apps/desktop` |
 
-**Estado em 2026-10-05:** `core`, `secrets`, `postproc`, `storage`, `audio`, `asr`, `meeting`, `media`, `mcp`, `notes` e `retention` têm lógica e testes, exercitados pelo `fala-cli`. `hotkey` ainda é só `//!`, e `inject` só detecta o app em primeiro plano. O desktop usa `core`, `secrets` (chaves de API), `storage` (histórico, ao lado do `history.db` herdado, que continua dono do áudio), `inject` (app em foco) e `postproc` (regras e Gemini automático no ditado do `transcribe`). Captura, VAD, ASR, atalho, colagem, pill e tray continuam os herdados do Handy: `managers/` (audio, model, transcription), `audio_toolkit/`, `shortcut/`, `clipboard.rs` e `paste_tx/`, `overlay.rs` e `tray.rs`. Até a fase 1 ligar o desktop a `audio` e `asr`, a captura e o ASR existem no crate e no desktop. A fase 2 liga `meeting`, `media`, `notes` e `retention` ao desktop.
+**Estado em 2026-10-09:** `core`, `secrets`, `postproc`, `storage`, `audio`, `asr`, `meeting`, `media`, `mcp`, `notes` e `retention` têm lógica e testes, exercitados pelo `fala-cli`. `hotkey` e `inject` têm os traits e os adaptadores Windows (`GlobalHotkey` sobre o `handy-keys`; `Injector` com clipboard + Ctrl+V e restore), com `Unsupported` no Linux, mas o desktop ainda usa `shortcut/` e `clipboard.rs`; `inject` também detecta o app em primeiro plano. O desktop usa `core`, `secrets` (chaves de API), `storage` (histórico, ao lado do `history.db` herdado, que continua dono do áudio), `inject` (app em foco) e `postproc` (regras e Gemini automático no ditado do `transcribe`). Captura, VAD, ASR, atalho, colagem, pill e tray continuam os herdados do Handy: `managers/` (audio, model, transcription), `audio_toolkit/`, `shortcut/`, `clipboard.rs` e `paste_tx/`, `overlay.rs` e `tray.rs`. Até a fase 1 ligar o desktop a `audio` e `asr`, a captura e o ASR existem no crate e no desktop. A fase 2 liga `meeting`, `media`, `notes` e `retention` ao desktop.
 
 ## Invariantes
 

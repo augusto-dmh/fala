@@ -42,13 +42,19 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: Windows CI on main after #34 and #33 (fixed by #41, #42) (tests)
 - last seen: 2026-10-04T19:55:48Z
 
-### L-006 - A criterion about how a record is written must list every code path that writes that record (save, retry, backfill) in a Coverage row, not only the path the feature touches
+### L-006 - A diff proof scoped to the feature must compare from the merge-base (origin/main...HEAD), never two-dot, or a moving main makes it fail on commits the branch never touched
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `proofs` · harmful: 0
+- features: hotkey-inject-traits
+- evidence: C22 - .specs/features/hotkey-inject-traits/verification.md round 1 finding 1 (proofs)
+- last seen: 2026-10-09T19:33:29Z
+
+### L-007 - A criterion about how a record is written must list every code path that writes that record (save, retry, backfill) in a Coverage row, not only the path the feature touches
 - signal: `ac_gap` · recurrence: 1 feature(s) · scope: `checks` · harmful: 0
 - features: llm-late-edit
 - evidence: llm-late-edit verification round 1 finding 1 (AC 1, history.rs update_transcription_with) (checks)
 - last seen: 2026-10-09T19:55:36Z
 
-### L-007 - When the Surface names an error variant, the proof must match that variant, not only is_err()
+### L-008 - When the Surface names an error variant, the proof must match that variant, not only is_err()
 - signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `proofs` · harmful: 0
 - features: llm-late-edit
 - evidence: llm-late-edit verification round 1 finding 2 (C5) (proofs)
