@@ -1,10 +1,28 @@
 @import "tailwindcss";
 @import "./styles/theme.css";
 
-/* Register the shared color tokens (src/styles/theme.css) as Tailwind
-   utilities */
+/* Register the shared tokens (src/styles/theme.css) as Tailwind utilities:
+   bg-surface-1, text-text-2, border-border, bg-accent, text-on-accent, ... */
 @theme inline {
+  --color-surface-0: var(--color-surface-0);
+  --color-surface-1: var(--color-surface-1);
+  --color-surface-2: var(--color-surface-2);
+  --color-border: var(--color-border);
   --color-text: var(--color-text);
+  --color-text-2: var(--color-text-2);
+  --color-text-3: var(--color-text-3);
+  --color-accent: var(--color-accent);
+  --color-on-accent: var(--color-on-accent);
+  --color-rec: var(--color-rec);
+  --color-warn: var(--color-warn);
+  --color-ok: var(--color-ok);
+  --color-me: var(--color-me);
+  --color-them: var(--color-them);
+  --color-danger: var(--color-danger);
+  --color-focus-outer: var(--color-focus-outer);
+  --color-focus-inner: var(--color-focus-inner);
+
+  /* Aliases kept for the inherited screens (see theme.css). */
   --color-background: var(--color-background);
   --color-background-ui: var(--color-background-ui);
   --color-logo-primary: var(--color-logo-primary);
@@ -15,11 +33,100 @@
   --color-error: var(--color-error);
 }
 
+/* Type, shape and motion. Values from the Windows 11 type ramp and geometry;
+   no font is bundled: Segoe UI Variable on Windows, the system sans elsewhere. */
+@theme {
+  --font-sans:
+    "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui,
+    sans-serif;
+  --font-display:
+    "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui,
+    sans-serif;
+
+  /* Ramp: caption 12/16, body 14/20, body large 18/24, subtitle 20/28,
+     title 28/36. The Tailwind sizes the inherited screens use map onto it. */
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 24px;
+  --text-subtitle: 20px;
+  --text-subtitle--line-height: 28px;
+  --text-title: 28px;
+  --text-title--line-height: 36px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-lg: 18px;
+  --text-lg--line-height: 24px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 28px;
+  --text-2xl--line-height: 36px;
+
+  /* 4 px on controls, cards and list items; 8 px on dialogs, menus, toasts. */
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 8px;
+
+  --ease-fluent: cubic-bezier(0, 0, 0, 1);
+  --default-transition-duration: 100ms;
+  --default-transition-timing-function: var(--ease-fluent);
+}
+
+/* Fluent double focus ring for elements that draw their own focus. */
+@utility focus-ring {
+  outline: 2px solid var(--color-focus-outer);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1px var(--color-focus-inner);
+}
+
+@layer base {
+  /* Keyboard focus is always visible, in the same double ring. Components
+     that opt out with `focus:outline-none` draw their own. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-outer);
+    outline-offset: 1px;
+    box-shadow: 0 0 0 1px var(--color-focus-inner);
+  }
+}
+
+/* Native controls and scrollbars follow the active theme. Main window only:
+   the overlay window stays transparent. */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 :root {
   /* Typography */
-  font-size: 15px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 400;
+  font-family: var(--font-sans);
 
   /* Typography settings */
   font-synthesis: none;
@@ -40,9 +147,9 @@
      block (matching other surfaces); the dark theme overrides it below. */
   --color-log-surface: color-mix(in srgb, var(--color-background), black 6%);
 
-  /* Apply colors */
+  /* Apply colors: the window sits on surface-0; cards and menus on surface-1. */
   color: var(--color-text);
-  background-color: var(--color-background);
+  background-color: var(--color-surface-0);
 }
 
 .container {
@@ -56,7 +163,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Just a bit darker than the (already dark) background, keeping its warm tint */
+    /* Just a bit darker than the (already dark) card surface */
     --color-log-surface: color-mix(in srgb, var(--color-background), black 15%);
   }
 }
@@ -99,8 +206,9 @@
   }
 }
 
+/* The wordmark is drawn in ink, never in a brand colour. */
 .logo-primary {
-  fill: var(--color-logo-primary);
+  fill: var(--color-text);
 }
 
 .logo-stroke {
