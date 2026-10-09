@@ -2,12 +2,21 @@
 //! `fala-postproc` `Postprocessor`. The local rules always run; the Gemini formats the text when
 //! the LLM is on, the `gemini` key is set, the app is not in `llm_disabled_apps` and the text has
 //! more than 15 words. An unknown app keeps the LLM on (D4 of the phase 1 plan).
+//!
+//! `custom_words` is the personal dictionary: the rules apply its spelling and the Gemini gets it
+//! in the prompt. While the LLM is configured, the inherited fuzzy correction waits until the
+//! LLM is out of the way and only touches text the LLM did not write.
+
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use fala_core::{AppContext, Dictionary, Editor, Language, Transcript};
-use fala_postproc::{Gemini, LlmConfig, Postprocessor, DEFAULT_BASE_URL};
+use fala_postproc::{
+    FormatContext, Formatter, Gemini, LlmConfig, Postprocessor, Rules, DEFAULT_BASE_URL,
+};
 use fala_secrets::ApiKey;
-use log::debug;
+use log::{debug, error};
 
+use crate::audio_toolkit::apply_custom_words;
 use crate::settings::{AppSettings, GEMINI_PROVIDER_ID};
 
 /// The text to paste and whether the LLM produced it.
@@ -17,29 +26,82 @@ pub(crate) struct AutoFormatted {
     pub llm_produced: bool,
 }
 
-/// The `Postprocessor` the settings describe. The key comes from `post_process_api_keys`, which
-/// the settings load fills from the OS keyring.
-pub(crate) fn postprocessor(settings: &AppSettings) -> Postprocessor {
-    postprocessor_at(settings, DEFAULT_BASE_URL)
+/// The `Postprocessor` the settings describe, the personal dictionary and the fuzzy correction
+/// left for text the LLM does not write.
+pub(crate) struct AutoFormatter {
+    postprocessor: Postprocessor,
+    dictionary: Dictionary,
+    fuzzy: Option<Fuzzy>,
 }
 
-fn postprocessor_at(settings: &AppSettings, base_url: &str) -> Postprocessor {
-    let gemini = settings
+/// The formatter for one dictation. `use_llm = false` keeps the LLM off for it. The key comes
+/// from `post_process_api_keys`, which the settings load fills from the OS keyring.
+pub(crate) fn formatter(settings: &AppSettings, use_llm: bool) -> AutoFormatter {
+    formatter_at(settings, use_llm, DEFAULT_BASE_URL)
+}
+
+fn formatter_at(settings: &AppSettings, use_llm: bool, base_url: &str) -> AutoFormatter {
+    let gemini = gemini_key(settings).map(|key| Gemini::new(key).with_base_url(base_url));
+    AutoFormatter {
+        postprocessor: Postprocessor::new(LlmConfig {
+            enabled: settings.llm_enabled && use_llm,
+            gemini,
+            disabled_apps: settings.llm_disabled_apps.clone(),
+        }),
+        dictionary: Dictionary::new(&settings.custom_words),
+        fuzzy: Fuzzy::deferred(settings),
+    }
+}
+
+fn gemini_key(settings: &AppSettings) -> Option<ApiKey> {
+    settings
         .post_process_api_keys
         .get(GEMINI_PROVIDER_ID)
         .and_then(|key| ApiKey::new(key.clone()).ok())
-        .map(|key| Gemini::new(key).with_base_url(base_url));
-    Postprocessor::new(LlmConfig {
-        enabled: settings.llm_enabled,
-        gemini,
-        disabled_apps: settings.llm_disabled_apps.clone(),
-    })
+}
+
+/// The LLM can format dictations: it is on and the `gemini` key is set. While it can, the
+/// transcription step leaves the fuzzy correction to the formatter, so the LLM reads what the
+/// ASR heard.
+pub(crate) fn llm_configured(settings: &AppSettings) -> bool {
+    settings.llm_enabled && gemini_key(settings).is_some()
+}
+
+/// The inherited fuzzy correction (`apply_custom_words`) the transcription step skipped.
+#[derive(Debug, Clone)]
+pub(crate) struct Fuzzy {
+    words: Vec<String>,
+    threshold: f64,
+}
+
+impl Fuzzy {
+    /// `Some` only when the transcription step skipped the correction because the LLM is
+    /// configured, so it never runs twice.
+    pub(crate) fn deferred(settings: &AppSettings) -> Option<Self> {
+        (llm_configured(settings) && !settings.custom_words.is_empty()).then(|| Self {
+            words: settings.custom_words.clone(),
+            threshold: settings.word_correction_threshold,
+        })
+    }
+
+    /// Like the transcription step, a panic in the matcher keeps the text untouched.
+    pub(crate) fn apply(&self, text: String) -> String {
+        match catch_unwind(AssertUnwindSafe(|| {
+            apply_custom_words(&text, &self.words, self.threshold)
+        })) {
+            Ok(corrected) => corrected,
+            Err(_) => {
+                error!("Custom-word correction panicked; keeping the text");
+                text
+            }
+        }
+    }
 }
 
 /// Formats one dictation. Blocks for at most `fala_postproc::INSERT_DEADLINE` when the LLM is
 /// asked; past that, the rules text stays.
 pub(crate) fn format(
-    postprocessor: &Postprocessor,
+    formatter: &AutoFormatter,
     text: &str,
     language: Language,
     app: AppContext,
@@ -48,13 +110,40 @@ pub(crate) fn format(
         text: text.to_string(),
         language,
     };
-    let formatted = postprocessor.process(raw, app, &Dictionary::default());
+    let formatted = formatter
+        .postprocessor
+        .process(raw, app, &formatter.dictionary);
     let editor = formatted.dictation.editor;
     debug!("post-processing: editor={editor:?}");
+    let llm_produced = editor == Editor::Llm;
+    let dictation = formatted.dictation;
+    // Text the LLM did not write goes through the fuzzy correction and then the rules, the
+    // order it had before the LLM: the fuzzy matcher reads ASR text, and the rules fix the
+    // spelling after it.
+    let refixed = match &formatter.fuzzy {
+        Some(fuzzy) if !llm_produced => {
+            let ctx = FormatContext {
+                app: &dictation.app,
+                dictionary: &formatter.dictionary,
+                language: &dictation.raw.language,
+            };
+            Rules
+                .format(&fuzzy.apply(dictation.raw.text.clone()), &ctx)
+                .ok()
+        }
+        _ => None,
+    };
+    let final_text = refixed.unwrap_or(dictation.final_text);
     AutoFormatted {
-        final_text: formatted.dictation.final_text,
-        llm_produced: editor == Editor::Llm,
+        final_text,
+        llm_produced,
     }
+}
+
+/// The personal dictionary as stored: `Dictionary::new` trims, drops blanks and keeps the first
+/// spelling of terms that differ only in case.
+pub(crate) fn normalize_words(words: Vec<String>) -> Vec<String> {
+    Dictionary::new(words).terms().to_vec()
 }
 
 /// The disabled-apps list as stored: each item reduced to the app name `fala-inject` reports,
@@ -76,6 +165,7 @@ mod tests {
     use super::*;
     use crate::actions::auto_processed;
     use crate::managers::history_dictations::dictation_for;
+    use fala_postproc::SYSTEM_PROMPT;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
@@ -169,11 +259,216 @@ mod tests {
         app: AppContext,
     ) -> AutoFormatted {
         format(
-            &postprocessor_at(settings, &server.base_url),
+            &formatter_at(settings, true, &server.base_url),
             text,
             Language::PtBr,
             app,
         )
+    }
+
+    /// The `systemInstruction` text of request `index`.
+    fn system_prompt(server: &FakeGemini, index: usize) -> String {
+        let body: serde_json::Value =
+            serde_json::from_str(&server.bodies.lock().unwrap()[index]).unwrap();
+        body["systemInstruction"]["parts"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn words(terms: &[&str]) -> Vec<String> {
+        terms.iter().map(|term| term.to_string()).collect()
+    }
+
+    #[test]
+    fn dictionary_reaches_the_llm_prompt() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        let mut settings = settings_with_key();
+        settings.custom_words = words(&[" Augusto ", "augusto", "ChargeBee"]);
+
+        let auto = run(&settings, &server, SIXTEEN, app("notepad"));
+
+        assert!(auto.llm_produced);
+        assert_eq!(server.requests(), 1);
+        assert_eq!(
+            system_prompt(&server, 0),
+            format!("{SYSTEM_PROMPT}\n\nDicionário pessoal:\n- Augusto\n- ChargeBee")
+        );
+    }
+
+    #[test]
+    fn empty_dictionary_keeps_the_prompt() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        for (index, terms) in [words(&[]), words(&["", "  "])].into_iter().enumerate() {
+            let mut settings = settings_with_key();
+            settings.custom_words = terms;
+            let auto = run(&settings, &server, SIXTEEN, app("notepad"));
+            assert!(auto.llm_produced, "case {index}");
+            assert_eq!(system_prompt(&server, index), SYSTEM_PROMPT, "case {index}");
+        }
+    }
+
+    /// What the pipeline gives without the LLM configured: the fuzzy correction in the
+    /// transcription step, then the rules.
+    fn without_llm(terms: &[&str], text: &str) -> String {
+        let mut keyless = crate::settings::get_default_settings();
+        keyless.custom_words = words(terms);
+        let corrected = apply_custom_words(
+            text,
+            &keyless.custom_words,
+            keyless.word_correction_threshold,
+        );
+        let server = FakeGemini::ok(Duration::ZERO);
+        run(&keyless, &server, &corrected, app("notepad")).final_text
+    }
+
+    #[test]
+    fn rules_apply_the_dictionary_without_llm() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        // 16 words after the rules, which join "charge bee" into one; without "hoje", 15.
+        let long =
+            "a charge bee mandou o relatório amanhã cedo para o time inteiro de vendas da empresa hoje";
+        let fifteen =
+            "a charge bee mandou o relatório amanhã cedo para o time inteiro de vendas da empresa";
+
+        let mut off = settings_with_key();
+        off.llm_enabled = false;
+        let mut keyless = crate::settings::get_default_settings();
+        keyless.llm_enabled = true;
+        for (case, mut settings) in [("off", off), ("keyless", keyless)] {
+            settings.custom_words = words(&["ChargeBee"]);
+            let auto = run(&settings, &server, long, app("notepad"));
+            assert!(
+                auto.final_text.starts_with("A ChargeBee mandou"),
+                "{case}: {}",
+                auto.final_text
+            );
+            assert!(!auto.llm_produced, "{case}");
+        }
+
+        // Configured but not asked: the deferred fuzzy runs before the rules, so the text is
+        // the one the pipeline gives without the LLM.
+        let mut configured = settings_with_key();
+        configured.custom_words = words(&["ChargeBee"]);
+        for (case, text, app) in [
+            ("disabled app", long, app("keepassxc")),
+            ("15 words", fifteen, app("notepad")),
+        ] {
+            let auto = run(&configured, &server, text, app);
+            assert_eq!(auto.final_text, without_llm(&["ChargeBee"], text), "{case}");
+            assert!(auto.final_text.contains("ChargeBee mandou"), "{case}");
+            assert!(!auto.llm_produced, "{case}");
+        }
+        assert_eq!(server.requests(), 0);
+    }
+
+    #[test]
+    fn deferred_fuzzy_matches_the_pipeline_without_llm() {
+        let terms = ["ChargeBee", "Augusto"];
+        let mut configured = settings_with_key();
+        configured.custom_words = words(&terms);
+        let server = FakeGemini::ok(Duration::ZERO);
+        for text in [
+            "a charge bee mandou isso",
+            "o augusto mandou isso",
+            "o agusto mandou isso",
+        ] {
+            let auto = run(&configured, &server, text, app("notepad"));
+            assert_eq!(auto.final_text, without_llm(&terms, text), "{text}");
+            assert!(!auto.final_text.contains("CHARGEBEE"), "{text}");
+            assert!(!auto.final_text.contains("AUGUSTO"), "{text}");
+        }
+        assert_eq!(server.requests(), 0);
+    }
+
+    #[test]
+    fn rules_only_retry_keeps_the_deferred_fuzzy() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        let mut settings = settings_with_key();
+        settings.custom_words = words(&["Augusto"]);
+        let text =
+            "o agusto acho que pode mandar o relatório amanhã cedo para o time inteiro todo hoje";
+
+        let auto = format(
+            &formatter_at(&settings, false, &server.base_url),
+            text,
+            Language::PtBr,
+            AppContext::default(),
+        );
+
+        assert!(
+            auto.final_text.starts_with("O Augusto acho"),
+            "{}",
+            auto.final_text
+        );
+        assert!(!auto.llm_produced);
+        assert_eq!(server.requests(), 0);
+    }
+
+    #[test]
+    fn llm_text_is_not_fuzzy_corrected() {
+        let answer = "O agusto mandou o relatório.";
+        let body = serde_json::json!({
+            "candidates": [{ "content": { "parts": [{ "text": answer }] } }]
+        });
+        let server = FakeGemini::start(Duration::ZERO, 200, body.to_string());
+        let mut settings = settings_with_key();
+        settings.custom_words = words(&["Augusto"]);
+        let text =
+            "o agusto acho que pode mandar o relatório amanhã cedo para o time inteiro todo hoje";
+
+        let auto = run(&settings, &server, text, app("notepad"));
+
+        assert_eq!(server.requests(), 1);
+        assert!(server.bodies.lock().unwrap()[0].contains("O agusto acho"));
+        assert_eq!(
+            auto,
+            AutoFormatted {
+                final_text: answer.to_string(),
+                llm_produced: true
+            }
+        );
+    }
+
+    #[test]
+    fn deferred_fuzzy_fixes_text_the_llm_did_not_write() {
+        let long =
+            "o agusto acho que pode mandar o relatório amanhã cedo para o time inteiro todo hoje";
+        let mut settings = settings_with_key();
+        settings.custom_words = words(&["Augusto"]);
+
+        let quiet = FakeGemini::ok(Duration::ZERO);
+        let short = run(&settings, &quiet, "o agusto mandou isso", app("notepad"));
+        assert_eq!(short.final_text, "O Augusto mandou isso");
+        let listed = run(&settings, &quiet, long, app("keepassxc"));
+        assert!(listed.final_text.starts_with("O Augusto acho"), "keepassxc");
+        assert_eq!(quiet.requests(), 0);
+
+        let failing = FakeGemini::start(Duration::ZERO, 500, "{}".to_string());
+        let failed = run(&settings, &failing, long, app("notepad"));
+        assert!(failed.final_text.starts_with("O Augusto acho"), "http 500");
+        assert!(!failed.llm_produced);
+        assert_eq!(failing.requests(), 1);
+    }
+
+    #[test]
+    fn no_second_fuzzy_without_llm() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.custom_words = words(&["Augusto"]);
+        assert!(Fuzzy::deferred(&settings).is_none());
+
+        let server = FakeGemini::ok(Duration::ZERO);
+        let auto = run(&settings, &server, "agusto mandou", app("notepad"));
+        assert_eq!(auto.final_text, "Agusto mandou");
+        assert_eq!(server.requests(), 0);
+    }
+
+    #[test]
+    fn custom_words_are_normalized() {
+        assert_eq!(
+            normalize_words(words(&[" Fala ", "fala", "", "ChargeBee", "  "])),
+            ["Fala", "ChargeBee"]
+        );
     }
 
     #[test]

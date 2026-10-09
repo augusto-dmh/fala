@@ -489,14 +489,12 @@ pub(crate) async fn process_transcription_output(
             return legacy_post_process(&settings, final_text).await;
         }
     };
-    let mut settings = settings;
-    settings.llm_enabled &= use_llm;
-    let postprocessor = llm_auto::postprocessor(&settings);
+    let formatter = llm_auto::formatter(&settings, use_llm);
     let language =
         crate::managers::history_dictations::language_from_setting(&settings.selected_language);
     let text = final_text.clone();
     match tauri::async_runtime::spawn_blocking(move || {
-        llm_auto::format(&postprocessor, &text, language, app_context)
+        llm_auto::format(&formatter, &text, language, app_context)
     })
     .await
     {
@@ -514,11 +512,13 @@ pub(crate) async fn process_transcription_output(
     }
 }
 
-/// The legacy binding: the OpenAI-compatible provider the user configured, unchanged.
-async fn legacy_post_process(
-    settings: &AppSettings,
-    mut final_text: String,
-) -> ProcessedTranscription {
+/// The legacy binding: the OpenAI-compatible provider the user configured, unchanged. It gets
+/// the fuzzy correction the transcription step left for later while the LLM is configured.
+async fn legacy_post_process(settings: &AppSettings, final_text: String) -> ProcessedTranscription {
+    let mut final_text = match llm_auto::Fuzzy::deferred(settings) {
+        Some(fuzzy) => fuzzy.apply(final_text),
+        None => final_text,
+    };
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
     if let Some(processed_text) = post_process_transcription(settings, &final_text).await {
@@ -1068,6 +1068,27 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn legacy_keeps_the_fuzzy_while_llm_is_configured() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.custom_words = vec!["Augusto".to_string()];
+        settings.post_process_api_keys.insert(
+            crate::settings::GEMINI_PROVIDER_ID.to_string(),
+            "chave-de-teste".to_string(),
+        );
+        // No legacy provider selected, so the OpenAI-compatible call never happens.
+        settings.post_process_provider_id = String::new();
+
+        let processed = tauri::async_runtime::block_on(super::legacy_post_process(
+            &settings,
+            "agusto mandou".to_string(),
+        ));
+
+        assert_eq!(processed.final_text, "Augusto mandou");
+        assert_eq!(processed.post_processed_text, None);
+        assert!(!processed.llm_produced);
+    }
 
     #[test]
     fn blank_transcription_is_detected() {

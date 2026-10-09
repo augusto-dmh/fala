@@ -882,7 +882,7 @@ pub fn change_whats_new_last_seen_version_setting(
 #[specta::specta]
 pub fn update_custom_words(app: AppHandle, words: Vec<String>) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.custom_words = words;
+    settings.custom_words = crate::llm_auto::normalize_words(words);
     settings::write_settings(&app, settings);
     Ok(())
 }
