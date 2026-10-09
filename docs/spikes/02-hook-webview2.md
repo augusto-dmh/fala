@@ -1,6 +1,6 @@
 # Spike 02 — Hook de teclado com a WebView2 em foco
 
-**Fase:** 0 · **Status:** modo `auto` medido no Windows; modo `manual` pendente · **Risco:** design doc §7
+**Fase:** 0 · **Status:** medido no Windows (modos `auto` e `manual`) · **Risco:** design doc §7
 
 ## Objetivo
 
@@ -86,12 +86,22 @@ fim (a sessão foi bloqueada durante a rodada; o desligamento de vídeo por inat
 outro processo aberto e com a tela mantida ligada (`SetThreadExecutionState`); a tabela é a da
 repetição.
 
-`TODO(windows)`: modo `manual` (10 min digitando na janela do Fala), que precisa do teclado
-físico:
+Modo `manual` medido em 2026-10-01 na mesma máquina, com o mesmo binário (`da03312`,
+`fala.exe --debug`) e o mesmo binding e modo de atalho. O Augusto digitou na janela do Fala, que
+ficou em foco os 10 min, e tocou F9 no teclado físico a cada ~10 s, com
+`-Mode manual -Minutes 10 -ExpectedPresses 60`. A tabela é a que o script gravou em
+`C:\fala-spikes\02-manual.md`, que terminou às 03:31Z:
 
 | mode | presses_sent | pressed_logged | released_logged | first_gap_at | foreground_at_end |
 | --- | ---: | ---: | ---: | --- | --- |
-| manual | | | | | |
+| manual | 60 | 60 | 60 | - | Fala |
+
+`presses_sent` é o valor de `-ExpectedPresses`. A contagem no papel não foi anotada na hora.
+Como conferência, o `fala.log` daquela noite tem as linhas `hotkey=f9, state=Pressed` de
+03:21:34Z a 03:31:56Z: são 62 em 10 min 22 s, e o script conta só a própria janela de 10 min,
+cujo início ele não grava. O arquivo começa numa rotação às 03:21:26Z, por isso há um
+`Released` a mais, de um toque anterior a ela. As três contagens da tabela batem entre si,
+então a regra de repetir a rodada não se aplica.
 
 `first_gap_at` é o instante (UTC) do primeiro toque sem `Pressed` no log; `foreground_at_end`
 confirma que a janela do Fala ainda tinha o foco no fim. Se as contagens ficarem abaixo de

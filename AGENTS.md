@@ -3,7 +3,7 @@
 Fala é um app desktop de ditado por voz e notas de reunião (Tauri 2 + Rust), fork não oficial do Handy.
 Leia `ARCHITECTURE.md` antes de criar ou mover crates ou adicionar dependências.
 As decisões estruturais estão em `docs/decisions/`. Para mudar uma, escreva uma ADR nova que substitua a antiga; nunca edite uma ADR aceita.
-Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` (não versionado aqui).
+Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` no Linux e `C:\dev\fala-research` no Windows (não versionado aqui).
 
 ## Comandos
 
@@ -12,7 +12,7 @@ Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` (
 - `cargo check --workspace` · `cargo test -p <crate>` (prefira o crate afetado)
 - `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --all`
 - `cargo build` sem `-p` compila só `crates/*` e `apps/cli` (`default-members`), sem WebView
-- `cargo run -p fala-cli -- <dictate|record|transcribe <arquivo>|bench>` testa o pipeline sem UI (stubs até a fase 0)
+- `cargo run -p fala-cli -- <dictate|meeting|record|bench|key|format|history|import|mcp>` testa o pipeline sem UI (`transcribe` ainda é stub)
 - `cargo deny check` · `scripts/check-no-tauri-in-crates.sh` · `scripts/check-brand.sh`
 - Frontend: `bun run lint` · `bun run format:check` · `bun run check:translations`
 
@@ -36,7 +36,7 @@ Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` (
 
 ## Quirks de ambiente
 
-- Esta máquina é Ubuntu 25.04 (GNOME Wayland); o alvo da fase 1 é Windows 11. O que só dá para verificar no Windows fica marcado `TODO(windows)`.
+- O projeto roda em duas máquinas: Ubuntu 25.04 (GNOME Wayland, 14 GB de RAM) e Windows 11 (Alienware 16, 32 GB), que é o alvo da fase 1. Confira em qual você está antes de seguir um handoff. No Linux, o que só dá para verificar no Windows fica marcado `TODO(windows)`. No Windows, esses itens são trabalho a fazer: o handoff da rodada Windows, em `fala-research`, lista a ordem.
 - Linux precisa dos pacotes de sistema listados em `docs/dev/build-windows.md` (apêndice Linux) para compilar `apps/desktop` (webkit2gtk, Vulkan/glslc, OpenSSL, evdev, gtk-layer-shell).
 - Windows: `VK_LOADER_LAYERS_DISABLE=~implicit~` é definido pelo app (opt-out: `FALA_KEEP_VULKAN_IMPLICIT_LAYERS=1`). Se aparecer erro de path-limit (`MSB3491`, `FTK1011`), use um `CARGO_TARGET_DIR` curto (`C:\f`).
 - O modelo VAD (`apps/desktop/resources/models/silero_vad_v4.onnx`) é versionado. Os modelos de ASR são baixados no primeiro uso para a pasta de dados do app, nunca para o repo.
