@@ -193,7 +193,8 @@ fn open_sets_wal_timeout_and_version() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    // Schema 2: as reuniões do `meeting-panel` sobem a versão por migração aditiva.
+    assert_eq!(version, 2);
 
     // Um escritor segurando o lock por 300 ms não faz o `add` falhar: ele espera.
     let db = env.db.clone();

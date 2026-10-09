@@ -7,11 +7,9 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::meetings::SCHEMA_2;
 use crate::mirror::{self, DITADOS};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
-
-/// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
-const SCHEMA_VERSION: i64 = 1;
 
 const SCHEMA_1: &str = "
 CREATE TABLE dictations (
@@ -47,7 +45,7 @@ const COLUMNS: &str =
 /// O histórico de ditados: `fala.sqlite` mais o espelho em `<notes_dir>/Ditados/`.
 #[derive(Debug)]
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
     notes_dir: PathBuf,
 }
 
@@ -60,10 +58,18 @@ impl Store {
         let conn = Connection::open(db)?;
         conn.busy_timeout(std::time::Duration::from_millis(5000))?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
+        conn.pragma_update(None, "foreign_keys", true)?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version < SCHEMA_VERSION {
+        // `PRAGMA user_version` é a versão do schema; cada migração sobe um número numa
+        // transação, e um banco novo passa por todas, em ordem.
+        if version < 1 {
             conn.execute_batch(&format!(
-                "BEGIN; {SCHEMA_1} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
+                "BEGIN; {SCHEMA_1} PRAGMA user_version = 1; COMMIT;"
+            ))?;
+        }
+        if version < 2 {
+            conn.execute_batch(&format!(
+                "BEGIN; {SCHEMA_2} PRAGMA user_version = 2; COMMIT;"
             ))?;
         }
         Ok(Store {
