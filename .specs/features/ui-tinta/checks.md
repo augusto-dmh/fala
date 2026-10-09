@@ -7,11 +7,11 @@ Plan: none - cada PR cabe numa frase; a especificação é a Parte 3 do relatór
 
 O Fala ainda tem a cara do Handy: a paleta rosa, a sidebar de configurações, o cartão de settings com título em caixa-alta e "?" com tooltip, o footer com seletor de modelo e a janela 680×570. Com estes três PRs, o app passa a usar tokens de tinta (neutros e semânticas, sem cor de marca), linhas de configuração no padrão do app Configurações do Windows 11, e abre em Início (os ditados) com um rail de três destinos.
 
-14 checks in 1 slice · 0 one-way doors · 0 open, of which 0 block
+24 checks in 2 slices · 0 one-way doors · 0 open, of which 0 block
 
 O repositório não tem vitest. A prova segue o padrão de `src/overlay/pill.test.tsx`: um script `node:assert` rodado pelo `bun`, que lê o CSS e o TSX como texto, imprime `<id> ok` por check e sai com código diferente de 0 na primeira falha. Os portões do frontend são comandos do `package.json` e do CI.
 
-`T1` = `bun src/styles/tokens.test.ts`.
+`T1` = `bun src/styles/tokens.test.ts`. `T2` = `bun src/components/ui/controls.test.tsx` (renderiza os controles com `react-dom/server` e lê as classes).
 
 Decisões delegadas (Confirmed? y — delegado), uma linha cada:
 
@@ -21,6 +21,10 @@ Decisões delegadas (Confirmed? y — delegado), uma linha cada:
 - D4: literais rosa em `AudioPlayer` e nos ícones sem uso (`CancelIcon`, `MicrophoneIcon`, `TranscriptionIcon`) viram `var(--color-accent)` e `currentColor`. Confirmed? y — delegado
 - D5: a rampa redefine `text-xs`/`sm`/`base`/`lg`/`xl`/`2xl` do Tailwind sobre os degraus do Windows 11 (12, 14, 14, 18, 20, 28) e cria `text-caption`, `text-body`, `text-body-lg`, `text-subtitle`, `text-title`; `rounded-sm`/`md`/`lg` = 4 px e `rounded-xl` = 8 px. Confirmed? y — delegado
 - D6: `color-scheme` fica no `App.css` (só janela principal); o overlay é janela transparente e não o recebe. Confirmed? y — delegado
+- D7: no PR 2 cada linha de um `SettingsGroup` vira um cartão próprio (`surface-1`, borda `border`, 4 px), separado por 4 px de vão (`gap-1`), como no app Configurações; o grupo aplica o cartão aos filhos diretos (`[&>*]:...`), então filhos que não são `SettingContainer` (chips do `LlmSettings`) também ganham cartão. Confirmed? y — delegado
+- D8: `descriptionMode` e `tooltipPosition` continuam aceitos (mesma API) e não mudam mais nada: a descrição é sempre visível; um `icon` opcional entra na API (aditivo). Confirmed? y — delegado
+- D9: campos de texto (`Input`, `Select`) marcam o foco com o sublinhado de tinta do Fluent (borda inferior + 1 px interno), não com o anel duplo; botões, toggle, slider e o gatilho do `Dropdown` usam o anel duplo (`focus-visible:focus-ring`). Confirmed? y — delegado
+- D10: `Textarea`, `ResetButton`, `Tooltip` e os demais `ui/*` fora da lista da 3.6 ficam como estão (herdam pelos aliases). Confirmed? y — delegado
 
 ## Checks
 
@@ -72,6 +76,40 @@ Proof: `git diff --exit-code origin/main...HEAD -- src/i18n` sai com 0
 **C14** - Portões do frontend: `bun run lint`, `bun run format:check`, `bun run check:translations`, `bunx tsc --noEmit`, `bun run build` e `scripts/check-brand.sh` saem com 0
 Proof: os seis comandos, cada um com exit 0
 
+### S2 - PR 2, linhas de configuração no padrão do Windows 11 · 9 files · ~40 KB · ~10k
+
+**C15** - `SettingsGroup` desenha o título como `<h2>` em `text-body font-semibold text-text`, sem `uppercase` nem `tracking-wide` (sentence case vem da própria string), a descrição em `text-caption text-text-2`, e um contêiner `gap-1` que dá a cada filho direto `bg-surface-1`, `border`, `border-border` e `rounded-lg`; sem `title`, não há `<h2>`
+Proof: `T2` imprime `C15 ok`
+
+**C16** - `SettingContainer`, nos dois `descriptionMode` (`tooltip`, `inline`) e nos dois `layout` (`horizontal`, `stacked`), mostra o título em `<h3>` `text-body` e a descrição sempre visível num `<p>` `text-caption text-text-2`; não há ícone "?" (`cursor-help`), gatilho `role="button"` nem import de `Tooltip`; o controle filho é renderizado
+Proof: `T2` imprime `C16 ok`
+
+**C17** - A linha horizontal tem `min-h-[56px]` sem descrição (e nenhum `<p>`) e `min-h-[68px]` com descrição; um `icon` opcional é renderizado antes do título numa caixa `w-5 h-5` (20 px); com `grouped` a linha não desenha cartão, sozinha desenha `bg-surface-1 border border-border rounded-lg`
+Proof: `T2` imprime `C17 ok`
+
+**C18** - `Button` mantém as 7 variantes (`primary`, `primary-soft`, `secondary`, `warning`, `danger`, `danger-ghost`, `ghost`) e os 3 tamanhos; toda variante tem `rounded-lg` (4 px), `focus-visible:focus-ring` e `min-h-[32px]` no tamanho padrão, e nenhuma cita `logo-primary`, `background-ui`, `mid-gray` ou `text-white`; `primary` é `bg-accent text-on-accent`; `sm`/`md`/`lg` = `min-h-[24px]`/`[32px]`/`[40px]`; `className` e atributos HTML passam adiante
+Proof: `T2` imprime `C18 ok`
+
+**C19** - `ToggleSwitch` é o toggle do Fluent: trilho `w-[40px] h-[20px] rounded-full` com contorno `border-text-2` e bolinha `after:bg-text-2` desligado, `peer-checked:bg-accent` com bolinha `peer-checked:after:bg-on-accent` ligado, deslocamento `translate-x-[20px]` (espelhado em RTL), foco `peer-focus-visible:focus-ring`; a descrição aparece em `text-text-2`
+Proof: `T2` imprime `C19 ok`
+
+**C20** - `Input` (variantes `default` e `compact`) tem `rounded-md` (4 px), `bg-surface-1`, `border-border`, `text-body`, peso regular (sem `font-semibold`) e `focus:border-b-accent`; desabilitado tem `opacity-50` e não tem o estilo de foco
+Proof: `T2` imprime `C20 ok`
+
+**C21** - `Select` exporta `selectStyles`: o controle tem `minHeight` 32, `borderRadius` 4, fundo `var(--color-surface-1)`, borda inferior `var(--color-text-3)` e `var(--color-accent)` com foco; o menu tem `borderRadius` 8 e fundo `var(--color-surface-1)`; o arquivo não cita `logo-primary`, `mid-gray` nem `--color-background`
+Proof: `T2` imprime `C21 ok`
+
+**C22** - O gatilho do `Dropdown` tem `min-h-[32px]`, `rounded-md` e `focus-visible:focus-ring`; o menu é `rounded-xl` (8 px) em `bg-surface-1`; a opção selecionada tem a barra de tinta de 3 px (`before:w-[3px] before:bg-accent`); o arquivo não cita `logo-primary`, `mid-gray` nem `bg-background`
+Proof: `T2` imprime `C22 ok`
+
+**C23** - `Slider` tem trilho `h-[4px] rounded-full` com preenchimento `linear-gradient(to right, var(--color-accent) <valor>%, ...)`, polegar de 20 px em tinta (`[&::-webkit-slider-thumb]:w-[20px]`, `h-[20px]`, `bg-accent`), `focus-visible:focus-ring`, valor em `tabular-nums` e descrição em `text-text-2`
+Proof: `T2` imprime `C23 ok`
+
+**C24** - Nenhum dos 8 arquivos restilizados (`SettingsGroup`, `SettingContainer`, `Button`, `ToggleSwitch`, `Input`, `Select`, `Dropdown`, `Slider`) cita `logo-primary`, `background-ui`, `mid-gray`, `bg-background` ou `--color-background`; o PR 2 não toca nenhuma tela de configuração nem string (diff de `src/components/settings` e `src/i18n` desde a base do PR 2 vazio) e todos os chamadores compilam sem edição; os portões do frontend (C14) e os testes `T1` e da pill continuam verdes
+Proof: `T2` imprime `C24 ok`
+Proof: `git diff --exit-code style/ui-ink-tokens...HEAD -- src/components/settings src/i18n` sai com 0
+Proof: `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`, `bun run check:translations`, `bun run build`, `scripts/check-brand.sh`, `T1` e `bun src/overlay/pill.test.tsx` saem com 0
+
 ## Coverage
 
 | Set (size) | Member -> proof | Unproven |
@@ -84,6 +122,12 @@ Proof: os seis comandos, cada um com exit 0
 | raios (4) | `sm` C7 · `md` C7 · `lg` C7 · `xl` C7 | - |
 | itens do PR 1 na 3.10 (8) | tokens C1 · aliases C3 · pilha Segoe C5 · rampa C6 · raiz 14 px C5 · `--radius-lg` C7 · acento Live C11 · wordmark C10 · Toaster C12 | - |
 | janelas que importam `theme.css` (2) | principal C10 · overlay C11 | - |
+| componentes do PR 2 na 3.6 (8) | `SettingsGroup` C15 · `SettingContainer` C16, C17 · `Button` C18 · `ToggleSwitch` C19 · `Input` C20 · `Select` C21 · `Dropdown` C22 · `Slider` C23 | - |
+| `descriptionMode` × `layout` (4) | tooltip/horizontal C16 · tooltip/stacked C16 · inline/horizontal C16 · inline/stacked C16 | - |
+| variantes do `Button` (7) | C18, table-driven sobre as 7 | - |
+| tamanhos do `Button` (3) | `sm` C18 · `md` C18 · `lg` C18 | - |
+| altura da linha (2) | sem descrição 56 px C17 · com descrição 68 px C17 | - |
+| estados do toggle (2) | desligado C19 · ligado C19 | - |
 
 ## Swept
 
@@ -105,3 +149,5 @@ Proof: os seis comandos, cada um com exit 0
 ## Handoff
 
 - S1 = ~15k (theme.css 6 KB, App.css 6 KB, App.tsx 13 KB, RecordingOverlay.css 14 KB, 9 componentes com troca de uma classe ~25 KB) - um builder, sob o orçamento de 150k
+- S2 = ~10k (8 arquivos de `ui/` ~30 KB + o teste) - acumulado ~25k, um builder
+- **Boundary:** C1-C14 fechados em `c0ed440` (PASS do Verifier; `6dff00f` só acrescenta o relatório)
