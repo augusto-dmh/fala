@@ -318,6 +318,7 @@ mod tests {
                 post_processed_text: post_processed.map(str::to_string),
                 post_process_prompt: None,
                 pasted_text: pasted.to_string(),
+                llm_produced: requested && post_processed.is_some(),
             },
             app: AppContext {
                 app_name: app.map(str::to_string),
@@ -659,6 +660,7 @@ mod tests {
                 post_processed_text: Some("Novo.".to_string()),
                 post_process_prompt: None,
                 pasted_text: "Novo.".to_string(),
+                llm_produced: true,
             },
             Language::PtBr,
         )

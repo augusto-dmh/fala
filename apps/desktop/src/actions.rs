@@ -2,6 +2,7 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::llm_auto::{self, AutoFormatted};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
 use crate::managers::model::ModelManager;
@@ -13,6 +14,7 @@ use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
 };
 use crate::TranscriptionCoordinator;
+use fala_core::AppContext;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
@@ -414,6 +416,31 @@ pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
+    pub llm_produced: bool,
+}
+
+/// How a transcription becomes the pasted text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OutputMode {
+    /// The `transcribe` dictation: the `fala-postproc` rules and the automatic LLM, told which
+    /// app the text goes to.
+    Auto(AppContext),
+    /// The `fala-postproc` rules only: a retry whose app was never recorded, so
+    /// `llm_disabled_apps` cannot be checked.
+    RulesOnly,
+    /// The legacy `transcribe_with_post_process` binding: the OpenAI-compatible client.
+    Legacy,
+}
+
+/// What the desktop pastes and records for a dictation the `Postprocessor` formatted.
+/// `transcription` is the ASR text before any rewrite.
+pub(crate) fn auto_processed(transcription: &str, auto: AutoFormatted) -> ProcessedTranscription {
+    ProcessedTranscription {
+        post_processed_text: (auto.final_text != transcription).then(|| auto.final_text.clone()),
+        final_text: auto.final_text,
+        post_process_prompt: None,
+        llm_produced: auto.llm_produced,
+    }
 }
 
 /// Resolve the persisted language *intent* into the language the currently-loaded
@@ -440,12 +467,10 @@ fn resolve_effective_language(app: &AppHandle, settings: &AppSettings) -> String
 pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
-    post_process: bool,
+    mode: OutputMode,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
-    let mut post_processed_text: Option<String> = None;
-    let mut post_process_prompt: Option<String> = None;
 
     // Resolve the language the transcription actually ran in (the persisted
     // intent coerced against the loaded model's capabilities) so OpenCC keys off
@@ -457,26 +482,62 @@ pub(crate) async fn process_transcription_output(
         final_text = converted_text;
     }
 
-    if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
-            post_processed_text = Some(processed_text.clone());
-            final_text = processed_text;
+    let (app_context, use_llm) = match mode {
+        OutputMode::Auto(app_context) => (app_context, true),
+        OutputMode::RulesOnly => (AppContext::default(), false),
+        OutputMode::Legacy => {
+            return legacy_post_process(&settings, final_text).await;
+        }
+    };
+    let mut settings = settings;
+    settings.llm_enabled &= use_llm;
+    let postprocessor = llm_auto::postprocessor(&settings);
+    let language =
+        crate::managers::history_dictations::language_from_setting(&settings.selected_language);
+    let text = final_text.clone();
+    match tauri::async_runtime::spawn_blocking(move || {
+        llm_auto::format(&postprocessor, &text, language, app_context)
+    })
+    .await
+    {
+        Ok(auto) => auto_processed(transcription, auto),
+        Err(e) => {
+            error!("Post-processing task failed: {}", e);
+            auto_processed(
+                transcription,
+                AutoFormatted {
+                    final_text,
+                    llm_produced: false,
+                },
+            )
+        }
+    }
+}
 
-            if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                if let Some(prompt) = settings
-                    .post_process_prompts
-                    .iter()
-                    .find(|prompt| &prompt.id == prompt_id)
-                {
-                    post_process_prompt = Some(prompt.prompt.clone());
-                }
+/// The legacy binding: the OpenAI-compatible provider the user configured, unchanged.
+async fn legacy_post_process(
+    settings: &AppSettings,
+    mut final_text: String,
+) -> ProcessedTranscription {
+    let mut post_processed_text: Option<String> = None;
+    let mut post_process_prompt: Option<String> = None;
+    if let Some(processed_text) = post_process_transcription(settings, &final_text).await {
+        post_processed_text = Some(processed_text.clone());
+        final_text = processed_text;
+
+        if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
+            if let Some(prompt) = settings
+                .post_process_prompts
+                .iter()
+                .find(|prompt| &prompt.id == prompt_id)
+            {
+                post_process_prompt = Some(prompt.prompt.clone());
             }
         }
-    } else if final_text != transcription {
-        post_processed_text = Some(final_text.clone());
     }
 
     ProcessedTranscription {
+        llm_produced: post_processed_text.is_some(),
         final_text,
         post_processed_text,
         post_process_prompt,
@@ -684,6 +745,9 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        // The app that receives the paste, asked once on release: the LLM gets its name and
+        // the history records it.
+        let app_context = fala_inject::foreground_app();
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
@@ -788,8 +852,13 @@ impl ShortcutAction for TranscribeAction {
                                     show_processing_overlay(&ah);
                                 }
                             }
+                            let mode = if post_process {
+                                OutputMode::Legacy
+                            } else {
+                                OutputMode::Auto(app_context.clone())
+                            };
                             let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                                process_transcription_output(&ah, &transcription, mode),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -814,6 +883,7 @@ impl ShortcutAction for TranscribeAction {
                             let post_processed_text = processed.post_processed_text.clone();
                             let post_process_prompt = processed.post_process_prompt.clone();
                             let pasted_text = processed.final_text.clone();
+                            let llm_produced = processed.llm_produced;
                             let save_history = move || {
                                 if wav_saved {
                                     if let Err(err) = hm.save_entry(NewEntry {
@@ -824,8 +894,9 @@ impl ShortcutAction for TranscribeAction {
                                             post_processed_text,
                                             post_process_prompt,
                                             pasted_text,
+                                            llm_produced,
                                         },
-                                        app: fala_inject::foreground_app(),
+                                        app: app_context,
                                     }) {
                                         error!("Failed to save history entry: {}", err);
                                     }
@@ -897,6 +968,7 @@ impl ShortcutAction for TranscribeAction {
                                         post_processed_text: None,
                                         post_process_prompt: None,
                                         pasted_text: String::new(),
+                                        llm_produced: false,
                                     },
                                     app: Default::default(),
                                 }) {

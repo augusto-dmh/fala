@@ -84,6 +84,8 @@ pub struct EntryTexts {
     pub post_process_prompt: Option<String>,
     /// The text that was pasted (the pipeline's final text); empty when transcription failed.
     pub pasted_text: String,
+    /// The LLM produced `pasted_text`; the dictation is then recorded as `Editor::Llm`.
+    pub llm_produced: bool,
 }
 
 /// A history entry about to be saved.
@@ -91,7 +93,7 @@ pub struct NewEntry {
     pub file_name: String,
     pub post_process_requested: bool,
     pub texts: EntryTexts,
-    /// The app that had focus when the text was delivered.
+    /// The app that had focus when the user released the shortcut.
     pub app: AppContext,
 }
 
@@ -322,12 +324,11 @@ impl HistoryManager {
             app,
         } = entry;
         let title = Self::format_timestamp_title(timestamp);
-        let llm_produced = post_process_requested && texts.post_processed_text.is_some();
         let dictation_id = store.and_then(|store| {
             let dictation = history_dictations::dictation_for(
                 &texts.transcription_text,
                 &texts.pasted_text,
-                llm_produced,
+                texts.llm_produced,
                 language,
                 app,
             )?;
@@ -376,22 +377,9 @@ impl HistoryManager {
     }
 
     /// Update an existing history entry with new transcription results (used by retry).
-    pub fn update_transcription(
-        &self,
-        id: i64,
-        transcription_text: String,
-        post_processed_text: Option<String>,
-        post_process_prompt: Option<String>,
-        pasted_text: String,
-    ) -> Result<HistoryEntry> {
+    pub fn update_transcription(&self, id: i64, texts: EntryTexts) -> Result<HistoryEntry> {
         let language = self.selected_language();
         let conn = self.get_connection()?;
-        let texts = EntryTexts {
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-            pasted_text,
-        };
         let entry = {
             let store = self.lock_store();
             Self::update_transcription_with(&conn, store.as_deref(), id, texts, language)?
@@ -438,22 +426,20 @@ impl HistoryManager {
         }
 
         if let Some(store) = store {
-            let (old_link, timestamp, requested): (Option<String>, i64, bool) = conn.query_row(
-                "SELECT dictation_id, timestamp, post_process_requested
-                 FROM transcription_history WHERE id = ?1",
+            let (old_link, timestamp): (Option<String>, i64) = conn.query_row(
+                "SELECT dictation_id, timestamp FROM transcription_history WHERE id = ?1",
                 params![id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
             let app = old_link
                 .as_deref()
                 .and_then(|old| store.get(old).ok())
                 .map(|record| record.dictation.app)
                 .unwrap_or_default();
-            let llm_produced = requested && texts.post_processed_text.is_some();
             let new_link = history_dictations::dictation_for(
                 &texts.transcription_text,
                 &texts.pasted_text,
-                llm_produced,
+                texts.llm_produced,
                 language,
                 app,
             )

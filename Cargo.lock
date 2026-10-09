@@ -1917,6 +1917,7 @@ dependencies = [
  "env_filter",
  "fala-core",
  "fala-inject",
+ "fala-postproc",
  "fala-secrets",
  "fala-storage",
  "ferrous-opencc",

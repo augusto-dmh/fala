@@ -13,6 +13,7 @@ use tauri_plugin_store::StoreExt;
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
+pub const GEMINI_PROVIDER_ID: &str = "gemini";
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
@@ -640,10 +641,26 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
+    #[serde(default = "default_llm_enabled")]
+    pub llm_enabled: bool,
+    /// Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
+    #[serde(default = "default_llm_disabled_apps")]
+    pub llm_disabled_apps: Vec<String>,
 }
 
 fn default_model() -> String {
     "".to_string()
+}
+
+fn default_llm_enabled() -> bool {
+    true
+}
+
+fn default_llm_disabled_apps() -> Vec<String> {
+    ["1password", "bitwarden", "keepass", "keepassxc"]
+        .map(String::from)
+        .to_vec()
 }
 
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
@@ -820,6 +837,16 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             id: "cerebras".to_string(),
             label: "Cerebras".to_string(),
             base_url: "https://api.cerebras.ai/v1".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
+        },
+        // Its key is the one the automatic dictation LLM uses (`llm_auto`): the keyring
+        // account `gemini`, the same `fala-cli key set gemini` writes.
+        PostProcessProvider {
+            id: GEMINI_PROVIDER_ID.to_string(),
+            label: "Gemini".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
@@ -1099,6 +1126,8 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        llm_enabled: default_llm_enabled(),
+        llm_disabled_apps: default_llm_disabled_apps(),
     }
 }
 
@@ -1906,6 +1935,52 @@ mod tests {
         let post_process = &bindings["transcribe_with_post_process"];
         assert_eq!(post_process.default_binding, "ctrl+space");
         assert_eq!(post_process.current_binding, "ctrl+space");
+    }
+
+    #[test]
+    fn store_without_llm_fields_gets_defaults() {
+        let raw = serde_json::json!({
+            "settings_schema_version": 2,
+            "selected_model": "",
+            "onboarding_completed": true
+        });
+        let settings: AppSettings =
+            serde_json::from_value(raw).expect("the store must parse strictly");
+        assert!(settings.llm_enabled);
+        assert_eq!(
+            settings.llm_disabled_apps,
+            ["1password", "bitwarden", "keepass", "keepassxc"]
+        );
+    }
+
+    #[test]
+    fn gemini_provider_is_added_to_old_stores() {
+        let gemini = default_post_process_providers()
+            .into_iter()
+            .find(|p| p.id == GEMINI_PROVIDER_ID)
+            .expect("gemini is a default provider");
+        assert_eq!(
+            gemini.base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+
+        let mut settings = get_default_settings();
+        settings
+            .post_process_providers
+            .retain(|p| p.id != GEMINI_PROVIDER_ID);
+        settings.post_process_api_keys.remove(GEMINI_PROVIDER_ID);
+        assert!(ensure_post_process_defaults(&mut settings));
+        assert!(settings
+            .post_process_providers
+            .iter()
+            .any(|p| p.id == GEMINI_PROVIDER_ID));
+        assert_eq!(
+            settings
+                .post_process_api_keys
+                .get(GEMINI_PROVIDER_ID)
+                .map(String::as_str),
+            Some("")
+        );
     }
 
     /// Stores hold every field explicitly, so a stored mode is a choice we
