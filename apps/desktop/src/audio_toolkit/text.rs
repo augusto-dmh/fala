@@ -594,6 +594,12 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_keeps_ha_in_english() {
+        let result = filter_transcription_output("Ha Long Bay is beautiful.", "en", &None);
+        assert_eq!(result, "Ha Long Bay is beautiful.");
+    }
+
+    #[test]
     fn test_filter_preserves_valid_text() {
         let text = "This is a completely normal sentence.";
         let result = filter_transcription_output(text, "en", &None);
