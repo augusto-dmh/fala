@@ -1,4 +1,5 @@
-//! Microfone pelo `cpal`: mono f32 na taxa do dispositivo, num ring lock-free.
+//! Microfone pelo `cpal`: mono f32 na taxa do dispositivo, num ring lock-free. O stream abre no
+//! formato nativo do dispositivo (o mix format do WASAPI) e cada amostra vira f32 no callback.
 //!
 //! Sem `cfg(target_os)`: o `cpal` escolhe o host (ALSA/PipeWire no Linux, WASAPI no Windows).
 
@@ -6,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, Stream};
+use cpal::{FromSample, Sample, SampleFormat, SizedSample, Stream};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::AudioError;
@@ -44,39 +45,39 @@ impl Mic {
         };
         let name = device.name().unwrap_or_default();
 
+        // O formato nativo, nunca um f32 forçado: com os efeitos do driver ligados (Realtek
+        // "Voice clarity"), um cliente WASAPI em f32 recebe só zeros sem erro nenhum, enquanto o
+        // mix format traz o sinal (cjpais/Handy#2141).
         let default = device
             .default_input_config()
             .map_err(|e| AudioError::Device(e.to_string()))?;
-        let config = if default.sample_format() == SampleFormat::F32 {
-            default.config()
-        } else {
-            let rate = default.sample_rate();
-            device
-                .supported_input_configs()
-                .map_err(|e| AudioError::Device(e.to_string()))?
-                .find(|r| {
-                    r.sample_format() == SampleFormat::F32
-                        && r.min_sample_rate() <= rate
-                        && r.max_sample_rate() >= rate
-                })
-                .map(|r| r.with_sample_rate(rate).config())
-                .ok_or_else(|| {
-                    AudioError::UnsupportedConfig(format!(
-                        "`{name}` não oferece f32 a {} Hz",
-                        rate.0
-                    ))
-                })?
-        };
+        let format = default.sample_format();
+        let config = default.config();
         let rate = config.sample_rate.0;
         let channels = usize::from(config.channels).max(1);
 
         let (producer, consumer) = RingBuffer::new(rate as usize * RING_SECONDS);
         let dropped = Arc::new(AtomicU64::new(0));
-        let stream = build(&device, &config, producer, channels, Arc::clone(&dropped))?;
+        let dropped_cb = Arc::clone(&dropped);
+        let stream = match format {
+            SampleFormat::I8 => build::<i8>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::I16 => build::<i16>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::I32 => build::<i32>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::I64 => build::<i64>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::U8 => build::<u8>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::U16 => build::<u16>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::U32 => build::<u32>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::U64 => build::<u64>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::F32 => build::<f32>(&device, &config, producer, channels, dropped_cb),
+            SampleFormat::F64 => build::<f64>(&device, &config, producer, channels, dropped_cb),
+            other => Err(AudioError::UnsupportedConfig(format!(
+                "`{name}` entrega amostras em {other:?}, que o Fala não converte"
+            ))),
+        }?;
         stream
             .play()
             .map_err(|e| AudioError::Stream(e.to_string()))?;
-        log::info!("microfone: {name}, {rate} Hz, {channels} canal(is)");
+        log::info!("microfone: {name}, {rate} Hz, {channels} canal(is), {format:?}");
         Ok(Self {
             _stream: stream,
             consumer,
@@ -129,20 +130,34 @@ fn find(host: &cpal::Host, needle: &str) -> Result<cpal::Device, AudioError> {
         .ok_or_else(|| AudioError::Device("dispositivo sumiu da lista".to_owned()))
 }
 
-fn build(
+/// Média dos canais de um quadro, já em f32 no intervalo [-1, 1].
+fn downmix<T>(frame: &[T]) -> f32
+where
+    T: Sample,
+    f32: FromSample<T>,
+{
+    let sum: f32 = frame.iter().map(|&s| f32::from_sample(s)).sum();
+    sum / frame.len().max(1) as f32
+}
+
+fn build<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut producer: Producer<f32>,
     channels: usize,
     dropped: Arc<AtomicU64>,
-) -> Result<Stream, AudioError> {
+) -> Result<Stream, AudioError>
+where
+    T: SizedSample,
+    f32: FromSample<T>,
+{
     device
         .build_input_stream(
             config,
-            move |data: &[f32], _| {
+            move |data: &[T], _| {
                 let mut lost = 0u64;
                 for frame in data.chunks_exact(channels) {
-                    let mono = frame.iter().sum::<f32>() / channels as f32;
+                    let mono = downmix(frame);
                     if producer.push(mono).is_err() {
                         lost += 1;
                     }
@@ -155,4 +170,36 @@ fn build(
             None,
         )
         .map_err(|e| AudioError::Stream(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::downmix;
+
+    fn close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1e-3,
+            "{actual} longe de {expected}"
+        );
+    }
+
+    #[test]
+    fn downmix_converts_every_native_format_to_f32() {
+        close(downmix(&[0.5f32, -0.25]), 0.125);
+        close(downmix(&[i16::MAX, i16::MAX]), 1.0);
+        close(downmix(&[i16::MIN]), -1.0);
+        close(downmix(&[16_384i16, 0]), 0.25);
+        close(downmix(&[i32::MIN, i32::MIN]), -1.0);
+        close(downmix(&[1_073_741_824i32]), 0.5);
+        close(downmix(&[128u8, 128]), 0.0);
+        close(downmix(&[255u8]), 127.0 / 128.0);
+        close(downmix(&[0.5f64, 0.5]), 0.5);
+    }
+
+    #[test]
+    fn downmix_keeps_a_signal_that_is_not_silence() {
+        // O sintoma do bug era um buffer só de zeros; um sinal inteiro precisa sobreviver.
+        let frame = [8_192i16, 8_192];
+        assert!(downmix(&frame).abs() > 0.2);
+    }
 }

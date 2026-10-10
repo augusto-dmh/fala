@@ -1,6 +1,7 @@
 import type { HistoryEntry, Result } from "@/bindings";
 
-/** The edit button an entry offers: undo the AI edit, or reapply it. */
+/** The edit button an entry offers: undo the AI edit, or apply it (after an undo, or when the
+ * AI answer arrived after the paste). */
 export type EditAction = "undo" | "redo";
 
 /** The text an entry shows and copies: its dictation's final or raw text, else the history.db text. */
@@ -10,7 +11,8 @@ export function shownText(entry: HistoryEntry): string {
   return d.showing === "raw" ? d.raw_text : d.final_text;
 }
 
-/** "undo" for an AI-edited entry showing the edit, "redo" once undone, `null` otherwise. */
+/** "undo" for an AI-edited entry showing the edit, "redo" while it shows the raw text, `null`
+ * otherwise. */
 export function editAction(entry: HistoryEntry): EditAction | null {
   const d = entry.dictation;
   if (!d || d.editor !== "llm") return null;

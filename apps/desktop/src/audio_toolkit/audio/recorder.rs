@@ -562,7 +562,17 @@ impl AudioRecorder {
         let default_config = device.default_input_config()?;
         let target_rate = default_config.sample_rate();
 
-        // Try to find the best sample format at the device's default rate
+        // On Windows, open the device's own format (the WASAPI mix format) whenever
+        // the stream builder handles it, instead of hunting for F32. cjpais/Handy#2141
+        // traces digital silence to an F32 shared-mode client with driver effects on
+        // (Realtek "Voice clarity"). Elsewhere the default is cpal's own pick (stereo
+        // first on ALSA), so Linux keeps the search below and its mono F32 choice.
+        #[cfg(windows)]
+        if builds_sample_format(default_config.sample_format()) {
+            return Ok(default_config);
+        }
+
+        // Find the best format the builder can open at the device's default rate.
         let supported_configs = match device.supported_input_configs() {
             Ok(configs) => configs,
             Err(e) => {
@@ -606,6 +616,21 @@ impl AudioRecorder {
         );
         Ok(default_config)
     }
+}
+
+#[cfg(any(windows, test))]
+/// Whether `AudioRecorder::build_stream` is instantiated for this sample format
+/// (the match in the capture thread); every other format is converted from one
+/// of these by the OS or refused.
+fn builds_sample_format(format: cpal::SampleFormat) -> bool {
+    matches!(
+        format,
+        cpal::SampleFormat::U8
+            | cpal::SampleFormat::I8
+            | cpal::SampleFormat::I16
+            | cpal::SampleFormat::I32
+            | cpal::SampleFormat::F32
+    )
 }
 
 fn acknowledge_pause_after_write(transport: &CaptureTransportState) {
