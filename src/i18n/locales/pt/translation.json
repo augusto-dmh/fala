@@ -13,7 +13,11 @@
     "microphoneAutoWithDevice": "Automático ({{device}})",
     "quit": "Sair",
     "cancel": "Cancelar",
-    "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
+    "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input",
+    "recordMeeting": "Gravar reunião",
+    "pauseMeeting": "Pausar reunião",
+    "resumeMeeting": "Retomar reunião",
+    "stopMeeting": "Parar reunião"
   },
   "rail": {
     "navigation": "Navegação principal",
@@ -777,7 +781,9 @@
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",
     "loadingModel": "Carregando modelo…",
-    "recordingLoadingModel": "Gravando, carregando modelo…"
+    "recordingLoadingModel": "Gravando, carregando modelo…",
+    "meeting": "Gravando reunião",
+    "meetingPaused": "Reunião pausada"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
