@@ -2,9 +2,12 @@
 //!
 //! O stdout é a legenda e a tabela Markdown, e só isso; diagnósticos vão para o stderr. Texto de
 //! referência ou de hipótese só aparece nos arquivos de `--out` e em log `debug`.
+//!
+//! `fala-cli bench format` mede o pós-processamento (`format.rs`).
 
 mod corpus;
 mod engine;
+pub mod format;
 mod wer;
 
 use std::fmt::Display;
@@ -13,19 +16,21 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Args, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 
 use corpus::Cut;
 use wer::Score;
 
 #[derive(Args)]
 pub struct BenchArgs {
+    #[command(subcommand)]
+    pub command: Option<BenchCommand>,
     /// Pasta com os cortes `<stem>.wav` (16 kHz, mono, PCM de 16 bits).
-    #[arg(long)]
-    cuts: PathBuf,
+    #[arg(long, required = true)]
+    cuts: Option<PathBuf>,
     /// Pasta com as referências `<stem>.txt`.
-    #[arg(long)]
-    refs: PathBuf,
+    #[arg(long, required = true)]
+    refs: Option<PathBuf>,
     /// Engine que transcreve os cortes.
     #[arg(long, value_enum, required_unless_present = "hyp", requires = "model")]
     engine: Option<EngineKind>,
@@ -53,6 +58,12 @@ pub struct BenchArgs {
     /// Rótulo livre para a legenda.
     #[arg(long)]
     tag: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum BenchCommand {
+    /// Mede o pós-processamento contra um corpus JSONL de ditados já formatados.
+    Format(format::FormatBenchArgs),
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -111,7 +122,11 @@ pub fn run(args: BenchArgs) -> Result<(), Failure> {
         }
     }
 
-    let cuts = corpus::load(&args.cuts, &args.refs).map_err(input)?;
+    // O clap exige os dois sem subcomando; `main` só chega aqui sem subcomando.
+    let (Some(cuts), Some(refs)) = (&args.cuts, &args.refs) else {
+        return Err(input(anyhow::anyhow!("--cuts e --refs são obrigatórios")));
+    };
+    let cuts = corpus::load(cuts, refs).map_err(input)?;
     let tag = args.tag.as_deref().unwrap_or("-");
 
     if let Some(dir) = &args.hyp {

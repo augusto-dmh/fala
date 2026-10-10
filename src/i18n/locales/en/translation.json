@@ -8,6 +8,9 @@
     "dictationLanguage": "Dictation language",
     "languagePtBr": "Portuguese (Brazil)",
     "languageEn": "English",
+    "microphone": "Microphone",
+    "microphoneAuto": "Automatic",
+    "microphoneAutoWithDevice": "Automatic ({{device}})",
     "quit": "Quit",
     "cancel": "Cancel",
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
@@ -516,7 +519,7 @@
       "transcribing": "Transcribing...",
       "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
       "undoAiEdit": "Undo AI edit",
-      "redoAiEdit": "Reapply AI edit",
+      "applyAiEdit": "Apply AI edit",
       "originalCopied": "Original text copied",
       "editedCopied": "Edited text copied",
       "editToggleError": "Couldn't switch the text",
