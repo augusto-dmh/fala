@@ -177,6 +177,33 @@ impl Store {
         self.set_showing(id, Showing::Final)
     }
 
+    /// Guarda a resposta do LLM que chegou depois da colagem: o item passa a ter `final = text`,
+    /// `editor = llm` e a mostrar o bruto, que é o que foi colado, até a pessoa aplicar a edição
+    /// com `redo`. Bruto, app, data e marca de sensível ficam.
+    ///
+    /// Id desconhecido devolve `NotFound` e texto em branco devolve `EmptyEdit`, sem mudar nada.
+    pub fn apply_late_edit(&self, id: &str, text: &str) -> Result<DictationRecord, StorageError> {
+        if text.trim().is_empty() {
+            return Err(StorageError::EmptyEdit(id.to_string()));
+        }
+        let mut record = self.get(id)?;
+        self.conn.execute(
+            "UPDATE dictations SET final = ?1, edited_by = ?2, showing = ?3 WHERE id = ?4",
+            params![
+                text,
+                mirror::editor_str(Editor::Llm),
+                Showing::Raw.as_str(),
+                id
+            ],
+        )?;
+        record.dictation.final_text = text.to_string();
+        record.dictation.editor = Editor::Llm;
+        record.showing = Showing::Raw;
+        log::debug!("edição tardia aplicada ao ditado {id}");
+        self.write_mirror(&record)?;
+        Ok(record)
+    }
+
     /// Apaga um item: a linha (o FTS sai pelo gatilho) e depois o `.md`.
     ///
     /// Id desconhecido devolve `NotFound` sem mudar nada; `.md` já ausente não é erro. Se só a
