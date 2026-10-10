@@ -7,9 +7,13 @@
 //! Inserção: [`platform_injector`] devolve o [`Injector`] do sistema operacional, que cola por
 //! clipboard + acorde ([`PasteChord`], Ctrl+V por padrão) e devolve ao clipboard o que estava
 //! nele, a sequência que o spike 03 mediu.
-//! Se o acorde falha, o clipboard volta ao conteúdo de antes e `insert` devolve
-//! `InjectError::Keystroke`; quem chama ainda tem o texto para oferecer "Colar".
-//! Windows: `arboard` e `enigo`. As outras plataformas devolvem `Unsupported`; o portal
+//! O texto só é entregue quando um app o lê do clipboard, e essa leitura é a prova da cola: sem
+//! ela em `read_timeout`, `insert` devolve `InjectError::PasteNotRead`. Se o acorde falha,
+//! devolve `InjectError::Keystroke`. Nos dois casos o clipboard volta ao conteúdo de antes (se
+//! ninguém escreveu nele nesse meio-tempo) e quem chama ainda tem o texto para oferecer "Colar".
+//! O texto colado fica fora do histórico do Win+V e da área de transferência na nuvem.
+//! Windows: delayed rendering numa janela message-only, `arboard` para salvar e restaurar e
+//! `enigo` para o acorde. As outras plataformas devolvem `Unsupported`; o portal
 //! RemoteDesktop é a fase 3 (ADR-0007). O desktop ainda usa `apps/desktop/src/clipboard.rs`; a
 //! troca é uma feature própria.
 
@@ -37,4 +41,7 @@ pub enum InjectError {
     /// O acorde de colar não foi enviado.
     #[error("falha ao enviar o acorde de colar: {0}")]
     Keystroke(String),
+    /// Nenhum app leu o texto colado dentro do prazo: provavelmente não havia campo em foco.
+    #[error("nenhum app leu o texto colado")]
+    PasteNotRead,
 }

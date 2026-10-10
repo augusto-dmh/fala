@@ -27,7 +27,8 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
 
     const handleAddWord = () => {
       if (normalizedWord && normalizedWord.length <= 50) {
-        if (customWords.includes(normalizedWord)) {
+        const lowered = normalizedWord.toLowerCase();
+        if (customWords.some((word) => word.toLowerCase() === lowered)) {
           toast.error(
             t("settings.advanced.customWords.duplicate", {
               word: normalizedWord,

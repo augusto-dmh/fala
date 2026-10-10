@@ -20,32 +20,32 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const baseClasses =
-    "font-medium rounded-lg border focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
+    "font-normal rounded-lg border transition-colors focus-visible:focus-ring disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
 
   const variantClasses = {
+    // Ink fill: the only accent the app has.
     primary:
-      "text-white bg-background-ui border-background-ui hover:bg-background-ui/80 hover:border-background-ui/80 focus:ring-1 focus:ring-background-ui",
+      "text-on-accent bg-accent border-accent hover:bg-accent/90 active:bg-accent/80",
     "primary-soft":
-      "text-text bg-logo-primary/20 border-transparent hover:bg-logo-primary/30 focus:ring-1 focus:ring-logo-primary",
+      "text-text bg-text/10 border-transparent hover:bg-text/15 active:bg-text/20",
+    // Windows 11 standard button: a quiet fill with a hairline border.
     secondary:
-      "bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary focus:outline-none",
-    // Secondary's neutral resting look, but hover/focus use the semantic
-    // --color-warning token (theme.css) instead of the pink accent — for
-    // buttons sitting on warning surfaces like SecureInputWarning
+      "text-text bg-surface-2 border-border hover:bg-text/5 active:bg-text/10",
+    // Secondary's neutral resting look, with the semantic warn token on hover,
+    // for buttons sitting on warning surfaces like SecureInputWarning.
     warning:
-      "text-text bg-mid-gray/10 border-mid-gray/20 hover:bg-warning/15 hover:border-warning focus:ring-1 focus:ring-warning",
+      "text-text bg-surface-2 border-border hover:bg-warn/15 hover:border-warn",
     danger:
-      "text-white bg-red-600 border-mid-gray/20 hover:bg-red-700 hover:border-red-700 focus:ring-1 focus:ring-red-500",
+      "text-on-accent bg-danger border-danger hover:bg-danger/90 active:bg-danger/80",
     "danger-ghost":
-      "text-red-400 border-transparent hover:text-red-300 hover:bg-red-500/10 focus:bg-red-500/20",
-    ghost:
-      "text-current border-transparent hover:bg-mid-gray/10 hover:border-logo-primary focus:bg-mid-gray/20",
+      "text-danger border-transparent hover:bg-danger/10 active:bg-danger/15",
+    ghost: "text-current border-transparent hover:bg-text/5 active:bg-text/10",
   };
 
   const sizeClasses = {
-    sm: "px-2 py-1 text-xs",
-    md: "px-4 py-[5px] text-sm",
-    lg: "px-4 py-2 text-base",
+    sm: "min-h-[24px] px-2 text-caption",
+    md: "min-h-[32px] px-3 text-body",
+    lg: "min-h-[40px] px-4 text-body",
   };
 
   return (
