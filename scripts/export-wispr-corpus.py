@@ -33,6 +33,18 @@ def connect_readonly(path):
     return sqlite3.connect(uri, uri=True)
 
 
+def pending_journals(path):
+    """`-wal`/`-journal` ao lado do banco: o `immutable=1` não os lê, então o app pode estar
+    escrevendo e as linhas mais novas podem faltar ou vir pela metade."""
+    db = pathlib.Path(path)
+    found = []
+    for suffix in ("-wal", "-journal"):
+        journal = db.with_name(db.name + suffix)
+        if journal.exists() and journal.stat().st_size > 0:
+            found.append(journal.name)
+    return found
+
+
 def blank_to_none(value):
     return value if value else None
 
@@ -83,6 +95,10 @@ def self_test():
         conn.commit()
         conn.close()
         out = pathlib.Path(tmp) / "corpus.jsonl"
+        assert pending_journals(db) == []
+        (pathlib.Path(tmp) / "flow.sqlite-wal").write_bytes(b"x")
+        assert pending_journals(db) == ["flow.sqlite-wal"]
+        (pathlib.Path(tmp) / "flow.sqlite-wal").unlink()
         assert export(db, out) == 2
         lines = out.read_text(encoding="utf-8").splitlines()
         records = [json.loads(line) for line in lines]
@@ -115,6 +131,11 @@ def main(argv):
     if len(argv) != 2:
         print(__doc__.strip().splitlines()[2], file=sys.stderr)
         return 2
+    for journal in pending_journals(argv[0]):
+        print(
+            f"aviso: {journal} existe; feche o app e exporte de novo para não perder linhas",
+            file=sys.stderr,
+        )
     count = export(argv[0], argv[1])
     print(f"{count} ditados exportados", file=sys.stderr)
     return 0

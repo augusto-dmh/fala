@@ -4,6 +4,10 @@
 //! a pessoa deixou depois de editar), mais `app` e `lang`. O stdout tem só números: igualdade
 //! exata e distância de edição normalizada contra `formatted` e contra `edited`, e p50/p90 da
 //! latência. Texto do corpus nunca sai, nem no stderr.
+//!
+//! O bench mede o prompt, não o prazo: uma resposta do LLM que passa dos 2 s e chega como
+//! `LateEdit` é pontuada pelo texto dela (o que "aplicar edição" colaria) e a latência conta até
+//! ela chegar. A legenda conta essas linhas em `late`.
 
 use std::io::Write;
 use std::path::PathBuf;
