@@ -783,10 +783,14 @@
     "loadingModel": "Loading model…",
     "recordingLoadingModel": "Recording, loading model…",
     "notice": {
+      "micInUse": "Using {{device}}",
+      "micMuted": "Is your microphone muted?",
       "micDenied": "No permission to use the microphone",
       "noMic": "No microphone found",
       "micFailed": "Couldn't open the microphone",
-      "modelMissing": "No speech model downloaded"
+      "modelMissing": "No speech model downloaded",
+      "chooseMic": "Choose microphone",
+      "resolve": "Fix it"
     }
   },
   "secureInput": {

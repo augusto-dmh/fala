@@ -200,6 +200,17 @@ function App() {
     };
   }, [t]);
 
+  // [Escolher microfone] in an overlay notice opens the microphone selector.
+  useEffect(() => {
+    const unlisten = listen("open-microphone-settings", () => {
+      setDestination("settings");
+      setSettingsView("general");
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const revealMainWindowForPermissions = async () => {
     try {
       await commands.showMainWindowCommand();
