@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/postproc-prompt-v2/plan.md`
 
-17 checks in 3 slices · 3 one-way doors · 0 open, of which 0 block
+18 checks in 3 slices · 3 one-way doors · 0 open, of which 0 block
 
 ## Checks
 
@@ -25,6 +25,9 @@ Proof: `cargo test -p fala-storage --test store reopen_releases_free_pages -- --
 
 **C5** - o teste existente de versão passa a esperar 2
 Proof: `cargo test -p fala-storage --test store open_sets_wal_timeout_and_version -- --exact`
+
+**C18** - com outra conexão segurando uma transação de escrita e `freelist_count = 0`, `Store::open` volta em menos de 2 s (sem o `if free > 0` o teste falha em 5,5 s) (AC 4)
+Proof: `cargo test -p fala-storage --test store open_without_free_pages_does_not_wait_for_writers -- --exact`
 
 ### S2 - prompt v2 (PR 2)
 

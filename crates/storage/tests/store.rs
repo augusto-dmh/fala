@@ -572,3 +572,31 @@ fn reopen_releases_free_pages() {
     let after = fs::metadata(&env.db).unwrap().len();
     assert!(after < before, "{after} >= {before}");
 }
+
+#[test]
+fn open_without_free_pages_does_not_wait_for_writers() {
+    let env = env("open_without_free_pages_does_not_wait_for_writers");
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "freelist_count"), 0);
+
+    let db = env.db.clone();
+    let (locked, wait_lock) = std::sync::mpsc::channel();
+    let (done, wait_done) = std::sync::mpsc::channel::<()>();
+    let handle = thread::spawn(move || {
+        let mut other = Connection::open(&db).unwrap();
+        let tx = other
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        locked.send(()).unwrap();
+        wait_done.recv().unwrap();
+        tx.commit().unwrap();
+    });
+    wait_lock.recv().unwrap();
+    let started = std::time::Instant::now();
+    let store = env.open();
+    let elapsed = started.elapsed();
+    done.send(()).unwrap();
+    handle.join().unwrap();
+    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+    drop(store);
+}
