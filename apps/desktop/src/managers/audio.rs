@@ -1,14 +1,8 @@
-use crate::audio_toolkit::{
-    list_input_devices,
-    vad::{
-        frames_for_duration_ms, EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS,
-        VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
-    },
-    AudioRecorder, SileroVad, VadPolicy, VoiceActivityDetector,
-};
+use crate::audio_toolkit::list_input_devices;
+use crate::dictation_capture::{DictationRecorder, VadPolicy};
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
-use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
+use crate::settings::{get_settings, write_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -17,8 +11,6 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-const SILERO_VAD_THRESHOLD: f32 = 0.3;
-const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
 fn set_mute(mute: bool) {
     // Expected behavior:
@@ -278,62 +270,26 @@ struct MicrophoneResolution {
 /* ──────────────────────────────────────────────────────────────── */
 
 fn create_audio_recorder(
-    backend: VadBackend,
     app_handle: &tauri::AppHandle,
     selected_channel: Option<u16>,
     stream_router: Arc<StreamRouter>,
-) -> Result<AudioRecorder, anyhow::Error> {
-    let detector: Box<dyn VoiceActivityDetector> = match backend {
-        VadBackend::Silero => {
-            let vad_path = app_handle
-                .path()
-                .resolve(
-                    "resources/models/silero_vad_v4.onnx",
-                    tauri::path::BaseDirectory::Resource,
-                )
-                .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))?;
-            Box::new(
-                SileroVad::new(vad_path, SILERO_VAD_THRESHOLD)
-                    .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {e}"))?,
-            )
-        }
-        VadBackend::Earshot => Box::new(
-            EarshotVad::new(EARSHOT_VAD_THRESHOLD)
-                .map_err(|e| anyhow::anyhow!("Failed to create EarshotVad: {e}"))?,
-        ),
-    };
-
-    // Earshot uses 16 ms frames while Silero uses 30 ms. Convert the existing
-    // time-based capture profile to each detector's frame size so selecting a
-    // backend does not shorten pre-roll, onset, or post-speech audio.
-    let frame_samples = detector.frame_samples();
-    let prefill_frames = frames_for_duration_ms(VAD_PREFILL_MS, frame_samples);
-    let offline_hangover_frames = frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, frame_samples);
-    let streaming_hangover_frames =
-        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, frame_samples);
-    let onset_frames = frames_for_duration_ms(VAD_ONSET_MS, frame_samples);
-    let smoothed_vad = SmoothedVad::new(
-        detector,
-        prefill_frames,
-        offline_hangover_frames,
-        onset_frames,
-    );
-
-    info!(
-        "Initialized {:?} VAD backend ({} samples/frame)",
-        backend, frame_samples
-    );
+) -> Result<DictationRecorder, anyhow::Error> {
+    // The dictation VAD is always the bundled Silero v4 (ADR-0009); a stored
+    // `vad_backend = "earshot"` is ignored.
+    let vad_path = app_handle
+        .path()
+        .resolve(
+            "resources/models/silero_vad_v4.onnx",
+            tauri::path::BaseDirectory::Resource,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))?;
+    let detector = fala_audio::SileroVad::load(&vad_path)?;
+    info!("Initialized Silero VAD from fala-audio");
 
     // Recorder with VAD, a spectrum-level callback that forwards level updates to
-    // the frontend, and an audio-frame callback that feeds live streaming via a
-    // shared `StreamRouter` (captured directly, not via Tauri state — see its docs).
-    let recorder = AudioRecorder::new()
-        .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
-        .with_vad(
-            Box::new(smoothed_vad),
-            offline_hangover_frames,
-            streaming_hangover_frames,
-        )
+    // the frontend, and an audio callback that feeds live streaming via a shared
+    // `StreamRouter` (captured directly, not via Tauri state — see its docs).
+    let recorder = DictationRecorder::new(Box::new(detector))
         .with_selected_channel(selected_channel)
         .with_level_callback({
             let app_handle = app_handle.clone();
@@ -378,7 +334,7 @@ pub struct AudioRecordingManager {
     mode: Arc<Mutex<MicrophoneMode>>,
     app_handle: tauri::AppHandle,
 
-    recorder: Arc<Mutex<Option<AudioRecorder>>>,
+    recorder: Arc<Mutex<Option<DictationRecorder>>>,
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
     mute_state: Arc<Mutex<MuteState>>,
@@ -625,7 +581,6 @@ impl AudioRecordingManager {
         if recorder_opt.is_none() {
             let settings = get_settings(&self.app_handle);
             *recorder_opt = Some(create_audio_recorder(
-                settings.vad_backend,
                 &self.app_handle,
                 settings.selected_channel,
                 Arc::clone(&self.stream_router),
@@ -676,7 +631,7 @@ impl AudioRecordingManager {
                 }
             }
             if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
-                let _ = rec.close();
+                rec.close();
             }
             *self.is_recording.lock().unwrap() = false;
             *open_flag = false;
@@ -774,7 +729,7 @@ impl AudioRecordingManager {
                 let _ = rec.stop();
                 *self.is_recording.lock().unwrap() = false;
             }
-            let _ = rec.close();
+            rec.close();
         }
 
         *open_flag = false;
@@ -895,60 +850,6 @@ impl AudioRecordingManager {
         } else {
             Err("Already recording".to_string())
         }
-    }
-
-    /// Replace the VAD implementation while idle. If the microphone stream is
-    /// currently warm (always-on or lazy-close mode), reopen it with the new
-    /// detector before reporting success. A failed reopen restores the previous
-    /// recorder so the persisted setting can remain unchanged.
-    pub fn update_vad_backend(&self, backend: VadBackend) -> Result<(), anyhow::Error> {
-        let state = self.state.lock().unwrap();
-        if !matches!(*state, RecordingState::Idle) {
-            return Err(anyhow::anyhow!(
-                "Cannot change the VAD backend while recording"
-            ));
-        }
-
-        let settings = get_settings(&self.app_handle);
-        let replacement = create_audio_recorder(
-            backend,
-            &self.app_handle,
-            settings.selected_channel,
-            Arc::clone(&self.stream_router),
-        )?;
-        let was_open = *self.is_open.lock().unwrap();
-
-        // Invalidate any delayed close before swapping the recorder it targets.
-        self.close_generation.fetch_add(1, Ordering::SeqCst);
-        if was_open {
-            self.stop_microphone_stream();
-        }
-
-        let previous_recorder = self.recorder.lock().unwrap().replace(replacement);
-        if was_open {
-            if let Err(change_error) = self.start_microphone_stream() {
-                // Ensure a partially opened replacement cannot retain capture
-                // resources before restoring the known-good detector.
-                if let Some(recorder) = self.recorder.lock().unwrap().as_mut() {
-                    let _ = recorder.close();
-                }
-                *self.recorder.lock().unwrap() = previous_recorder;
-
-                if let Err(rollback_error) = self.start_microphone_stream() {
-                    error!(
-                        "Failed to restore microphone stream after VAD backend change failed: {rollback_error}"
-                    );
-                }
-                return Err(anyhow::anyhow!(
-                    "Failed to reopen microphone with {:?} VAD: {change_error}",
-                    backend
-                ));
-            }
-        }
-
-        info!("VAD backend changed to {:?}", backend);
-        drop(state);
-        Ok(())
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {

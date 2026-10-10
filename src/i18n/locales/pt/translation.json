@@ -8,6 +8,9 @@
     "dictationLanguage": "Idioma do ditado",
     "languagePtBr": "Português (Brasil)",
     "languageEn": "Inglês",
+    "microphone": "Microfone",
+    "microphoneAuto": "Automático",
+    "microphoneAutoWithDevice": "Automático ({{device}})",
     "quit": "Sair",
     "cancel": "Cancelar",
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input",
@@ -16,22 +19,39 @@
     "resumeMeeting": "Retomar reunião",
     "stopMeeting": "Parar reunião"
   },
-  "sidebar": {
-    "general": "Geral",
-    "models": "Modelos",
-    "advanced": "Avançado",
-    "postProcessing": "Pós-Processamento",
-    "history": "Histórico",
-    "debug": "Depuração",
-    "about": "Sobre",
+  "rail": {
+    "navigation": "Navegação principal",
+    "home": "Início",
+    "dictionary": "Dicionário",
+    "settings": "Configurações",
     "meetings": "Reuniões"
   },
+  "dictionary": {
+    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita."
+  },
+  "settingsPage": {
+    "tabs": {
+      "general": "Geral",
+      "advanced": "Avançado",
+      "about": "Sobre"
+    },
+    "advancedPages": {
+      "title": "Mais opções",
+      "models": {
+        "title": "Modelos",
+        "description": "Modelo de transcrição, downloads e aceleração"
+      },
+      "postProcessing": {
+        "title": "Pós-processamento",
+        "description": "Provedor, chave e prompts do pós-processamento herdado"
+      },
+      "debug": {
+        "title": "Depuração",
+        "description": "Logs, diagnóstico do teclado e prévias"
+      }
+    }
+  },
   "onboarding": {
-    "subtitle": "Para começar, escolha um modelo de transcrição",
-    "existingModelsTitle": "Modelos compatíveis",
-    "downloadModelsTitle": "Disponíveis para download",
-    "showAllModels": "Mostrar todos os {{total}} modelos",
-    "showFewerModels": "Mostrar menos modelos",
     "recommended": "Recomendado",
     "customModelDescription": "Não suportado oficialmente",
     "modelCard": {
@@ -104,28 +124,54 @@
         "description": "Um modelo grande, mais lento, mas muito preciso e multilíngue."
       }
     },
-    "errors": {
-      "selectModel": "Falha ao selecionar o modelo"
+    "progress": "Passo {{current}} de {{total}}",
+    "nav": {
+      "back": "Voltar",
+      "next": "Continuar",
+      "done": "Concluir"
     },
-    "permissions": {
-      "title": "Permissões Necessárias",
-      "description": "O Fala precisa de algumas permissões para funcionar corretamente.",
-      "microphone": {
-        "title": "Acesso ao Microfone",
-        "description": "Necessário para ouvir sua voz para transcrição."
-      },
-      "accessibility": {
-        "title": "Acesso à Acessibilidade",
-        "description": "Necessário para digitar o texto transcrito em seus aplicativos."
-      },
-      "grant": "Conceder Permissão",
-      "granted": "Concedido",
-      "waiting": "Aguardando...",
-      "allGranted": "Tudo pronto!",
-      "errors": {
-        "checkFailed": "Erro ao verificar permissões. Por favor, tente novamente.",
-        "requestFailed": "Erro ao solicitar permissão. Por favor, tente novamente."
+    "footer": {
+      "pending": "Preparando o modelo de transcrição",
+      "downloading": "Baixando o modelo de transcrição: {{percent}}%",
+      "verifying": "Verificando o modelo de transcrição",
+      "extracting": "Instalando o modelo de transcrição",
+      "ready": "Modelo de transcrição pronto",
+      "failed": "Não deu para baixar o modelo de transcrição",
+      "retry": "Tentar de novo"
+    },
+    "microphone": {
+      "title": "Microfone",
+      "description": "Escolha o microfone e fale: a barra deve acompanhar a sua voz.",
+      "meterLabel": "Nível do microfone",
+      "test": "Testar microfone",
+      "stop": "Parar",
+      "unavailable": "O medidor não funciona nesta janela ({{reason}}). O próximo passo testa o microfone com um ditado de verdade.",
+      "denied": {
+        "title": "O Windows está bloqueando o microfone",
+        "step1": "Abra Configurações › Privacidade e segurança › Microfone.",
+        "step2": "Ligue “Acesso ao microfone”.",
+        "step3": "Ligue “Permitir que aplicativos da área de trabalho acessem o microfone”.",
+        "openSettings": "Abrir configurações de privacidade",
+        "waiting": "Esperando a permissão…"
       }
+    },
+    "shortcut": {
+      "title": "Atalho",
+      "description": "Faça um ditado de verdade: a pill aparece enquanto você fala.",
+      "instruction": "Segure o atalho, diga “olá, Fala” e solte.",
+      "instructionToggle": "Aperte o atalho, diga “olá, Fala” e aperte de novo.",
+      "testLabel": "Campo de teste",
+      "testPlaceholder": "O texto ditado aparece aqui",
+      "waitModel": "O teste funciona assim que o modelo de transcrição terminar de baixar."
+    },
+    "ai": {
+      "title": "IA (opcional)",
+      "description": "A IA corrige pontuação e formatação do que você ditou.",
+      "privacy": "Com a IA ligada, só o texto do ditado vai para o Gemini; nunca o áudio, que fica na sua máquina.",
+      "keyLabel": "Chave do Gemini",
+      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações.",
+      "skip": "Pular",
+      "finish": "Concluir"
     }
   },
   "modelSelector": {
@@ -405,8 +451,8 @@
         }
       },
       "customWords": {
-        "title": "Palavras Personalizadas",
-        "description": "Ajude os modelos compatíveis a reconhecer nomes e termos especializados. A correção aproximada está atualmente limitada a palavras que usam letras de A–Z e números.",
+        "title": "Dicionário pessoal",
+        "description": "Nomes e termos que o Fala deve escrever sempre com esta grafia. Eles ajudam os modelos compatíveis a reconhecer o que você diz, corrigem a grafia no texto e vão para a IA de formatação. A correção aproximada está limitada a palavras com letras de A–Z e números.",
         "placeholder": "Adicionar uma palavra",
         "add": "Adicionar",
         "remove": "Remover {{word}}",
@@ -414,15 +460,7 @@
       },
       "voiceActivityDetection": {
         "title": "Detecção de atividade de voz",
-        "description": "Filtra o silêncio das gravações. Modelos com suporte a streaming usam uma cauda de VAD mais longa; desativar o VAD grava o áudio bruto."
-      },
-      "vadBackend": {
-        "title": "Backend de detecção de voz",
-        "description": "Escolha o detector usado para filtrar o silêncio. O Earshot é experimental; volte para o Silero se a fala for cortada ou o ruído for mantido.",
-        "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
-        }
+        "description": "Filtra o silêncio das gravações. Desativar o VAD grava o áudio bruto."
       },
       "fillerWordRemoval": {
         "title": "Remover palavras de preenchimento",
@@ -499,11 +537,21 @@
       "transcribing": "Transcrevendo...",
       "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente.",
       "undoAiEdit": "Desfazer edição da IA",
-      "redoAiEdit": "Reaplicar edição da IA",
+      "applyAiEdit": "Aplicar edição da IA",
       "originalCopied": "Texto original copiado",
       "editedCopied": "Texto editado copiado",
       "editToggleError": "Não foi possível trocar o texto",
-      "inApp": "em {{app}}"
+      "inApp": "em {{app}}",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "searchPlaceholder": "Buscar nos ditados",
+      "clearSearch": "Limpar busca",
+      "searchNoResults": "Nenhum ditado encontrado.",
+      "searchError": "Não foi possível buscar no histórico.",
+      "discarded": "Este ditado foi descartado.",
+      "recover": "Recuperar",
+      "recovered": "Ditado recuperado e copiado",
+      "recoverError": "Não foi possível recuperar o ditado."
     },
     "debug": {
       "title": "Depuração",
@@ -633,10 +681,11 @@
       },
       "onboardingPreview": {
         "title": "Pré-visualizar configuração inicial",
-        "description": "Pré-visualize os ecrãs de configuração sem alterar permissões, modelos ou o estado de conclusão",
-        "permissionsButton": "Permissões",
-        "modelsButton": "Seleção de modelo",
-        "exitButton": "Sair da pré-visualização"
+        "description": "Abra o assistente de primeiro uso num passo, sem baixar modelo nem mudar o estado de conclusão",
+        "exitButton": "Sair da pré-visualização",
+        "microphoneButton": "Microfone",
+        "shortcutButton": "Atalho",
+        "aiButton": "IA"
       }
     },
     "about": {
@@ -732,6 +781,8 @@
     "recording": "Gravando",
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",
+    "loadingModel": "Carregando modelo…",
+    "recordingLoadingModel": "Gravando, carregando modelo…",
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada"
   },
