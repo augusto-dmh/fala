@@ -566,6 +566,19 @@ impl ShortcutAction for TranscribeAction {
         let key = crate::dictation_metrics::key_pressed();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
+        // ADR-0015: without the microphone fan-out, no dictation while a meeting records.
+        if let Some(error_type) = crate::meeting::dictation_refusal(crate::meeting::indicator()) {
+            log::info!("Dictation refused: a meeting is recording");
+            let _ = app.emit(
+                "recording-error",
+                RecordingErrorEvent {
+                    error_type: error_type.to_string(),
+                    detail: None,
+                },
+            );
+            return;
+        }
+
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
