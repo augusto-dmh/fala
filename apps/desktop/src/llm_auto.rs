@@ -335,9 +335,18 @@ mod tests {
 
         assert!(auto.llm_produced);
         assert_eq!(server.requests(), 1);
-        assert_eq!(
-            system_prompt(&server, 0),
-            format!("{SYSTEM_PROMPT}\n\nDicionário pessoal:\n- Augusto\n- ChargeBee")
+        // The v2 prompt puts the cleanup level between the fixed text and the dictionary.
+        let prompt = system_prompt(&server, 0);
+        assert!(prompt.starts_with(SYSTEM_PROMPT), "{prompt}");
+        assert!(
+            prompt.ends_with(
+                "
+
+Personal dictionary:
+- Augusto
+- ChargeBee"
+            ),
+            "{prompt}"
         );
     }
 
@@ -349,7 +358,12 @@ mod tests {
             settings.custom_words = terms;
             let auto = run(&settings, &server, SIXTEEN, app("notepad"));
             assert!(auto.llm_produced, "case {index}");
-            assert_eq!(system_prompt(&server, index), SYSTEM_PROMPT, "case {index}");
+            let prompt = system_prompt(&server, index);
+            assert!(prompt.starts_with(SYSTEM_PROMPT), "case {index}: {prompt}");
+            assert!(
+                !prompt.contains("Personal dictionary"),
+                "case {index}: {prompt}"
+            );
         }
     }
 
