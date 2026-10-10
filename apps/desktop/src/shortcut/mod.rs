@@ -16,6 +16,8 @@ pub mod tauri_impl;
 use log::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -55,27 +57,112 @@ pub fn init_shortcuts(app: &AppHandle) {
     }
 }
 
-/// Register the cancel shortcut (called when recording starts)
+/// The cancel key's requested and actual registration. Callers write the request
+/// synchronously, then a spawned pass applies it. Spawned tasks run in any order:
+/// a very short dictation can see its unregister task run before its register task,
+/// which used to leave Esc captured system-wide until the app quit. Each pass applies
+/// the latest request instead of the action that scheduled it, so order no longer
+/// matters (cjpais/Handy#2190).
+struct CancelKey<B> {
+    /// What the dictation lifecycle wants now; always the latest request.
+    requested: AtomicBool,
+    /// The binding registered with the backend, if any. The lock also serializes passes.
+    registered: Mutex<Option<B>>,
+}
+
+impl<B> CancelKey<B> {
+    const fn new() -> Self {
+        Self {
+            requested: AtomicBool::new(false),
+            registered: Mutex::new(None),
+        }
+    }
+
+    fn request(&self, armed: bool) {
+        self.requested.store(armed, Ordering::SeqCst);
+    }
+
+    /// Bring the registration in line with the latest request. `register` returns the
+    /// binding it registered; `unregister` gets that same binding back, so a cancel
+    /// binding edited mid-dictation still releases the key that was captured. A failed
+    /// call leaves the recorded state alone, so the next pass retries.
+    fn reconcile(
+        &self,
+        register: impl FnOnce() -> Result<B, String>,
+        unregister: impl FnOnce(&B) -> Result<(), String>,
+    ) {
+        let mut registered = self.registered.lock().unwrap_or_else(|e| e.into_inner());
+        let requested = self.requested.load(Ordering::SeqCst);
+        match (requested, registered.as_ref()) {
+            (true, None) => match register() {
+                Ok(binding) => *registered = Some(binding),
+                Err(e) => error!("Failed to register cancel shortcut: {}", e),
+            },
+            (false, Some(binding)) => match unregister(binding) {
+                Ok(()) => *registered = None,
+                Err(e) => error!("Failed to unregister cancel shortcut: {}", e),
+            },
+            _ => {}
+        }
+    }
+}
+
+static CANCEL_KEY: CancelKey<ShortcutBinding> = CancelKey::new();
+
+/// Register the cancel shortcut (called when a dictation starts)
 pub fn register_cancel_shortcut(app: &AppHandle) {
     // Track recording lifecycle independently of the current implementation so
     // switching implementations mid-recording cannot leave stale fallback state.
     crate::secure_input::register_cancel_fallback(app);
 
-    let settings = get_settings(app);
-    match settings.keyboard_implementation {
-        KeyboardImplementation::Tauri => tauri_impl::register_cancel_shortcut(app),
-        KeyboardImplementation::FalaKeys => fala_keys::register_cancel_shortcut(app),
-    }
+    CANCEL_KEY.request(true);
+    schedule_cancel_reconcile(app);
 }
 
-/// Unregister the cancel shortcut (called when recording stops)
+/// Unregister the cancel shortcut (called when the dictation ends)
 pub fn unregister_cancel_shortcut(app: &AppHandle) {
     crate::secure_input::unregister_cancel_fallback(app);
 
-    let settings = get_settings(app);
-    match settings.keyboard_implementation {
-        KeyboardImplementation::Tauri => tauri_impl::unregister_cancel_shortcut(app),
-        KeyboardImplementation::FalaKeys => fala_keys::unregister_cancel_shortcut(app),
+    CANCEL_KEY.request(false);
+    schedule_cancel_reconcile(app);
+}
+
+/// Apply the requested cancel state off the calling thread, which must not block on
+/// registration.
+fn schedule_cancel_reconcile(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        CANCEL_KEY.reconcile(
+            || register_cancel_binding(&app),
+            |binding| unregister_cancel_binding(&app, binding),
+        );
+    });
+}
+
+// The cancel shortcut is disabled on Linux due to instability with dynamic shortcut
+// registration: there the binding is tracked but never handed to the backend.
+
+fn register_cancel_binding(app: &AppHandle) -> Result<ShortcutBinding, String> {
+    let binding = get_settings(app)
+        .bindings
+        .get("cancel")
+        .cloned()
+        .ok_or_else(|| "no cancel binding in settings".to_string())?;
+    #[cfg(not(target_os = "linux"))]
+    register_shortcut(app, binding.clone())?;
+    Ok(binding)
+}
+
+fn unregister_cancel_binding(app: &AppHandle, binding: &ShortcutBinding) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (app, binding);
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        unregister_shortcut(app, binding.clone())
     }
 }
 
@@ -1457,8 +1544,105 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 
 #[cfg(test)]
 mod tests {
+    use super::CancelKey;
     use handy_keys::Hotkey;
+    use std::cell::RefCell;
     use tauri_plugin_global_shortcut::Shortcut;
+
+    /// A fake backend that records each call (`true` register, `false` unregister),
+    /// the bindings it was asked to unregister, and whether a key is registered.
+    #[derive(Default)]
+    struct FakeBackend {
+        calls: RefCell<Vec<bool>>,
+        unregistered: RefCell<Vec<String>>,
+        registered: RefCell<bool>,
+    }
+
+    impl FakeBackend {
+        fn register(&self, binding: &str) -> Result<String, String> {
+            self.calls.borrow_mut().push(true);
+            *self.registered.borrow_mut() = true;
+            Ok(binding.to_string())
+        }
+
+        fn unregister(&self, binding: &str) -> Result<(), String> {
+            self.calls.borrow_mut().push(false);
+            self.unregistered.borrow_mut().push(binding.to_string());
+            *self.registered.borrow_mut() = false;
+            Ok(())
+        }
+
+        fn reconcile(&self, key: &CancelKey<String>, binding: &str) {
+            key.reconcile(|| self.register(binding), |b| self.unregister(b));
+        }
+    }
+
+    #[test]
+    fn cancel_key_ends_unregistered_when_passes_run_out_of_order() {
+        let key = CancelKey::new();
+        let backend = FakeBackend::default();
+        // A short dictation: start and stop request synchronously, in order...
+        key.request(true);
+        key.request(false);
+        // ...but the stop's pass runs first and the start's pass second.
+        backend.reconcile(&key, "escape");
+        backend.reconcile(&key, "escape");
+        assert!(!*backend.registered.borrow());
+        assert!(backend.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn cancel_key_follows_the_latest_request() {
+        let key = CancelKey::new();
+        let backend = FakeBackend::default();
+        key.request(true);
+        backend.reconcile(&key, "escape");
+        assert!(*backend.registered.borrow());
+        // A second pass for the same request does not register twice.
+        backend.reconcile(&key, "escape");
+        key.request(false);
+        backend.reconcile(&key, "escape");
+        assert!(!*backend.registered.borrow());
+        assert_eq!(*backend.calls.borrow(), vec![true, false]);
+    }
+
+    #[test]
+    fn cancel_key_retries_after_a_failed_registration() {
+        let key = CancelKey::new();
+        let backend = FakeBackend::default();
+        key.request(true);
+        key.reconcile(|| Err("busy".to_string()), |_| Ok(()));
+        backend.reconcile(&key, "escape");
+        assert!(*backend.registered.borrow());
+        assert_eq!(*backend.calls.borrow(), vec![true]);
+    }
+
+    #[test]
+    fn cancel_key_unregisters_the_binding_it_registered() {
+        let key = CancelKey::new();
+        let backend = FakeBackend::default();
+        key.request(true);
+        backend.reconcile(&key, "escape");
+        // The cancel binding is edited mid-dictation: the stop still releases Esc.
+        key.request(false);
+        backend.reconcile(&key, "ctrl+q");
+        assert!(!*backend.registered.borrow());
+        assert_eq!(*backend.unregistered.borrow(), vec!["escape".to_string()]);
+    }
+
+    #[test]
+    fn cancel_key_retries_after_a_failed_unregistration() {
+        let key = CancelKey::new();
+        let backend = FakeBackend::default();
+        key.request(true);
+        backend.reconcile(&key, "escape");
+        key.request(false);
+        key.reconcile(|| Ok("escape".to_string()), |_| Err("busy".to_string()));
+        assert!(*backend.registered.borrow());
+        backend.reconcile(&key, "escape");
+        assert!(!*backend.registered.borrow());
+        assert_eq!(*backend.calls.borrow(), vec![true, false]);
+    }
 
     #[test]
     fn empty_binding_is_unset() {
