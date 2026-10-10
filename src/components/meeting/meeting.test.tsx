@@ -350,7 +350,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     guard >= 0 && guard < appListener.indexOf("requestConsent();"),
     "o app só deixa o pedido quando a página ainda vai montar",
   );
-  assert.ok(app.includes("sectionRef.current = currentSection;"));
+  assert.ok(app.includes("sectionRef.current = destination;"));
   const pageListener = page.slice(
     page.indexOf('listen("meeting-consent-required"'),
   );

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{StorageError, Store};
 
 pub(crate) const SCHEMA_2: &str = "
-CREATE TABLE meetings (
+CREATE TABLE IF NOT EXISTS meetings (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     mode TEXT NOT NULL CHECK (mode IN ('meeting', 'in_person', 'system_only', 'import')),
@@ -33,8 +33,8 @@ CREATE TABLE meetings (
     notes_md TEXT,
     notes_template TEXT
 );
-CREATE INDEX meetings_by_time ON meetings (created_ms DESC);
-CREATE TABLE meeting_segments (
+CREATE INDEX IF NOT EXISTS meetings_by_time ON meetings (created_ms DESC);
+CREATE TABLE IF NOT EXISTS meeting_segments (
     meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
     seq INTEGER NOT NULL CHECK (seq >= 1),
     channel TEXT NOT NULL CHECK (channel IN ('mic', 'system')),

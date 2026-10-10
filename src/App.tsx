@@ -9,46 +9,30 @@ import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
-import {
-  checkAccessibilityPermission,
-  checkMicrophonePermission,
-} from "tauri-plugin-macos-permissions-api";
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
-import Footer from "./components/footer";
-import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
-import {
-  DebugSettings,
-  type OnboardingPreviewStep,
-} from "./components/settings";
+import Onboarding from "./components/onboarding";
+import { type OnboardingPreviewStep } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { Rail, type RailDestination } from "./components/Rail";
+import { HomePage } from "./components/HomePage";
+import { DictionaryPage } from "./components/DictionaryPage";
+import { MeetingsPage } from "./components/meeting/MeetingsPage";
+import { SettingsPage } from "./components/SettingsPage";
+import { type SettingsView } from "./components/settingsNav";
 import { WhatsNewGate } from "./components/whats-new";
 import { requestConsent } from "./components/meeting/meetingModel";
+import { UPDATER_ENABLED } from "./lib/updater";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
-type OnboardingStep = "accessibility" | "model" | "done";
-
-// Stable identity so preview effects do not re-run due to callback changes.
-const NOOP = () => {};
-
-const renderSettingsContent = (
-  section: SidebarSection,
-  onPreviewOnboarding: (step: OnboardingPreviewStep) => void,
-) => {
-  if (section === "debug") {
-    return <DebugSettings onPreviewOnboarding={onPreviewOnboarding} />;
-  }
-
-  const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
-  return <ActiveComponent />;
-};
+// "microphone" is the returning user whose microphone Windows now denies:
+// the wizard reopens on that step alone.
+type OnboardingStep = "full" | "microphone" | "done";
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -57,11 +41,9 @@ function App() {
   );
   const [onboardingPreview, setOnboardingPreview] =
     useState<OnboardingPreviewStep | null>(null);
-  // Track if this is a returning user who just needs to grant permissions
-  // (vs a new user who needs full onboarding including model selection)
-  const [isReturningUser, setIsReturningUser] = useState(false);
-  const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+  // The window opens on Início (the dictations), not on settings.
+  const [destination, setDestination] = useState<RailDestination>("home");
+  const [settingsView, setSettingsView] = useState<SettingsView>("general");
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -71,11 +53,11 @@ function App() {
     (state) => state.refreshOutputDevices,
   );
   const hasCompletedPostOnboardingInit = useRef(false);
-  const settingsScrollRef = useRef<HTMLDivElement>(null);
+  const settingsScrollRef = useRef<HTMLElement>(null);
   const isShowingOnboarding =
     onboardingPreview !== null ||
-    onboardingStep === "accessibility" ||
-    onboardingStep === "model";
+    onboardingStep === "full" ||
+    onboardingStep === "microphone";
 
   // Classic scrollbars consume layout space. Reserve a matching gutter on the
   // opposite edge while onboarding is visible so its content stays centered in
@@ -86,10 +68,28 @@ function App() {
     return () => document.documentElement.removeAttribute(attribute);
   }, [isShowingOnboarding]);
 
-  // Reset the scroll position whenever the active section changes.
+  // Reset the scroll position whenever the page changes.
   useLayoutEffect(() => {
     settingsScrollRef.current?.scrollTo({ top: 0 });
-  }, [currentSection]);
+  }, [destination, settingsView]);
+
+  // The tray asked to record before the third-party notice was accepted: open the Meetings
+  // page, which shows the notice (ADR-0005).
+  // An open page shows the notice from its own listener; only a page about to mount needs
+  // the request, so the two listeners never race over it.
+  const sectionRef = useRef(destination);
+  sectionRef.current = destination;
+  useEffect(() => {
+    const unlisten = listen("meeting-consent-required", () => {
+      if (sectionRef.current !== "meetings") {
+        requestConsent();
+        setDestination("meetings");
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     checkOnboardingStatus();
@@ -139,24 +139,6 @@ function App() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [settings?.debug_mode, updateSetting]);
-
-  // The tray asked to record before the third-party notice was accepted: open the Meetings
-  // page, which shows the notice (ADR-0005).
-  // An open page shows the notice from its own listener; only a page about to mount needs
-  // the request, so the two listeners never race over it.
-  const sectionRef = useRef(currentSection);
-  sectionRef.current = currentSection;
-  useEffect(() => {
-    const unlisten = listen("meeting-consent-required", () => {
-      if (sectionRef.current !== "meetings") {
-        requestConsent();
-        setCurrentSection("meetings");
-      }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
 
   // Listen for recording errors from the backend and show a toast
   useEffect(() => {
@@ -252,26 +234,8 @@ function App() {
       const currentPlatform = platform();
 
       if (hasCompletedOnboarding) {
-        // Returning user - check if they need to grant permissions first
-        setIsReturningUser(true);
-
-        if (currentPlatform === "macos") {
-          try {
-            const [hasAccessibility, hasMicrophone] = await Promise.all([
-              checkAccessibilityPermission(),
-              checkMicrophonePermission(),
-            ]);
-            if (!hasAccessibility || !hasMicrophone) {
-              await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
-              return;
-            }
-          } catch (e) {
-            console.warn("Failed to check macOS permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
-          }
-        }
-
+        // Returning user: only a microphone Windows now denies reopens the
+        // wizard, on that step alone.
         if (currentPlatform === "windows") {
           try {
             const microphoneStatus =
@@ -281,7 +245,7 @@ function App() {
               microphoneStatus.overall_access === "denied"
             ) {
               await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
+              setOnboardingStep("microphone");
               return;
             }
           } catch (e) {
@@ -292,25 +256,13 @@ function App() {
 
         setOnboardingStep("done");
       } else {
-        // New user - start full onboarding
-        setIsReturningUser(false);
-        setOnboardingStep("accessibility");
+        // New user: the three-step wizard, ending on Início.
+        setOnboardingStep("full");
       }
     } catch (error) {
       console.error("Failed to check onboarding status:", error);
-      setOnboardingStep("accessibility");
+      setOnboardingStep("full");
     }
-  };
-
-  const handleAccessibilityComplete = () => {
-    // Returning users already have models, skip to main app
-    // New users need to select a model
-    setOnboardingStep(isReturningUser ? "done" : "model");
-  };
-
-  const handleModelSelected = () => {
-    // Transition to main app - user has started a download
-    setOnboardingStep("done");
   };
 
   // Rendered once around every step below (including onboarding) so
@@ -325,11 +277,11 @@ function App() {
         unstyled: true,
         classNames: {
           toast:
-            "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-          title: "font-medium",
-          description: "text-mid-gray",
+            "bg-surface-1 text-text border border-border rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 text-body",
+          title: "font-semibold",
+          description: "text-text-2",
           actionButton:
-            "px-2 py-1 text-xs font-medium rounded-lg border bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary cursor-pointer whitespace-nowrap",
+            "px-2 py-1 text-caption font-medium rounded-md border bg-surface-2 border-border hover:bg-text/10 cursor-pointer whitespace-nowrap",
         },
       }}
     />
@@ -350,11 +302,12 @@ function App() {
     // as it does during first-run onboarding.
     content = (
       <>
-        {onboardingPreview === "accessibility" ? (
-          <AccessibilityOnboarding onComplete={NOOP} preview />
-        ) : (
-          <Onboarding onModelSelected={NOOP} preview />
-        )}
+        <Onboarding
+          key={onboardingPreview}
+          preview
+          initialStep={onboardingPreview}
+          onFinish={() => setOnboardingPreview(null)}
+        />
         <button
           type="button"
           onClick={() => setOnboardingPreview(null)}
@@ -364,40 +317,57 @@ function App() {
         </button>
       </>
     );
-  } else if (onboardingStep === "accessibility") {
+  } else if (onboardingStep === "full") {
+    content = <Onboarding onFinish={() => setOnboardingStep("done")} />;
+  } else if (onboardingStep === "microphone") {
     content = (
-      <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
+      <Onboarding
+        steps={["microphone"]}
+        prepareModel={false}
+        onFinish={() => setOnboardingStep("done")}
+      />
     );
-  } else if (onboardingStep === "model") {
-    content = <Onboarding onModelSelected={handleModelSelected} />;
   } else {
     content = (
       <div
         dir={direction}
         className="h-screen flex flex-col select-none cursor-default"
       >
-        <ErrorBoundary context="What's New">
-          <WhatsNewGate />
-        </ErrorBoundary>
-        {/* Main content area that takes remaining space */}
+        {/* Release notes only make sense with the updater on (ADR-0008). */}
+        {UPDATER_ENABLED && (
+          <ErrorBoundary context="What's New">
+            <WhatsNewGate />
+          </ErrorBoundary>
+        )}
         <div className="flex-1 flex overflow-hidden">
-          <Sidebar
-            activeSection={currentSection}
-            onSectionChange={setCurrentSection}
+          <Rail
+            active={destination}
+            onSelect={(next) => {
+              setDestination(next);
+              if (next === "settings") setSettingsView("general");
+            }}
+            onOpenModels={() => {
+              setDestination("settings");
+              setSettingsView("models");
+            }}
           />
-          {/* Scrollable content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div ref={settingsScrollRef} className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center p-4 gap-4">
-                <AccessibilityPermissions />
-                <SecureInputWarning />
-                {renderSettingsContent(currentSection, setOnboardingPreview)}
-              </div>
+          <main ref={settingsScrollRef} className="flex-1 overflow-y-auto">
+            <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 px-6 py-6 max-[840px]:px-4">
+              <AccessibilityPermissions />
+              <SecureInputWarning />
+              {destination === "home" && <HomePage />}
+              {destination === "dictionary" && <DictionaryPage />}
+              {destination === "meetings" && <MeetingsPage />}
+              {destination === "settings" && (
+                <SettingsPage
+                  view={settingsView}
+                  onNavigate={setSettingsView}
+                  onPreviewOnboarding={setOnboardingPreview}
+                />
+              )}
             </div>
-          </div>
+          </main>
         </div>
-        {/* Fixed footer at bottom */}
-        <Footer />
       </div>
     );
   }
