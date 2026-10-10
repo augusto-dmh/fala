@@ -9,6 +9,7 @@ pub mod cli;
 mod clipboard;
 mod commands;
 mod dictation_capture;
+mod dictation_metrics;
 mod helpers;
 mod input;
 mod llm_auto;
@@ -812,6 +813,7 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::undo_history_entry_edit,
             commands::history::redo_history_entry_edit,
+            commands::history::get_dictation_stats,
             commands::history::history_search,
             commands::history::recover_history_entry,
             commands::history::update_history_limit,

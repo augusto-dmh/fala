@@ -7,6 +7,7 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::metrics::{self, DictationMetrics, MetricsSummary};
 use crate::mirror::{self, DITADOS};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
@@ -93,6 +94,7 @@ impl Store {
                 }
             }
         }
+        conn.execute_batch(metrics::SCHEMA)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),
@@ -291,6 +293,16 @@ impl Store {
             report.skipped.len()
         );
         Ok(report)
+    }
+
+    /// Grava as métricas de um ditado (`dictation_metrics`); nunca texto.
+    pub fn add_metrics(&self, metrics: &DictationMetrics) -> Result<(), StorageError> {
+        metrics::insert(&self.conn, metrics)
+    }
+
+    /// Contagens e p50/p90 dos ditados dos últimos `days` dias.
+    pub fn metrics_summary(&self, days: u32) -> Result<MetricsSummary, StorageError> {
+        metrics::summary(&self.conn, days, chrono::Utc::now().timestamp_millis())
     }
 
     fn set_showing(&self, id: &str, showing: Showing) -> Result<DictationRecord, StorageError> {
