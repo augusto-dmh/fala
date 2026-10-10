@@ -8,6 +8,7 @@ mod catalog;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod dictation_capture;
 mod helpers;
 mod input;
 mod llm_auto;
@@ -203,6 +204,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         AudioRecordingManager::new(app_handle, transcription_manager.stream_router())
             .expect("Failed to initialize recording manager"),
     );
+    // Load the Silero VAD off the hotkey path: the first press would otherwise wait for
+    // the ONNX session before the mic opens.
+    std::thread::spawn({
+        let recording_manager = Arc::clone(&recording_manager);
+        move || {
+            if let Err(e) = recording_manager.preload_vad() {
+                log::warn!("VAD preload failed: {e}");
+            }
+        }
+    });
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
 
@@ -732,7 +743,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
-            shortcut::change_vad_backend_setting,
             shortcut::change_filler_word_removal_enabled_setting,
             shortcut::change_app_language_setting,
             shortcut::change_update_checks_setting,
