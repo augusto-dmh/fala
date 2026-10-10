@@ -6,8 +6,8 @@
 //! `fala_core::DictationAudio` (que não implementa serialização, ADR-0003).
 //! Reunião: `meeting::MeetingRecorder` grava mic e sistema (`SystemAudio`) num WAV estéreo 48 kHz
 //! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo).
-//! Ainda por vir: Opus no fim da reunião, e o `audio_toolkit` do desktop, que migra para cá
-//! quando o desktop for ligado aos crates.
+//! O desktop grava o ditado por aqui (`Mic::open_device` com o dispositivo e o canal dos
+//! settings). Ainda por vir: Opus no fim da reunião.
 
 mod capture;
 mod meeting;
