@@ -11,6 +11,7 @@
 //! meeting records, and the dictation stream is closed so the mic has a single stream.
 
 mod disk;
+pub(crate) mod pipeline;
 pub(crate) mod recorder;
 
 use std::path::{Path, PathBuf};
@@ -108,12 +109,29 @@ pub enum MeetingError {
     InvalidTransition,
     CapAtMaximum,
     Storage(String),
+    /// The session is still recording; stop it first.
+    StillRecording,
+    /// No retained audio (and no working WAV) for the session.
+    NoAudio,
+    /// The provider key is not in the keyring.
+    MissingKey,
+    InvalidKey,
+    Keyring,
+    Transcription(String),
+    Cancelled,
+    /// A transcription or a notes generation is already running.
+    Busy,
+    UnknownTemplate,
+    Notes(String),
 }
 
 impl std::fmt::Display for MeetingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MeetingError::AudioDevice(detail) | MeetingError::Storage(detail) => {
+            MeetingError::AudioDevice(detail)
+            | MeetingError::Storage(detail)
+            | MeetingError::Transcription(detail)
+            | MeetingError::Notes(detail) => {
                 write!(f, "{self:?}: {detail}")
             }
             other => write!(f, "{other:?}"),
@@ -287,6 +305,12 @@ pub struct MeetingManager {
     audio_root: PathBuf,
     store: Mutex<Option<Store>>,
     inner: Mutex<Inner>,
+    /// The OS keyring (ADR-0008).
+    keys: Arc<dyn fala_secrets::SecretStore>,
+    /// The transcription or notes generation in flight, one at a time.
+    work: Mutex<pipeline::Work>,
+    /// Held for the whole WAV → Opus conversion.
+    retaining: Mutex<()>,
 }
 
 impl MeetingManager {
@@ -308,6 +332,9 @@ impl MeetingManager {
             audio_root: data.join("audio"),
             store: Mutex::new(store),
             inner: Mutex::new(Inner::default()),
+            keys: Arc::new(fala_secrets::KeyringStore),
+            work: Mutex::new(pipeline::Work::default()),
+            retaining: Mutex::new(()),
         })
     }
 
@@ -665,17 +692,30 @@ impl MeetingManager {
         }
         self.restore_dictation_mic();
         self.retain(id, dir);
-        let mut inner = self.lock();
-        inner.processing = inner.processing.saturating_sub(1);
-        self.publish(&mut inner);
+        {
+            let mut inner = self.lock();
+            inner.processing = inner.processing.saturating_sub(1);
+            self.publish(&mut inner);
+        }
+        // With the key in the keyring, the transcript follows the stop without another click.
+        if pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
+            if let Err(e) = self.transcribe(&id.to_string()) {
+                log::warn!("meeting {id}: automatic transcription failed: {e}");
+            }
+        }
     }
 
     /// `recording.wav` becomes `mic.opus` and `sys.opus`; on any error the WAV stays.
     fn retain(&self, id: SessionId, dir: &Path) {
+        // One conversion at a time: the stop's worker and a "transcribe" click must never write
+        // the same `.part` files, nor one delete the WAV the other still reads (ADR-0014). The
+        // second caller waits and then finds the WAV gone.
+        let _retaining = self.retaining.lock().unwrap_or_else(|e| e.into_inner());
         let wav = dir.join(WORK_WAV);
         if !wav.exists() {
             return;
         }
+        self.progress(id, pipeline::ProgressStage::Retaining);
         match fala_retention::retain_wav(&wav, dir) {
             Ok(audio) => {
                 log::info!("meeting {id}: audio retained ({} samples)", audio.samples);
