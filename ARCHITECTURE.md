@@ -4,7 +4,7 @@ Codemap vivo. Muda no mesmo commit que cria, move ou remove um crate. O porquê 
 
 ## Visão geral
 
-O Fala captura áudio (microfone e, na fase 2, áudio do sistema), segmenta com VAD e transcreve localmente (Parakeet). Opcionalmente formata o texto com um LLM e insere o resultado no app ativo. Tudo roda na máquina do usuário e não há backend. As chamadas de rede opcionais são três, todas desligáveis: texto do ditado para o LLM, áudio de reunião para o ASR em nuvem, transcrição para o LLM de notas.
+O Fala captura áudio (microfone e, na fase 2, áudio do sistema), segmenta com VAD e transcreve localmente (Parakeet). Opcionalmente formata o texto com um LLM e insere o resultado no app ativo. Tudo roda na máquina do usuário e não há backend. As chamadas de rede opcionais são três, todas desligáveis: texto do ditado para o LLM; áudio de reunião para o ASR em nuvem; transcrição, anotações e os campos enumerados na ADR-0016 para o LLM de notas, nunca em sessão só local.
 
 ```
 hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc ─▶ inject ─▶ app ativo
@@ -17,7 +17,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 |---|---|---|
 | `crates/core` | `fala-core` | tipos (`Event`, `Settings`, `Utterance`, `Session`), config, dicionário pessoal, erros |
 | `crates/hotkey` | `fala-hotkey` | atalho global com press/release: trait `GlobalHotkey` e `platform_hotkey`. Windows: hook `WH_KEYBOARD_LL` do `handy-keys`. Linux: `Unsupported` até o portal GlobalShortcuts da fase 3 |
-| `crates/audio` | `fala-audio` | captura (cpal, loopback WASAPI, PipeWire), VAD Silero, resample, gravador de reunião |
+| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013), VAD Silero, resample, gravador de reunião |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
@@ -32,12 +32,13 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `apps/cli` | `fala-cli` | `dictate`, `record`, `transcribe`, `bench`, `import`, para spikes, benchmark e uso headless |
 | `src/` | — | frontend React + TypeScript + Tailwind (Vite, Bun), servido pelo `apps/desktop` |
 
-**Estado em 2026-10-09:** `core`, `secrets`, `postproc`, `storage`, `audio`, `asr`, `meeting`, `media`, `mcp`, `notes` e `retention` têm lógica e testes, exercitados pelo `fala-cli`. `hotkey` e `inject` têm os traits e os adaptadores Windows (`GlobalHotkey` sobre o `handy-keys`; `Injector` com clipboard + Ctrl+V e restore), com `Unsupported` no Linux, mas o desktop ainda usa `shortcut/` e `clipboard.rs`; `inject` também detecta o app em primeiro plano. O desktop usa `core`, `secrets` (chaves de API), `storage` (histórico, ao lado do `history.db` herdado, que continua dono do áudio), `inject` (app em foco) e `postproc` (regras e Gemini automático no ditado do `transcribe`). Captura, VAD, ASR, atalho, colagem, pill e tray continuam os herdados do Handy: `managers/` (audio, model, transcription), `audio_toolkit/`, `shortcut/`, `clipboard.rs` e `paste_tx/`, `overlay.rs` e `tray.rs`. Até a fase 1 ligar o desktop a `audio` e `asr`, a captura e o ASR existem no crate e no desktop. A fase 2 liga `meeting`, `media`, `notes` e `retention` ao desktop.
+**Estado em 2026-10-09:** `core`, `secrets`, `postproc`, `storage`, `audio`, `asr`, `meeting`, `media`, `mcp`, `notes` e `retention` têm lógica e testes, exercitados pelo `fala-cli`. `hotkey` e `inject` têm os traits e os adaptadores Windows (`GlobalHotkey` sobre o `handy-keys`; `Injector` com clipboard + Ctrl+V e restore), com `Unsupported` no Linux, mas o desktop ainda usa `shortcut/` e `clipboard.rs`; `inject` também detecta o app em primeiro plano. O desktop usa `core`, `secrets` (chaves de API), `storage` (histórico, ao lado do `history.db` herdado, que continua dono do áudio), `inject` (app em foco), `postproc` (regras e Gemini automático no ditado do `transcribe`) e `audio` (captura do mic, pré-buffer e Silero v4 do ditado, pelo `dictation_capture.rs`). ASR, atalho, colagem, pill e tray continuam os herdados do Handy: `managers/` (model, transcription), `shortcut/`, `clipboard.rs` e `paste_tx/`, `overlay.rs` e `tray.rs`. Até a fase 1 ligar o desktop a `asr`, o ASR existe no crate e no desktop. A fase 2 liga `meeting`, `media`, `notes` e `retention` ao desktop.
 
 ## Invariantes
 
 - **Nada em `crates/` depende de `tauri`**, nem de forma transitiva. A UI só conversa com o core via `core::Event`. Verificado por `scripts/check-no-tauri-in-crates.sh` no CI.
-- **O áudio de ditado nunca é enviado pela rede.** O tipo que o representa não implementa serialização para os clientes HTTP.
+- **O áudio de ditado nunca é enviado pela rede**, nem pelo arquivo da reunião: durante um ditado, o canal do mic da reunião gravada é zerado e marcado (ADR-0015). O tipo que o representa não implementa serialização para os clientes HTTP.
+- **Um único stream por dispositivo de entrada:** o ditado e o gravador de reunião consomem a mesma captura; sem fan-out, o ditado fica bloqueado durante a gravação (ADR-0015).
 - **Nenhuma chave de API** em código, em config versionada ou em log. As chaves ficam no keyring do SO.
 - **A gravação de reunião só começa por ação explícita** e tem indicador visível enquanto dura.
 - **O código específico de plataforma** fica em `hotkey`, `audio`, `inject` e `apps/desktop`. `cargo check --workspace` passa no Linux desde a fase 1 (adaptadores ainda sem implementação retornam `Unsupported`).
@@ -49,7 +50,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 - **Config:** um `Settings` em `core`, persistido por `tauri-plugin-store` no desktop e por TOML na CLI.
 - **Eventos:** `core::Event` (enum) do backend para a UI; comandos e tipos TS gerados por `tauri-specta` em `src/bindings.ts`.
 - **i18n:** pt-BR é a fonte, en é o segundo idioma (`src/i18n/locales`); o tray lê as mesmas strings via `build.rs`.
-- **Logs:** locais, com níveis; nada remoto. O trace de latência por etapa (`FALA_TRACE=1`) entra na fase 1.
+- **Logs:** locais, com níveis; nada remoto. O trace de latência por etapa (`FALA_TRACE=1`, target `fala_trace`) sai do `fala-cli dictate` e do desktop; o desktop guarda sempre os tempos de cada ditado, sem texto, em `dictation_metrics` (`fala-cli history stats`).
 - **Dados do usuário:** pasta de dados do app (`%APPDATA%` no Windows, `~/.local/share` no Linux) com `fala.sqlite`, `audio/` e `models/`.
 
 ## Orçamento de latência e recursos
@@ -66,4 +67,4 @@ Copiado do design doc §5 como referência. Será medido pelo log de etapas (`FA
 | Reunião: progresso da transcrição | visível em ≤ 1 s, cancelável | 10 s sem progresso | Nielsen |
 | Idle na bandeja com modelo carregado | < 1 % CPU, < 300 MB RAM | — | contraste com 800 MB do Wispr |
 | Início a frio até hotkey funcionar | ≤ 3 s | 5 s | — |
-| Pré-buffer de áudio | 300 ms contínuos | — | nunca perder a primeira sílaba |
+| Pré-buffer de áudio | 300 ms enquanto o mic está aberto (always-on ou janela de `lazy_stream_close`); sob demanda, o mic abre na tecla | — | nunca perder a primeira sílaba; o mic sob demanda por padrão é a door 1 da F9a (`.specs/features/desktop-pipeline-audio/plan.md`) |

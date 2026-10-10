@@ -49,6 +49,8 @@ serde = { version = "1", features = ["derive"] }
 [dependencies]
 # Chaves de API no keyring do SO (ADR-0008).
 fala-secrets = { workspace = true }
+# Captura do mic, pré-buffer e Silero v4 do ditado (ADR-0009).
+fala-audio = { workspace = true }
 # Histórico de ditados em fala.sqlite com espelho Markdown (ADR-0006) e o app em foco.
 fala-core = { workspace = true }
 fala-inject = { workspace = true }

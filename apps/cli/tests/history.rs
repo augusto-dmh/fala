@@ -327,3 +327,68 @@ fn undo_without_id_exits_2() {
         assert_eq!(o.status.code(), Some(2), "{sub}: {}", stderr(&o));
     }
 }
+
+fn metrics(
+    at: chrono::DateTime<chrono::FixedOffset>,
+    e2e_ms: u32,
+) -> fala_storage::DictationMetrics {
+    fala_storage::DictationMetrics {
+        dictation_id: None,
+        created_at: at,
+        e2e_ms,
+        asr_ms: e2e_ms / 2,
+        llm_ms: None,
+        paste_ms: 20,
+        speech_ms: 1500,
+        words: 5,
+        lang: fala_core::Language::PtBr,
+        llm_used: false,
+        fallback: None,
+        model: "parakeet-tdt-0.6b-v3".to_string(),
+        app: None,
+    }
+}
+
+#[test]
+fn stats_prints_summary() {
+    let d = Dirs::new("stats_prints_summary");
+    let o = d.run(&["history", "stats", "--days", "7"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("\nditados: 0\n"), "{out}");
+    assert!(
+        out.contains("soltar → texto (sem LLM): p50 - · p90 -"),
+        "{out}"
+    );
+
+    let store = fala_storage::Store::open(&d.db(), &d.data.join("notas")).unwrap();
+    let now = (chrono::Utc::now() - chrono::Duration::minutes(1)).fixed_offset();
+    for e2e in (100..=1000).step_by(100) {
+        store.add_metrics(&metrics(now, e2e)).unwrap();
+    }
+    for (e2e, fallback) in [
+        (1100, None),
+        (1300, None),
+        (2100, None),
+        (2400, Some("timeout")),
+    ] {
+        let mut m = metrics(now, e2e);
+        m.llm_ms = Some(e2e - 400);
+        m.llm_used = fallback.is_none();
+        m.fallback = fallback.map(str::to_string);
+        store.add_metrics(&m).unwrap();
+    }
+    drop(store);
+
+    let o = d.run(&["history", "stats", "--days", "7"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    for line in [
+        "ditados: 14",
+        "LLM tentado: 4 (1 fallbacks)",
+        "soltar → texto (sem LLM): p50 500 ms · p90 900 ms (meta 700 ms, máx. 1000 ms)",
+        "com LLM: p50 1300 ms · p90 2400 ms (meta 1200 ms, máx. 2000 ms)",
+    ] {
+        assert!(out.lines().any(|l| l == line), "{line:?} em {out}");
+    }
+}
