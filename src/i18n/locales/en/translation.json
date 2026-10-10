@@ -47,11 +47,6 @@
     }
   },
   "onboarding": {
-    "subtitle": "To get started, choose a transcription model",
-    "existingModelsTitle": "Compatible Models",
-    "downloadModelsTitle": "Available to Download",
-    "showAllModels": "Show all {{total}} models",
-    "showFewerModels": "Show fewer models",
     "recommended": "Recommended",
     "customModelDescription": "Not officially supported",
     "modelCard": {
@@ -124,28 +119,54 @@
         "description": "A large, slower, but very accurate multilingual model."
       }
     },
-    "errors": {
-      "selectModel": "Failed to select model"
+    "progress": "Step {{current}} of {{total}}",
+    "nav": {
+      "back": "Back",
+      "next": "Continue",
+      "done": "Done"
     },
-    "permissions": {
-      "title": "Permissions Required",
-      "description": "Fala needs a couple of permissions to work properly.",
-      "microphone": {
-        "title": "Microphone Access",
-        "description": "Required to hear your voice for transcription."
-      },
-      "accessibility": {
-        "title": "Accessibility Access",
-        "description": "Required to type transcribed text into your applications."
-      },
-      "grant": "Grant Permission",
-      "granted": "Granted",
-      "waiting": "Waiting...",
-      "allGranted": "All set!",
-      "errors": {
-        "checkFailed": "Failed to check permissions. Please try again.",
-        "requestFailed": "Failed to request permission. Please try again."
+    "footer": {
+      "pending": "Preparing the transcription model",
+      "downloading": "Downloading the transcription model: {{percent}}%",
+      "verifying": "Checking the transcription model",
+      "extracting": "Installing the transcription model",
+      "ready": "Transcription model ready",
+      "failed": "Couldn't download the transcription model",
+      "retry": "Try again"
+    },
+    "microphone": {
+      "title": "Microphone",
+      "description": "Pick the microphone and speak: the bar should follow your voice.",
+      "meterLabel": "Microphone level",
+      "test": "Test microphone",
+      "stop": "Stop",
+      "unavailable": "The meter doesn't work in this window ({{reason}}). The next step tests the microphone with a real dictation.",
+      "denied": {
+        "title": "Windows is blocking the microphone",
+        "step1": "Open Settings › Privacy & security › Microphone.",
+        "step2": "Turn on “Microphone access”.",
+        "step3": "Turn on “Let desktop apps access your microphone”.",
+        "openSettings": "Open privacy settings",
+        "waiting": "Waiting for permission…"
       }
+    },
+    "shortcut": {
+      "title": "Shortcut",
+      "description": "Do a real dictation: the pill shows up while you speak.",
+      "instruction": "Hold the shortcut, say “hello, Fala” and let go.",
+      "instructionToggle": "Press the shortcut, say “hello, Fala” and press it again.",
+      "testLabel": "Test field",
+      "testPlaceholder": "The dictated text shows up here",
+      "waitModel": "The test works as soon as the transcription model finishes downloading."
+    },
+    "ai": {
+      "title": "AI (optional)",
+      "description": "The AI fixes punctuation and formatting in what you dictated.",
+      "privacy": "With the AI on, only the text of your dictation goes to Gemini; never the audio, which stays on your machine.",
+      "keyLabel": "Gemini key",
+      "keyDescription": "Kept in the system's password vault. You can add or change it later in Settings.",
+      "skip": "Skip",
+      "finish": "Done"
     }
   },
   "modelSelector": {
@@ -562,10 +583,11 @@
       },
       "onboardingPreview": {
         "title": "Preview Onboarding",
-        "description": "Preview onboarding screens without changing permissions, models, or completion state",
-        "permissionsButton": "Permissions",
-        "modelsButton": "Model Selection",
-        "exitButton": "Exit Preview"
+        "description": "Open the first-run wizard on one step, without downloading a model or changing the completion state",
+        "exitButton": "Exit Preview",
+        "microphoneButton": "Microphone",
+        "shortcutButton": "Shortcut",
+        "aiButton": "AI"
       },
       "soundTheme": {
         "label": "Sound Theme",

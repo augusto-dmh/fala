@@ -47,11 +47,6 @@
     }
   },
   "onboarding": {
-    "subtitle": "Para começar, escolha um modelo de transcrição",
-    "existingModelsTitle": "Modelos compatíveis",
-    "downloadModelsTitle": "Disponíveis para download",
-    "showAllModels": "Mostrar todos os {{total}} modelos",
-    "showFewerModels": "Mostrar menos modelos",
     "recommended": "Recomendado",
     "customModelDescription": "Não suportado oficialmente",
     "modelCard": {
@@ -124,28 +119,54 @@
         "description": "Um modelo grande, mais lento, mas muito preciso e multilíngue."
       }
     },
-    "errors": {
-      "selectModel": "Falha ao selecionar o modelo"
+    "progress": "Passo {{current}} de {{total}}",
+    "nav": {
+      "back": "Voltar",
+      "next": "Continuar",
+      "done": "Concluir"
     },
-    "permissions": {
-      "title": "Permissões Necessárias",
-      "description": "O Fala precisa de algumas permissões para funcionar corretamente.",
-      "microphone": {
-        "title": "Acesso ao Microfone",
-        "description": "Necessário para ouvir sua voz para transcrição."
-      },
-      "accessibility": {
-        "title": "Acesso à Acessibilidade",
-        "description": "Necessário para digitar o texto transcrito em seus aplicativos."
-      },
-      "grant": "Conceder Permissão",
-      "granted": "Concedido",
-      "waiting": "Aguardando...",
-      "allGranted": "Tudo pronto!",
-      "errors": {
-        "checkFailed": "Erro ao verificar permissões. Por favor, tente novamente.",
-        "requestFailed": "Erro ao solicitar permissão. Por favor, tente novamente."
+    "footer": {
+      "pending": "Preparando o modelo de transcrição",
+      "downloading": "Baixando o modelo de transcrição: {{percent}}%",
+      "verifying": "Verificando o modelo de transcrição",
+      "extracting": "Instalando o modelo de transcrição",
+      "ready": "Modelo de transcrição pronto",
+      "failed": "Não deu para baixar o modelo de transcrição",
+      "retry": "Tentar de novo"
+    },
+    "microphone": {
+      "title": "Microfone",
+      "description": "Escolha o microfone e fale: a barra deve acompanhar a sua voz.",
+      "meterLabel": "Nível do microfone",
+      "test": "Testar microfone",
+      "stop": "Parar",
+      "unavailable": "O medidor não funciona nesta janela ({{reason}}). O próximo passo testa o microfone com um ditado de verdade.",
+      "denied": {
+        "title": "O Windows está bloqueando o microfone",
+        "step1": "Abra Configurações › Privacidade e segurança › Microfone.",
+        "step2": "Ligue “Acesso ao microfone”.",
+        "step3": "Ligue “Permitir que aplicativos da área de trabalho acessem o microfone”.",
+        "openSettings": "Abrir configurações de privacidade",
+        "waiting": "Esperando a permissão…"
       }
+    },
+    "shortcut": {
+      "title": "Atalho",
+      "description": "Faça um ditado de verdade: a pill aparece enquanto você fala.",
+      "instruction": "Segure o atalho, diga “olá, Fala” e solte.",
+      "instructionToggle": "Aperte o atalho, diga “olá, Fala” e aperte de novo.",
+      "testLabel": "Campo de teste",
+      "testPlaceholder": "O texto ditado aparece aqui",
+      "waitModel": "O teste funciona assim que o modelo de transcrição terminar de baixar."
+    },
+    "ai": {
+      "title": "IA (opcional)",
+      "description": "A IA corrige pontuação e formatação do que você ditou.",
+      "privacy": "Com a IA ligada, só o texto do ditado vai para o Gemini; nunca o áudio, que fica na sua máquina.",
+      "keyLabel": "Chave do Gemini",
+      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações.",
+      "skip": "Pular",
+      "finish": "Concluir"
     }
   },
   "modelSelector": {
@@ -655,10 +676,11 @@
       },
       "onboardingPreview": {
         "title": "Pré-visualizar configuração inicial",
-        "description": "Pré-visualize os ecrãs de configuração sem alterar permissões, modelos ou o estado de conclusão",
-        "permissionsButton": "Permissões",
-        "modelsButton": "Seleção de modelo",
-        "exitButton": "Sair da pré-visualização"
+        "description": "Abra o assistente de primeiro uso num passo, sem baixar modelo nem mudar o estado de conclusão",
+        "exitButton": "Sair da pré-visualização",
+        "microphoneButton": "Microfone",
+        "shortcutButton": "Atalho",
+        "aiButton": "IA"
       }
     },
     "about": {

@@ -1,274 +1,216 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
-import { ChevronDown } from "lucide-react";
-import type { ModelInfo } from "@/bindings";
-import type { ModelCardStatus } from "./ModelCard";
-import ModelCard, { isLegacySource } from "./ModelCard";
-import FalaTextLogo from "../icons/FalaTextLogo";
+import { commands } from "@/bindings";
 import { useModelStore } from "../../stores/modelStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { Button } from "../ui/Button";
+import FalaTextLogo from "../icons/FalaTextLogo";
+import { AiStep } from "./AiStep";
+import { MicrophoneStep } from "./MicrophoneStep";
+import { ModelFooter } from "./ModelFooter";
+import { ShortcutStep } from "./ShortcutStep";
+import {
+  DICTATION_MODEL_ID,
+  footerError,
+  ONBOARDING_STEPS,
+  micAccess,
+  modelAction,
+  modelFooterState,
+  nextStep,
+  previousStep,
+  type MicAccess,
+  type OnboardingStepId,
+} from "./onboardingModel";
 
 interface OnboardingProps {
-  onModelSelected: () => void;
+  onFinish: () => void;
+  /** Defaults to all three; a returning user with a denied mic sees only the first. */
+  steps?: readonly OnboardingStepId[];
+  initialStep?: OnboardingStepId;
+  /** Download and select the dictation model. Off for a returning user, who
+   *  already has a model and only needs the microphone back. */
+  prepareModel?: boolean;
+  /** Debug preview: never downloads, selects or polls anything. */
   preview?: boolean;
 }
 
+const MIC_POLL_MS = 1000;
+
+/** First run in three steps (microphone, shortcut, optional AI) while the
+ *  dictation model downloads in the background (ADR-0009: no model choice). */
 const Onboarding: React.FC<OnboardingProps> = ({
-  onModelSelected,
+  onFinish,
+  steps = ONBOARDING_STEPS,
+  initialStep,
+  prepareModel = true,
   preview = false,
 }) => {
   const { t } = useTranslation();
+  const [step, setStep] = useState<OnboardingStepId>(initialStep ?? steps[0]);
+  const [access, setAccess] = useState<MicAccess>("ok");
+  const [waitingForAccess, setWaitingForAccess] = useState(false);
+  const refreshAudioDevices = useSettingsStore((s) => s.refreshAudioDevices);
   const {
     models,
-    downloadModel,
-    selectModel,
+    currentModel,
     downloadingModels,
     verifyingModels,
     extractingModels,
     downloadProgress,
-    downloadStats,
-    cancelDownload,
+    error,
+    downloadModel,
+    selectModel,
   } = useModelStore();
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const hasStartedSelection = useRef(false);
+  // Each automatic action runs once; "try again" clears the record.
+  const attempted = useRef(new Set<string>());
+  const [retries, setRetries] = useState(0);
+  // A download or selection that failed without the store recording an error
+  // (an IPC exception) still has to offer "try again".
+  const [actionFailed, setActionFailed] = useState(false);
 
-  const isBusy = selectedModelId !== null;
+  const progress = {
+    models,
+    currentModel,
+    downloading: downloadingModels,
+    verifying: verifyingModels,
+    extracting: extractingModels,
+  };
+  const footer = modelFooterState({
+    ...progress,
+    progress: downloadProgress,
+    error: footerError(error, actionFailed),
+  });
+  const action = modelAction(progress);
 
-  // Curate the download list: legacy (.bin/ONNX) downloads are deprecated and
-  // never shown here (they still appear in the compatible section if already on
-  // disk). The catalog arrives rank-sorted, so the first two recommended models
-  // are the featured picks — currently Parakeet Unified (English) and Nemotron
-  // Streaming (multilingual). Everything else hides behind "Show all".
-  const { downloadable, topPicks, otherRecommended, rest } = useMemo(() => {
-    const downloadable = models.filter(
-      (m: ModelInfo) => !m.is_downloaded && !isLegacySource(m),
-    );
-    const recommended = downloadable.filter((m: ModelInfo) => m.is_recommended);
-    // `models` arrives in editorial rank order (the backend sorts by rank_of,
-    // then accuracy), so keep that order here: ranked-but-not-recommended models
-    // surface first, then the unranked tail by accuracy.
-    const rest = downloadable.filter((m: ModelInfo) => !m.is_recommended);
-    return {
-      downloadable,
-      topPicks: recommended.slice(0, 2),
-      otherRecommended: recommended.slice(2),
-      rest,
-    };
-  }, [models]);
-
-  const hasRecommended = topPicks.length > 0 || otherRecommended.length > 0;
-  // When nothing recommended remains to download (e.g. all already on disk),
-  // there is no curated subset to collapse, so just show the full list.
-  const showRest = showAll || !hasRecommended;
-
-  // Watch for the selected model to finish downloading + verifying + extracting
+  // Start the Parakeet download as soon as the wizard opens, then select it.
   useEffect(() => {
-    // Debug previews are inert: never switch the user's active model. Guarded
-    // here as well as in the handlers because this is where the backend call
-    // actually happens.
-    if (preview) return;
-
-    if (!selectedModelId) {
-      hasStartedSelection.current = false;
+    if (
+      preview ||
+      !prepareModel ||
+      action === "none" ||
+      attempted.current.has(action)
+    ) {
       return;
     }
+    attempted.current.add(action);
+    const run =
+      action === "download"
+        ? downloadModel(DICTATION_MODEL_ID)
+        : selectModel(DICTATION_MODEL_ID);
+    void run.then((ok) => {
+      if (!ok) setActionFailed(true);
+    });
+  }, [preview, prepareModel, action, retries, downloadModel, selectModel]);
 
-    const model = models.find((m) => m.id === selectedModelId);
-    const stillDownloading = selectedModelId in downloadingModels;
-    const stillVerifying = selectedModelId in verifyingModels;
-    const stillExtracting = selectedModelId in extractingModels;
-
-    if (
-      model?.is_downloaded &&
-      !stillDownloading &&
-      !stillVerifying &&
-      !stillExtracting &&
-      !hasStartedSelection.current
-    ) {
-      hasStartedSelection.current = true;
-
-      // Model is ready — select it and transition
-      selectModel(selectedModelId).then((success) => {
-        if (success) {
-          onModelSelected();
-        } else {
-          toast.error(t("onboarding.errors.selectModel"));
-          hasStartedSelection.current = false;
-          setSelectedModelId(null);
+  // Windows can deny the microphone to desktop apps; poll while it does.
+  useEffect(() => {
+    if (preview) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const next = micAccess(
+          await commands.getWindowsMicrophonePermissionStatus(),
+        );
+        if (cancelled) return;
+        setAccess(next);
+        if (next === "ok" && access === "denied") {
+          setWaitingForAccess(false);
+          void refreshAudioDevices();
         }
-      });
-    }
-  }, [
-    selectedModelId,
-    models,
-    downloadingModels,
-    verifyingModels,
-    extractingModels,
-    selectModel,
-    onModelSelected,
-    preview,
-    t,
-  ]);
+      } catch (e) {
+        console.warn("Failed to check microphone access:", e);
+      }
+    };
+    void check();
+    const timer =
+      access === "denied" ? setInterval(check, MIC_POLL_MS) : undefined;
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [preview, access, refreshAudioDevices]);
 
-  const handleDownloadModel = async (modelId: string) => {
+  const openPrivacySettings = async () => {
     if (preview) return;
-
-    setSelectedModelId(modelId);
-
-    // Error toast is handled centrally by the model-download-failed event listener
-    // in modelStore — no toast here to avoid duplicates.
-    const success = await downloadModel(modelId);
-    if (!success) {
-      setSelectedModelId(null);
-    }
+    const result = await commands.openMicrophonePrivacySettings();
+    if (result.status === "ok") setWaitingForAccess(true);
   };
 
-  const handleCancelDownload = async (modelId: string) => {
-    if (preview) return;
-
-    const success = await cancelDownload(modelId);
-    if (success) {
-      setSelectedModelId(null);
-    }
+  const retry = () => {
+    attempted.current.clear();
+    setActionFailed(false);
+    setRetries((n) => n + 1);
   };
 
-  const handleSelectExistingModel = (modelId: string) => {
-    if (preview) return;
-
-    setSelectedModelId(modelId);
-  };
-
-  const getModelStatus = (modelId: string): ModelCardStatus => {
-    if (modelId in extractingModels) return "extracting";
-    if (modelId in verifyingModels) return "verifying";
-    if (modelId in downloadingModels) return "downloading";
-    return "downloadable";
-  };
-
-  const getExistingModelStatus = (modelId: string): ModelCardStatus => {
-    if (selectedModelId === modelId) return "switching";
-    return "available";
-  };
-
-  const getModelDownloadProgress = (modelId: string): number | undefined => {
-    return downloadProgress[modelId]?.percentage;
-  };
-
-  const getModelDownloadSpeed = (modelId: string): number | undefined => {
-    return downloadStats[modelId]?.speed;
-  };
+  const next = nextStep(steps, step);
+  const previous = previousStep(steps, step);
+  const blocked = step === "microphone" && access === "denied";
 
   return (
-    <div className="h-screen w-full flex flex-col p-6 gap-4">
-      <div className="flex flex-col items-center gap-2 shrink-0">
-        <FalaTextLogo width={200} />
-        <p className="text-text/70 max-w-md font-medium mx-auto">
-          {t("onboarding.subtitle")}
-        </p>
-      </div>
-
-      <div className="max-w-[600px] w-full mx-auto text-center flex-1 flex flex-col min-h-0">
-        <div className="space-y-6 pb-6">
-          {models.some((m: ModelInfo) => m.is_downloaded) && (
-            <div className="space-y-3">
-              <div className="text-left">
-                <h2 className="text-sm font-medium text-text/60">
-                  {t("onboarding.existingModelsTitle")}
-                </h2>
-              </div>
-              {models
-                .filter((m: ModelInfo) => m.is_downloaded)
-                .map((model: ModelInfo) => (
-                  <ModelCard
-                    key={model.id}
-                    model={model}
-                    status={getExistingModelStatus(model.id)}
-                    disabled={isBusy}
-                    onSelect={handleSelectExistingModel}
-                    showRecommended={false}
-                  />
-                ))}
-            </div>
+    <div className="flex h-screen w-full flex-col bg-surface-0">
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-6 py-8 max-[840px]:px-4">
+          <FalaTextLogo width={96} />
+          <header className="flex flex-col gap-1">
+            {steps.length > 1 && (
+              <p className="text-caption text-text-2 tabular-nums">
+                {t("onboarding.progress", {
+                  current: steps.indexOf(step) + 1,
+                  total: steps.length,
+                })}
+              </p>
+            )}
+            <h1 className="font-display text-title font-semibold text-text">
+              {t(`onboarding.${step}.title`)}
+            </h1>
+            <p className="text-body text-text-2">
+              {t(`onboarding.${step}.description`)}
+            </p>
+          </header>
+          {step === "microphone" && (
+            <MicrophoneStep
+              access={access}
+              waiting={waitingForAccess}
+              onOpenPrivacySettings={openPrivacySettings}
+            />
           )}
-
-          {downloadable.length > 0 && (
-            <div className="space-y-3">
-              <div className="text-left">
-                <h2 className="text-sm font-medium text-text/60">
-                  {t("onboarding.downloadModelsTitle")}
-                </h2>
-              </div>
-
-              {topPicks.map((model: ModelInfo) => (
-                <ModelCard
-                  key={model.id}
-                  model={model}
-                  variant="featured"
-                  status={getModelStatus(model.id)}
-                  disabled={isBusy}
-                  onSelect={handleDownloadModel}
-                  onDownload={handleDownloadModel}
-                  onCancel={handleCancelDownload}
-                  downloadProgress={getModelDownloadProgress(model.id)}
-                  downloadSpeed={getModelDownloadSpeed(model.id)}
-                  showRecommended={false}
-                />
-              ))}
-
-              {otherRecommended.map((model: ModelInfo) => (
-                <ModelCard
-                  key={model.id}
-                  model={model}
-                  status={getModelStatus(model.id)}
-                  disabled={isBusy}
-                  onSelect={handleDownloadModel}
-                  onDownload={handleDownloadModel}
-                  onCancel={handleCancelDownload}
-                  downloadProgress={getModelDownloadProgress(model.id)}
-                  downloadSpeed={getModelDownloadSpeed(model.id)}
-                  showRecommended={false}
-                />
-              ))}
-
-              {hasRecommended && rest.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAll((v) => !v)}
-                  className="flex items-center justify-center gap-1.5 mx-auto py-1 text-sm font-medium text-text/60 hover:text-text transition-colors"
-                >
-                  {showAll
-                    ? t("onboarding.showFewerModels")
-                    : t("onboarding.showAllModels", {
-                        total: downloadable.length,
-                      })}
-                  <ChevronDown
-                    className={`w-4 h-4 transition-transform duration-200 ${
-                      showAll ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-              )}
-
-              {showRest &&
-                rest.map((model: ModelInfo) => (
-                  <ModelCard
-                    key={model.id}
-                    model={model}
-                    status={getModelStatus(model.id)}
-                    disabled={isBusy}
-                    onSelect={handleDownloadModel}
-                    onDownload={handleDownloadModel}
-                    onCancel={handleCancelDownload}
-                    downloadProgress={getModelDownloadProgress(model.id)}
-                    downloadSpeed={getModelDownloadSpeed(model.id)}
-                    showRecommended={false}
-                  />
-                ))}
-            </div>
+          {step === "shortcut" && (
+            <ShortcutStep
+              modelReady={footer.kind === "ready"}
+              preview={preview}
+            />
           )}
+          {step === "ai" && <AiStep onFinish={onFinish} />}
         </div>
       </div>
+      <footer className="flex items-center justify-between gap-4 border-t border-border bg-surface-1 px-6 py-3 max-[840px]:px-4">
+        {prepareModel ? (
+          <ModelFooter state={footer} onRetry={retry} />
+        ) : (
+          <span />
+        )}
+        <div className="flex shrink-0 gap-2">
+          {previous && (
+            <Button variant="secondary" onClick={() => setStep(previous)}>
+              {t("onboarding.nav.back")}
+            </Button>
+          )}
+          {next && (
+            <Button
+              variant="primary"
+              disabled={blocked}
+              onClick={() => setStep(next)}
+            >
+              {t("onboarding.nav.next")}
+            </Button>
+          )}
+          {!next && step !== "ai" && (
+            <Button variant="primary" disabled={blocked} onClick={onFinish}>
+              {t("onboarding.nav.done")}
+            </Button>
+          )}
+        </div>
+      </footer>
     </div>
   );
 };
