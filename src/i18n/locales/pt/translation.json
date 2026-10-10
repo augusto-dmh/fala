@@ -23,7 +23,8 @@
     "navigation": "Navegação principal",
     "home": "Início",
     "dictionary": "Dicionário",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "meetings": "Reuniões"
   },
   "dictionary": {
     "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita."
@@ -798,5 +799,91 @@
     "learnMore": "Como resolver isso",
     "recorderBlocked": "Não é possível gravar atalhos agora — o Secure Input do macOS está bloqueando os eventos de tecla. Resolva primeiro o aviso do Secure Input.",
     "dismiss": "Dispensar"
+  },
+  "meeting": {
+    "title": "Reunião",
+    "untitled": "Reunião de {{date}}",
+    "consent": {
+      "title": "Antes de gravar a primeira reunião",
+      "body": "Gravar uma reunião guarda no seu computador o áudio do seu microfone e do sistema, inclusive a voz de outras pessoas. Ao transcrever, esse áudio é enviado à ElevenLabs; ao gerar notas, a transcrição e as suas anotações são enviadas à Anthropic. Transcrições e notas contêm dados pessoais de terceiros: avise quem participa e siga as regras do seu trabalho e a LGPD.",
+      "accept": "Entendi, gravar",
+      "cancel": "Cancelar"
+    },
+    "recorder": {
+      "mode": "Tipo de reunião",
+      "online": "Online (fone)",
+      "inPerson": "Presencial",
+      "titlePlaceholder": "Título (opcional)",
+      "start": "Gravar reunião",
+      "newDraft": "Nova reunião sem gravar",
+      "processing": "Salvando o áudio da última reunião…",
+      "paused": "Pausada",
+      "live": "Gravando",
+      "pause": "Pausar",
+      "resume": "Retomar",
+      "stop": "Parar",
+      "mic": "Eu",
+      "system": "Sistema",
+      "mutedMic": "Sem áudio do seu microfone há 2 minutos.",
+      "mutedSystem": "Sem áudio do sistema há 2 minutos.",
+      "capWarning": "A gravação para em {{time}} (limite da sessão).",
+      "extend": "Mais 1 h",
+      "lowDisk": "Pouco espaço em disco: {{mb}} MB livres."
+    },
+    "annotations": {
+      "placeholder": "Digite suas anotações. Elas são salvas sozinhas."
+    },
+    "list": {
+      "title": "Reuniões",
+      "empty": "Nenhuma reunião ainda. Grave uma ou crie uma sem gravar para escrever a pauta.",
+      "draft": "rascunho",
+      "transcribed": "transcrita",
+      "notes": "com notas"
+    },
+    "view": {
+      "agenda": "Pauta e anotações (antes de gravar)",
+      "annotations": "Anotações",
+      "recordDraft": "Gravar esta reunião",
+      "transcribe": "Transcrever",
+      "transcribing": "Transcrevendo…",
+      "cancel": "Cancelar",
+      "template": "Template das notas",
+      "generate": "Gerar notas",
+      "generating": "Gerando notas…",
+      "copy": "Copiar Markdown",
+      "transcript": "Transcrição",
+      "noTranscript": "Ainda sem transcrição.",
+      "notes": "Notas",
+      "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
+    },
+    "speaker": {
+      "me": "Eu",
+      "person": "Pessoa {{n}}"
+    },
+    "key": {
+      "label": "Chave da ElevenLabs para transcrever:",
+      "placeholder": "cole a chave",
+      "save": "Salvar no cofre do sistema"
+    },
+    "errors": {
+      "consent_required": "Aceite o aviso antes de gravar.",
+      "already_active": "Já existe uma reunião gravando.",
+      "already_started": "Essa reunião já foi gravada.",
+      "dictation_active": "Termine o ditado antes de gravar a reunião.",
+      "insufficient_disk": "Espaço em disco insuficiente para gravar (menos de 500 MB livres).",
+      "audio_device": "Não consegui abrir o microfone ou o áudio do sistema.",
+      "not_found": "Reunião não encontrada.",
+      "still_recording": "Pare a gravação antes de transcrever.",
+      "no_audio": "Essa reunião não tem áudio salvo.",
+      "missing_key": "Falta a chave do provedor no cofre do sistema.",
+      "invalid_key": "Chave vazia ou inválida.",
+      "keyring": "O cofre de chaves do sistema não respondeu.",
+      "transcription": "A transcrição falhou. O áudio continua salvo; tente de novo.",
+      "cancelled": "Transcrição cancelada.",
+      "busy": "Já há uma transcrição ou geração de notas em andamento.",
+      "unknown_template": "Template desconhecido.",
+      "notes": "A geração de notas falhou. Tente de novo.",
+      "generic": "Algo deu errado. Veja o log."
+    }
   }
 }
