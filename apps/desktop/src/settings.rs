@@ -2110,6 +2110,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn earshot_store_still_loads() {
+        // The Earshot selector is gone (the dictation VAD is Silero v4, ADR-0009),
+        // but a store that picked it must keep loading.
+        let raw = serde_json::json!({
+            "settings_schema_version": 2,
+            "selected_model": "",
+            "onboarding_completed": true,
+            "whats_new_last_seen_version": "",
+            "overlay_style": "live",
+            "vad_backend": "earshot"
+        });
+        let settings: AppSettings =
+            serde_json::from_value(raw).expect("an earshot store must parse strictly");
+        assert_eq!(settings.vad_backend, VadBackend::Earshot);
+    }
+
     mod key_vault {
         use super::*;
         use fala_secrets::{MemoryStore, SecretError};

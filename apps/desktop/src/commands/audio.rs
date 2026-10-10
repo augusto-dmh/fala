@@ -1,5 +1,5 @@
 use crate::audio_feedback;
-use crate::audio_toolkit::audio::{list_input_devices, list_output_devices, AudioRecorder};
+use crate::audio_toolkit::audio::{list_input_devices, list_output_devices};
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
 use crate::settings::{get_settings, write_settings};
 use log::warn;
@@ -352,7 +352,7 @@ pub async fn get_microphone_channels(device_name: String) -> Result<u16, String>
         };
 
         match device {
-            Some(device) => AudioRecorder::preferred_input_channel_count(&device)
+            Some(device) => crate::dictation_capture::input_channel_count(&device)
                 .map_err(|e| format!("Failed to get microphone config: {e}")),
             None => Ok(1),
         }

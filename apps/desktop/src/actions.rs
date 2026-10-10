@@ -1,7 +1,8 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
-use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error};
+use crate::dictation_capture::VadPolicy;
 use crate::llm_auto::{self, AutoFormatted};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
