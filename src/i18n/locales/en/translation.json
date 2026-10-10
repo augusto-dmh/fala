@@ -523,7 +523,17 @@
       "originalCopied": "Original text copied",
       "editedCopied": "Edited text copied",
       "editToggleError": "Couldn't switch the text",
-      "inApp": "in {{app}}"
+      "inApp": "in {{app}}",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "searchPlaceholder": "Search dictations",
+      "clearSearch": "Clear search",
+      "searchNoResults": "No dictations found.",
+      "searchError": "Could not search the history.",
+      "discarded": "This dictation was discarded.",
+      "recover": "Recover",
+      "recovered": "Dictation recovered and copied",
+      "recoverError": "Could not recover the dictation."
     },
     "debug": {
       "title": "Debug",

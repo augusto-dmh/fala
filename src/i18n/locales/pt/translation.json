@@ -523,7 +523,17 @@
       "originalCopied": "Texto original copiado",
       "editedCopied": "Texto editado copiado",
       "editToggleError": "Não foi possível trocar o texto",
-      "inApp": "em {{app}}"
+      "inApp": "em {{app}}",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "searchPlaceholder": "Buscar nos ditados",
+      "clearSearch": "Limpar busca",
+      "searchNoResults": "Nenhum ditado encontrado.",
+      "searchError": "Não foi possível buscar no histórico.",
+      "discarded": "Este ditado foi descartado.",
+      "recover": "Recuperar",
+      "recovered": "Ditado recuperado e copiado",
+      "recoverError": "Não foi possível recuperar o ditado."
     },
     "debug": {
       "title": "Depuração",
