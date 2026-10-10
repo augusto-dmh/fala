@@ -90,7 +90,7 @@ fn one_line(text: &str) -> String {
         .join(" ")
 }
 
-fn annotations_block(input: &NotesInput) -> String {
+pub(crate) fn annotations_block(input: &NotesInput) -> String {
     let lines = input.annotation_lines();
     if lines.is_empty() {
         return String::new();

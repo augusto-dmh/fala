@@ -7,6 +7,7 @@
 //! nada sai numa sessão "só local".
 
 mod claude;
+mod document;
 mod input;
 mod key;
 mod payload;
@@ -17,6 +18,7 @@ pub use claude::{
     Claude, ANTHROPIC_VERSION, DEFAULT_BASE_URL, DEFAULT_MAX_TOKENS, DEFAULT_MODEL,
     DEFAULT_TIMEOUT, KEY_PROVIDER, SYSTEM_PROMPT,
 };
+pub use document::note_document;
 pub use input::{Channel, NotesInput, Segment, Speaker};
 pub use key::{ApiKey, KeySource};
 pub use payload::NotesPayload;
