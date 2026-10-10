@@ -39,7 +39,13 @@ pub(crate) static MIGRATIONS: &[M] = &[
     // The id of the matching dictation in fala.sqlite (fala-storage); null when the
     // transcription failed or the store was unavailable.
     M::up("ALTER TABLE transcription_history ADD COLUMN dictation_id TEXT;"),
+    // The paste of this dictation failed: the text never reached the app.
+    M::up("ALTER TABLE transcription_history ADD COLUMN paste_failed BOOLEAN NOT NULL DEFAULT 0;"),
 ];
+
+/// The columns `map_history_entry` reads, in every query that returns entries.
+const ENTRY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, \
+     post_processed_text, post_process_prompt, post_process_requested, dictation_id, paste_failed";
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
@@ -75,6 +81,10 @@ pub struct HistoryEntry {
     pub dictation_id: Option<String>,
     /// That dictation (raw, final, editor, what it shows, app), when the store can read it.
     pub dictation: Option<HistoryDictation>,
+    /// The paste failed, so the text never reached the app.
+    pub paste_failed: bool,
+    /// The dictation was not delivered and has text to recover (see `is_discarded`).
+    pub discarded: bool,
 }
 
 /// The texts of one dictation, as the pipeline produced them.
@@ -95,6 +105,8 @@ pub struct NewEntry {
     pub texts: EntryTexts,
     /// The app that had focus when the user released the shortcut.
     pub app: AppContext,
+    /// `utils::paste` failed for this dictation.
+    pub paste_failed: bool,
 }
 
 pub struct HistoryManager {
@@ -276,7 +288,16 @@ impl HistoryManager {
             post_process_requested: row.get("post_process_requested")?,
             dictation_id: row.get("dictation_id")?,
             dictation: None,
+            paste_failed: row.get("paste_failed")?,
+            discarded: false,
         })
+    }
+
+    /// Attaches the entry's dictation from the store and classifies it.
+    fn attach_dictation(entry: &mut HistoryEntry, store: Option<&Store>) {
+        entry.dictation = history_dictations::view(store, entry.dictation_id.as_deref());
+        entry.discarded =
+            history_dictations::is_discarded(entry.paste_failed, entry.dictation.as_ref());
     }
 
     pub fn recordings_dir(&self) -> &std::path::Path {
@@ -322,6 +343,7 @@ impl HistoryManager {
             post_process_requested,
             texts,
             app,
+            paste_failed,
         } = entry;
         let title = Self::format_timestamp_title(timestamp);
         let dictation_id = store.and_then(|store| {
@@ -345,8 +367,9 @@ impl HistoryManager {
                 post_processed_text,
                 post_process_prompt,
                 post_process_requested,
-                dictation_id
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                dictation_id,
+                paste_failed
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 &file_name,
                 timestamp,
@@ -357,11 +380,11 @@ impl HistoryManager {
                 &texts.post_process_prompt,
                 post_process_requested,
                 &dictation_id,
+                paste_failed,
             ],
         )?;
 
-        let dictation = history_dictations::view(store, dictation_id.as_deref());
-        Ok(HistoryEntry {
+        let mut entry = HistoryEntry {
             id: conn.last_insert_rowid(),
             file_name,
             timestamp,
@@ -372,8 +395,12 @@ impl HistoryManager {
             post_process_prompt: texts.post_process_prompt,
             post_process_requested,
             dictation_id,
-            dictation,
-        })
+            dictation: None,
+            paste_failed,
+            discarded: false,
+        };
+        Self::attach_dictation(&mut entry, store);
+        Ok(entry)
     }
 
     /// Update an existing history entry with new transcription results (used by retry).
@@ -459,7 +486,7 @@ impl HistoryManager {
 
         let mut entry = Self::get_entry_by_id_with(conn, id)?
             .ok_or_else(|| anyhow!("History entry {} not found", id))?;
-        entry.dictation = history_dictations::view(store, entry.dictation_id.as_deref());
+        Self::attach_dictation(&mut entry, store);
         Ok(entry)
     }
 
@@ -659,13 +686,13 @@ impl HistoryManager {
         let mut entries: Vec<HistoryEntry> = match (cursor, limit) {
             (Some(cursor_id), Some(lim)) => {
                 let fetch_count = (lim + 1) as i64;
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, dictation_id
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT {ENTRY_COLUMNS}
                      FROM transcription_history
                      WHERE id < ?1
                      ORDER BY id DESC
-                     LIMIT ?2",
-                )?;
+                     LIMIT ?2"
+                ))?;
                 let result = stmt
                     .query_map(params![cursor_id, fetch_count], Self::map_history_entry)?
                     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -673,23 +700,23 @@ impl HistoryManager {
             }
             (None, Some(lim)) => {
                 let fetch_count = (lim + 1) as i64;
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, dictation_id
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT {ENTRY_COLUMNS}
                      FROM transcription_history
                      ORDER BY id DESC
-                     LIMIT ?1",
-                )?;
+                     LIMIT ?1"
+                ))?;
                 let result = stmt
                     .query_map(params![fetch_count], Self::map_history_entry)?
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 result
             }
             (_, None) => {
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, dictation_id
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT {ENTRY_COLUMNS}
                      FROM transcription_history
-                     ORDER BY id DESC",
-                )?;
+                     ORDER BY id DESC"
+                ))?;
                 let result = stmt
                     .query_map([], Self::map_history_entry)?
                     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -702,7 +729,7 @@ impl HistoryManager {
             entries.pop();
         }
         for entry in &mut entries {
-            entry.dictation = history_dictations::view(store, entry.dictation_id.as_deref());
+            Self::attach_dictation(entry, store);
         }
 
         Ok(PaginatedHistory { entries, has_more })
@@ -710,22 +737,12 @@ impl HistoryManager {
 
     #[cfg(test)]
     fn get_latest_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested,
-                dictation_id
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ENTRY_COLUMNS}
              FROM transcription_history
              ORDER BY timestamp DESC
-             LIMIT 1",
-        )?;
+             LIMIT 1"
+        ))?;
 
         let entry = stmt.query_row([], Self::map_history_entry).optional()?;
         Ok(entry)
@@ -738,23 +755,13 @@ impl HistoryManager {
     }
 
     fn get_latest_completed_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested,
-                dictation_id
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ENTRY_COLUMNS}
              FROM transcription_history
              WHERE transcription_text != ''
              ORDER BY timestamp DESC
-             LIMIT 1",
-        )?;
+             LIMIT 1"
+        ))?;
 
         let entry = stmt.query_row([], Self::map_history_entry).optional()?;
         Ok(entry)
@@ -797,21 +804,11 @@ impl HistoryManager {
     }
 
     fn get_entry_by_id_with(conn: &Connection, id: i64) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested,
-                dictation_id
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ENTRY_COLUMNS}
              FROM transcription_history
-             WHERE id = ?1",
-        )?;
+             WHERE id = ?1"
+        ))?;
 
         let entry = stmt.query_row([id], Self::map_history_entry).optional()?;
 
@@ -912,6 +909,56 @@ impl HistoryManager {
         }
         .map_err(|e| anyhow!("{}", e))?;
         entry.dictation = Some(HistoryDictation::from(&record));
+        entry.discarded =
+            history_dictations::is_discarded(entry.paste_failed, entry.dictation.as_ref());
+        Ok(entry)
+    }
+
+    /// "Recuperar": the discarded entry becomes a normal one, showing the text it has.
+    pub fn recover(&self, id: i64) -> Result<HistoryEntry> {
+        let conn = self.get_connection()?;
+        let entry = {
+            let store = self.lock_store();
+            Self::recover_with(&conn, store.as_deref(), id)?
+        };
+        if let Err(e) = (HistoryUpdatePayload::Updated {
+            entry: entry.clone(),
+        })
+        .emit(&self.app_handle)
+        {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+        Ok(entry)
+    }
+
+    /// Clears the paste failure and, when the pipeline emptied the text, shows the raw one.
+    /// An entry that is not discarded is an error and nothing changes.
+    pub(crate) fn recover_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        id: i64,
+    ) -> Result<HistoryEntry> {
+        let mut entry = Self::get_entry_by_id_with(conn, id)?
+            .ok_or_else(|| anyhow!("History entry {} not found", id))?;
+        Self::attach_dictation(&mut entry, store);
+        if !entry.discarded {
+            return Err(anyhow!("History entry {} is not discarded", id));
+        }
+        if let (Some(store), Some(dictation_id), Some(dictation)) = (
+            store,
+            entry.dictation_id.as_deref(),
+            entry.dictation.as_ref(),
+        ) {
+            if history_dictations::shows_emptied_text(dictation) {
+                store.undo(dictation_id).map_err(|e| anyhow!("{}", e))?;
+            }
+        }
+        conn.execute(
+            "UPDATE transcription_history SET paste_failed = 0 WHERE id = ?1",
+            params![id],
+        )?;
+        entry.paste_failed = false;
+        Self::attach_dictation(&mut entry, store);
         Ok(entry)
     }
 
@@ -944,7 +991,8 @@ mod tests {
                 post_processed_text TEXT,
                 post_process_prompt TEXT,
                 post_process_requested BOOLEAN NOT NULL DEFAULT 0,
-                dictation_id TEXT
+                dictation_id TEXT,
+                paste_failed BOOLEAN NOT NULL DEFAULT 0
             );",
         )
         .expect("create transcription_history table");
@@ -989,9 +1037,9 @@ mod tests {
             .unwrap();
         assert_eq!(version, 4);
 
-        Migrations::new(MIGRATIONS.to_vec())
+        Migrations::new(MIGRATIONS[..5].to_vec())
             .to_latest(&mut conn)
-            .expect("migrate to latest");
+            .expect("migrate to version 5");
 
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -1013,6 +1061,37 @@ mod tests {
             )
             .unwrap();
         assert_eq!(link, None);
+    }
+
+    #[test]
+    fn migration_six_adds_paste_failed() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        Migrations::new(MIGRATIONS[..5].to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to version 5");
+        insert_entry(&conn, 100, "antes", None);
+
+        Migrations::new(MIGRATIONS.to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to latest");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 6);
+        let (notnull, default): (i64, String) = conn
+            .query_row(
+                "SELECT \"notnull\", dflt_value FROM pragma_table_info('transcription_history') WHERE name = 'paste_failed'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("paste_failed column exists");
+        assert_eq!((notnull, default.as_str()), (1, "0"));
+        let entry = HistoryManager::get_latest_entry_with_conn(&conn)
+            .unwrap()
+            .expect("the old row survives");
+        assert_eq!(entry.transcription_text, "antes");
+        assert!(!entry.paste_failed);
     }
 
     #[test]

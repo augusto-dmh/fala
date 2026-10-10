@@ -63,6 +63,21 @@ impl From<&DictationRecord> for HistoryDictation {
     }
 }
 
+/// O item mostra texto vazio, mas o bruto tem texto: o pipeline esvaziou o ditado.
+pub(crate) fn shows_emptied_text(dictation: &HistoryDictation) -> bool {
+    let shown = match dictation.showing {
+        HistoryShowing::Final => &dictation.final_text,
+        HistoryShowing::Raw => &dictation.raw_text,
+    };
+    shown.trim().is_empty() && !dictation.raw_text.trim().is_empty()
+}
+
+/// Um ditado "descartado" não chegou ao app e tem texto para recuperar: a cola falhou, ou o
+/// item mostra texto vazio com bruto. Sem texto do ASR a linha segue "a transcrição falhou".
+pub(crate) fn is_discarded(paste_failed: bool, dictation: Option<&HistoryDictation>) -> bool {
+    paste_failed || dictation.is_some_and(shows_emptied_text)
+}
+
 /// Abre `fala.sqlite`; numa falha registra o erro e devolve `None`, e o histórico segue sem vínculo.
 pub(crate) fn open_store(db: &Path, notes_dir: &Path) -> Option<Store> {
     match Store::open(db, notes_dir) {
@@ -323,6 +338,7 @@ mod tests {
             app: AppContext {
                 app_name: app.map(str::to_string),
             },
+            paste_failed: false,
         }
     }
 
@@ -764,5 +780,126 @@ mod tests {
                 app_name: Some("notepad".to_string()),
             })
         );
+    }
+
+    /// O ditado "hum" que as regras esvaziaram: bruto com texto, colado vazio.
+    fn emptied_entry(file: &str) -> NewEntry {
+        entry(file, "hum", "", false, None, None)
+    }
+
+    fn paste_failed_entry(file: &str) -> NewEntry {
+        NewEntry {
+            paste_failed: true,
+            ..llm_entry(file)
+        }
+    }
+
+    #[test]
+    fn save_records_paste_failure() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+
+        let failed = save(&conn, Some(&store), paste_failed_entry("fala-1.wav"), 1);
+        let delivered = save(&conn, Some(&store), llm_entry("fala-2.wav"), 2);
+
+        let stored = |id: i64| -> bool {
+            conn.query_row(
+                "SELECT paste_failed FROM transcription_history WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert!(stored(failed.id));
+        assert!(failed.paste_failed && failed.discarded);
+        assert!(!stored(delivered.id));
+        assert!(!delivered.paste_failed && !delivered.discarded);
+    }
+
+    #[test]
+    fn discarded_classification() {
+        let d = |raw: &str, final_text: &str, showing| HistoryDictation {
+            raw_text: raw.to_string(),
+            final_text: final_text.to_string(),
+            editor: HistoryEditor::Rules,
+            showing,
+            app_name: None,
+        };
+        let final_ = HistoryShowing::Final;
+        let cases = [
+            // (paste_failed, dictation, discarded)
+            (true, Some(d("oi", "Oi.", final_)), true),
+            (true, None, true),
+            (false, Some(d("hum", "", final_)), true),
+            (false, Some(d("hum", "  ", final_)), true),
+            (false, Some(d("hum", "", HistoryShowing::Raw)), false),
+            (false, Some(d("oi", "Oi.", final_)), false),
+            (false, Some(d("", "", final_)), false),
+            (false, None, false),
+        ];
+        for (paste_failed, dictation, want) in cases {
+            assert_eq!(
+                is_discarded(paste_failed, dictation.as_ref()),
+                want,
+                "{paste_failed} {dictation:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn recover_restores_emptied_and_paste_failed_entries() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let emptied = save(&conn, Some(&store), emptied_entry("fala-1.wav"), 1);
+        assert!(emptied.discarded);
+
+        let recovered = HistoryManager::recover_with(&conn, Some(&store), emptied.id).unwrap();
+        assert!(!recovered.discarded);
+        let dictation = recovered.dictation.unwrap();
+        assert_eq!(dictation.showing, HistoryShowing::Raw);
+        assert_eq!(dictation.raw_text, "hum");
+        let id = link(&conn, emptied.id).unwrap();
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Raw);
+
+        let failed = save(&conn, Some(&store), paste_failed_entry("fala-2.wav"), 2);
+        let recovered = HistoryManager::recover_with(&conn, Some(&store), failed.id).unwrap();
+        assert!(!recovered.paste_failed && !recovered.discarded);
+        assert_eq!(
+            recovered.dictation.unwrap().showing,
+            HistoryShowing::Final,
+            "a paste failure keeps the text it had"
+        );
+        let page = HistoryManager::page_with(&conn, Some(&store), None, Some(10)).unwrap();
+        assert!(page.entries.iter().all(|e| !e.discarded));
+
+        // Sem store, a falha de cola ainda se recupera pelo history.db.
+        let unlinked = save(&conn, None, paste_failed_entry("fala-3.wav"), 3);
+        let recovered = HistoryManager::recover_with(&conn, None, unlinked.id).unwrap();
+        assert!(!recovered.paste_failed && !recovered.discarded);
+    }
+
+    #[test]
+    fn recover_refuses_entries_that_are_not_discarded() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let delivered = save(&conn, Some(&store), llm_entry("fala-1.wav"), 1);
+        let failed = save(
+            &conn,
+            Some(&store),
+            entry("fala-2.wav", "", "", false, None, None),
+            2,
+        );
+
+        for id in [delivered.id, failed.id, 999] {
+            assert!(
+                HistoryManager::recover_with(&conn, Some(&store), id).is_err(),
+                "{id}"
+            );
+        }
+        let id = link(&conn, delivered.id).unwrap();
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Final);
     }
 }
