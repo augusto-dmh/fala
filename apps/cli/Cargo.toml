@@ -24,6 +24,8 @@ fala-secrets.workspace = true
 fala-mcp.workspace = true
 fala-storage.workspace = true
 fala-media.workspace = true
+# `bench format`: lê o corpus JSONL.
+serde_json.workspace = true
 # Código de spike da fase 0 (`bench`): os dois runtimes de ASR que o desktop já embarca.
 # Migra para `crates/asr` na fase 1.
 transcribe-rs = { version = "0.3.8", features = ["onnx"] }
@@ -40,7 +42,6 @@ env_logger = "0.10"
 [dev-dependencies]
 # `tests/mcp.rs`: fala JSON-RPC com o binário e quebra o banco no meio de uma sessão.
 rusqlite.workspace = true
-serde_json.workspace = true
 
 [features]
 # GPU só por feature de build; o default é CPU.
