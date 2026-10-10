@@ -1010,4 +1010,92 @@ mod tests {
         let id = link(&conn, delivered.id).unwrap();
         assert_eq!(store.get(&id).unwrap().showing, Showing::Final);
     }
+
+    #[test]
+    fn search_finds_entries_without_accents_newest_first() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let old = save(
+            &conn,
+            Some(&store),
+            entry(
+                "fala-1.wav",
+                "reunião amanhã",
+                "Reunião amanhã.",
+                false,
+                None,
+                None,
+            ),
+            1_790_000_100,
+        );
+        save(
+            &conn,
+            Some(&store),
+            entry(
+                "fala-2.wav",
+                "outra coisa",
+                "Outra coisa.",
+                false,
+                None,
+                None,
+            ),
+            1_790_000_200,
+        );
+        let new = save(
+            &conn,
+            Some(&store),
+            entry(
+                "fala-3.wav",
+                "reuniao de novo",
+                "Reuniao de novo.",
+                false,
+                None,
+                Some("slack"),
+            ),
+            1_790_000_300,
+        );
+
+        let found = HistoryManager::search_with(&conn, Some(&store), "REUNIAO").unwrap();
+
+        let ids: Vec<i64> = found.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![new.id, old.id]);
+        assert_eq!(
+            found[0]
+                .dictation
+                .as_ref()
+                .and_then(|d| d.app_name.as_deref()),
+            Some("slack")
+        );
+        assert!(
+            HistoryManager::search_with(&conn, Some(&store), "inexistente")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn search_skips_dictations_without_rows_and_needs_the_store() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let saved = save(&conn, Some(&store), llm_entry("fala-1.wav"), 1);
+        let orphan = dictation_for(
+            "acao da cli",
+            "Ação da CLI.",
+            false,
+            Language::PtBr,
+            AppContext::default(),
+        )
+        .unwrap();
+        add_dictation(&store, &orphan, 2, false).unwrap();
+
+        let found = HistoryManager::search_with(&conn, Some(&store), "acao").unwrap();
+
+        assert_eq!(
+            found.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![saved.id]
+        );
+        assert!(HistoryManager::search_with(&conn, None, "acao").is_err());
+    }
 }
