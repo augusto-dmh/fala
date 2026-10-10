@@ -465,3 +465,95 @@ fn delete_tolerates_missing_mirror() {
         Err(StorageError::NotFound(_))
     ));
 }
+
+#[test]
+fn apply_late_edit_sets_final_editor_and_showing() {
+    let env = env("apply_late_edit_sets_final_editor_and_showing");
+    let store = env.open();
+    let before = store
+        .add_sensitive(
+            &dictation(
+                "a charge bee cobra",
+                "A ChargeBee cobra",
+                Editor::Rules,
+                Some("notepad"),
+            ),
+            at(16, 0, 0),
+        )
+        .unwrap();
+
+    let applied = store.apply_late_edit(&before.id, "texto do llm").unwrap();
+
+    assert_eq!(applied.dictation.final_text, "texto do llm");
+    assert_eq!(applied.dictation.editor, Editor::Llm);
+    assert_eq!(applied.showing, Showing::Raw);
+    assert_eq!(applied.id, before.id);
+    assert_eq!(applied.dictation.raw, before.dictation.raw);
+    assert_eq!(applied.dictation.app, before.dictation.app);
+    assert_eq!(applied.created_at, before.created_at);
+    assert!(applied.sensitive);
+    assert_eq!(store.get(&before.id).unwrap(), applied);
+}
+
+#[test]
+fn apply_late_edit_rewrites_mirror_and_survives_reindex() {
+    let env = env("apply_late_edit_rewrites_mirror_and_survives_reindex");
+    let mut store = env.open();
+    let before = store
+        .add(
+            &dictation("bruto do asr", "Bruto do ASR.", Editor::Rules, None),
+            at(16, 5, 0),
+        )
+        .unwrap();
+
+    let applied = store.apply_late_edit(&before.id, "Texto do LLM.").unwrap();
+
+    let md = fs::read_to_string(md_of(&env, &before.id)).unwrap();
+    assert!(md.contains("\nedited_by: \"llm\"\n"), "{md}");
+    assert!(md.contains("\nshowing: \"raw\"\n"), "{md}");
+    assert!(md.ends_with("---\nTexto do LLM.\n"), "{md}");
+
+    store.reindex().unwrap();
+    assert_eq!(store.get(&before.id).unwrap(), applied);
+}
+
+#[test]
+fn apply_late_edit_rejects_unknown_id_and_blank_text() {
+    let env = env("apply_late_edit_rejects_unknown_id_and_blank_text");
+    let store = env.open();
+    let r = store
+        .add(
+            &dictation("bruto", "Bruto.", Editor::Rules, None),
+            at(16, 10, 0),
+        )
+        .unwrap();
+    let path = md_of(&env, &r.id);
+    let md_before = fs::read_to_string(&path).unwrap();
+
+    assert!(matches!(
+        store.apply_late_edit("nao-existe", "texto do llm"),
+        Err(StorageError::NotFound(id)) if id == "nao-existe"
+    ));
+    assert_eq!(store.get(&r.id).unwrap(), r);
+    assert_eq!(fs::read_to_string(&path).unwrap(), md_before);
+    assert_eq!(common::files_under(&env.ditados()).len(), 1);
+
+    for blank in ["", "   "] {
+        assert!(
+            matches!(store.apply_late_edit(&r.id, blank), Err(StorageError::EmptyEdit(id)) if id == r.id),
+            "{blank:?}"
+        );
+        assert_eq!(store.get(&r.id).unwrap(), r, "{blank:?}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), md_before, "{blank:?}");
+    }
+
+    Connection::open(&env.db)
+        .unwrap()
+        .execute_batch("DROP TABLE dictations;")
+        .unwrap();
+    assert!(matches!(
+        store.apply_late_edit(&r.id, "texto do llm"),
+        Err(StorageError::Db(_))
+    ));
+    assert_eq!(fs::read_to_string(&path).unwrap(), md_before);
+}

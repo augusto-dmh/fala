@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 7,
+  "next_id": 9,
   "lessons": [
     {
       "id": "L-001",
@@ -114,6 +114,42 @@
       ],
       "created": "2026-10-09T19:33:29Z",
       "last_seen": "2026-10-09T19:33:29Z"
+    },
+    {
+      "id": "L-007",
+      "key": "ac_gap::a criterion about how a record is written must list every code path that writes that record save retry backfill in a coverage row not only the path the feature touches",
+      "text": "A criterion about how a record is written must list every code path that writes that record (save, retry, backfill) in a Coverage row, not only the path the feature touches",
+      "signal": "ac_gap",
+      "scope": "checks",
+      "status": "candidate",
+      "features": [
+        "llm-late-edit"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "llm-late-edit verification round 1 finding 1 (AC 1, history.rs update_transcription_with) (checks)"
+      ],
+      "created": "2026-10-09T19:55:36Z",
+      "last_seen": "2026-10-09T19:55:36Z"
+    },
+    {
+      "id": "L-008",
+      "key": "spec_precision_gap::when the surface names an error variant the proof must match that variant not only is err",
+      "text": "When the Surface names an error variant, the proof must match that variant, not only is_err()",
+      "signal": "spec_precision_gap",
+      "scope": "proofs",
+      "status": "candidate",
+      "features": [
+        "llm-late-edit"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "llm-late-edit verification round 1 finding 2 (C5) (proofs)"
+      ],
+      "created": "2026-10-09T19:55:36Z",
+      "last_seen": "2026-10-09T19:55:36Z"
     }
   ]
 }

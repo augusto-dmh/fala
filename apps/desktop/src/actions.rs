@@ -15,6 +15,7 @@ use crate::utils::{
 };
 use crate::TranscriptionCoordinator;
 use fala_core::AppContext;
+use fala_postproc::LateEdit;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
@@ -418,6 +419,9 @@ pub(crate) struct ProcessedTranscription {
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     pub llm_produced: bool,
+    /// The LLM answer that missed the 2 s and may still arrive; the stop path applies it to the
+    /// saved entry, every other caller drops it.
+    pub late_edit: Option<LateEdit>,
 }
 
 /// How a transcription becomes the pasted text.
@@ -441,6 +445,7 @@ pub(crate) fn auto_processed(transcription: &str, auto: AutoFormatted) -> Proces
         final_text: auto.final_text,
         post_process_prompt: None,
         llm_produced: auto.llm_produced,
+        late_edit: None,
     }
 }
 
@@ -497,11 +502,14 @@ pub(crate) async fn process_transcription_output(
         crate::managers::history_dictations::language_from_setting(&settings.selected_language);
     let text = final_text.clone();
     match tauri::async_runtime::spawn_blocking(move || {
-        llm_auto::format(&postprocessor, &text, language, app_context)
+        llm_auto::format_with_late_edit(&postprocessor, &text, language, app_context)
     })
     .await
     {
-        Ok(auto) => auto_processed(transcription, auto),
+        Ok((auto, late_edit)) => ProcessedTranscription {
+            late_edit,
+            ..auto_processed(transcription, auto)
+        },
         Err(e) => {
             error!("Post-processing task failed: {}", e);
             auto_processed(
@@ -542,6 +550,7 @@ async fn legacy_post_process(
         final_text,
         post_processed_text,
         post_process_prompt,
+        late_edit: None,
     }
 }
 
@@ -749,6 +758,8 @@ impl ShortcutAction for TranscribeAction {
         // The app that receives the paste, asked once on release: the LLM gets its name and
         // the history records it.
         let app_context = fala_inject::foreground_app();
+        // A dictation into an app where the LLM stays off is saved as sensitive.
+        let sensitive = llm_auto::is_disabled_app(&get_settings(app), &app_context);
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
@@ -885,12 +896,15 @@ impl ShortcutAction for TranscribeAction {
                             let post_process_prompt = processed.post_process_prompt.clone();
                             let pasted_text = processed.final_text.clone();
                             let llm_produced = processed.llm_produced;
+                            // An LLM answer that missed the 2 s is applied to the saved
+                            // entry when it arrives; without a saved entry it is dropped.
+                            let late_edit = processed.late_edit;
                             // Set by the paste below; the history marks the entry discarded.
                             let paste_failed = Arc::new(AtomicBool::new(false));
                             let paste_failed_for_save = Arc::clone(&paste_failed);
                             let save_history = move || {
                                 if wav_saved {
-                                    if let Err(err) = hm.save_entry(NewEntry {
+                                    match hm.save_entry(NewEntry {
                                         file_name,
                                         post_process_requested: post_process,
                                         texts: EntryTexts {
@@ -901,9 +915,21 @@ impl ShortcutAction for TranscribeAction {
                                             llm_produced,
                                         },
                                         app: app_context,
+                                        sensitive,
                                         paste_failed: paste_failed_for_save.load(Ordering::Acquire),
                                     }) {
-                                        error!("Failed to save history entry: {}", err);
+                                        Ok(saved) => {
+                                            if let Some(late_edit) = late_edit {
+                                                tauri::async_runtime::spawn_blocking(move || {
+                                                    llm_auto::finish_late_edit(
+                                                        late_edit,
+                                                        |text| hm.apply_late_edit(saved.id, text),
+                                                        |entry| hm.announce_updated(entry),
+                                                    );
+                                                });
+                                            }
+                                        }
+                                        Err(err) => error!("Failed to save history entry: {}", err),
                                     }
                                 }
                             };
@@ -977,6 +1003,7 @@ impl ShortcutAction for TranscribeAction {
                                         llm_produced: false,
                                     },
                                     app: Default::default(),
+                                    sensitive: false,
                                     paste_failed: false,
                                 }) {
                                     error!("Failed to save failed history entry: {}", save_err);

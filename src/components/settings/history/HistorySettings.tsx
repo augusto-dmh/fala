@@ -421,7 +421,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
               title={
                 action === "undo"
                   ? t("settings.history.undoAiEdit")
-                  : t("settings.history.redoAiEdit")
+                  : t("settings.history.applyAiEdit")
               }
             >
               {action === "undo" ? (
