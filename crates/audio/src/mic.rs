@@ -2,7 +2,7 @@
 //!
 //! Sem `cfg(target_os)`: o `cpal` escolhe o host (ALSA/PipeWire no Linux, WASAPI no Windows).
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -21,6 +21,7 @@ pub struct Mic {
     rate: u32,
     name: String,
     dropped: Arc<AtomicU64>,
+    failed: Arc<AtomicBool>,
 }
 
 impl Mic {
@@ -31,10 +32,6 @@ impl Mic {
 
     /// Abre a entrada cujo nome contém `needle`, ou a entrada padrão.
     pub fn open(needle: Option<&str>) -> Result<Self, AudioError> {
-        // Nunca abrir o mic enquanto as variáveis do monitor do PipeWire estão no ambiente.
-        let _guard = crate::meeting::ENV_OPEN
-            .lock()
-            .map_err(|_| AudioError::Device("trava do ambiente envenenada".to_owned()))?;
         let host = cpal::default_host();
         let device = match needle {
             Some(needle) => find(&host, needle)?,
@@ -42,6 +39,17 @@ impl Mic {
                 .default_input_device()
                 .ok_or_else(|| AudioError::Device("não há entrada padrão".to_owned()))?,
         };
+        Self::open_device(device, None)
+    }
+
+    /// Abre um dispositivo já resolvido. Com `channel` dentro do alcance, entrega só esse canal;
+    /// fora dele ou sem `channel`, a média dos canais.
+    pub fn open_device(device: cpal::Device, channel: Option<usize>) -> Result<Self, AudioError> {
+        // Nunca abrir o mic enquanto as variáveis do monitor do PipeWire estão no ambiente.
+        let _guard = crate::meeting::ENV_OPEN
+            .lock()
+            .map_err(|_| AudioError::Device("trava do ambiente envenenada".to_owned()))?;
+        let started = std::time::Instant::now();
         let name = device.name().unwrap_or_default();
 
         let default = device
@@ -67,22 +75,37 @@ impl Mic {
                     ))
                 })?
         };
+        let configured = started.elapsed();
         let rate = config.sample_rate.0;
         let channels = usize::from(config.channels).max(1);
+        let channel = channel.filter(|c| *c < channels);
 
         let (producer, consumer) = RingBuffer::new(rate as usize * RING_SECONDS);
         let dropped = Arc::new(AtomicU64::new(0));
-        let stream = build(&device, &config, producer, channels, Arc::clone(&dropped))?;
+        let failed = Arc::new(AtomicBool::new(false));
+        let stream = build(
+            &device,
+            &config,
+            producer,
+            (channels, channel),
+            Arc::clone(&dropped),
+            Arc::clone(&failed),
+        )?;
         stream
             .play()
             .map_err(|e| AudioError::Stream(e.to_string()))?;
         log::info!("microfone: {name}, {rate} Hz, {channels} canal(is)");
+        log::debug!(
+            "microfone: config {configured:?}, stream {:?}",
+            started.elapsed() - configured
+        );
         Ok(Self {
             _stream: stream,
             consumer,
             rate,
             name,
             dropped,
+            failed,
         })
     }
 
@@ -97,6 +120,11 @@ impl Mic {
     /// Amostras descartadas porque o ring encheu.
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
+    }
+
+    /// O `cpal` reportou erro no stream (dispositivo removido, por exemplo): reabra.
+    pub fn failed(&self) -> bool {
+        self.failed.load(Ordering::Relaxed)
     }
 
     /// Move para `out` tudo o que o callback já entregou.
@@ -129,12 +157,21 @@ fn find(host: &cpal::Host, needle: &str) -> Result<cpal::Device, AudioError> {
         .ok_or_else(|| AudioError::Device("dispositivo sumiu da lista".to_owned()))
 }
 
+/// Um quadro intercalado reduzido a mono: o canal escolhido ou a média.
+fn mono(frame: &[f32], channel: Option<usize>) -> f32 {
+    match channel.and_then(|c| frame.get(c)) {
+        Some(x) => *x,
+        None => frame.iter().sum::<f32>() / frame.len().max(1) as f32,
+    }
+}
+
 fn build(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut producer: Producer<f32>,
-    channels: usize,
+    (channels, channel): (usize, Option<usize>),
     dropped: Arc<AtomicU64>,
+    failed: Arc<AtomicBool>,
 ) -> Result<Stream, AudioError> {
     device
         .build_input_stream(
@@ -142,8 +179,7 @@ fn build(
             move |data: &[f32], _| {
                 let mut lost = 0u64;
                 for frame in data.chunks_exact(channels) {
-                    let mono = frame.iter().sum::<f32>() / channels as f32;
-                    if producer.push(mono).is_err() {
+                    if producer.push(mono(frame, channel)).is_err() {
                         lost += 1;
                     }
                 }
@@ -151,8 +187,25 @@ fn build(
                     dropped.fetch_add(lost, Ordering::Relaxed);
                 }
             },
-            |e| log::warn!("stream do microfone: {e}"),
+            move |e| {
+                log::warn!("stream do microfone: {e}");
+                failed.store(true, Ordering::Relaxed);
+            },
             None,
         )
         .map_err(|e| AudioError::Stream(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mono;
+
+    #[test]
+    fn mono_picks_channel_or_averages() {
+        let frame = [0.1, 0.5, 0.9];
+        assert_eq!(mono(&frame, Some(1)), 0.5);
+        assert!((mono(&frame, Some(3)) - 0.5).abs() < 1e-6);
+        assert!((mono(&frame, None) - 0.5).abs() < 1e-6);
+        assert_eq!(mono(&[0.2], Some(0)), 0.2);
+    }
 }
