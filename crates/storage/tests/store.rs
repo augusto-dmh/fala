@@ -193,7 +193,7 @@ fn open_sets_wal_timeout_and_version() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
 
     // Um escritor segurando o lock por 300 ms não faz o `add` falhar: ele espera.
     let db = env.db.clone();
@@ -488,7 +488,7 @@ fn new_db_has_incremental_auto_vacuum() {
     let env = env("new_db_has_incremental_auto_vacuum");
     drop(env.open());
     assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
-    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 3);
 }
 
 #[test]
@@ -503,7 +503,7 @@ fn schema_1_db_is_vacuumed_once() {
 
     let store = env.open();
     assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
-    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 3);
     assert_eq!(
         store.get(&id).unwrap().dictation.final_text,
         "reunião de orçamento"
@@ -543,7 +543,7 @@ fn busy_vacuum_keeps_version_1() {
     drop(store);
 
     drop(env.open());
-    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 3);
     assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
 }
 

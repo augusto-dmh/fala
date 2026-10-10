@@ -5,11 +5,13 @@
 //! Escrita no SQLite primeiro, espelho depois.
 //!
 //! O banco é `fala.sqlite`, separado do `history.db` do desktop: cada um tem o seu `user_version`.
+//! O schema 2 acrescenta as reuniões (`meetings`, `meeting_segments`), sem mexer nos ditados.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
 //! `Store::metrics_summary`.
 
+mod meetings;
 mod metrics;
 mod mirror;
 mod store;
@@ -20,6 +22,7 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::Dictation;
 use serde::{Deserialize, Serialize};
 
+pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};
 pub use metrics::{DayCount, DictationMetrics, MetricsSummary, Percentiles};
 pub use store::Store;
 
@@ -94,8 +97,12 @@ pub struct ReindexReport {
 /// Erros de `fala-storage`.
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
-    #[error("ditado não encontrado: {0}")]
+    /// Ditado ou reunião que não existe.
+    #[error("não encontrado: {0}")]
     NotFound(String),
+    /// A reunião já começou a gravar; um rascunho grava uma vez só.
+    #[error("a reunião {0} já começou")]
+    MeetingAlreadyStarted(String),
     #[error("o ditado {0} não tem edição para desfazer")]
     NothingToUndo(String),
     #[error("a edição tardia do ditado {0} está em branco")]

@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 chrono.workspace = true
 fala-core.workspace = true
+fala-meeting.workspace = true
 log.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

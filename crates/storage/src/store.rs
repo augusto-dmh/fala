@@ -7,14 +7,16 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::meetings::SCHEMA_2;
 use crate::metrics::{self, DictationMetrics, MetricsSummary};
 use crate::mirror::{self, DITADOS};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
 /// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
 ///
-/// 1: as tabelas de `SCHEMA_1`. 2: as mesmas, com `auto_vacuum = INCREMENTAL`.
-const SCHEMA_VERSION: i64 = 2;
+/// 1: as tabelas de `SCHEMA_1`. 2: as mesmas, com `auto_vacuum = INCREMENTAL`. 3: mais as
+/// tabelas de reunião de `SCHEMA_2`.
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_1: &str = "
 CREATE TABLE dictations (
@@ -50,7 +52,7 @@ const COLUMNS: &str =
 /// O histórico de ditados: `fala.sqlite` mais o espelho em `<notes_dir>/Ditados/`.
 #[derive(Debug)]
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
     notes_dir: PathBuf,
 }
 
@@ -71,19 +73,23 @@ impl Store {
             conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
         }
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
+        conn.pragma_update(None, "foreign_keys", true)?;
         match version {
             0 => conn.execute_batch(&format!(
-                "BEGIN; {SCHEMA_1} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
+                "BEGIN; {SCHEMA_1} {SCHEMA_2} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
             ))?,
             1 => {
                 // `VACUUM` não roda dentro de transação; se cair entre ele e a versão, roda de novo.
-                let migrated = conn.execute_batch(&format!(
-                    "PRAGMA auto_vacuum = INCREMENTAL; VACUUM; PRAGMA user_version = {SCHEMA_VERSION};"
-                ));
-                if let Err(e) = migrated {
-                    log::warn!("fala.sqlite: VACUUM da migração adiado: {e}");
+                // As reuniões só entram depois dele, para a migração do `auto_vacuum` não se perder.
+                let migrated = conn.execute_batch(
+                    "PRAGMA auto_vacuum = INCREMENTAL; VACUUM; PRAGMA user_version = 2;",
+                );
+                match migrated {
+                    Ok(()) => migrate_meetings(&conn)?,
+                    Err(e) => log::warn!("fala.sqlite: VACUUM da migração adiado: {e}"),
                 }
             }
+            2 => migrate_meetings(&conn)?,
             _ => {
                 // Sem página livre, nada de pedir a trava de escrita (o MCP só lê).
                 let free: i64 = conn.pragma_query_value(None, "freelist_count", |r| r.get(0))?;
@@ -332,6 +338,14 @@ impl Store {
 }
 
 /// Devolve todas as páginas livres. O pragma libera uma página por passo, então é lido até o fim.
+/// Versão 2 → 3: as tabelas de reunião, numa transação, com a versão no mesmo lote.
+fn migrate_meetings(conn: &Connection) -> Result<(), StorageError> {
+    conn.execute_batch(&format!(
+        "BEGIN; {SCHEMA_2} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
+    ))?;
+    Ok(())
+}
+
 fn incremental_vacuum(conn: &Connection) -> rusqlite::Result<()> {
     let mut stmt = conn.prepare("PRAGMA incremental_vacuum")?;
     let mut rows = stmt.query([])?;
