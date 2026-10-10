@@ -414,6 +414,7 @@ mod tests {
                     },
                     app: app("notepad"),
                     sensitive: false,
+                    paste_failed: false,
                 },
                 Language::PtBr,
                 1,

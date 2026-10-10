@@ -22,6 +22,7 @@ use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -899,6 +900,9 @@ impl ShortcutAction for TranscribeAction {
                             // An LLM answer that missed the 2 s is applied to the saved
                             // entry when it arrives; without a saved entry it is dropped.
                             let late_edit = processed.late_edit;
+                            // Set by the paste below; the history marks the entry discarded.
+                            let paste_failed = Arc::new(AtomicBool::new(false));
+                            let paste_failed_for_save = Arc::clone(&paste_failed);
                             let save_history = move || {
                                 if wav_saved {
                                     match hm.save_entry(NewEntry {
@@ -913,6 +917,7 @@ impl ShortcutAction for TranscribeAction {
                                         },
                                         app: app_context,
                                         sensitive,
+                                        paste_failed: paste_failed_for_save.load(Ordering::Acquire),
                                     }) {
                                         Ok(saved) => {
                                             if let Some(late_edit) = late_edit {
@@ -952,6 +957,7 @@ impl ShortcutAction for TranscribeAction {
                                                 paste_time.elapsed()
                                             ),
                                             Err(e) => {
+                                                paste_failed.store(true, Ordering::Release);
                                                 error!("Failed to paste transcription: {}", e);
                                                 let _ = ah_clone.emit("paste-error", ());
                                             }
@@ -999,6 +1005,7 @@ impl ShortcutAction for TranscribeAction {
                                     },
                                     app: Default::default(),
                                     sensitive: false,
+                                    paste_failed: false,
                                 }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }

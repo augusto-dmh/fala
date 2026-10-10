@@ -288,6 +288,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 if opens_window {
                     show_main_window(tray.app_handle());
                 }
+                // The pointer reaching the icon refreshes the microphone list before a
+                // right click opens the menu.
+                if matches!(
+                    event,
+                    TrayIconEvent::Enter { .. } | TrayIconEvent::Click { .. }
+                ) {
+                    tray::refresh_microphones(tray.app_handle());
+                }
             });
     }
     #[cfg(not(target_os = "windows"))]
@@ -343,6 +351,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     }
                 }
             }
+            id if id == tray::MICROPHONE_AUTO_ID
+                || id.starts_with(tray::MICROPHONE_ITEM_PREFIX) =>
+            {
+                if let Some(device) = tray::parse_microphone_item(id) {
+                    let app = app.clone();
+                    // Switching the device can restart the cpal stream: off the main thread.
+                    std::thread::spawn(move || {
+                        match commands::audio::apply_selected_microphone(&app, device) {
+                            Ok(()) => log::info!("Microphone switched via tray."),
+                            Err(e) => log::error!("Failed to switch microphone via tray: {}", e),
+                        }
+                        let _ = app.emit(
+                            "settings-changed",
+                            serde_json::json!({ "setting": "selected_microphone" }),
+                        );
+                    });
+                }
+            }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
@@ -370,6 +396,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Initialize tray menu with idle state
     tray::update_tray_menu(app_handle);
+    tray::refresh_microphones(app_handle);
 
     // Apply show_tray_icon setting
     let settings = settings::get_settings(app_handle);
@@ -785,6 +812,8 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::undo_history_entry_edit,
             commands::history::redo_history_entry_edit,
+            commands::history::history_search,
+            commands::history::recover_history_entry,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,

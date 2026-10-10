@@ -1,4 +1,5 @@
-//! Microfone pelo `cpal`: mono f32 na taxa do dispositivo, num ring lock-free.
+//! Microfone pelo `cpal`: mono f32 na taxa do dispositivo, num ring lock-free. O stream abre no
+//! formato nativo do dispositivo (o mix format do WASAPI) e cada amostra vira f32 no callback.
 //!
 //! Sem `cfg(target_os)`: o `cpal` escolhe o host (ALSA/PipeWire no Linux, WASAPI no Windows).
 
@@ -6,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, Stream};
+use cpal::{FromSample, Sample, SampleFormat, SizedSample, Stream};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::AudioError;
@@ -52,29 +53,14 @@ impl Mic {
         let started = std::time::Instant::now();
         let name = device.name().unwrap_or_default();
 
+        // O formato nativo, nunca um f32 forçado: com os efeitos do driver ligados (Realtek
+        // "Voice clarity"), um cliente WASAPI em f32 recebe só zeros sem erro nenhum, enquanto o
+        // mix format traz o sinal (cjpais/Handy#2141).
         let default = device
             .default_input_config()
             .map_err(|e| AudioError::Device(e.to_string()))?;
-        let config = if default.sample_format() == SampleFormat::F32 {
-            default.config()
-        } else {
-            let rate = default.sample_rate();
-            device
-                .supported_input_configs()
-                .map_err(|e| AudioError::Device(e.to_string()))?
-                .find(|r| {
-                    r.sample_format() == SampleFormat::F32
-                        && r.min_sample_rate() <= rate
-                        && r.max_sample_rate() >= rate
-                })
-                .map(|r| r.with_sample_rate(rate).config())
-                .ok_or_else(|| {
-                    AudioError::UnsupportedConfig(format!(
-                        "`{name}` não oferece f32 a {} Hz",
-                        rate.0
-                    ))
-                })?
-        };
+        let format = default.sample_format();
+        let config = default.config();
         let configured = started.elapsed();
         let rate = config.sample_rate.0;
         let channels = usize::from(config.channels).max(1);
@@ -83,18 +69,48 @@ impl Mic {
         let (producer, consumer) = RingBuffer::new(rate as usize * RING_SECONDS);
         let dropped = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicBool::new(false));
-        let stream = build(
-            &device,
-            &config,
-            producer,
-            (channels, channel),
-            Arc::clone(&dropped),
-            Arc::clone(&failed),
-        )?;
+        let dropped_cb = Arc::clone(&dropped);
+        let failed_cb = Arc::clone(&failed);
+        let layout = (channels, channel);
+        let stream = match format {
+            SampleFormat::I8 => {
+                build::<i8>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::I16 => {
+                build::<i16>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::I32 => {
+                build::<i32>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::I64 => {
+                build::<i64>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::U8 => {
+                build::<u8>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::U16 => {
+                build::<u16>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::U32 => {
+                build::<u32>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::U64 => {
+                build::<u64>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::F32 => {
+                build::<f32>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            SampleFormat::F64 => {
+                build::<f64>(&device, &config, producer, layout, dropped_cb, failed_cb)
+            }
+            other => Err(AudioError::UnsupportedConfig(format!(
+                "`{name}` entrega amostras em {other:?}, que o Fala não converte"
+            ))),
+        }?;
         stream
             .play()
             .map_err(|e| AudioError::Stream(e.to_string()))?;
-        log::info!("microfone: {name}, {rate} Hz, {channels} canal(is)");
+        log::info!("microfone: {name}, {rate} Hz, {channels} canal(is), {format:?}");
         log::debug!(
             "microfone: config {configured:?}, stream {:?}",
             started.elapsed() - configured
@@ -157,26 +173,38 @@ fn find(host: &cpal::Host, needle: &str) -> Result<cpal::Device, AudioError> {
         .ok_or_else(|| AudioError::Device("dispositivo sumiu da lista".to_owned()))
 }
 
-/// Um quadro intercalado reduzido a mono: o canal escolhido ou a média.
-fn mono(frame: &[f32], channel: Option<usize>) -> f32 {
+/// Um quadro intercalado reduzido a mono f32 no intervalo [-1, 1]: o canal escolhido ou a
+/// média, cada amostra convertida do formato nativo.
+fn mono<T>(frame: &[T], channel: Option<usize>) -> f32
+where
+    T: Sample,
+    f32: FromSample<T>,
+{
     match channel.and_then(|c| frame.get(c)) {
-        Some(x) => *x,
-        None => frame.iter().sum::<f32>() / frame.len().max(1) as f32,
+        Some(&x) => f32::from_sample(x),
+        None => {
+            let sum: f32 = frame.iter().map(|&s| f32::from_sample(s)).sum();
+            sum / frame.len().max(1) as f32
+        }
     }
 }
 
-fn build(
+fn build<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut producer: Producer<f32>,
     (channels, channel): (usize, Option<usize>),
     dropped: Arc<AtomicU64>,
     failed: Arc<AtomicBool>,
-) -> Result<Stream, AudioError> {
+) -> Result<Stream, AudioError>
+where
+    T: SizedSample,
+    f32: FromSample<T>,
+{
     device
         .build_input_stream(
             config,
-            move |data: &[f32], _| {
+            move |data: &[T], _| {
                 let mut lost = 0u64;
                 for frame in data.chunks_exact(channels) {
                     if producer.push(mono(frame, channel)).is_err() {
@@ -200,12 +228,40 @@ fn build(
 mod tests {
     use super::mono;
 
+    fn close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1e-3,
+            "{actual} longe de {expected}"
+        );
+    }
+
     #[test]
     fn mono_picks_channel_or_averages() {
-        let frame = [0.1, 0.5, 0.9];
+        let frame = [0.1f32, 0.5, 0.9];
         assert_eq!(mono(&frame, Some(1)), 0.5);
         assert!((mono(&frame, Some(3)) - 0.5).abs() < 1e-6);
         assert!((mono(&frame, None) - 0.5).abs() < 1e-6);
-        assert_eq!(mono(&[0.2], Some(0)), 0.2);
+        assert_eq!(mono(&[0.2f32], Some(0)), 0.2);
+    }
+
+    #[test]
+    fn mono_converts_every_native_format_to_f32() {
+        close(mono(&[0.5f32, -0.25], None), 0.125);
+        close(mono(&[i16::MAX, i16::MAX], None), 1.0);
+        close(mono(&[i16::MIN], None), -1.0);
+        close(mono(&[16_384i16, 0], None), 0.25);
+        close(mono(&[i32::MIN, i32::MIN], None), -1.0);
+        close(mono(&[1_073_741_824i32], None), 0.5);
+        close(mono(&[128u8, 128], None), 0.0);
+        close(mono(&[255u8], None), 127.0 / 128.0);
+        close(mono(&[0.5f64, 0.5], None), 0.5);
+        close(mono(&[0i16, 16_384], Some(1)), 0.5);
+    }
+
+    #[test]
+    fn mono_keeps_a_signal_that_is_not_silence() {
+        // O sintoma do bug era um buffer só de zeros; um sinal inteiro precisa sobreviver.
+        let frame = [8_192i16, 8_192];
+        assert!(mono(&frame, None).abs() > 0.2);
     }
 }

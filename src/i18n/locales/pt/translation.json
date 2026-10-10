@@ -8,6 +8,9 @@
     "dictationLanguage": "Idioma do ditado",
     "languagePtBr": "Português (Brasil)",
     "languageEn": "Inglês",
+    "microphone": "Microfone",
+    "microphoneAuto": "Automático",
+    "microphoneAutoWithDevice": "Automático ({{device}})",
     "quit": "Sair",
     "cancel": "Cancelar",
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
