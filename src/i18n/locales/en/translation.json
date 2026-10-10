@@ -8,18 +8,43 @@
     "dictationLanguage": "Dictation language",
     "languagePtBr": "Portuguese (Brazil)",
     "languageEn": "English",
+    "microphone": "Microphone",
+    "microphoneAuto": "Automatic",
+    "microphoneAutoWithDevice": "Automatic ({{device}})",
     "quit": "Quit",
     "cancel": "Cancel",
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
   },
-  "sidebar": {
-    "general": "General",
-    "models": "Models",
-    "advanced": "Advanced",
-    "postProcessing": "Post Process",
-    "history": "History",
-    "debug": "Debug",
-    "about": "About"
+  "rail": {
+    "navigation": "Main navigation",
+    "home": "Home",
+    "dictionary": "Dictionary",
+    "settings": "Settings"
+  },
+  "dictionary": {
+    "description": "Words, names and terms Fala should recognise when you dictate."
+  },
+  "settingsPage": {
+    "tabs": {
+      "general": "General",
+      "advanced": "Advanced",
+      "about": "About"
+    },
+    "advancedPages": {
+      "title": "More options",
+      "models": {
+        "title": "Models",
+        "description": "Transcription model, downloads and acceleration"
+      },
+      "postProcessing": {
+        "title": "Post-processing",
+        "description": "Provider, key and prompts of the inherited post-processing"
+      },
+      "debug": {
+        "title": "Debug",
+        "description": "Logs, keyboard diagnostics and previews"
+      }
+    }
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -409,15 +434,7 @@
       },
       "voiceActivityDetection": {
         "title": "Voice Activity Detection",
-        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
-      },
-      "vadBackend": {
-        "title": "Voice Activity Backend",
-        "description": "Choose the detector used to filter silence. Earshot is experimental; switch back to Silero if speech is clipped or noise is retained.",
-        "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
-        }
+        "description": "Filter silence from recordings. Disabling VAD records raw audio."
       },
       "fillerWordRemoval": {
         "title": "Remove Filler Words",
@@ -498,7 +515,17 @@
       "originalCopied": "Original text copied",
       "editedCopied": "Edited text copied",
       "editToggleError": "Couldn't switch the text",
-      "inApp": "in {{app}}"
+      "inApp": "in {{app}}",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "searchPlaceholder": "Search dictations",
+      "clearSearch": "Clear search",
+      "searchNoResults": "No dictations found.",
+      "searchError": "Could not search the history.",
+      "discarded": "This dictation was discarded.",
+      "recover": "Recover",
+      "recovered": "Dictation recovered and copied",
+      "recoverError": "Could not recover the dictation."
     },
     "debug": {
       "title": "Debug",

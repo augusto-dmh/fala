@@ -12,7 +12,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use anyhow::Result;
 use fala_core::{AppContext, Dictionary, Editor, Language, Transcript};
 use fala_postproc::{
-    FormatContext, Formatter, Gemini, LateEdit, LlmConfig, Postprocessor, Rules, DEFAULT_BASE_URL,
+    CleanupLevel, Fallback, FormatContext, Formatter, Gemini, LateEdit, LlmConfig, Postprocessor,
+    Rules, DEFAULT_BASE_URL,
 };
 use fala_secrets::ApiKey;
 use log::{debug, error};
@@ -21,11 +22,12 @@ use crate::audio_toolkit::apply_custom_words;
 use crate::managers::history::HistoryEntry;
 use crate::settings::{AppSettings, GEMINI_PROVIDER_ID};
 
-/// The text to paste and whether the LLM produced it.
+/// The text to paste, whether the LLM produced it, and why not when it was asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AutoFormatted {
     pub final_text: String,
     pub llm_produced: bool,
+    pub fallback: Option<Fallback>,
 }
 
 /// The `Postprocessor` the settings describe, the personal dictionary and the fuzzy correction
@@ -133,6 +135,7 @@ pub(crate) fn format_with_late_edit(
                 app: &dictation.app,
                 dictionary: &formatter.dictionary,
                 language: &dictation.raw.language,
+                cleanup: CleanupLevel::default(),
             };
             Rules
                 .format(&fuzzy.apply(dictation.raw.text.clone()), &ctx)
@@ -143,6 +146,7 @@ pub(crate) fn format_with_late_edit(
     let auto = AutoFormatted {
         final_text: refixed.unwrap_or(dictation.final_text),
         llm_produced,
+        fallback: formatted.fallback,
     };
     (auto, formatted.late_edit)
 }
@@ -467,7 +471,8 @@ mod tests {
             auto,
             AutoFormatted {
                 final_text: answer.to_string(),
-                llm_produced: true
+                llm_produced: true,
+                fallback: None
             }
         );
     }
@@ -521,7 +526,8 @@ mod tests {
             auto,
             AutoFormatted {
                 final_text: LLM_TEXT.to_string(),
-                llm_produced: true
+                llm_produced: true,
+                fallback: None,
             }
         );
         assert_eq!(server.requests(), 1);
@@ -550,6 +556,7 @@ mod tests {
             "Eu acho que a gente pode mandar o relatório amanhã cedo para o time todo"
         );
         assert!(!fifteen.llm_produced);
+        assert_eq!(fifteen.fallback, None);
 
         let mut off = settings_with_key();
         off.llm_enabled = false;
@@ -601,14 +608,20 @@ mod tests {
     #[test]
     fn slow_failed_or_invalid_llm_keeps_rules_text() {
         let candidates_empty = r#"{"candidates":[]}"#.to_string();
-        for (case, server) in [
-            ("3 s", FakeGemini::ok(Duration::from_secs(3))),
+        for (case, fallback, server) in [
+            (
+                "3 s",
+                Fallback::Timeout,
+                FakeGemini::ok(Duration::from_secs(3)),
+            ),
             (
                 "http 500",
+                Fallback::Http(500),
                 FakeGemini::start(Duration::ZERO, 500, "{}".to_string()),
             ),
             (
                 "invalid body",
+                Fallback::InvalidResponse,
                 FakeGemini::start(Duration::ZERO, 200, candidates_empty),
             ),
         ] {
@@ -617,6 +630,7 @@ mod tests {
             assert!(started.elapsed() < Duration::from_millis(2500), "{case}");
             assert_eq!(auto.final_text, SIXTEEN_RULES, "{case}");
             assert!(!auto.llm_produced, "{case}");
+            assert_eq!(auto.fallback, Some(fallback), "{case}");
             assert_eq!(server.requests(), 1, "{case}");
 
             let processed = auto_processed(SIXTEEN, auto);
@@ -709,6 +723,7 @@ mod tests {
                     },
                     app: app("notepad"),
                     sensitive: false,
+                    paste_failed: false,
                 },
                 Language::PtBr,
                 1,
