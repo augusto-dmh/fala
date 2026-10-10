@@ -21,7 +21,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
-| `crates/inject` | `fala-inject` | inserção no app ativo: trait `Injector` e `platform_injector` (clipboard + Ctrl+V com restore; Windows por `arboard` e `enigo`, Linux `Unsupported` até a fase 3) e o app em primeiro plano (`foreground_app`) |
+| `crates/inject` | `fala-inject` | inserção no app ativo: trait `Injector` e `platform_injector` (clipboard + acorde com restore; Windows por `arboard` e `enigo`, Linux `Unsupported` até a fase 3), o acorde por app (`is_terminal`, `PasteChord::for_app`: Shift+Insert em terminal) e o app em primeiro plano (`foreground_app`) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID) e modos |
 | `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |

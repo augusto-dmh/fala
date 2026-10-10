@@ -771,9 +771,29 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
+/// The chord that pastes into `app`: the configured `CtrlV` becomes `ShiftInsert` in a
+/// terminal, where Ctrl+V does not paste. Any other configured method is an explicit choice
+/// and is kept as is.
+fn effective_paste_method(configured: PasteMethod, app: &fala_core::AppContext) -> PasteMethod {
+    match (configured, app.app_name.as_deref()) {
+        (PasteMethod::CtrlV, Some(name)) if fala_inject::is_terminal(name) => {
+            PasteMethod::ShiftInsert
+        }
+        _ => configured,
+    }
+}
+
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let settings = get_settings(&app_handle);
-    let paste_method = settings.paste_method;
+    // Asked again here, not reused from the key release: focus may have moved since.
+    let app = fala_inject::foreground_app();
+    let paste_method = effective_paste_method(settings.paste_method, &app);
+    if paste_method != settings.paste_method {
+        log::debug!(
+            "terminal em foco ({}): colando com Shift+Insert",
+            app.app_name.as_deref().unwrap_or_default()
+        );
+    }
     let paste_delay_ms = settings.paste_delay_ms;
     let paste_delay_after_ms = settings.paste_delay_after_ms;
 
@@ -962,6 +982,52 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
         assert!(should_send_auto_submit(true, PasteMethod::Direct));
         assert!(should_send_auto_submit(true, PasteMethod::CtrlShiftV));
         assert!(should_send_auto_submit(true, PasteMethod::ShiftInsert));
+    }
+
+    fn app(name: Option<&str>) -> fala_core::AppContext {
+        fala_core::AppContext {
+            app_name: name.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn ctrl_v_becomes_shift_insert_in_terminals() {
+        for terminal in ["windowsterminal", "pwsh", "cmd", "conhost", "alacritty"] {
+            assert_eq!(
+                effective_paste_method(PasteMethod::CtrlV, &app(Some(terminal))),
+                PasteMethod::ShiftInsert,
+                "{terminal}"
+            );
+        }
+        for other in ["notepad", "chrome", "code", "cursor"] {
+            assert_eq!(
+                effective_paste_method(PasteMethod::CtrlV, &app(Some(other))),
+                PasteMethod::CtrlV,
+                "{other}"
+            );
+        }
+        assert_eq!(
+            effective_paste_method(PasteMethod::CtrlV, &app(None)),
+            PasteMethod::CtrlV
+        );
+    }
+
+    #[test]
+    fn explicit_paste_method_is_kept() {
+        let terminal = app(Some("windowsterminal"));
+        for configured in [
+            PasteMethod::Direct,
+            PasteMethod::None,
+            PasteMethod::ShiftInsert,
+            PasteMethod::CtrlShiftV,
+            PasteMethod::ExternalScript,
+        ] {
+            assert_eq!(
+                effective_paste_method(configured, &terminal),
+                configured,
+                "{configured:?}"
+            );
+        }
     }
 
     #[test]

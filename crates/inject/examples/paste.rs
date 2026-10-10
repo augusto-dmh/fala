@@ -1,14 +1,16 @@
 //! Verificação manual da colagem com prova de leitura e restore.
 //!
 //! Uso: `cargo run -p fala-inject --example paste -- [--rounds N] [--blank] [--image]
-//! [--shift-insert] [--delay S] ["texto"]`.
+//! [--shift-insert | --chord auto] [--delay S] ["texto"]`.
 //!
 //! Cada rodada põe um marcador no clipboard (uma imagem 8×8 com `--image`), espera `--delay`
 //! segundos (3 por padrão) para a pessoa focar o destino, cola o texto e imprime
-//! `round=<n> result=<ok|not_read|erro> restored=<y|n>`.
+//! `round=<n> chord=<ctrl_v|shift_insert> result=<ok|not_read|erro> restored=<y|n>`.
 //! - Destino com campo (Bloco de Notas, Windows Terminal, VS Code): espera `result=ok`; que o
 //!   texto apareceu no destino, a pessoa confere.
 //! - `--blank`: abre uma janela sem campo de texto e cola nela; espera `result=not_read`.
+//! - `--chord auto`: escolhe o acorde pelo app em foco na hora da cola (`PasteChord::for_app`),
+//!   como o desktop faz; num terminal sai `shift_insert`.
 //!
 //! Sai com 0 só se toda rodada teve o resultado esperado e o clipboard voltou ao marcador. No
 //! fim, abra o Win+V: o texto colado não deve estar no histórico.
@@ -24,7 +26,8 @@ struct Args {
     blank: bool,
     image: bool,
     delay_secs: u64,
-    chord: PasteChord,
+    /// `None`: pelo app em foco, a cada rodada.
+    chord: Option<PasteChord>,
     text: String,
 }
 
@@ -34,7 +37,7 @@ fn parse_args() -> Result<Args, String> {
         blank: false,
         image: false,
         delay_secs: 3,
-        chord: PasteChord::CtrlV,
+        chord: Some(PasteChord::CtrlV),
         text: "teste um dois três".to_owned(),
     };
     let mut it = std::env::args().skip(1);
@@ -49,7 +52,15 @@ fn parse_args() -> Result<Args, String> {
             "--delay" => args.delay_secs = number("--delay")?,
             "--blank" => args.blank = true,
             "--image" => args.image = true,
-            "--shift-insert" => args.chord = PasteChord::ShiftInsert,
+            "--shift-insert" => args.chord = Some(PasteChord::ShiftInsert),
+            "--chord" => {
+                args.chord = match it.next().as_deref() {
+                    Some("auto") => None,
+                    Some("ctrl_v") => Some(PasteChord::CtrlV),
+                    Some("shift_insert") => Some(PasteChord::ShiftInsert),
+                    _ => return Err("--chord pede auto, ctrl_v ou shift_insert".to_owned()),
+                }
+            }
             _ => args.text = arg,
         }
     }
@@ -57,29 +68,39 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn main() -> ExitCode {
-    let args = match parse_args() {
-        Ok(args) => args,
+    match parse_args() {
+        Ok(args) => check(&args),
         Err(err) => {
             eprintln!("{err}");
-            return ExitCode::FAILURE;
+            ExitCode::FAILURE
         }
-    };
+    }
+}
+
+/// O `Injector` com o acorde pedido, ou com o do app em foco agora.
+fn injector_for(chord: Option<PasteChord>) -> Result<(Box<dyn Injector>, PasteChord), String> {
+    let chord = chord.unwrap_or_else(|| PasteChord::for_app(&fala_inject::foreground_app()));
     let config = PasteConfig {
-        chord: args.chord,
+        chord,
         ..PasteConfig::default()
     };
-    let mut injector = match platform_injector(config) {
-        Ok(injector) => injector,
-        Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    check(injector.as_mut(), &args)
+    platform_injector(config)
+        .map(|injector| (injector, chord))
+        .map_err(|err| err.to_string())
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn chord_name(chord: PasteChord) -> &'static str {
+    match chord {
+        PasteChord::CtrlV => "ctrl_v",
+        PasteChord::CtrlShiftV => "ctrl_shift_v",
+        PasteChord::ShiftInsert => "shift_insert",
+        _ => "other",
+    }
 }
 
 #[cfg(windows)]
-fn check(injector: &mut dyn Injector, args: &Args) -> ExitCode {
+fn check(args: &Args) -> ExitCode {
     use std::borrow::Cow;
     use std::time::{Duration, Instant};
 
@@ -117,10 +138,19 @@ fn check(injector: &mut dyn Injector, args: &Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
         println!(
-            "foque o destino: colando em {} s ({:?})",
-            args.delay_secs, args.chord
+            "foque o destino: colando em {} s ({})",
+            args.delay_secs,
+            args.chord.map_or("pelo app em foco", chord_name)
         );
         std::thread::sleep(Duration::from_secs(args.delay_secs));
+        // Só agora o destino está em foco, então só agora dá para escolher o acorde.
+        let (mut injector, chord) = match injector_for(args.chord) {
+            Ok(pair) => pair,
+            Err(err) => {
+                eprintln!("{err}");
+                return ExitCode::FAILURE;
+            }
+        };
         let started = Instant::now();
         let result = injector.insert(&args.text);
         let elapsed = started.elapsed();
@@ -145,7 +175,8 @@ fn check(injector: &mut dyn Injector, args: &Args) -> ExitCode {
         };
         all_ok &= expected && restored;
         println!(
-            "round={round} result={outcome} restored={} elapsed_ms={}",
+            "round={round} chord={} result={outcome} restored={} elapsed_ms={}",
+            chord_name(chord),
             if restored { "y" } else { "n" },
             elapsed.as_millis()
         );
@@ -204,8 +235,14 @@ mod blank_window {
     }
 }
 
-/// Fora do Windows `platform_injector` já devolveu `Unsupported`; não há o que conferir.
+/// Fora do Windows `platform_injector` devolve `Unsupported`; não há o que conferir.
 #[cfg(not(windows))]
-fn check(_injector: &mut dyn Injector, _args: &Args) -> ExitCode {
-    ExitCode::FAILURE
+fn check(args: &Args) -> ExitCode {
+    match injector_for(args.chord) {
+        Ok(_) => ExitCode::FAILURE,
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
 }
