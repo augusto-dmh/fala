@@ -22,9 +22,17 @@ type ModelStatus =
 
 interface ModelSelectorProps {
   onError?: (error: string) => void;
+  /** `status` shows only the state dot and text (the rail footer); clicking
+   *  it calls `onOpen` instead of opening the model dropdown. */
+  variant?: "selector" | "status";
+  onOpen?: () => void;
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
+const ModelSelector: React.FC<ModelSelectorProps> = ({
+  onError,
+  variant = "selector",
+  onOpen,
+}) => {
   const { t } = useTranslation();
   const {
     models,
@@ -241,6 +249,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     if (Object.keys(downloadProgress).length > 0) return "downloading";
     return modelStatus;
   };
+
+  if (variant === "status") {
+    return (
+      <ModelStatusButton
+        status={getDisplayStatus()}
+        displayText={getModelDisplayText()}
+        isDropdownOpen={false}
+        onClick={() => onOpen?.()}
+        compact
+      />
+    );
+  }
 
   return (
     <>

@@ -193,7 +193,7 @@ fn open_sets_wal_timeout_and_version() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 
     // Um escritor segurando o lock por 300 ms não faz o `add` falhar: ele espera.
     let db = env.db.clone();
@@ -464,4 +464,231 @@ fn delete_tolerates_missing_mirror() {
         store.get(&gone.id),
         Err(StorageError::NotFound(_))
     ));
+}
+
+fn pragma(db: &std::path::Path, name: &str) -> i64 {
+    Connection::open(db)
+        .unwrap()
+        .pragma_query_value(None, name, |r| r.get(0))
+        .unwrap()
+}
+
+/// Deixa o banco como um `fala.sqlite` da versão 1: o mesmo schema, sem `auto_vacuum`.
+fn downgrade_to_schema_1(db: &std::path::Path) {
+    Connection::open(db)
+        .unwrap()
+        .execute_batch("PRAGMA auto_vacuum = NONE; VACUUM; PRAGMA user_version = 1;")
+        .unwrap();
+    assert_eq!(pragma(db, "auto_vacuum"), 0);
+    assert_eq!(pragma(db, "user_version"), 1);
+}
+
+#[test]
+fn new_db_has_incremental_auto_vacuum() {
+    let env = env("new_db_has_incremental_auto_vacuum");
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 2);
+}
+
+#[test]
+fn schema_1_db_is_vacuumed_once() {
+    let env = env("schema_1_db_is_vacuumed_once");
+    let id = env
+        .open()
+        .add(&unedited("reunião de orçamento"), at(9, 0, 0))
+        .unwrap()
+        .id;
+    downgrade_to_schema_1(&env.db);
+
+    let store = env.open();
+    assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
+    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(
+        store.get(&id).unwrap().dictation.final_text,
+        "reunião de orçamento"
+    );
+    let hits = store.search("orcamento", 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, id);
+}
+
+#[test]
+fn busy_vacuum_keeps_version_1() {
+    let env = env("busy_vacuum_keeps_version_1");
+    drop(env.open());
+    downgrade_to_schema_1(&env.db);
+
+    // Um escritor segura o banco por mais que o `busy_timeout` de 5 s.
+    let db = env.db.clone();
+    let (locked, wait_lock) = std::sync::mpsc::channel();
+    let (done, wait_done) = std::sync::mpsc::channel::<()>();
+    let handle = thread::spawn(move || {
+        let mut other = Connection::open(&db).unwrap();
+        let tx = other
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        locked.send(()).unwrap();
+        wait_done.recv().unwrap();
+        tx.commit().unwrap();
+    });
+    wait_lock.recv().unwrap();
+    let store = env.open();
+    done.send(()).unwrap();
+    handle.join().unwrap();
+    assert_eq!(pragma(&env.db, "user_version"), 1);
+    store
+        .add(&unedited("depois da trava"), at(10, 0, 0))
+        .unwrap();
+    drop(store);
+
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "user_version"), 2);
+    assert_eq!(pragma(&env.db, "auto_vacuum"), 2);
+}
+
+#[test]
+fn reopen_releases_free_pages() {
+    let env = env("reopen_releases_free_pages");
+    let store = env.open();
+    let filler = "palavra ".repeat(256);
+    let ids: Vec<String> = (0..200)
+        .map(|i| {
+            store
+                .add(&unedited(&format!("{i} {filler}")), at(11, 0, 0))
+                .unwrap()
+                .id
+        })
+        .collect();
+    for id in &ids {
+        store.delete(id).unwrap();
+    }
+    drop(store);
+    assert!(pragma(&env.db, "freelist_count") > 0);
+    let before = fs::metadata(&env.db).unwrap().len();
+
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "freelist_count"), 0);
+    let after = fs::metadata(&env.db).unwrap().len();
+    assert!(after < before, "{after} >= {before}");
+}
+
+#[test]
+fn open_without_free_pages_does_not_wait_for_writers() {
+    let env = env("open_without_free_pages_does_not_wait_for_writers");
+    drop(env.open());
+    assert_eq!(pragma(&env.db, "freelist_count"), 0);
+
+    let db = env.db.clone();
+    let (locked, wait_lock) = std::sync::mpsc::channel();
+    let (done, wait_done) = std::sync::mpsc::channel::<()>();
+    let handle = thread::spawn(move || {
+        let mut other = Connection::open(&db).unwrap();
+        let tx = other
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        locked.send(()).unwrap();
+        wait_done.recv().unwrap();
+        tx.commit().unwrap();
+    });
+    wait_lock.recv().unwrap();
+    let started = std::time::Instant::now();
+    let store = env.open();
+    let elapsed = started.elapsed();
+    done.send(()).unwrap();
+    handle.join().unwrap();
+    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+    drop(store);
+}
+
+#[test]
+fn apply_late_edit_sets_final_editor_and_showing() {
+    let env = env("apply_late_edit_sets_final_editor_and_showing");
+    let store = env.open();
+    let before = store
+        .add_sensitive(
+            &dictation(
+                "a charge bee cobra",
+                "A ChargeBee cobra",
+                Editor::Rules,
+                Some("notepad"),
+            ),
+            at(16, 0, 0),
+        )
+        .unwrap();
+
+    let applied = store.apply_late_edit(&before.id, "texto do llm").unwrap();
+
+    assert_eq!(applied.dictation.final_text, "texto do llm");
+    assert_eq!(applied.dictation.editor, Editor::Llm);
+    assert_eq!(applied.showing, Showing::Raw);
+    assert_eq!(applied.id, before.id);
+    assert_eq!(applied.dictation.raw, before.dictation.raw);
+    assert_eq!(applied.dictation.app, before.dictation.app);
+    assert_eq!(applied.created_at, before.created_at);
+    assert!(applied.sensitive);
+    assert_eq!(store.get(&before.id).unwrap(), applied);
+}
+
+#[test]
+fn apply_late_edit_rewrites_mirror_and_survives_reindex() {
+    let env = env("apply_late_edit_rewrites_mirror_and_survives_reindex");
+    let mut store = env.open();
+    let before = store
+        .add(
+            &dictation("bruto do asr", "Bruto do ASR.", Editor::Rules, None),
+            at(16, 5, 0),
+        )
+        .unwrap();
+
+    let applied = store.apply_late_edit(&before.id, "Texto do LLM.").unwrap();
+
+    let md = fs::read_to_string(md_of(&env, &before.id)).unwrap();
+    assert!(md.contains("\nedited_by: \"llm\"\n"), "{md}");
+    assert!(md.contains("\nshowing: \"raw\"\n"), "{md}");
+    assert!(md.ends_with("---\nTexto do LLM.\n"), "{md}");
+
+    store.reindex().unwrap();
+    assert_eq!(store.get(&before.id).unwrap(), applied);
+}
+
+#[test]
+fn apply_late_edit_rejects_unknown_id_and_blank_text() {
+    let env = env("apply_late_edit_rejects_unknown_id_and_blank_text");
+    let store = env.open();
+    let r = store
+        .add(
+            &dictation("bruto", "Bruto.", Editor::Rules, None),
+            at(16, 10, 0),
+        )
+        .unwrap();
+    let path = md_of(&env, &r.id);
+    let md_before = fs::read_to_string(&path).unwrap();
+
+    assert!(matches!(
+        store.apply_late_edit("nao-existe", "texto do llm"),
+        Err(StorageError::NotFound(id)) if id == "nao-existe"
+    ));
+    assert_eq!(store.get(&r.id).unwrap(), r);
+    assert_eq!(fs::read_to_string(&path).unwrap(), md_before);
+    assert_eq!(common::files_under(&env.ditados()).len(), 1);
+
+    for blank in ["", "   "] {
+        assert!(
+            matches!(store.apply_late_edit(&r.id, blank), Err(StorageError::EmptyEdit(id)) if id == r.id),
+            "{blank:?}"
+        );
+        assert_eq!(store.get(&r.id).unwrap(), r, "{blank:?}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), md_before, "{blank:?}");
+    }
+
+    Connection::open(&env.db)
+        .unwrap()
+        .execute_batch("DROP TABLE dictations;")
+        .unwrap();
+    assert!(matches!(
+        store.apply_late_edit(&r.id, "texto do llm"),
+        Err(StorageError::Db(_))
+    ));
+    assert_eq!(fs::read_to_string(&path).unwrap(), md_before);
 }

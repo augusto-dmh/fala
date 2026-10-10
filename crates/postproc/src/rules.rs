@@ -87,15 +87,37 @@ fn remove_fillers(tokens: Vec<Token>, language: Language) -> Vec<Token> {
         Language::PtBr => FILLERS_PT_BR,
         Language::En => FILLERS_OTHER,
     };
-    tokens
-        .into_iter()
-        .filter(|t| {
-            let is_filler = t.lead.is_empty()
-                && matches!(t.trail.as_str(), "" | "," | ".")
-                && fillers.contains(&t.core.to_lowercase().as_str());
-            !is_filler
-        })
-        .collect()
+    let mut kept: Vec<Token> = Vec::with_capacity(tokens.len());
+    // Um filler maiúsculo que abria a frase passa a maiúscula para a palavra que fica no lugar:
+    // "Isso funciona. Uhm, deixa eu ver" vira "Isso funciona. Deixa eu ver".
+    let mut capital_owed = false;
+    for mut token in tokens {
+        let is_filler = token.lead.is_empty()
+            && matches!(token.trail.as_str(), "" | "," | ".")
+            && fillers.contains(&token.core.to_lowercase().as_str());
+        if is_filler {
+            let capitalized = token.core.starts_with(char::is_uppercase);
+            capital_owed |= capitalized && opens_sentence(kept.last());
+            continue;
+        }
+        if capital_owed && !token.core.is_empty() {
+            token.core = capitalize_first(&token.core);
+            capital_owed = false;
+        }
+        kept.push(token);
+    }
+    kept
+}
+
+/// Se uma palavra depois de `previous` abre frase: não há palavra antes, ou a anterior termina
+/// em `.`, `!`, `?` ou `…`.
+fn opens_sentence(previous: Option<&Token>) -> bool {
+    previous.is_none_or(|t| {
+        t.trail
+            .chars()
+            .next_back()
+            .is_some_and(|c| matches!(c, '.' | '!' | '?' | '…'))
+    })
 }
 
 /// `eu eu eu` vira `eu`; duas repetições ficam (`o que que é`). A sequência só vale sem
@@ -241,6 +263,21 @@ mod tests {
                 "{filler} dentro de palavra"
             );
         }
+    }
+
+    #[test]
+    fn keeps_sentence_capital_after_removed_filler() {
+        assert_eq!(
+            pt("Isso funciona. Uhm, deixa eu ver."),
+            "Isso funciona. Deixa eu ver."
+        );
+        assert_eq!(pt("Pronto! Hã, então vamos."), "Pronto! Então vamos.");
+        assert_eq!(pt("Será? Ahn ahn, é isso."), "Será? É isso.");
+        assert_eq!(pt("Certo… Hum, ótimo."), "Certo… Ótimo.");
+        // No meio da frase não há maiúscula a passar adiante.
+        assert_eq!(pt("ele disse, Hum, hoje não."), "Ele disse, hoje não.");
+        // Filler minúsculo depois do ponto: a regra só passa a maiúscula que existia.
+        assert_eq!(pt("Isso funciona. uhm, deixa."), "Isso funciona. deixa.");
     }
 
     #[test]

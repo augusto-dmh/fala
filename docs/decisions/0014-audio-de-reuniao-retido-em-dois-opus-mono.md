@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-02
 ---
 # Áudio de reunião retido em dois arquivos Ogg Opus mono de 24 kbps, com libopus compilado do fonte

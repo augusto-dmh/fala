@@ -8,6 +8,7 @@ import { Button } from "../../ui/Button";
 import { AppDataDirectory } from "../AppDataDirectory";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ShowWhatsNewOnUpdate } from "../ShowWhatsNewOnUpdate";
+import { UPDATER_ENABLED } from "../../../lib/updater";
 import { ThemeSelector } from "../ThemeSelector";
 import { LogDirectory } from "../debug";
 
@@ -43,7 +44,9 @@ export const AboutSettings: React.FC = () => {
           <span className="text-sm font-mono">v{version}</span>
         </SettingContainer>
 
-        <ShowWhatsNewOnUpdate descriptionMode="tooltip" grouped={true} />
+        {UPDATER_ENABLED && (
+          <ShowWhatsNewOnUpdate descriptionMode="tooltip" grouped={true} />
+        )}
 
         <SettingContainer
           title={t("settings.about.sourceCode.title")}

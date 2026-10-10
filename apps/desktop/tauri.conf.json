@@ -17,7 +17,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["**"],
+          "allow": ["$APPDATA/recordings/**"],
           "requireLiteralLeadingDot": false
         }
       }
@@ -75,6 +75,7 @@
       },
       "nsis": {
         "template": "nsis/installer.nsi",
+        "installerIcon": "icons/icon.ico",
         "installMode": "currentUser",
         "languages": ["PortugueseBR", "English"],
         "displayLanguageSelector": false

@@ -1,20 +1,21 @@
-//! Adaptador Windows da colagem: clipboard pelo `arboard` e acorde pelo `enigo`, as bibliotecas
-//! que o desktop usa e que o spike 03 mediu (`tauri-plugin-clipboard-manager` embrulha o
-//! `arboard`; `input.rs::send_paste_ctrl_v` usa `Key::Control` + `Key::Other(0x56)`).
-//!
-//! TODO(windows): verificar à mão com `cargo run -p fala-inject --example paste` e o Bloco de
-//! Notas em foco.
+//! Adaptador Windows da colagem: o texto vai ao clipboard por delayed rendering ([`offer`]), o
+//! clipboard é salvo e restaurado pelo `arboard`, e o acorde sai pelo `enigo` (as bibliotecas
+//! que o desktop usa e que o spike 03 mediu).
+
+mod offer;
 
 use std::time::Duration;
 
-use arboard::ImageData;
+use arboard::{ImageData, SetExtWindows as _};
 use enigo::{Direction, Enigo, Key, Keyboard as _, Settings};
 
+use self::offer::DelayedOffer;
 use super::{paste_with_restore, Clipboard, Injector, Keyboard, PasteChord, PasteConfig};
 use crate::InjectError;
 
-/// Tecla virtual `VK_V`, independente do layout do teclado.
+/// Teclas virtuais, independentes do layout do teclado.
 const VK_V: u32 = 0x56;
+const VK_INSERT: u32 = 0x2D;
 
 pub(crate) struct WindowsInjector {
     clipboard: SystemClipboard,
@@ -28,7 +29,10 @@ impl WindowsInjector {
         let enigo = Enigo::new(&Settings::default())
             .map_err(|err| InjectError::Keystroke(err.to_string()))?;
         Ok(Self {
-            clipboard: SystemClipboard(clipboard),
+            clipboard: SystemClipboard {
+                arboard: clipboard,
+                offer: None,
+            },
             keyboard: SystemKeyboard(enigo),
             config,
         })
@@ -55,29 +59,74 @@ fn key_error(err: enigo::InputError) -> InjectError {
     InjectError::Keystroke(err.to_string())
 }
 
-struct SystemClipboard(arboard::Clipboard);
+struct SystemClipboard {
+    arboard: arboard::Clipboard,
+    offer: Option<DelayedOffer>,
+}
 
 impl Clipboard for SystemClipboard {
     type Image = ImageData<'static>;
 
     fn read_text(&mut self) -> Result<String, InjectError> {
-        self.0.get_text().map_err(clipboard_error)
+        self.arboard.get_text().map_err(clipboard_error)
     }
 
     fn read_image(&mut self) -> Result<Self::Image, InjectError> {
-        self.0.get_image().map_err(clipboard_error)
+        self.arboard.get_image().map_err(clipboard_error)
     }
 
+    fn offer_text(&mut self, text: &str) -> Result<(), InjectError> {
+        self.offer = None;
+        self.offer = Some(DelayedOffer::start(text)?);
+        Ok(())
+    }
+
+    fn wait_read(&mut self, timeout: Duration) -> bool {
+        self.offer
+            .as_mut()
+            .is_some_and(|offer| offer.wait_read(timeout))
+    }
+
+    fn unchanged_since_offer(&mut self) -> bool {
+        self.offer.as_mut().is_some_and(DelayedOffer::unchanged)
+    }
+
+    fn end_offer(&mut self) {
+        self.offer = None;
+    }
+
+    // O conteúdo restaurado já passou pelo histórico quando a pessoa o copiou; não entra de novo.
     fn write_text(&mut self, text: &str) -> Result<(), InjectError> {
-        self.0.set_text(text).map_err(clipboard_error)
+        self.arboard
+            .set()
+            .exclude_from_history()
+            .exclude_from_cloud()
+            .text(text)
+            .map_err(clipboard_error)
     }
 
     fn write_image(&mut self, image: &Self::Image) -> Result<(), InjectError> {
-        self.0.set_image(image.clone()).map_err(clipboard_error)
+        self.arboard
+            .set()
+            .exclude_from_history()
+            .exclude_from_cloud()
+            .image(image.clone())
+            .map_err(clipboard_error)
     }
 
     fn clear(&mut self) -> Result<(), InjectError> {
-        self.0.clear().map_err(clipboard_error)
+        self.arboard.clear().map_err(clipboard_error)
+    }
+}
+
+/// Os modificadores e a tecla de cada acorde.
+fn chord_keys(chord: PasteChord) -> (&'static [Key], Key) {
+    match chord {
+        PasteChord::CtrlV => (&[Key::Control], Key::Other(VK_V)),
+        PasteChord::CtrlShiftV => (&[Key::Control, Key::Shift], Key::Other(VK_V)),
+        // O `enigo` marca o VK_INSERT como tecla estendida, o Insert de verdade e não o 0 do
+        // teclado numérico.
+        PasteChord::ShiftInsert => (&[Key::Shift], Key::Other(VK_INSERT)),
     }
 }
 
@@ -89,10 +138,7 @@ impl Keyboard for SystemKeyboard {
         chord: PasteChord,
         modifier_hold: Duration,
     ) -> Result<(), InjectError> {
-        let modifiers: &[Key] = match chord {
-            PasteChord::CtrlV => &[Key::Control],
-            PasteChord::CtrlShiftV => &[Key::Control, Key::Shift],
-        };
+        let (modifiers, key) = chord_keys(chord);
         let enigo = &mut self.0;
         let mut pressed = 0;
         let mut result = Ok(());
@@ -104,9 +150,7 @@ impl Keyboard for SystemKeyboard {
             pressed += 1;
         }
         if result.is_ok() {
-            result = enigo
-                .key(Key::Other(VK_V), Direction::Click)
-                .map_err(key_error);
+            result = enigo.key(key, Direction::Click).map_err(key_error);
             std::thread::sleep(modifier_hold);
         }
         // Solta, na ordem inversa, todo modificador que chegou a ser pressionado, mesmo depois de
@@ -118,5 +162,26 @@ impl Keyboard for SystemKeyboard {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chords_map_to_keys() {
+        assert_eq!(
+            chord_keys(PasteChord::CtrlV),
+            (&[Key::Control][..], Key::Other(0x56))
+        );
+        assert_eq!(
+            chord_keys(PasteChord::CtrlShiftV),
+            (&[Key::Control, Key::Shift][..], Key::Other(0x56))
+        );
+        assert_eq!(
+            chord_keys(PasteChord::ShiftInsert),
+            (&[Key::Shift][..], Key::Other(0x2D))
+        );
     }
 }
