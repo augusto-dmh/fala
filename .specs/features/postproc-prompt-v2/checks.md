@@ -57,11 +57,11 @@ Proof: `cargo test -p fala-postproc`
 
 ### S3 - corpus e bench (PR 3)
 
-**C15** - o script, contra um `flow.sqlite` de teste com 3 linhas (uma sem `formattedText`, uma com `editedText`), escreve 2 linhas JSON com exatamente as chaves `id, raw, formatted, pasted, edited, app, lang, words`, e o banco abre com `immutable=1` (AC 14)
+**C15** - o script, contra um `flow.sqlite` de teste com 3 linhas (uma sem `formattedText`, uma com `editedText`), escreve 2 linhas JSON com exatamente as chaves `id, raw, formatted, pasted, edited, app, lang, words`, sem o e-mail e o token das colunas de contexto, e a conexão do script recusa escrita; `connect_readonly` monta a URI com `mode=ro&immutable=1` (leitura do código) (AC 14)
 Proof: `python -I scripts/export-wispr-corpus.py --self-test`
 
 **C16** - `bench format` sem `--llm` num corpus de 3 linhas imprime `exact` e `edit` para `formatted` e para `edited` e `p50`/`p90`, com números conferidos à mão, e o stdout/stderr não contêm nenhuma palavra do corpus; com `--limit 1` conta 1 linha (AC 15, AC 16)
-Proof: `cargo test -p fala-cli bench_format`
+Proof: `cargo test -p fala-cli bench::format`
 
 **C17** - `bench format --llm` sem chave sai 2 com "fala-cli key set gemini"; com o servidor falso, 1 request por linha acima de 15 palavras e `--level medium` muda o `systemInstruction` (AC 17)
 Proof: o mesmo filtro de C16
