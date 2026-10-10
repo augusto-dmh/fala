@@ -480,6 +480,12 @@ fn version_label() -> String {
     }
 }
 
+/// Whether the tray offers "Check for updates". Process-constant: the
+/// compile-time `UPDATER_ENABLED` and the `FALA_DISABLE_UPDATER` env flag.
+fn check_updates_item_visible() -> bool {
+    settings::UPDATER_ENABLED && !settings::update_checks_forced_disabled()
+}
+
 /// Builds the tray menu and tooltip for the given inputs. Pure with respect
 /// to app state: everything it depends on is in `inputs`, plus the
 /// process-constant `FALA_DISABLE_UPDATER` env flag behind
@@ -623,13 +629,13 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
-    // When update checks are forced off (e.g. FALA_DISABLE_UPDATER, set by
-    // the Nix package), the item is dropped from the menu rather than shown
-    // disabled — it can never do anything in that case, and a disabled item
-    // still shifts every entry below it by one position. A manually-disabled
-    // toggle in Debug Settings keeps the old greyed-out behavior via the
-    // enabled flag.
-    if settings::update_checks_forced_disabled() {
+    // While the updater is off, or update checks are forced off (e.g.
+    // FALA_DISABLE_UPDATER, set by the Nix package), the item is dropped from
+    // the menu rather than shown disabled — it can never do anything in that
+    // case, and a disabled item still shifts every entry below it by one
+    // position. A manually-disabled toggle in Debug Settings keeps the old
+    // greyed-out behavior via the enabled flag.
+    if !check_updates_item_visible() {
         menu.remove(&check_updates_i)?;
     }
 
@@ -720,10 +726,11 @@ pub fn copy_last_transcript(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        language_item_id, last_transcript_text, load_tray_icon, parse_language_item,
-        tray_language_choice, MenuInputs, TrayDesired, TrayIconState,
+        check_updates_item_visible, language_item_id, last_transcript_text, load_tray_icon,
+        parse_language_item, tray_language_choice, MenuInputs, TrayDesired, TrayIconState,
     };
     use crate::managers::history::HistoryEntry;
+    use crate::settings;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
         HistoryEntry {
@@ -792,6 +799,14 @@ mod tests {
         };
         assert_ne!(recording.icon_path, transcribing.icon_path);
         assert_eq!(recording.menu, transcribing.menu);
+    }
+
+    #[test]
+    fn check_updates_item_hidden_while_updater_off() {
+        // The updater is off (ADR-0008), so the item would do nothing.
+        let updater_enabled = settings::UPDATER_ENABLED;
+        assert!(!updater_enabled);
+        assert!(!check_updates_item_visible());
     }
 
     #[test]
