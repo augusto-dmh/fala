@@ -49,7 +49,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 - **Config:** um `Settings` em `core`, persistido por `tauri-plugin-store` no desktop e por TOML na CLI.
 - **Eventos:** `core::Event` (enum) do backend para a UI; comandos e tipos TS gerados por `tauri-specta` em `src/bindings.ts`.
 - **i18n:** pt-BR é a fonte, en é o segundo idioma (`src/i18n/locales`); o tray lê as mesmas strings via `build.rs`.
-- **Logs:** locais, com níveis; nada remoto. O trace de latência por etapa (`FALA_TRACE=1`) entra na fase 1.
+- **Logs:** locais, com níveis; nada remoto. O trace de latência por etapa (`FALA_TRACE=1`, target `fala_trace`) sai do `fala-cli dictate` e do desktop; o desktop guarda sempre os tempos de cada ditado, sem texto, em `dictation_metrics` (`fala-cli history stats`).
 - **Dados do usuário:** pasta de dados do app (`%APPDATA%` no Windows, `~/.local/share` no Linux) com `fala.sqlite`, `audio/` e `models/`.
 
 ## Orçamento de latência e recursos

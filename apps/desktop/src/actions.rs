@@ -418,6 +418,8 @@ pub(crate) struct ProcessedTranscription {
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     pub llm_produced: bool,
+    /// Why the LLM was asked and its text did not stay; never set by the legacy binding.
+    pub fallback: Option<fala_postproc::Fallback>,
 }
 
 /// How a transcription becomes the pasted text.
@@ -441,6 +443,7 @@ pub(crate) fn auto_processed(transcription: &str, auto: AutoFormatted) -> Proces
         final_text: auto.final_text,
         post_process_prompt: None,
         llm_produced: auto.llm_produced,
+        fallback: auto.fallback,
     }
 }
 
@@ -509,6 +512,7 @@ pub(crate) async fn process_transcription_output(
                 AutoFormatted {
                     final_text,
                     llm_produced: false,
+                    fallback: None,
                 },
             )
         }
@@ -542,12 +546,14 @@ async fn legacy_post_process(
         final_text,
         post_processed_text,
         post_process_prompt,
+        fallback: None,
     }
 }
 
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
+        let key = crate::dictation_metrics::key_pressed();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
         // Load model in the background
@@ -607,6 +613,7 @@ impl ShortcutAction for TranscribeAction {
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
             OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
         }
+        crate::dictation_metrics::pill_shown(key, settings.overlay_style != OverlayStyle::None);
         // Everything above runs before capture can begin, so each span here is
         // added keypress->capture latency.
         debug!(
@@ -715,6 +722,7 @@ impl ShortcutAction for TranscribeAction {
             .invalidate_recording_readiness();
 
         let stop_time = Instant::now();
+        let (key_to_pill, release) = crate::dictation_metrics::key_released();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
 
         let ah = app.clone();
@@ -806,6 +814,7 @@ impl ShortcutAction for TranscribeAction {
                         Ok(_) => tm.transcribe(samples),
                         Err(err) => Err(err),
                     };
+                    let asr_done = Instant::now();
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -858,6 +867,7 @@ impl ShortcutAction for TranscribeAction {
                             } else {
                                 OutputMode::Auto(app_context.clone())
                             };
+                            let format_start = Instant::now();
                             let Some(processed) = complete_unless_cancelled(
                                 process_transcription_output(&ah, &transcription, mode),
                                 || rm.was_cancelled_since(cancel_generation),
@@ -869,6 +879,7 @@ impl ShortcutAction for TranscribeAction {
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             };
+                            let format_done = Instant::now();
 
                             if rm.was_cancelled_since(cancel_generation) {
                                 debug!("Transcription operation cancelled before paste");
@@ -885,9 +896,36 @@ impl ShortcutAction for TranscribeAction {
                             let post_process_prompt = processed.post_process_prompt.clone();
                             let pasted_text = processed.final_text.clone();
                             let llm_produced = processed.llm_produced;
+                            let settings = get_settings(&ah);
+                            let measured = (!pasted_text.is_empty()).then(|| {
+                                crate::dictation_metrics::Measured {
+                                    key_to_pill,
+                                    release,
+                                    asr_start: transcription_time,
+                                    asr_done,
+                                    format_start,
+                                    format_done,
+                                    paste_start: Instant::now(),
+                                    speech_samples: sample_count,
+                                    words: pasted_text.split_whitespace().count(),
+                                    lang:
+                                        crate::managers::history_dictations::language_from_setting(
+                                            &settings.selected_language,
+                                        ),
+                                    llm_attempted: llm_produced || processed.fallback.is_some(),
+                                    llm_used: llm_produced,
+                                    fallback: processed.fallback,
+                                    model: tm
+                                        .get_current_model()
+                                        .unwrap_or(settings.selected_model),
+                                    app: app_context.app_name.clone(),
+                                }
+                            });
                             let save_history = move || {
+                                let pasted = Instant::now();
+                                let mut dictation_id = None;
                                 if wav_saved {
-                                    if let Err(err) = hm.save_entry(NewEntry {
+                                    match hm.save_entry(NewEntry {
                                         file_name,
                                         post_process_requested: post_process,
                                         texts: EntryTexts {
@@ -899,8 +937,12 @@ impl ShortcutAction for TranscribeAction {
                                         },
                                         app: app_context,
                                     }) {
-                                        error!("Failed to save history entry: {}", err);
+                                        Ok(entry) => dictation_id = entry.dictation_id,
+                                        Err(err) => error!("Failed to save history entry: {}", err),
                                     }
+                                }
+                                if let Some(measured) = measured {
+                                    hm.record_metrics(&measured.finish(pasted, dictation_id));
                                 }
                             };
 

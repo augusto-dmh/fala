@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rusqlite::{params, Connection, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use tauri_specta::Event;
 
 use crate::managers::history_dictations::{self, HistoryDictation};
 use fala_core::{AppContext, Language};
-use fala_storage::{Showing, Store};
+use fala_storage::{DictationMetrics, MetricsSummary, Showing, Store};
 
 /// Database migrations for transcription history.
 /// Each migration is applied in order. The library tracks which migrations
@@ -374,6 +374,23 @@ impl HistoryManager {
             dictation_id,
             dictation,
         })
+    }
+
+    /// Saves one dictation's metrics in fala.sqlite; a failure is only logged.
+    pub fn record_metrics(&self, metrics: &DictationMetrics) {
+        if let Some(store) = self.lock_store() {
+            if let Err(e) = store.add_metrics(metrics) {
+                warn!("dictation metrics not saved: {e}");
+            }
+        }
+    }
+
+    /// Counts and p50/p90 of the last `days` days of dictations.
+    pub fn metrics_summary(&self, days: u32) -> Result<MetricsSummary> {
+        let store = self
+            .lock_store()
+            .ok_or_else(|| anyhow!("fala.sqlite is not available"))?;
+        Ok(store.metrics_summary(days)?)
     }
 
     /// Update an existing history entry with new transcription results (used by retry).

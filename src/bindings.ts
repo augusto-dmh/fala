@@ -924,6 +924,17 @@ async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * "Como estou indo": the last `days` days of dictation metrics.
+ */
+async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateHistoryLimit(limit: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_history_limit", { limit }) };
@@ -1052,6 +1063,15 @@ export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_d
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * Dictations and words of one local day (`YYYY-MM-DD`).
+ */
+export type DictationDay = { day: string; dictations: number; words: number }
+/**
+ * `fala_storage::MetricsSummary` for the UI: `e2e` is release → pasted text without the LLM,
+ * `e2e_llm` with it asked.
+ */
+export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1097,6 +1117,10 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "fala_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * p50/p90 in ms; `None` without samples.
+ */
+export type LatencyPercentiles = { p50: number | null; p90: number | null }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }

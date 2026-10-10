@@ -5,7 +5,9 @@ use crate::managers::{
     transcription::TranscriptionManager,
 };
 use fala_core::AppContext;
-use fala_storage::Showing;
+use fala_storage::{MetricsSummary, Percentiles, Showing};
+use serde::Serialize;
+use specta::Type;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -149,6 +151,81 @@ pub async fn redo_history_entry_edit(
 ) -> Result<HistoryEntry, String> {
     history_manager
         .set_showing(id, Showing::Final)
+        .map_err(|e| e.to_string())
+}
+
+/// p50/p90 in ms; `None` without samples.
+#[derive(Serialize, Type)]
+pub struct LatencyPercentiles {
+    pub p50: Option<u32>,
+    pub p90: Option<u32>,
+}
+
+/// Dictations and words of one local day (`YYYY-MM-DD`).
+#[derive(Serialize, Type)]
+pub struct DictationDay {
+    pub day: String,
+    pub dictations: u32,
+    pub words: u32,
+}
+
+/// `fala_storage::MetricsSummary` for the UI: `e2e` is release → pasted text without the LLM,
+/// `e2e_llm` with it asked.
+#[derive(Serialize, Type)]
+pub struct DictationStats {
+    pub days: u32,
+    pub dictations: u32,
+    pub words: u32,
+    pub llm_attempts: u32,
+    pub fallbacks: u32,
+    pub per_day: Vec<DictationDay>,
+    pub e2e: LatencyPercentiles,
+    pub e2e_llm: LatencyPercentiles,
+    pub asr: LatencyPercentiles,
+    pub llm: LatencyPercentiles,
+    pub paste: LatencyPercentiles,
+    pub speech: LatencyPercentiles,
+}
+
+impl From<MetricsSummary> for DictationStats {
+    fn from(s: MetricsSummary) -> Self {
+        let p = |p: Percentiles| LatencyPercentiles {
+            p50: p.p50,
+            p90: p.p90,
+        };
+        Self {
+            days: s.days,
+            dictations: s.dictations,
+            words: s.words,
+            llm_attempts: s.llm_attempts,
+            fallbacks: s.fallbacks,
+            per_day: (s.per_day.into_iter())
+                .map(|d| DictationDay {
+                    day: d.day,
+                    dictations: d.dictations,
+                    words: d.words,
+                })
+                .collect(),
+            e2e: p(s.e2e),
+            e2e_llm: p(s.e2e_llm),
+            asr: p(s.asr),
+            llm: p(s.llm),
+            paste: p(s.paste),
+            speech: p(s.speech),
+        }
+    }
+}
+
+/// "Como estou indo": the last `days` days of dictation metrics.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_dictation_stats(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    days: u32,
+) -> Result<DictationStats, String> {
+    history_manager
+        .metrics_summary(days)
+        .map(DictationStats::from)
         .map_err(|e| e.to_string())
 }
 
