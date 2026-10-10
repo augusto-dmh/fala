@@ -425,8 +425,8 @@
         }
       },
       "customWords": {
-        "title": "Custom Words",
-        "description": "Help supported models recognize names and specialized terms. Fuzzy correction is currently limited to words using A–Z and numbers.",
+        "title": "Personal dictionary",
+        "description": "Names and terms Fala should always spell this way. They help supported models recognize what you say, fix the spelling in the text and go to the formatting AI. Fuzzy correction is limited to words using A–Z and numbers.",
         "placeholder": "Add a word",
         "add": "Add",
         "remove": "Remove {{word}}",

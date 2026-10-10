@@ -425,8 +425,8 @@
         }
       },
       "customWords": {
-        "title": "Palavras Personalizadas",
-        "description": "Ajude os modelos compatíveis a reconhecer nomes e termos especializados. A correção aproximada está atualmente limitada a palavras que usam letras de A–Z e números.",
+        "title": "Dicionário pessoal",
+        "description": "Nomes e termos que o Fala deve escrever sempre com esta grafia. Eles ajudam os modelos compatíveis a reconhecer o que você diz, corrigem a grafia no texto e vão para a IA de formatação. A correção aproximada está limitada a palavras com letras de A–Z e números.",
         "placeholder": "Adicionar uma palavra",
         "add": "Adicionar",
         "remove": "Remover {{word}}",
