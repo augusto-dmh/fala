@@ -304,11 +304,11 @@ function App() {
         unstyled: true,
         classNames: {
           toast:
-            "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-          title: "font-medium",
-          description: "text-mid-gray",
+            "bg-surface-1 text-text border border-border rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 text-body",
+          title: "font-semibold",
+          description: "text-text-2",
           actionButton:
-            "px-2 py-1 text-xs font-medium rounded-lg border bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary cursor-pointer whitespace-nowrap",
+            "px-2 py-1 text-caption font-medium rounded-md border bg-surface-2 border-border hover:bg-text/10 cursor-pointer whitespace-nowrap",
         },
       }}
     />
