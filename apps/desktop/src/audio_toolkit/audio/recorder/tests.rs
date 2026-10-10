@@ -1,6 +1,7 @@
 use super::{
-    is_microphone_access_denied, is_no_input_device_error, run_consumer, AudioRecorder,
-    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig, VadPolicy,
+    builds_sample_format, is_microphone_access_denied, is_no_input_device_error, run_consumer,
+    AudioRecorder, CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig,
+    VadPolicy,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
@@ -415,4 +416,29 @@ fn detects_coreaudio_config_error() {
 fn does_not_match_other_errors_for_no_device() {
     assert!(!is_no_input_device_error("permission denied"));
     assert!(!is_no_input_device_error("device not found"));
+}
+
+#[test]
+fn device_default_format_is_kept_when_the_builder_handles_it() {
+    use cpal::SampleFormat;
+    // The formats the capture thread builds a stream for open as the device
+    // offers them, so an I32 or I16 mix format is no longer swapped for F32.
+    for format in [
+        SampleFormat::U8,
+        SampleFormat::I8,
+        SampleFormat::I16,
+        SampleFormat::I32,
+        SampleFormat::F32,
+    ] {
+        assert!(builds_sample_format(format), "{format:?}");
+    }
+    // Anything else still goes through the scored search.
+    for format in [
+        SampleFormat::U16,
+        SampleFormat::U32,
+        SampleFormat::I64,
+        SampleFormat::F64,
+    ] {
+        assert!(!builds_sample_format(format), "{format:?}");
+    }
 }

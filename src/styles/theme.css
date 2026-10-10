@@ -1,50 +1,100 @@
-/* Fala Colors */
+/* Fala tokens: "Tinta" (ink). Neutral surfaces, ink as the only accent, and
+   colour only where it means something (recording, warning, success, danger).
+   This file is the single source of every colour the UI uses. */
 
 :root {
-  /* Palette source of truth. Each themed color is defined once as a
+  /* Palette source of truth. Each themed colour is defined once as a
      light/dark pair; the active tokens below and the `data-theme` overrides
-     in App.css reference these, so a hex value lives in exactly one place. */
-  --light-color-text: #0f0f0f;
-  --light-color-background: #fbfbfb;
-  --light-color-logo-primary: #faa2ca;
-  --light-color-logo-stroke: #382731;
+     reference these, so a hex value lives in exactly one place. */
 
-  --dark-color-text: #fbfbfb;
-  --dark-color-background: #2c2b29;
-  --dark-color-logo-primary: #f28cbb;
-  --dark-color-logo-stroke: #fad1ed;
+  /* Surfaces: window, cards and lists, hover and fields. */
+  --light-color-surface-0: #f3f3f3;
+  --light-color-surface-1: #ffffff;
+  --light-color-surface-2: #f7f7f7;
+  --dark-color-surface-0: #202020;
+  --dark-color-surface-1: #2b2b2b;
+  --dark-color-surface-2: #323232;
 
-  /* Semantic status colors. First used by SecureInputWarning; intended to
-     replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
-     time so status styling is themeable from one place. */
-  --light-color-warning: #d97706;
-  --light-color-error: #dc2626;
-  --dark-color-warning: #fbbf24;
-  --dark-color-error: #f87171;
+  /* Dividers and card outlines. */
+  --light-color-border: #e5e5e5;
+  --dark-color-border: #3a3a3a;
 
-  /* Tokens that do not change between light and dark */
-  --color-background-ui: #da5893;
-  --color-text-stroke: #f6f6f6;
-  --color-mid-gray: #808080;
+  /* Text: primary, secondary (descriptions, metadata, AI text), tertiary
+     (placeholder, disabled; never essential information). */
+  --light-color-text: #1a1a1a;
+  --light-color-text-2: #5c5c5c;
+  --light-color-text-3: #8a8a8a;
+  --dark-color-text: #f5f5f5;
+  --dark-color-text-2: #c4c4c4;
+  --dark-color-text-3: #8f8f8f;
 
-  /* Active palette — defaults to light, follows the OS via the media query
+  /* Accent is ink: primary button, toggle on, active navigation marker. */
+  --light-color-accent: #1a1a1a;
+  --light-color-on-accent: #ffffff;
+  --dark-color-accent: #f5f5f5;
+  --dark-color-on-accent: #1a1a1a;
+
+  /* Semantic colours. `rec` is the pill's recording red in both themes. */
+  --color-rec: #e5322d;
+  --light-color-warn: #b45309;
+  --dark-color-warn: #f5a524;
+  --light-color-ok: #1a7f4b;
+  --dark-color-ok: #4cc38a;
+  --light-color-them: #8a8a8a;
+  --dark-color-them: #8f8f8f;
+  --light-color-danger: #c42b1c;
+  --dark-color-danger: #ff99a4;
+
+  /* Active palette: defaults to light, follows the OS via the media query
      below, or is forced by `data-theme` (see the overrides below). */
+  --color-surface-0: var(--light-color-surface-0);
+  --color-surface-1: var(--light-color-surface-1);
+  --color-surface-2: var(--light-color-surface-2);
+  --color-border: var(--light-color-border);
   --color-text: var(--light-color-text);
-  --color-background: var(--light-color-background);
-  --color-logo-primary: var(--light-color-logo-primary);
-  --color-logo-stroke: var(--light-color-logo-stroke);
-  --color-warning: var(--light-color-warning);
-  --color-error: var(--light-color-error);
+  --color-text-2: var(--light-color-text-2);
+  --color-text-3: var(--light-color-text-3);
+  --color-accent: var(--light-color-accent);
+  --color-on-accent: var(--light-color-on-accent);
+  --color-warn: var(--light-color-warn);
+  --color-ok: var(--light-color-ok);
+  --color-them: var(--light-color-them);
+  --color-danger: var(--light-color-danger);
+
+  /* Tokens derived from the active palette; they flip with it. */
+  --color-me: var(--color-ok);
+  /* Fluent double focus ring: 2 px of text outside, 1 px of surface inside. */
+  --color-focus-outer: var(--color-text);
+  --color-focus-inner: var(--color-surface-1);
+
+  /* Aliases for the names the inherited screens still use. They point at the
+     ink tokens so those screens change without being edited; each alias goes
+     away when its last use does. Never use them in new code. */
+  --color-background: var(--color-surface-1);
+  --color-background-ui: var(--color-accent);
+  --color-logo-primary: var(--color-accent);
+  --color-logo-stroke: var(--color-text);
+  --color-text-stroke: var(--color-surface-1);
+  --color-mid-gray: var(--color-text-2);
+  --color-warning: var(--color-warn);
+  --color-error: var(--color-danger);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --color-surface-0: var(--dark-color-surface-0);
+    --color-surface-1: var(--dark-color-surface-1);
+    --color-surface-2: var(--dark-color-surface-2);
+    --color-border: var(--dark-color-border);
     --color-text: var(--dark-color-text);
-    --color-background: var(--dark-color-background);
-    --color-logo-primary: var(--dark-color-logo-primary);
-    --color-logo-stroke: var(--dark-color-logo-stroke);
-    --color-warning: var(--dark-color-warning);
-    --color-error: var(--dark-color-error);
+    --color-text-2: var(--dark-color-text-2);
+    --color-text-3: var(--dark-color-text-3);
+    --color-accent: var(--dark-color-accent);
+    --color-on-accent: var(--dark-color-on-accent);
+    --color-warn: var(--dark-color-warn);
+    --color-ok: var(--dark-color-ok);
+    --color-them: var(--dark-color-them);
+    --color-danger: var(--dark-color-danger);
   }
 }
 
@@ -56,22 +106,36 @@
  * `system` (or no attribute) leaves the OS in charge.
  *
  * Lives here (not in App.css) so every window that imports the shared palette —
- * the settings window and the recording overlay alike — honours the override.
+ * the main window and the recording overlay alike — honours the override.
  */
 :root[data-theme="light"] {
+  --color-surface-0: var(--light-color-surface-0);
+  --color-surface-1: var(--light-color-surface-1);
+  --color-surface-2: var(--light-color-surface-2);
+  --color-border: var(--light-color-border);
   --color-text: var(--light-color-text);
-  --color-background: var(--light-color-background);
-  --color-logo-primary: var(--light-color-logo-primary);
-  --color-logo-stroke: var(--light-color-logo-stroke);
-  --color-warning: var(--light-color-warning);
-  --color-error: var(--light-color-error);
+  --color-text-2: var(--light-color-text-2);
+  --color-text-3: var(--light-color-text-3);
+  --color-accent: var(--light-color-accent);
+  --color-on-accent: var(--light-color-on-accent);
+  --color-warn: var(--light-color-warn);
+  --color-ok: var(--light-color-ok);
+  --color-them: var(--light-color-them);
+  --color-danger: var(--light-color-danger);
 }
 
 :root[data-theme="dark"] {
+  --color-surface-0: var(--dark-color-surface-0);
+  --color-surface-1: var(--dark-color-surface-1);
+  --color-surface-2: var(--dark-color-surface-2);
+  --color-border: var(--dark-color-border);
   --color-text: var(--dark-color-text);
-  --color-background: var(--dark-color-background);
-  --color-logo-primary: var(--dark-color-logo-primary);
-  --color-logo-stroke: var(--dark-color-logo-stroke);
-  --color-warning: var(--dark-color-warning);
-  --color-error: var(--dark-color-error);
+  --color-text-2: var(--dark-color-text-2);
+  --color-text-3: var(--dark-color-text-3);
+  --color-accent: var(--dark-color-accent);
+  --color-on-accent: var(--dark-color-on-accent);
+  --color-warn: var(--dark-color-warn);
+  --color-ok: var(--dark-color-ok);
+  --color-them: var(--dark-color-them);
+  --color-danger: var(--dark-color-danger);
 }
