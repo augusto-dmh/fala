@@ -45,6 +45,9 @@ enum Command {
         file: PathBuf,
     },
     /// Mede WER e RTF de um modelo de ASR sobre cortes com referência.
+    ///
+    /// `bench format` mede o pós-processamento contra um corpus de ditados formatados.
+    #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
     Bench(bench::BenchArgs),
     /// Guarda, consulta e apaga chaves de API no keyring do SO.
     Key(key::KeyArgs),
@@ -108,6 +111,17 @@ fn main() -> ExitCode {
                 args,
                 &KeyringStore,
                 &mut io::stdin().lock(),
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            ));
+        }
+        Command::Bench(bench::BenchArgs {
+            command: Some(bench::BenchCommand::Format(args)),
+            ..
+        }) => {
+            return ExitCode::from(bench::format::run(
+                args,
+                &KeyringStore,
                 &mut io::stdout().lock(),
                 &mut io::stderr().lock(),
             ));

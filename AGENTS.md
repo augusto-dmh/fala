@@ -2,7 +2,7 @@
 
 Fala é um app desktop de ditado por voz e notas de reunião (Tauri 2 + Rust), fork não oficial do Handy.
 Leia `ARCHITECTURE.md` antes de criar ou mover crates ou adicionar dependências.
-As decisões estruturais estão em `docs/decisions/`. Para mudar uma, escreva uma ADR nova que substitua a antiga; nunca edite uma ADR aceita.
+As decisões estruturais estão em `docs/decisions/`. Para mudar uma, escreva uma ADR nova que substitua a antiga; nunca edite uma ADR aceita, exceto o `status` quando outra a substitui.
 Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` no Linux e `C:\dev\fala-research` no Windows (não versionado aqui).
 
 ## Comandos

@@ -4,6 +4,10 @@
 
 mod offer;
 
+// Ligada à sequência de colagem no PR seguinte da pilha.
+#[allow(dead_code)]
+mod offer;
+
 use std::time::Duration;
 
 use arboard::{ImageData, SetExtWindows as _};
