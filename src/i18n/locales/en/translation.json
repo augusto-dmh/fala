@@ -8,6 +8,9 @@
     "dictationLanguage": "Dictation language",
     "languagePtBr": "Portuguese (Brazil)",
     "languageEn": "English",
+    "microphone": "Microphone",
+    "microphoneAuto": "Automatic",
+    "microphoneAutoWithDevice": "Automatic ({{device}})",
     "quit": "Quit",
     "cancel": "Cancel",
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
@@ -443,8 +446,8 @@
         }
       },
       "customWords": {
-        "title": "Custom Words",
-        "description": "Help supported models recognize names and specialized terms. Fuzzy correction is currently limited to words using A–Z and numbers.",
+        "title": "Personal dictionary",
+        "description": "Names and terms Fala should always spell this way. They help supported models recognize what you say, fix the spelling in the text and go to the formatting AI. Fuzzy correction is limited to words using A–Z and numbers.",
         "placeholder": "Add a word",
         "add": "Add",
         "remove": "Remove {{word}}",
@@ -452,15 +455,7 @@
       },
       "voiceActivityDetection": {
         "title": "Voice Activity Detection",
-        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
-      },
-      "vadBackend": {
-        "title": "Voice Activity Backend",
-        "description": "Choose the detector used to filter silence. Earshot is experimental; switch back to Silero if speech is clipped or noise is retained.",
-        "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
-        }
+        "description": "Filter silence from recordings. Disabling VAD records raw audio."
       },
       "fillerWordRemoval": {
         "title": "Remove Filler Words",
@@ -537,11 +532,21 @@
       "transcribing": "Transcribing...",
       "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
       "undoAiEdit": "Undo AI edit",
-      "redoAiEdit": "Reapply AI edit",
+      "applyAiEdit": "Apply AI edit",
       "originalCopied": "Original text copied",
       "editedCopied": "Edited text copied",
       "editToggleError": "Couldn't switch the text",
-      "inApp": "in {{app}}"
+      "inApp": "in {{app}}",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "searchPlaceholder": "Search dictations",
+      "clearSearch": "Clear search",
+      "searchNoResults": "No dictations found.",
+      "searchError": "Could not search the history.",
+      "discarded": "This dictation was discarded.",
+      "recover": "Recover",
+      "recovered": "Dictation recovered and copied",
+      "recoverError": "Could not recover the dictation."
     },
     "debug": {
       "title": "Debug",
@@ -772,7 +777,9 @@
   "overlay": {
     "recording": "Recording",
     "transcribing": "Transcribing...",
-    "processing": "Processing..."
+    "processing": "Processing...",
+    "loadingModel": "Loading model…",
+    "recordingLoadingModel": "Recording, loading model…"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

@@ -21,7 +21,6 @@ import { VoiceActivityDetection } from "../VoiceActivityDetection";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
 import { FillerWordRemoval } from "../FillerWordRemoval";
-import { VadBackendSelector } from "../VadBackendSelector";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -69,7 +68,6 @@ export const AdvancedSettings: React.FC = () => {
           />
           <AccelerationSelector descriptionMode="tooltip" grouped={true} />
           <LazyStreamClose descriptionMode="tooltip" grouped={true} />
-          <VadBackendSelector descriptionMode="tooltip" grouped={true} />
         </SettingsGroup>
       )}
     </div>

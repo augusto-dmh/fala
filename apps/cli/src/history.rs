@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Context};
 use clap::{Args, Subcommand, ValueEnum};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
-use fala_storage::{DictationRecord, Store};
+use fala_storage::{DictationRecord, MetricsSummary, Percentiles, Store};
 
 /// A pasta do identifier do `tauri.conf.json`, a mesma `app_data_dir` do desktop.
 pub(crate) const APP_DIR: &str = "br.com.augusto.fala";
@@ -75,6 +75,12 @@ enum HistoryCommand {
     Undo { id: String },
     /// Reaplica a edição: o item volta a mostrar o final.
     Redo { id: String },
+    /// Resume as métricas dos ditados do desktop, com o orçamento de latência ao lado.
+    Stats {
+        /// Janela, em dias até agora.
+        #[arg(long, default_value_t = 7)]
+        days: u32,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -162,6 +168,10 @@ pub fn run(args: HistoryArgs) -> Result<(), Failure> {
             let record = store.redo(&id).map_err(|e| failed(e.into()))?;
             println!("{}", record.shown_text());
         }
+        HistoryCommand::Stats { days } => {
+            let summary = store.metrics_summary(days).map_err(|e| failed(e.into()))?;
+            print!("{}", stats(&summary));
+        }
     }
     Ok(())
 }
@@ -216,6 +226,35 @@ fn table(hits: &[DictationRecord]) -> String {
             cell(r.shown_text()),
         ));
     }
+    out
+}
+
+/// O resumo em linhas; as metas e máximos são os do ARCHITECTURE.md.
+fn stats(s: &MetricsSummary) -> String {
+    let p = |label: &str, p: Percentiles, budget: &str| {
+        let ms = |v: Option<u32>| v.map_or("-".to_string(), |v| format!("{v} ms"));
+        format!("{label}: p50 {} · p90 {}{budget}\n", ms(p.p50), ms(p.p90))
+    };
+    let mut out = format!(
+        "últimos {} dias\nditados: {}\npalavras: {}\nLLM tentado: {} ({} fallbacks)\n",
+        s.days, s.dictations, s.words, s.llm_attempts, s.fallbacks
+    );
+    for day in &s.per_day {
+        out.push_str(&format!(
+            "{}: {} ditados, {} palavras\n",
+            day.day, day.dictations, day.words
+        ));
+    }
+    out.push_str(&p(
+        "soltar → texto (sem LLM)",
+        s.e2e,
+        " (meta 700 ms, máx. 1000 ms)",
+    ));
+    out.push_str(&p("com LLM", s.e2e_llm, " (meta 1200 ms, máx. 2000 ms)"));
+    out.push_str(&p("asr", s.asr, ""));
+    out.push_str(&p("llm", s.llm, ""));
+    out.push_str(&p("colagem", s.paste, ""));
+    out.push_str(&p("fala", s.speech, ""));
     out
 }
 
