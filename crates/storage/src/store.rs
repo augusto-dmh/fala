@@ -76,14 +76,19 @@ impl Store {
             ))?,
             1 => {
                 // `VACUUM` não roda dentro de transação; se cair entre ele e a versão, roda de novo.
-                let vacuumed = conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL; VACUUM;");
-                match vacuumed {
-                    Ok(()) => conn.pragma_update(None, "user_version", SCHEMA_VERSION)?,
-                    Err(e) => log::warn!("fala.sqlite: VACUUM da migração adiado: {e}"),
+                let migrated = conn.execute_batch(&format!(
+                    "PRAGMA auto_vacuum = INCREMENTAL; VACUUM; PRAGMA user_version = {SCHEMA_VERSION};"
+                ));
+                if let Err(e) = migrated {
+                    log::warn!("fala.sqlite: VACUUM da migração adiado: {e}");
                 }
             }
             _ => {
-                if let Err(e) = incremental_vacuum(&conn) {
+                // Sem página livre, nada de pedir a trava de escrita (o MCP só lê).
+                let free: i64 = conn.pragma_query_value(None, "freelist_count", |r| r.get(0))?;
+                if free > 0
+                    && let Err(e) = incremental_vacuum(&conn)
+                {
                     log::warn!("fala.sqlite: incremental_vacuum adiado: {e}");
                 }
             }

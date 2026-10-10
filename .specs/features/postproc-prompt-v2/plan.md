@@ -74,7 +74,7 @@ PR 3 (corpus e bench):
 1. WHEN `Store::open` cria um banco novo THEN `fala-storage` SHALL deixá-lo com `auto_vacuum = 2` (INCREMENTAL) e `user_version = 2`
 2. WHEN `Store::open` abre um banco com schema 1 e `auto_vacuum = 0` THEN `fala-storage` SHALL deixá-lo com `auto_vacuum = 2`, `user_version = 2` e as linhas que já existiam legíveis e buscáveis
 3. WHEN o `VACUUM` da migração falha THEN `Store::open` SHALL devolver o `Store`, manter `user_version = 1` e registrar um `warn` sem conteúdo de ditado
-4. WHEN um banco com páginas livres é aberto THEN `fala-storage` SHALL devolvê-las (`freelist_count = 0` depois do `open`)
+4. WHEN um banco com páginas livres é aberto THEN `fala-storage` SHALL devolvê-las (`freelist_count = 0` depois do `open`); WHEN não há página livre THEN `Store::open` SHALL não pedir a trava de escrita (achado do Verifier: o MCP abre o banco só para ler)
 
 **Independent test:** `cargo test -p fala-storage --test store`
 
@@ -115,7 +115,7 @@ PR 3 (corpus e bench):
 
 ## Observable
 
-- Nenhuma linha de log nova acima de `debug`; o bench imprime só números.
+- Duas linhas `warn!` novas no `fala-storage` (`VACUUM` da migração e `incremental_vacuum` adiados), com o erro do SQLite e sem conteúdo de ditado; nenhuma outra acima de `debug`. O bench imprime só números.
 
 ## Sources
 
