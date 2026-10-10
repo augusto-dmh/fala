@@ -294,3 +294,67 @@ const navFile = sources.find((p) => /components\/(Sidebar|Rail)\.tsx$/.test(p));
 assert.ok(navFile, "the navigation component exists");
 assert.doesNotMatch(readFileSync(navFile, "utf8"), /bg-logo-primary\/80/);
 ok("C13");
+
+// The checks below belong to the ADR on the UI identity
+// (`.specs/features/ui-onboarding/checks.md`, S3).
+const decisionsDir = new URL("../../docs/decisions/", import.meta.url).pathname;
+const designDoc = read("../../docs/design/ui.md");
+
+// C17: ADR-0017 is proposed, follows the template and carries the three rules.
+{
+  const file = readdirSync(decisionsDir).find((name) =>
+    name.startsWith("0017-"),
+  );
+  assert.ok(file, "docs/decisions/0017-*.md exists");
+  const adr = readFileSync(join(decisionsDir, file), "utf8");
+  assert.match(adr, /^---\nstatus: proposed\ndate: 2026-10-10\n---\n/);
+  for (const heading of [
+    "## Contexto e problema",
+    "## Opções consideradas",
+    "## Decisão",
+    "### Consequências",
+    "## Confirmação",
+  ]) {
+    assert.ok(adr.includes(`\n${heading}\n`), `ADR-0017 has ${heading}`);
+  }
+  assert.match(adr, /\*\*O app abre no conteúdo, não em configurações\.\*\*/);
+  assert.match(adr, /\*\*Cor só semântica, sem cor de marca\.\*\*/);
+  assert.match(
+    adr,
+    /\*\*Os tokens vêm de `src\/styles\/theme\.css`, fonte única\.\*\*/,
+  );
+  assert.ok(adr.includes("`docs/design/ui.md`"), "ADR-0017 cites ui.md");
+  ok("C17");
+}
+
+// C18: docs/design/ui.md lists every token with the same values as theme.css,
+// the type ramp, the radii and the window layout.
+{
+  const rows = new Map<string, [string, string]>();
+  for (const m of designDoc.matchAll(
+    /^\| `([\w-]+)` \| `?([^|`]+?)`? \| `?([^|`]+?)`? \|/gm,
+  )) {
+    rows.set(m[1], [m[2].trim(), m[3].trim()]);
+  }
+  for (const token of THEMED) {
+    assert.deepEqual(
+      rows.get(token),
+      [
+        rootBlock.get(`--light-color-${token}`),
+        rootBlock.get(`--dark-color-${token}`),
+      ],
+      `ui.md ${token} matches theme.css`,
+    );
+  }
+  const rec = rootBlock.get("--color-rec");
+  assert.deepEqual(rows.get("rec"), [rec, rec], "ui.md rec matches theme.css");
+  assert.ok(designDoc.includes("| `me` | = `ok` | = `ok` |"), "ui.md me = ok");
+  for (const step of ["12/16", "14/20", "18/24", "20/28", "28/36"]) {
+    assert.ok(designDoc.includes(`| ${step} |`), `ui.md ramp ${step}`);
+  }
+  assert.match(designDoc, /Raio: 4 px em controles/);
+  assert.match(designDoc, /8 px em diálogos/);
+  assert.match(designDoc, /960×640 por padrão, mínimo 720×520/);
+  assert.match(designDoc, /220 px, recolhido em 48 px/);
+  ok("C18");
+}
