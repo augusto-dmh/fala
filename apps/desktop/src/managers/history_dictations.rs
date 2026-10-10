@@ -123,13 +123,20 @@ pub(crate) fn dictation_for(
     })
 }
 
-/// Grava um item e devolve o id; com falha só no espelho, o id que o erro informa.
+/// Grava um item (sensível por `Store::add_sensitive`) e devolve o id; com falha só no espelho,
+/// o id que o erro informa.
 pub(crate) fn add_dictation(
     store: &Store,
     dictation: &Dictation,
     timestamp: i64,
+    sensitive: bool,
 ) -> Option<String> {
-    match store.add(dictation, created_at(timestamp)) {
+    let added = if sensitive {
+        store.add_sensitive(dictation, created_at(timestamp))
+    } else {
+        store.add(dictation, created_at(timestamp))
+    };
+    match added {
         Ok(record) => Some(record.id),
         Err(StorageError::Mirror { id, path, source }) => {
             error!(
@@ -212,7 +219,7 @@ pub(crate) fn backfill(conn: &Connection, store: &Store, language: Language) -> 
             editor,
             app: AppContext::default(),
         };
-        let Some(dictation_id) = add_dictation(store, &dictation, timestamp) else {
+        let Some(dictation_id) = add_dictation(store, &dictation, timestamp, false) else {
             anyhow::bail!("backfill stopped at history entry {id}");
         };
         conn.execute(
@@ -323,6 +330,7 @@ mod tests {
             app: AppContext {
                 app_name: app.map(str::to_string),
             },
+            sensitive: false,
         }
     }
 
@@ -376,6 +384,106 @@ mod tests {
 
     fn not_found(store: &Store, id: &str) -> bool {
         matches!(store.get(id), Err(StorageError::NotFound(_)))
+    }
+
+    #[test]
+    fn disabled_app_marks_sensitive() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.llm_disabled_apps = vec!["keepassxc".to_string()];
+        for (app, sensitive) in [("KeePassXC", true), ("notepad", false)] {
+            let env = scratch();
+            let store = env.store();
+            let conn = history();
+            let mut e = entry(
+                "fala-1.wav",
+                "senha nova",
+                "Senha nova",
+                false,
+                None,
+                Some(app),
+            );
+            e.sensitive = crate::llm_auto::is_disabled_app(&settings, &e.app);
+
+            let saved = save(&conn, Some(&store), e, 1);
+
+            let record = store.get(&link(&conn, saved.id).unwrap()).unwrap();
+            assert_eq!(record.sensitive, sensitive, "{app}");
+        }
+    }
+
+    #[test]
+    fn retry_keeps_sensitive() {
+        for sensitive in [true, false] {
+            let env = scratch();
+            let store = env.store();
+            let conn = history();
+            let mut e = entry(
+                "fala-1.wav",
+                "velho",
+                "Velho",
+                false,
+                None,
+                Some("keepassxc"),
+            );
+            e.sensitive = sensitive;
+            let saved = save(&conn, Some(&store), e, 1);
+            let old = link(&conn, saved.id).unwrap();
+
+            HistoryManager::update_transcription_with(
+                &conn,
+                Some(&store),
+                saved.id,
+                EntryTexts {
+                    transcription_text: "novo".to_string(),
+                    post_processed_text: Some("Novo".to_string()),
+                    post_process_prompt: None,
+                    pasted_text: "Novo".to_string(),
+                    llm_produced: false,
+                },
+                Language::PtBr,
+            )
+            .unwrap();
+
+            let new = link(&conn, saved.id).unwrap();
+            assert_ne!(new, old);
+            let record = store.get(&new).unwrap();
+            assert_eq!(record.dictation.final_text, "Novo", "{sensitive}");
+            assert_eq!(record.sensitive, sensitive, "{sensitive}");
+        }
+    }
+
+    #[test]
+    fn undo_after_late_edit() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let saved = save(
+            &conn,
+            Some(&store),
+            entry("fala-1.wav", "bruto", "Bruto", false, Some("Bruto"), None),
+            1,
+        );
+        let id = link(&conn, saved.id).unwrap();
+
+        let late =
+            HistoryManager::apply_late_edit_with(&conn, Some(&store), saved.id, "Bruto, editado.")
+                .unwrap();
+        let shown = late.dictation.unwrap();
+        assert_eq!(shown.editor, HistoryEditor::Llm);
+        assert_eq!(shown.showing, HistoryShowing::Raw);
+
+        let applied =
+            HistoryManager::set_showing_with(&conn, Some(&store), saved.id, Showing::Final)
+                .unwrap();
+        assert_eq!(applied.dictation.unwrap().showing, HistoryShowing::Final);
+        assert_eq!(store.get(&id).unwrap().shown_text(), "Bruto, editado.");
+
+        let undone =
+            HistoryManager::set_showing_with(&conn, Some(&store), saved.id, Showing::Raw).unwrap();
+        let undone = undone.dictation.unwrap();
+        assert_eq!(undone.showing, HistoryShowing::Raw);
+        assert_eq!(undone.editor, HistoryEditor::Llm);
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Raw);
     }
 
     #[test]
