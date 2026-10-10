@@ -152,6 +152,18 @@ pub async fn redo_history_entry_edit(
         .map_err(|e| e.to_string())
 }
 
+/// Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
+/// recentes primeiro, como linhas do histórico.
+#[tauri::command]
+#[specta::specta]
+pub async fn history_search(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    query: String,
+) -> Result<Vec<HistoryEntry>, String> {
+    history_manager.search(&query).map_err(|e| e.to_string())
+}
+
 /// "Recuperar": a linha descartada volta ao normal, com o texto que tem.
 #[tauri::command]
 #[specta::specta]

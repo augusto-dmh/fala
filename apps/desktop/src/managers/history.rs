@@ -47,6 +47,9 @@ pub(crate) static MIGRATIONS: &[M] = &[
 const ENTRY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, \
      post_processed_text, post_process_prompt, post_process_requested, dictation_id, paste_failed";
 
+/// The most entries a history search returns.
+const SEARCH_LIMIT: usize = 100;
+
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
     pub entries: Vec<HistoryEntry>,
@@ -912,6 +915,43 @@ impl HistoryManager {
         entry.discarded =
             history_dictations::is_discarded(entry.paste_failed, entry.dictation.as_ref());
         Ok(entry)
+    }
+
+    /// The entries whose dictation matches `query` in fala.sqlite, newest first.
+    pub fn search(&self, query: &str) -> Result<Vec<HistoryEntry>> {
+        let conn = self.get_connection()?;
+        let store = self.lock_store();
+        Self::search_with(&conn, store.as_deref(), query)
+    }
+
+    /// Searches the store, then reads each match's history row; a dictation without a row
+    /// (written by the CLI, or orphaned) is skipped.
+    pub(crate) fn search_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        query: &str,
+    ) -> Result<Vec<HistoryEntry>> {
+        let store = store.ok_or_else(|| anyhow!("fala.sqlite is not available"))?;
+        let records = store
+            .search(query, SEARCH_LIMIT)
+            .map_err(|e| anyhow!("{}", e))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ENTRY_COLUMNS} FROM transcription_history WHERE dictation_id = ?1"
+        ))?;
+        let mut entries = Vec::with_capacity(records.len());
+        for record in &records {
+            let Some(mut entry) = stmt
+                .query_row([&record.id], Self::map_history_entry)
+                .optional()?
+            else {
+                continue;
+            };
+            entry.dictation = Some(HistoryDictation::from(record));
+            entry.discarded =
+                history_dictations::is_discarded(entry.paste_failed, entry.dictation.as_ref());
+            entries.push(entry);
+        }
+        Ok(entries)
     }
 
     /// "Recuperar": the discarded entry becomes a normal one, showing the text it has.
