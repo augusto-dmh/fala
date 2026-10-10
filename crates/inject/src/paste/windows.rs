@@ -5,6 +5,10 @@
 //! TODO(windows): verificar à mão com `cargo run -p fala-inject --example paste` e o Bloco de
 //! Notas em foco.
 
+// Ligada à sequência de colagem no PR seguinte da pilha.
+#[allow(dead_code)]
+mod offer;
+
 use std::time::Duration;
 
 use arboard::ImageData;
