@@ -107,7 +107,7 @@ fn migrates_v1_to_v2_keeping_dictations() {
     assert_eq!(user_version(&e.db), 1);
 
     let store = e.open();
-    assert_eq!(user_version(&e.db), 2);
+    assert_eq!(user_version(&e.db), 3);
     let names = tables(&e.db);
     assert!(names.contains(&"meetings".to_string()), "{names:?}");
     assert!(names.contains(&"meeting_segments".to_string()), "{names:?}");
@@ -127,10 +127,10 @@ fn migrates_v1_to_v2_keeping_dictations() {
     );
     drop(store);
 
-    // Um banco novo abre direto em 2 e aceita ditados e reuniões.
+    // Um banco novo abre direto em 3 e aceita ditados e reuniões.
     let fresh = env("meetings_migrate_fresh");
     let store = fresh.open();
-    assert_eq!(user_version(&fresh.db), 2);
+    assert_eq!(user_version(&fresh.db), 3);
     store.add(&unedited("oi"), at(9, 0, 0)).unwrap();
     store.create_meeting(&new_meeting(1, 10)).unwrap();
     drop(store);

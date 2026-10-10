@@ -5,7 +5,13 @@ import "./RecordingOverlay.css";
 import "./Pill.css";
 import { Pill } from "./Pill";
 import { MeetingPill } from "./MeetingPill";
-import { isHoldToTalk, toPillMode } from "./pillModel";
+import {
+  SLOW_LOAD_MS,
+  isHoldToTalk,
+  nextModelLoadStart,
+  showsModelLoading,
+  toPillMode,
+} from "./pillModel";
 import { commands, events } from "@/bindings";
 import type {
   StreamPhase,
@@ -14,6 +20,7 @@ import type {
   StreamWorkKind,
 } from "@/bindings";
 import i18n, { syncLanguageFromSettings } from "@/i18n";
+import type { ModelStateEvent } from "@/lib/types/events";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
 type OverlayState =
@@ -39,6 +46,12 @@ const RecordingOverlay: React.FC = () => {
   // The recording is close to the session limit (19 of 20 minutes): the dot
   // turns amber until the overlay hides or a new session shows.
   const [limitWarning, setLimitWarning] = useState(false);
+  // Recording starts while the model loads in the background. When the in-flight load started
+  // (ms), or null: after the key is released the wait is the load, not the transcription, and a
+  // cold start would otherwise look like a stuck pill.
+  const [loadStart, setLoadStart] = useState<number | null>(null);
+  // Re-render once the load crosses SLOW_LOAD_MS during the recording.
+  const [now, setNow] = useState(() => Date.now());
   const [levels, setLevels] = useState<number[]>(Array(WAVE_BARS).fill(0));
   const [streamText, setStreamText] = useState<StreamTextEvent>({
     committed: "",
@@ -151,7 +164,19 @@ const RecordingOverlay: React.FC = () => {
         if (payload.kind) setWorkKind(payload.kind);
       });
 
+      const unlistenModel = await listen<ModelStateEvent>(
+        "model-state-changed",
+        (event) => {
+          const at = Date.now();
+          setNow(at);
+          setLoadStart((current) =>
+            nextModelLoadStart(current, event.payload.event_type, at),
+          );
+        },
+      );
+
       return () => {
+        unlistenModel();
         unlistenShow();
         unlistenHide();
         unlistenReady();
@@ -172,6 +197,18 @@ const RecordingOverlay: React.FC = () => {
     const id = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(id);
   }, [state, isVisible, captureReady]);
+
+  // While a load is in flight, wake up when it becomes slow so the recording pill can show it.
+  useEffect(() => {
+    if (loadStart === null) return;
+    const wait = loadStart + SLOW_LOAD_MS - Date.now();
+    if (wait <= 0) {
+      setNow(Date.now());
+      return;
+    }
+    const id = setTimeout(() => setNow(Date.now()), wait);
+    return () => clearTimeout(id);
+  }, [loadStart]);
 
   // Stick to the bottom as text streams in — but only while pinned, so a user who
   // has scrolled up to read history isn't yanked back down by the next chunk.
@@ -197,6 +234,9 @@ const RecordingOverlay: React.FC = () => {
     if (!el) return;
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
   };
+
+  const transcribingLabel =
+    loadStart !== null ? t("overlay.loadingModel") : t("overlay.transcribing");
 
   const fmtTime = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -304,7 +344,7 @@ const RecordingOverlay: React.FC = () => {
             ? workingRow(
                 workKind === "polishing"
                   ? t("overlay.processing")
-                  : t("overlay.transcribing"),
+                  : transcribingLabel,
                 true,
               )
             : listeningRow(open, true)}
@@ -337,6 +377,16 @@ const RecordingOverlay: React.FC = () => {
   }
 
   const pillMode = toPillMode(state) ?? "recording";
+  const pillLoading = showsModelLoading(pillMode, loadStart, now);
+  const loadingLabel =
+    pillMode === "recording"
+      ? t("overlay.recordingLoadingModel")
+      : t("overlay.loadingModel");
+  const pillLabel = pillLoading
+    ? loadingLabel
+    : pillMode === "recording"
+      ? t("overlay.recording")
+      : t("overlay.processing");
 
   return (
     <div
@@ -347,13 +397,10 @@ const RecordingOverlay: React.FC = () => {
         mode={pillMode}
         holdToTalk={holdToTalk}
         limit={limitWarning}
+        modelLoading={pillLoading}
         ready={captureReady}
         levels={levels}
-        label={
-          pillMode === "recording"
-            ? t("overlay.recording")
-            : t("overlay.processing")
-        }
+        label={pillLabel}
       />
     </div>
   );

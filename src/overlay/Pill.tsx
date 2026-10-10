@@ -12,6 +12,8 @@ export interface PillProps {
   holdToTalk: boolean;
   /** The recording is close to the session limit (`recording-limit-warning`). */
   limit?: boolean;
+  /** The model is still loading (ring and sweep over the capsule). */
+  modelLoading?: boolean;
   /** Microphone samples are flowing (`recording-ready`). */
   ready: boolean;
   /** Smoothed `mic-level` buckets. */
@@ -27,6 +29,7 @@ export function Pill({
   mode,
   holdToTalk,
   limit = false,
+  modelLoading = false,
   ready,
   levels,
   label,
@@ -42,6 +45,7 @@ export function Pill({
     mode,
     pillTone(mode, holdToTalk, limit) ?? "",
     recording && !ready ? "arming" : "",
+    modelLoading ? "loading" : "",
   ]
     .filter(Boolean)
     .join(" ");

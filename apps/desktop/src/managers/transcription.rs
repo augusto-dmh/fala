@@ -1774,7 +1774,12 @@ fn post_process_transcription_text(
     supported_languages: &[String],
 ) -> String {
     fail_open_text_transform(raw, |raw| {
-        let corrected = if !settings.custom_words.is_empty() && !custom_words_already_prompted {
+        // While the LLM is configured, `llm_auto` runs the correction on the text the LLM
+        // did not write, so the LLM reads what the model heard.
+        let corrected = if !settings.custom_words.is_empty()
+            && !custom_words_already_prompted
+            && !crate::llm_auto::llm_configured(settings)
+        {
             apply_custom_words(
                 &raw,
                 &settings.custom_words,
@@ -1891,19 +1896,29 @@ pub fn init_transcribe_backend() {
                      disabling transcribe.cpp GPU acceleration and using CPU"
                 );
             }
-            let devices = transcribe_compute_devices();
-            info!(
-                "transcribe-cpp initialized with {} compute device(s): [{}]",
-                devices.len(),
-                devices
-                    .iter()
-                    .map(|d| format!("{} ({})", d.name, d.kind))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
         }
         Err(e) => warn!("Failed to initialize transcribe-cpp backends: {}", e),
     }
+}
+
+/// Log the compute devices [`init_transcribe_backend`] registered.
+///
+/// Listing devices is what first opens the GPU. On macOS that loads ggml's
+/// Metal library, which is compiled from source whenever the system's shader
+/// cache does not hold it yet (the first launch after an install or update),
+/// so the app calls this from a background thread instead of its startup
+/// path. A model load that comes first waits on the same one-time compile.
+pub fn report_compute_devices() {
+    let devices = transcribe_compute_devices();
+    info!(
+        "transcribe-cpp initialized with {} compute device(s): [{}]",
+        devices.len(),
+        devices
+            .iter()
+            .map(|d| format!("{} ({})", d.name, d.kind))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 }
 
 /// Human-readable list of the transcribe-cpp compute devices registered at
@@ -2217,6 +2232,33 @@ mod tests {
         });
 
         assert_eq!(result, raw);
+    }
+
+    #[test]
+    fn fuzzy_waits_for_the_llm_while_it_is_configured() {
+        let mut settings = AppSettings {
+            custom_words: vec!["Augusto".to_string()],
+            llm_enabled: true,
+            ..Default::default()
+        };
+        let run = |settings: &AppSettings| {
+            post_process_transcription_text(
+                "agusto mandou".to_string(),
+                settings,
+                false,
+                &OutputLanguageEvidence::Unknown,
+                &[],
+            )
+        };
+
+        assert_eq!(run(&settings), "Augusto mandou", "without a key");
+        settings.post_process_api_keys.insert(
+            crate::settings::GEMINI_PROVIDER_ID.to_string(),
+            "chave-de-teste".to_string(),
+        );
+        assert_eq!(run(&settings), "agusto mandou", "with the LLM configured");
+        settings.llm_enabled = false;
+        assert_eq!(run(&settings), "Augusto mandou", "with the LLM off");
     }
 
     #[test]

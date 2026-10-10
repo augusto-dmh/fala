@@ -1,16 +1,20 @@
 // Prova dos checks da pill (`.specs/features/pill-redesign/checks.md`), do vermelho no modo
 // padrão de dois toques (`.specs/features/shortcut-gestures/checks.md`, C24) e do estado âmbar
-// do limite de sessão (`.specs/features/session-limit/checks.md`, C18).
+// do limite de sessão (`.specs/features/session-limit/checks.md`, C18) e do estado de carga do
+// modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Pill, type PillProps } from "./Pill";
 import {
+  SLOW_LOAD_MS,
   formatElapsed,
   isHoldToTalk,
+  nextModelLoadStart,
   pillBars,
   pillTone,
+  showsModelLoading,
   toPillMode,
 } from "./pillModel";
 import { MeetingPill } from "./MeetingPill";
@@ -19,6 +23,8 @@ const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
 const css = read("./Pill.css");
 const overlaySource = read("./RecordingOverlay.tsx");
+const locale = (lang: string) =>
+  JSON.parse(read(`../i18n/locales/${lang}/translation.json`));
 
 const zeros = Array(16).fill(0);
 const loud = Array(16).fill(1);
@@ -352,6 +358,132 @@ function ok(id: string) {
     "o estado do recording-limit-warning precisa chegar à pill",
   );
   ok("session-limit C18");
+}
+
+// upstream-catchup PR2 C1 - só completed/failed encerram a carga; started repetido mantém o início.
+{
+  assert.equal(nextModelLoadStart(null, "loading_started", 1000), 1000);
+  assert.equal(nextModelLoadStart(500, "loading_started", 1000), 500);
+  assert.equal(nextModelLoadStart(500, "loading_completed", 1000), null);
+  assert.equal(nextModelLoadStart(500, "loading_failed", 1000), null);
+  assert.equal(nextModelLoadStart(500, "unloaded", 1000), 500);
+  assert.equal(nextModelLoadStart(500, "selection_changed", 1000), 500);
+  assert.equal(nextModelLoadStart(null, "unloaded", 1000), null);
+  ok("upstream-catchup PR2 C1");
+}
+
+// upstream-catchup PR2 C2 - processando mostra a carga na hora; gravando, só a partir de 2 s.
+{
+  assert.equal(SLOW_LOAD_MS, 2000);
+  assert.equal(showsModelLoading("recording", null, 10_000), false);
+  assert.equal(showsModelLoading("processing", null, 10_000), false);
+  assert.equal(showsModelLoading("processing", 1000, 1000), true);
+  assert.equal(showsModelLoading("recording", 1000, 2999), false);
+  assert.equal(showsModelLoading("recording", 1000, 3000), true);
+  ok("upstream-catchup PR2 C2");
+}
+
+// upstream-catchup PR2 C3 - classe `loading`, sem texto, barras ao vivo gravando e paradas processando.
+{
+  const recording = render({ modelLoading: true, levels: loud });
+  assert.ok(classes(recording).includes("loading"), recording);
+  assert.equal(text(recording), "");
+  onlyBars(recording);
+  assert.deepEqual(bars(recording), Array(10).fill(18));
+
+  const processing = render({
+    mode: "processing",
+    modelLoading: true,
+    levels: loud,
+  });
+  assert.ok(classes(processing).includes("loading"), processing);
+  assert.equal(text(processing), "");
+  onlyBars(processing);
+  assert.deepEqual(bars(processing), [5, 7, 9, 11, 13, 13, 11, 9, 7, 5]);
+
+  assert.ok(!classes(render({})).includes("loading"));
+  assert.ok(!classes(render({ mode: "processing" })).includes("loading"));
+  assert.ok(!classes(render({ modelLoading: false })).includes("loading"));
+  ok("upstream-catchup PR2 C3");
+}
+
+// upstream-catchup PR2 C4 - anel e brilho; processando troca o pulso pelo brilho; sem movimento, só o anel.
+{
+  has(
+    rule(css, ".fpill.loading"),
+    "box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6)",
+    ".fpill.loading",
+  );
+  const sweep = rule(css, ".fpill.loading::after");
+  assert.ok(
+    /animation:\s*fpill-loading-sweep\b[^;]*\binfinite\b/.test(sweep),
+    `.fpill.loading::after sem o brilho: ${sweep}`,
+  );
+  assert.ok(/@keyframes\s+fpill-loading-sweep\s*\{/.test(css));
+  has(
+    rule(css, ".fpill.processing.loading"),
+    "animation: none",
+    ".fpill.processing.loading",
+  );
+  const media = css.match(
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/,
+  );
+  assert.ok(media, "sem @media (prefers-reduced-motion: reduce)");
+  const still = rule(media[1], ".fpill.loading::after");
+  has(still, "animation: none", "reduced-motion loading");
+  has(still, "display: none", "reduced-motion loading");
+  ok("upstream-catchup PR2 C4");
+}
+
+// upstream-catchup PR2 C5 - strings pt e en, usadas no aria-label da pill.
+{
+  const pt = locale("pt").overlay;
+  const en = locale("en").overlay;
+  assert.equal(pt.loadingModel, "Carregando modelo…");
+  assert.equal(pt.recordingLoadingModel, "Gravando, carregando modelo…");
+  assert.equal(en.loadingModel, "Loading model…");
+  assert.equal(en.recordingLoadingModel, "Recording, loading model…");
+  assert.ok(overlaySource.includes('t("overlay.loadingModel")'));
+  assert.ok(overlaySource.includes('t("overlay.recordingLoadingModel")'));
+  assert.ok(
+    /const pillLabel = pillLoading\s*\?\s*loadingLabel/.test(overlaySource),
+    "o rótulo da pill precisa trocar para o de carga",
+  );
+  assert.ok(overlaySource.includes("label={pillLabel}"));
+  ok("upstream-catchup PR2 C5");
+}
+
+// upstream-catchup PR2 C6 - o overlay segue model-state-changed e liga a pill e o rótulo ao vivo.
+{
+  assert.ok(
+    /listen<ModelStateEvent>\(\s*"model-state-changed"/.test(overlaySource),
+    "o overlay precisa escutar model-state-changed",
+  );
+  assert.ok(overlaySource.includes("nextModelLoadStart("));
+  assert.ok(overlaySource.includes("showsModelLoading("));
+  assert.ok(overlaySource.includes("modelLoading={pillLoading}"));
+  assert.ok(
+    /workKind === "polishing"\s*\?\s*t\("overlay\.processing"\)\s*:\s*transcribingLabel/.test(
+      overlaySource,
+    ),
+    "o rótulo de trabalho ao vivo precisa usar transcribingLabel",
+  );
+  assert.ok(
+    /const transcribingLabel =\s*loadStart !== null\s*\?\s*t\("overlay\.loadingModel"\)/.test(
+      overlaySource,
+    ),
+  );
+  ok("upstream-catchup PR2 C6");
+}
+
+// upstream-catchup PR2 C7 - nenhuma espera nova antes de a pill aparecer.
+{
+  const handler = overlaySource.match(
+    /listen\("show-overlay", async \(event\) => \{([\s\S]*?)\n {6}\}\);/,
+  );
+  assert.ok(handler, "sem o handler de show-overlay");
+  assert.equal((handler[1].match(/\bawait\b/g) ?? []).length, 2, handler[1]);
+  ok("upstream-catchup PR2 C7");
 }
 
 // Pill da reunião (`.specs/features/meeting-panel/checks.md`, C15 e C25).

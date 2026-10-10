@@ -1380,6 +1380,11 @@ fn unbind_legacy_post_process_shortcut(settings: &mut AppSettings) {
     }
 }
 
+/// The updater is off: `plugins.updater` is empty in `tauri.conf.json` until the
+/// signed release flow exists (ADR-0008, docs/RELEASE.md). Mirrors
+/// `UPDATER_ENABLED` in `src/lib/updater.ts`; flip both together.
+pub const UPDATER_ENABLED: bool = false;
+
 /// Update checks are forced off (without touching the persisted setting) when
 /// `FALA_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
 /// can't work against an immutable /nix/store install.
@@ -2113,6 +2118,23 @@ mod tests {
             apply_settings_migrations(&mut settings, &raw);
             assert_eq!(settings.selected_language, stored, "stored '{stored}'");
         }
+    }
+
+    #[test]
+    fn earshot_store_still_loads() {
+        // The Earshot selector is gone (the dictation VAD is Silero v4, ADR-0009),
+        // but a store that picked it must keep loading.
+        let raw = serde_json::json!({
+            "settings_schema_version": 2,
+            "selected_model": "",
+            "onboarding_completed": true,
+            "whats_new_last_seen_version": "",
+            "overlay_style": "live",
+            "vad_backend": "earshot"
+        });
+        let settings: AppSettings =
+            serde_json::from_value(raw).expect("an earshot store must parse strictly");
+        assert_eq!(settings.vad_backend, VadBackend::Earshot);
     }
 
     mod key_vault {

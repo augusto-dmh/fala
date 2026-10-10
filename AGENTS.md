@@ -38,7 +38,8 @@ Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` n
 
 - O projeto roda em duas máquinas: Ubuntu 25.04 (GNOME Wayland, 14 GB de RAM) e Windows 11 (Alienware 16, 32 GB), que é o alvo da fase 1. Confira em qual você está antes de seguir um handoff. No Linux, o que só dá para verificar no Windows fica marcado `TODO(windows)`. No Windows, esses itens são trabalho a fazer: o handoff da rodada Windows, em `fala-research`, lista a ordem.
 - Linux precisa dos pacotes de sistema listados em `docs/dev/build-windows.md` (apêndice Linux) para compilar `apps/desktop` (webkit2gtk, Vulkan/glslc, OpenSSL, evdev, gtk-layer-shell).
-- Windows: `VK_LOADER_LAYERS_DISABLE=~implicit~` é definido pelo app (opt-out: `FALA_KEEP_VULKAN_IMPLICIT_LAYERS=1`). Se aparecer erro de path-limit (`MSB3491`, `FTK1011`), use um `CARGO_TARGET_DIR` curto (`C:\f`).
+- Windows: `VK_LOADER_LAYERS_DISABLE=~implicit~` é definido pelo app (opt-out: `FALA_KEEP_VULKAN_IMPLICIT_LAYERS=1`).
+- Windows: todo `cargo` roda com `CARGO_TARGET_DIR=C:\f\<nome-da-pasta-do-worktree>` (o clone principal usa `C:\f\main`), sempre o mesmo por worktree. O caminho curto evita o path-limit (`MSB3491`, `FTK1011`); o nome exato deixa a limpeza agendada apagar o build quando o worktree some ou fica 7 dias sem build. Nunca compile no `./target` do worktree nem invente outra pasta: cada target de dev ocupa 10–25 GB.
 - O modelo VAD (`apps/desktop/resources/models/silero_vad_v4.onnx`) é versionado. Os modelos de ASR são baixados no primeiro uso para a pasta de dados do app, nunca para o repo.
 - Os modelos ainda vêm do CDN do upstream (`blob.handy.computer`); não adicione URLs novas para ele.
 - O updater está desligado (`plugins.updater` vazio em `tauri.conf.json`). Não o religue sem `docs/RELEASE.md` (ADR-0008).
