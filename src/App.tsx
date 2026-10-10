@@ -9,15 +9,11 @@ import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
-import {
-  checkAccessibilityPermission,
-  checkMicrophonePermission,
-} from "tauri-plugin-macos-permissions-api";
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
-import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
+import Onboarding from "./components/onboarding";
 import { type OnboardingPreviewStep } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Rail, type RailDestination } from "./components/Rail";
@@ -32,10 +28,9 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
-type OnboardingStep = "accessibility" | "model" | "done";
-
-// Stable identity so preview effects do not re-run due to callback changes.
-const NOOP = () => {};
+// "microphone" is the returning user whose microphone Windows now denies:
+// the wizard reopens on that step alone.
+type OnboardingStep = "full" | "microphone" | "done";
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -44,9 +39,6 @@ function App() {
   );
   const [onboardingPreview, setOnboardingPreview] =
     useState<OnboardingPreviewStep | null>(null);
-  // Track if this is a returning user who just needs to grant permissions
-  // (vs a new user who needs full onboarding including model selection)
-  const [isReturningUser, setIsReturningUser] = useState(false);
   // The window opens on Início (the dictations), not on settings.
   const [destination, setDestination] = useState<RailDestination>("home");
   const [settingsView, setSettingsView] = useState<SettingsView>("general");
@@ -62,8 +54,8 @@ function App() {
   const settingsScrollRef = useRef<HTMLElement>(null);
   const isShowingOnboarding =
     onboardingPreview !== null ||
-    onboardingStep === "accessibility" ||
-    onboardingStep === "model";
+    onboardingStep === "full" ||
+    onboardingStep === "microphone";
 
   // Classic scrollbars consume layout space. Reserve a matching gutter on the
   // opposite edge while onboarding is visible so its content stays centered in
@@ -220,26 +212,8 @@ function App() {
       const currentPlatform = platform();
 
       if (hasCompletedOnboarding) {
-        // Returning user - check if they need to grant permissions first
-        setIsReturningUser(true);
-
-        if (currentPlatform === "macos") {
-          try {
-            const [hasAccessibility, hasMicrophone] = await Promise.all([
-              checkAccessibilityPermission(),
-              checkMicrophonePermission(),
-            ]);
-            if (!hasAccessibility || !hasMicrophone) {
-              await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
-              return;
-            }
-          } catch (e) {
-            console.warn("Failed to check macOS permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
-          }
-        }
-
+        // Returning user: only a microphone Windows now denies reopens the
+        // wizard, on that step alone.
         if (currentPlatform === "windows") {
           try {
             const microphoneStatus =
@@ -249,7 +223,7 @@ function App() {
               microphoneStatus.overall_access === "denied"
             ) {
               await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
+              setOnboardingStep("microphone");
               return;
             }
           } catch (e) {
@@ -260,25 +234,13 @@ function App() {
 
         setOnboardingStep("done");
       } else {
-        // New user - start full onboarding
-        setIsReturningUser(false);
-        setOnboardingStep("accessibility");
+        // New user: the three-step wizard, ending on Início.
+        setOnboardingStep("full");
       }
     } catch (error) {
       console.error("Failed to check onboarding status:", error);
-      setOnboardingStep("accessibility");
+      setOnboardingStep("full");
     }
-  };
-
-  const handleAccessibilityComplete = () => {
-    // Returning users already have models, skip to main app
-    // New users need to select a model
-    setOnboardingStep(isReturningUser ? "done" : "model");
-  };
-
-  const handleModelSelected = () => {
-    // Transition to main app - user has started a download
-    setOnboardingStep("done");
   };
 
   // Rendered once around every step below (including onboarding) so
@@ -318,11 +280,12 @@ function App() {
     // as it does during first-run onboarding.
     content = (
       <>
-        {onboardingPreview === "accessibility" ? (
-          <AccessibilityOnboarding onComplete={NOOP} preview />
-        ) : (
-          <Onboarding onModelSelected={NOOP} preview />
-        )}
+        <Onboarding
+          key={onboardingPreview}
+          preview
+          initialStep={onboardingPreview}
+          onFinish={() => setOnboardingPreview(null)}
+        />
         <button
           type="button"
           onClick={() => setOnboardingPreview(null)}
@@ -332,12 +295,16 @@ function App() {
         </button>
       </>
     );
-  } else if (onboardingStep === "accessibility") {
+  } else if (onboardingStep === "full") {
+    content = <Onboarding onFinish={() => setOnboardingStep("done")} />;
+  } else if (onboardingStep === "microphone") {
     content = (
-      <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
+      <Onboarding
+        steps={["microphone"]}
+        prepareModel={false}
+        onFinish={() => setOnboardingStep("done")}
+      />
     );
-  } else if (onboardingStep === "model") {
-    content = <Onboarding onModelSelected={handleModelSelected} />;
   } else {
     content = (
       <div

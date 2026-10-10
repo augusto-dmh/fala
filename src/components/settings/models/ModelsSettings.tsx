@@ -9,8 +9,8 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import type { ModelCardStatus } from "@/components/onboarding";
-import { ModelCard } from "@/components/onboarding";
+import type { ModelCardStatus } from "./ModelCard";
+import ModelCard from "./ModelCard";
 import { useModelStore } from "@/stores/modelStore";
 import {
   getLanguageLabel,
