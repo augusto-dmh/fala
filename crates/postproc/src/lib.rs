@@ -143,6 +143,7 @@ impl LateEdit {
 /// Compõe `Rules` e o LLM opcional e decide quem editou.
 #[derive(Debug, Clone)]
 pub struct Postprocessor {
+    rules: Rules,
     llm: LlmConfig,
     late_deadline: Duration,
     cleanup: CleanupLevel,
@@ -151,6 +152,7 @@ pub struct Postprocessor {
 impl Postprocessor {
     pub fn new(llm: LlmConfig) -> Self {
         Self {
+            rules: Rules::default(),
             llm,
             late_deadline: DEFAULT_LATE_DEADLINE,
             cleanup: CleanupLevel::default(),
@@ -169,6 +171,12 @@ impl Postprocessor {
         self
     }
 
+    /// Troca as regras locais (padrão: `Rules::default()`, com a pontuação falada ligada).
+    pub fn with_rules(mut self, rules: Rules) -> Self {
+        self.rules = rules;
+        self
+    }
+
     pub fn process(&self, raw: Transcript, app: AppContext, dictionary: &Dictionary) -> Formatted {
         let ctx = FormatContext {
             app: &app,
@@ -176,7 +184,7 @@ impl Postprocessor {
             language: &raw.language,
             cleanup: self.cleanup,
         };
-        let rules_text = match Rules.format(&raw.text, &ctx) {
+        let rules_text = match self.rules.format(&raw.text, &ctx) {
             Ok(text) => text,
             Err(_) => raw.text.trim().to_string(),
         };
