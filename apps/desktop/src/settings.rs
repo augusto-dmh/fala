@@ -1375,6 +1375,11 @@ fn unbind_legacy_post_process_shortcut(settings: &mut AppSettings) {
     }
 }
 
+/// The updater is off: `plugins.updater` is empty in `tauri.conf.json` until the
+/// signed release flow exists (ADR-0008, docs/RELEASE.md). Mirrors
+/// `UPDATER_ENABLED` in `src/lib/updater.ts`; flip both together.
+pub const UPDATER_ENABLED: bool = false;
+
 /// Update checks are forced off (without touching the persisted setting) when
 /// `FALA_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
 /// can't work against an immutable /nix/store install.
