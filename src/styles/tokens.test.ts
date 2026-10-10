@@ -288,5 +288,9 @@ assert.match(
   read("../components/ui/ToggleSwitch.tsx"),
   /peer-checked:after:bg-on-accent/,
 );
-assert.doesNotMatch(read("../components/Sidebar.tsx"), /bg-logo-primary\/80/);
+// The navigation's active item is never an ink fill under ink text. PR 3
+// replaced the sidebar with the rail, whose active item is checked in C26.
+const navFile = sources.find((p) => /components\/(Sidebar|Rail)\.tsx$/.test(p));
+assert.ok(navFile, "the navigation component exists");
+assert.doesNotMatch(readFileSync(navFile, "utf8"), /bg-logo-primary\/80/);
 ok("C13");
