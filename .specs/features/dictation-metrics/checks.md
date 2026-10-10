@@ -31,8 +31,8 @@ Proof: `cargo test -p fala --lib dictation_metrics::tests::key_clock_uses_recent
 **C6** - marcos sintéticos (tecla, pill +30 ms, soltar, ASR +200, LLM +900, colado +40) viram `DictationMetrics` com `e2e_ms` 1140, `asr_ms`, `llm_ms` 900, `paste_ms` 40, e a linha de trace tem exatamente as chaves da door 4 na ordem, `key_to_pill_ms=30`, `release_to_text_ms=1140`, `fallback=none`; sem LLM tentado, `llm_ms` é `None` e `release_to_llm_ms` = `release_to_asr_ms` (AC 7, AC 8)
 Proof: `cargo test -p fala --lib dictation_metrics::tests::marks_become_metrics_and_trace -- --exact`
 
-**C7** - a linha de trace nunca contém o texto: para um ditado de texto "segredo absoluto", nenhuma palavra dele aparece na linha; `Trace` desligado não emite (AC 8)
-Proof: `cargo test -p fala --lib dictation_metrics::tests::trace_has_no_text -- --exact`
+**C7** - a linha de trace nunca contém o texto: `Measured` não tem campo de texto (só `words: usize`), e `trace_line` formata só números, `lang`, `llm_used` e `fallback`; sem `FALA_TRACE=1`, `finish` não chama `log::info!` (AC 8)
+Proof: leitura de `apps/desktop/src/dictation_metrics.rs` (`Measured`, `finish`, `trace_line`); o formato exato é travado por C6
 
 **C8** - `llm_auto::format` copia o `fallback` do `Formatted`: o caso "3 s" do teste existente dá `Some(Fallback::Timeout)` e o caso "http 500" dá `Some(Fallback::Http(500))`; abaixo de 16 palavras, `None` (AC 9)
 Proof: `cargo test -p fala --lib llm_auto::tests -- `
