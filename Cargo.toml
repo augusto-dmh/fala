@@ -64,6 +64,12 @@ expect_used = "deny"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
+# Full debug info made a dev target ~25 GB on Windows (.pdb, .rlib, .o), once per worktree.
+# Line tables keep file:line in backtraces; dependencies carry none.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 lto = true
