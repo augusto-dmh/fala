@@ -99,7 +99,7 @@ PR 3 (corpus e bench):
 16. `fala-cli bench format` SHALL nunca imprimir texto do corpus no stdout nem no stderr
 17. WHEN `--llm` e não há chave THEN SHALL sair com 2 e a mensagem de `fala-cli format`
 
-**Independent test:** `cargo test -p fala-cli bench_format`
+**Independent test:** `cargo test -p fala-cli bench::format`
 
 ## Out of scope
 
