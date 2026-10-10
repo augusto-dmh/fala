@@ -24,7 +24,7 @@ use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings;
-use crate::tray_i18n::get_tray_translations;
+use crate::tray_i18n::{get_tray_translations, TrayStrings};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -65,6 +65,49 @@ struct MenuInputs {
     update_checks_enabled: bool,
     /// Which dictation language item is checked, from [`tray_language_choice`].
     language_choice: Option<&'static str>,
+    /// Input devices for the microphone submenu, from the [`refresh_microphones`] cache.
+    microphones: Microphones,
+    /// `selected_microphone` from settings; `None` is "Automático".
+    selected_microphone: Option<String>,
+}
+
+/// The input devices the tray offers, as cpal lists them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Microphones {
+    names: Vec<String>,
+    /// The system default input, shown in the "Automático" label.
+    default: Option<String>,
+}
+
+/// Menu item id for "Automático": `selected_microphone` unset.
+pub const MICROPHONE_AUTO_ID: &str = "microphone_auto";
+
+/// Menu item ids for the input devices: `microphone:<device name>`.
+pub const MICROPHONE_ITEM_PREFIX: &str = "microphone:";
+
+fn microphone_item_id(name: &str) -> String {
+    format!("{MICROPHONE_ITEM_PREFIX}{name}")
+}
+
+/// The value a microphone item writes, in the form `set_selected_microphone` takes:
+/// `"default"` for "Automático", else the device name.
+pub fn parse_microphone_item(id: &str) -> Option<String> {
+    if id == MICROPHONE_AUTO_ID {
+        return Some("default".to_string());
+    }
+    id.strip_prefix(MICROPHONE_ITEM_PREFIX)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+/// The "Automático" label, with the system default when it is known.
+fn microphone_auto_label(strings: &TrayStrings, default: Option<&str>) -> String {
+    match default {
+        Some(device) => strings
+            .microphone_auto_with_device
+            .replace("{{device}}", device),
+        None => strings.microphone_auto.clone(),
+    }
 }
 
 /// The dictation languages the tray offers, as the tags stored in
@@ -121,6 +164,10 @@ struct TrayInner {
     next_seq: u64,
     /// Sequence number of the request that produced `desired`.
     desired_seq: u64,
+    /// Last device list from [`refresh_microphones`]; never enumerated on the caller's thread.
+    microphones: Microphones,
+    /// A [`refresh_microphones`] thread is running.
+    refreshing_microphones: bool,
 }
 
 /// Tauri managed state owning the tray's desired/applied snapshots.
@@ -137,6 +184,8 @@ impl TrayState {
             icons: HashMap::new(),
             next_seq: 0,
             desired_seq: 0,
+            microphones: Microphones::default(),
+            refreshing_microphones: false,
         }))
     }
 
@@ -337,6 +386,48 @@ fn sync_tray_with(app: &AppHandle, update: impl FnOnce(&mut TrayInner)) {
     }
 }
 
+/// Lists the input devices on a worker thread (cpal enumeration can stall) and rebuilds the
+/// menu when the list changed. A call while one is running is dropped.
+pub fn refresh_microphones(app: &AppHandle) {
+    let Some(state) = app.try_state::<TrayState>() else {
+        return;
+    };
+    if std::mem::replace(&mut state.lock().refreshing_microphones, true) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let listed = match crate::audio_toolkit::audio::list_input_devices() {
+            Ok(devices) => Some(Microphones {
+                default: devices
+                    .iter()
+                    .find(|d| d.is_default)
+                    .map(|d| d.name.clone()),
+                names: devices.into_iter().map(|d| d.name).collect(),
+            }),
+            Err(err) => {
+                warn!("Failed to list microphones for the tray: {err}");
+                None
+            }
+        };
+        let changed = {
+            let state = app.state::<TrayState>();
+            let mut inner = state.lock();
+            inner.refreshing_microphones = false;
+            match listed {
+                Some(listed) if listed != inner.microphones => {
+                    inner.microphones = listed;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if changed {
+            sync_tray(&app);
+        }
+    });
+}
+
 fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     let settings = settings::get_settings(app);
     let theme = get_current_theme(app);
@@ -363,6 +454,11 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
             language_choice: tray_language_choice(&settings.selected_language),
+            microphones: app
+                .try_state::<TrayState>()
+                .map(|state| state.lock().microphones.clone())
+                .unwrap_or_default(),
+            selected_microphone: settings.selected_microphone,
         },
     }
 }
@@ -478,6 +574,12 @@ fn version_label() -> String {
     } else {
         format!("Fala v{}", env!("CARGO_PKG_VERSION"))
     }
+}
+
+/// Whether the tray offers "Check for updates". Process-constant: the
+/// compile-time `UPDATER_ENABLED` and the `FALA_DISABLE_UPDATER` env flag.
+fn check_updates_item_visible() -> bool {
+    settings::UPDATER_ENABLED && !settings::update_checks_forced_disabled()
 }
 
 /// Builds the tray menu and tooltip for the given inputs. Pure with respect
@@ -596,6 +698,30 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             language_submenu.append(&item)?;
         }
 
+        // Microphone: idle only, like the language, so a recording keeps its device.
+        let microphone_submenu =
+            Submenu::with_id(app, "microphone_submenu", &strings.microphone, true)?;
+        let auto_i = CheckMenuItem::with_id(
+            app,
+            MICROPHONE_AUTO_ID,
+            microphone_auto_label(&strings, inputs.microphones.default.as_deref()),
+            true,
+            inputs.selected_microphone.is_none(),
+            None::<&str>,
+        )?;
+        microphone_submenu.append(&auto_i)?;
+        for name in &inputs.microphones.names {
+            let item = CheckMenuItem::with_id(
+                app,
+                microphone_item_id(name),
+                name,
+                true,
+                inputs.selected_microphone.as_deref() == Some(name.as_str()),
+                None::<&str>,
+            )?;
+            microphone_submenu.append(&item)?;
+        }
+
         let unload_model_i = MenuItem::with_id(
             app,
             "unload_model",
@@ -613,6 +739,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &separator()?,
                 &model_submenu,
                 &language_submenu,
+                &microphone_submenu,
                 &unload_model_i,
                 &separator()?,
                 &settings_i,
@@ -623,13 +750,13 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
-    // When update checks are forced off (e.g. FALA_DISABLE_UPDATER, set by
-    // the Nix package), the item is dropped from the menu rather than shown
-    // disabled — it can never do anything in that case, and a disabled item
-    // still shifts every entry below it by one position. A manually-disabled
-    // toggle in Debug Settings keeps the old greyed-out behavior via the
-    // enabled flag.
-    if settings::update_checks_forced_disabled() {
+    // While the updater is off, or update checks are forced off (e.g.
+    // FALA_DISABLE_UPDATER, set by the Nix package), the item is dropped from
+    // the menu rather than shown disabled — it can never do anything in that
+    // case, and a disabled item still shifts every entry below it by one
+    // position. A manually-disabled toggle in Debug Settings keeps the old
+    // greyed-out behavior via the enabled flag.
+    if !check_updates_item_visible() {
         menu.remove(&check_updates_i)?;
     }
 
@@ -720,10 +847,14 @@ pub fn copy_last_transcript(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        language_item_id, last_transcript_text, load_tray_icon, parse_language_item,
-        tray_language_choice, MenuInputs, TrayDesired, TrayIconState,
+        check_updates_item_visible, language_item_id, last_transcript_text, load_tray_icon,
+        microphone_auto_label, microphone_item_id, parse_language_item, parse_microphone_item,
+        tray_language_choice, MenuInputs, Microphones, TrayDesired, TrayIconState,
+        MICROPHONE_AUTO_ID,
     };
     use crate::managers::history::HistoryEntry;
+    use crate::settings;
+    use crate::tray_i18n::get_tray_translations;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
         HistoryEntry {
@@ -738,6 +869,8 @@ mod tests {
             post_process_requested: false,
             dictation_id: None,
             dictation: None,
+            paste_failed: false,
+            discarded: false,
         }
     }
 
@@ -751,6 +884,11 @@ mod tests {
             locale: "en".to_string(),
             update_checks_enabled: true,
             language_choice: Some("pt-BR"),
+            microphones: Microphones {
+                names: vec!["Fifine".to_string(), "Realtek".to_string()],
+                default: Some("Realtek".to_string()),
+            },
+            selected_microphone: None,
         }
     }
 
@@ -792,6 +930,14 @@ mod tests {
         };
         assert_ne!(recording.icon_path, transcribing.icon_path);
         assert_eq!(recording.menu, transcribing.menu);
+    }
+
+    #[test]
+    fn check_updates_item_hidden_while_updater_off() {
+        // The updater is off (ADR-0008), so the item would do nothing.
+        let updater_enabled = settings::UPDATER_ENABLED;
+        assert!(!updater_enabled);
+        assert!(!check_updates_item_visible());
     }
 
     #[test]
@@ -847,5 +993,78 @@ mod tests {
         ] {
             assert_eq!(parse_language_item(id), None, "id {id:?}");
         }
+    }
+
+    #[test]
+    fn microphone_item_ids_round_trip() {
+        assert_eq!(
+            parse_microphone_item(MICROPHONE_AUTO_ID).as_deref(),
+            Some("default")
+        );
+        for name in [
+            "Microfone (Fifine )",
+            "Voicemeeter Out B2 (VB-Audio)",
+            "a:b",
+        ] {
+            assert_eq!(
+                parse_microphone_item(&microphone_item_id(name)).as_deref(),
+                Some(name)
+            );
+        }
+        for id in [
+            "microphone:",
+            "microphone",
+            "model_select:Fifine",
+            "dictation_language:en",
+        ] {
+            assert_eq!(parse_microphone_item(id), None, "id {id:?}");
+        }
+    }
+
+    #[test]
+    fn microphone_auto_label_names_the_default() {
+        let pt = get_tray_translations(Some("pt".to_string()));
+        assert_eq!(
+            microphone_auto_label(&pt, Some("Fifine")),
+            "Automático (Fifine)"
+        );
+        assert_eq!(microphone_auto_label(&pt, None), "Automático");
+        let en = get_tray_translations(Some("en".to_string()));
+        assert_eq!(
+            microphone_auto_label(&en, Some("Fifine")),
+            "Automatic (Fifine)"
+        );
+        assert_eq!(pt.microphone, "Microfone");
+        assert_eq!(en.microphone, "Microphone");
+    }
+
+    #[test]
+    fn microphone_changes_rebuild_the_menu() {
+        let auto = inputs(false);
+        let fifine = MenuInputs {
+            selected_microphone: Some("Fifine".to_string()),
+            ..inputs(false)
+        };
+        let plugged = MenuInputs {
+            microphones: Microphones {
+                names: vec![
+                    "Fifine".to_string(),
+                    "Realtek".to_string(),
+                    "USB".to_string(),
+                ],
+                default: Some("Realtek".to_string()),
+            },
+            ..inputs(false)
+        };
+        let new_default = MenuInputs {
+            microphones: Microphones {
+                default: Some("Fifine".to_string()),
+                ..inputs(false).microphones
+            },
+            ..inputs(false)
+        };
+        assert_ne!(auto, fifine);
+        assert_ne!(auto, plugged);
+        assert_ne!(auto, new_default);
     }
 }

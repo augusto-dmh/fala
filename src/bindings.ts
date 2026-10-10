@@ -386,14 +386,6 @@ async changeVadEnabledSetting(enabled: boolean) : Promise<Result<null, string>> 
     else return { status: "error", error: e  as any };
 }
 },
-async changeVadBackendSetting(backend: VadBackend) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_vad_backend_setting", { backend }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async changeFillerWordRemovalEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled }) };
@@ -932,6 +924,40 @@ async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
+ * recentes primeiro, como linhas do histórico.
+ */
+async historySearch(query: string) : Promise<Result<HistoryEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("history_search", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Recuperar": a linha descartada volta ao normal, com o texto que tem.
+ */
+async recoverHistoryEntry(id: number) : Promise<Result<HistoryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recover_history_entry", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Como estou indo": the last `days` days of dictation metrics.
+ */
+async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateHistoryLimit(limit: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_history_limit", { limit }) };
@@ -1151,6 +1177,15 @@ export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_d
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * Dictations and words of one local day (`YYYY-MM-DD`).
+ */
+export type DictationDay = { day: string; dictations: number; words: number }
+/**
+ * `fala_storage::MetricsSummary` for the UI: `e2e` is release → pasted text without the LLM,
+ * `e2e_llm` with it asked.
+ */
+export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1175,7 +1210,15 @@ dictation_id: string | null;
 /**
  * That dictation (raw, final, editor, what it shows, app), when the store can read it.
  */
-dictation: HistoryDictation | null }
+dictation: HistoryDictation | null; 
+/**
+ * The paste failed, so the text never reached the app.
+ */
+paste_failed: boolean; 
+/**
+ * The dictation was not delivered and has text to recover (see `is_discarded`).
+ */
+discarded: boolean }
 /**
  * Qual texto o item mostra agora: o final ou, depois de desfazer, o bruto.
  */
@@ -1196,6 +1239,10 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "fala_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * p50/p90 in ms; `None` without samples.
+ */
+export type LatencyPercentiles = { p50: number | null; p90: number | null }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
