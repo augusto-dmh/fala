@@ -1,6 +1,8 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
-use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
+use crate::audio_feedback::{
+    play_error_chime, play_feedback_sound, play_feedback_sound_blocking, SoundType,
+};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error};
 use crate::dictation_capture::VadPolicy;
 use crate::llm_auto::{self, AutoFormatted};
@@ -12,7 +14,7 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
-    self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
+    self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay, NoticeKind,
 };
 use crate::TranscriptionCoordinator;
 use fala_core::AppContext;
@@ -34,6 +36,17 @@ const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 struct RecordingErrorEvent {
     error_type: String,
     detail: Option<String>,
+}
+
+/// The `recording-error` type and the overlay notice for a microphone that failed to open.
+fn start_error_kind(err: &str) -> (&'static str, NoticeKind) {
+    if is_microphone_access_denied(err) {
+        ("microphone_permission_denied", NoticeKind::MicDenied)
+    } else if is_no_input_device_error(err) {
+        ("no_input_device", NoticeKind::NoMic)
+    } else {
+        ("unknown", NoticeKind::MicFailed)
+    }
 }
 
 /// Drop guard that finishes the transcription pipeline, including immediate
@@ -590,6 +603,8 @@ impl ShortcutAction for TranscribeAction {
                 .get_model_path(&selected_model)
             {
                 warn!("Not starting recording: no model can transcribe it ({})", e);
+                utils::show_notice(app, NoticeKind::ModelMissing, None, true);
+                play_error_chime(app);
                 return;
             }
         }
@@ -710,18 +725,14 @@ impl ShortcutAction for TranscribeAction {
         // long as the dictation is in flight, not here.
         if recording_error.is_some() {
             // Starting failed (for example due to blocked microphone permissions).
-            // Revert UI state so we don't stay stuck in the recording overlay.
+            // The recording pill gives way to a notice that says why, with the
+            // error chime, since the main window is usually hidden.
             tm.cancel_stream();
-            utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
-                let error_type = if is_microphone_access_denied(&err) {
-                    "microphone_permission_denied"
-                } else if is_no_input_device_error(&err) {
-                    "no_input_device"
-                } else {
-                    "unknown"
-                };
+                let (error_type, notice) = start_error_kind(&err);
+                utils::show_notice(app, notice, None, true);
+                play_error_chime(app);
                 let _ = app.emit(
                     "recording-error",
                     RecordingErrorEvent {
@@ -1153,9 +1164,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         complete_unless_cancelled, deliver_unless_cancelled, is_blank_transcription,
-        should_use_streaming_overlay, strip_think_block,
+        should_use_streaming_overlay, start_error_kind, strip_think_block,
     };
     use crate::settings::OverlayStyle;
+    use crate::utils::NoticeKind;
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -1181,6 +1193,22 @@ mod tests {
         assert_eq!(processed.final_text, "Augusto mandou");
         assert_eq!(processed.post_processed_text, None);
         assert!(!processed.llm_produced);
+    }
+
+    #[test]
+    fn start_errors_map_to_event_and_notice() {
+        assert_eq!(
+            start_error_kind("Microphone access denied (0x80070005)"),
+            ("microphone_permission_denied", NoticeKind::MicDenied)
+        );
+        assert_eq!(
+            start_error_kind("No input device found"),
+            ("no_input_device", NoticeKind::NoMic)
+        );
+        assert_eq!(
+            start_error_kind("device is busy"),
+            ("unknown", NoticeKind::MicFailed)
+        );
     }
 
     #[test]

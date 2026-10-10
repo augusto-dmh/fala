@@ -3,6 +3,9 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
 import "./Pill.css";
+import "./Notice.css";
+import { Notice } from "./Notice";
+import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
 import {
   SLOW_LOAD_MS,
@@ -39,6 +42,8 @@ const RecordingOverlay: React.FC = () => {
   // The recording is close to the session limit (19 of 20 minutes): the dot
   // turns amber until the overlay hides or a new session shows.
   const [limitWarning, setLimitWarning] = useState(false);
+  // A notice from the backend (`overlay-notice`): why the dictation did not start.
+  const [notice, setNotice] = useState<OverlayNotice | null>(null);
   // Recording starts while the model loads in the background. When the in-flight load started
   // (ms), or null: after the key is released the wait is the load, not the transcription, and a
   // cold start would otherwise look like a stuck pill.
@@ -75,7 +80,28 @@ const RecordingOverlay: React.FC = () => {
 
   useEffect(() => {
     const setupEventListeners = async () => {
+      // The window opened for a notice: what it shows comes with `overlay-notice`. The
+      // overlay may not have shown since launch, so read the language and the placement.
+      const showForNotice = async () => {
+        setIsVisible(true);
+        await syncLanguageFromSettings();
+        try {
+          const settings = await commands.getAppSettings();
+          if (settings.status === "ok") {
+            setPosition(
+              settings.data.overlay_position === "top" ? "top" : "bottom",
+            );
+          }
+        } catch {
+          // Keep the previous/default placement if settings can't be read.
+        }
+      };
+
       const unlistenShow = await listen("show-overlay", async (event) => {
+        if (event.payload === "notice") {
+          void showForNotice();
+          return;
+        }
         const overlayState = event.payload as OverlayState;
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
@@ -83,6 +109,7 @@ const RecordingOverlay: React.FC = () => {
         if (overlayState === "recording" || overlayState === "streaming") {
           setCaptureReady(false);
           setLimitWarning(false);
+          setNotice(null);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
           setStreamText({ committed: "", tentative: "" });
@@ -116,7 +143,15 @@ const RecordingOverlay: React.FC = () => {
         setIsVisible(false);
         setCaptureReady(false);
         setLimitWarning(false);
+        setNotice(null);
       });
+
+      const unlistenNotice = await listen<OverlayNotice>(
+        "overlay-notice",
+        (event) => {
+          setNotice(event.payload);
+        },
+      );
 
       const unlistenLimit = await listen("recording-limit-warning", () => {
         setLimitWarning(true);
@@ -166,6 +201,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenHide();
         unlistenReady();
         unlistenLimit();
+        unlistenNotice();
         unlistenLevel();
         unlistenStream();
         unlistenPhase();
@@ -181,6 +217,17 @@ const RecordingOverlay: React.FC = () => {
     const id = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(id);
   }, [state, isVisible, captureReady]);
+
+  // A notice clears itself after its duration; an alone notice's window is hidden by the
+  // backend at the same time.
+  useEffect(() => {
+    if (!notice) return;
+    const id = setTimeout(
+      () => setNotice((current) => (current === notice ? null : current)),
+      notice.duration_ms,
+    );
+    return () => clearTimeout(id);
+  }, [notice]);
 
   // While a load is in flight, wake up when it becomes slow so the recording pill can show it.
   useEffect(() => {
@@ -218,6 +265,14 @@ const RecordingOverlay: React.FC = () => {
     if (!el) return;
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
   };
+
+  if (notice?.alone) {
+    return (
+      <div dir={direction} className={`ov-stage ${position}`}>
+        <Notice kind={notice.kind} text={t(noticeKey(notice.kind))} />
+      </div>
+    );
+  }
 
   const transcribingLabel =
     loadStart !== null ? t("overlay.loadingModel") : t("overlay.transcribing");

@@ -55,6 +55,10 @@ pub struct ModelStateEvent {
     pub model_id: Option<String>,
     pub model_name: Option<String>,
     pub error: Option<String>,
+    /// A stable code for a failure the UI translates (`model_not_found`,
+    /// `model_not_downloaded`); `error` keeps
+    /// the backend's English detail.
+    pub error_code: Option<String>,
 }
 
 /// Live transcription snapshot emitted to the overlay during a streaming run.
@@ -432,6 +436,7 @@ impl TranscriptionManager {
                 model_id: None,
                 model_name: None,
                 error: None,
+                error_code: None,
             },
         );
 
@@ -495,6 +500,7 @@ impl TranscriptionManager {
                 model_id: Some(model_id.to_string()),
                 model_name: None,
                 error: None,
+                error_code: None,
             },
         );
 
@@ -509,6 +515,8 @@ impl TranscriptionManager {
                         model_id: Some(model_id.to_string()),
                         model_name: None,
                         error: Some(error_msg.clone()),
+                        // Also an empty selection: startup clears a model that is not on disk.
+                        error_code: Some("model_not_found".to_string()),
                     },
                 );
                 return Err(anyhow::anyhow!(error_msg));
@@ -517,7 +525,7 @@ impl TranscriptionManager {
 
         // Every failure after loading starts must emit a terminal event so the
         // frontend can never remain in its loading state.
-        let emit_loading_failed = |error_msg: &str| {
+        let emit_loading_failed_with = |error_msg: &str, error_code: Option<&str>| {
             let _ = self.app_handle.emit(
                 "model-state-changed",
                 ModelStateEvent {
@@ -525,13 +533,15 @@ impl TranscriptionManager {
                     model_id: Some(model_id.to_string()),
                     model_name: Some(model_info.name.clone()),
                     error: Some(error_msg.to_string()),
+                    error_code: error_code.map(str::to_string),
                 },
             );
         };
+        let emit_loading_failed = |error_msg: &str| emit_loading_failed_with(error_msg, None);
 
         if !model_info.is_downloaded {
             let error_msg = "Model not downloaded";
-            emit_loading_failed(error_msg);
+            emit_loading_failed_with(error_msg, Some("model_not_downloaded"));
             return Err(anyhow::anyhow!(error_msg));
         }
 
@@ -728,6 +738,7 @@ impl TranscriptionManager {
                 model_id: Some(model_id.to_string()),
                 model_name: Some(model_info.name.clone()),
                 error: None,
+                error_code: None,
             },
         );
 
@@ -1464,6 +1475,7 @@ impl TranscriptionManager {
                             model_id: None,
                             model_name: None,
                             error: Some(format!("Engine panicked: {}", panic_msg)),
+                            error_code: None,
                         },
                     );
 

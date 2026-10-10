@@ -53,13 +53,48 @@ const OVERLAY_HEIGHT: f64 = 50.0;
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
+// A notice card, alone in the window or (with a recording) stacked over the 30h pill.
+const OVERLAY_NOTICE_WIDTH: f64 = 340.0;
+const OVERLAY_NOTICE_HEIGHT: f64 = 110.0;
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
-        (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
-    } else {
-        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    match state {
+        "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
+        "notice" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
+        _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
+}
+
+/// What a notice in the overlay says. The frontend translates the code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticeKind {
+    /// The OS denied microphone access.
+    MicDenied,
+    /// No input device was found.
+    NoMic,
+    /// The microphone failed to open for another reason (busy, unplugged).
+    MicFailed,
+    /// No model can transcribe the dictation.
+    ModelMissing,
+}
+
+/// How long a notice stays: the microphone notices long enough to act on them.
+pub fn notice_duration(kind: NoticeKind) -> std::time::Duration {
+    let ms = match kind {
+        NoticeKind::MicDenied | NoticeKind::NoMic | NoticeKind::MicFailed => 6_000,
+        NoticeKind::ModelMissing => 5_000,
+    };
+    std::time::Duration::from_millis(ms)
+}
+
+#[derive(Clone, serde::Serialize)]
+struct NoticePayload {
+    kind: NoticeKind,
+    device: Option<String>,
+    alone: bool,
+    duration_ms: u64,
 }
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
@@ -623,6 +658,36 @@ pub fn emit_recording_limit_warning(app_handle: &AppHandle) {
     });
 }
 
+/// Shows a notice in the overlay window. `alone` replaces whatever the overlay shows, shows
+/// the window even with the overlay turned off (the gesture failed and nothing else says so),
+/// and hides it after the notice's duration unless a newer session showed the overlay. Without
+/// `alone` the notice stacks over the pill of the current recording.
+pub fn show_notice(app_handle: &AppHandle, kind: NoticeKind, device: Option<String>, alone: bool) {
+    let duration = notice_duration(kind);
+    let payload = NoticePayload {
+        kind,
+        device,
+        alone,
+        duration_ms: duration.as_millis() as u64,
+    };
+    log::debug!("overlay notice {kind:?} (alone: {alone})");
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        show_overlay_state_on_main(&handle, "notice");
+        let _ = handle.emit_to("recording_overlay", "overlay-notice", payload);
+        if !alone {
+            return;
+        }
+        let shown = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
+        std::thread::spawn(move || {
+            std::thread::sleep(duration);
+            if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown {
+                hide_recording_overlay(&handle);
+            }
+        });
+    });
+}
+
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "recording");
@@ -782,6 +847,26 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notice_durations_and_codes() {
+        let expected = [
+            (NoticeKind::MicDenied, "mic_denied", 6_000),
+            (NoticeKind::NoMic, "no_mic", 6_000),
+            (NoticeKind::MicFailed, "mic_failed", 6_000),
+            (NoticeKind::ModelMissing, "model_missing", 5_000),
+        ];
+        for (kind, code, ms) in expected {
+            assert_eq!(
+                serde_json::to_value(kind).unwrap(),
+                serde_json::json!(code),
+                "{kind:?}"
+            );
+            assert_eq!(notice_duration(kind).as_millis(), ms, "{kind:?}");
+        }
+        assert_eq!(overlay_dimensions("notice"), (340.0, 110.0));
+        assert_eq!(overlay_dimensions("recording"), (256.0, 50.0));
+    }
 
     #[test]
     fn monitor_hit_test_uses_half_open_physical_bounds() {

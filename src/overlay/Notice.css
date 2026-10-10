@@ -1,0 +1,36 @@
+/* A notice in the overlay window: the pill's black, literal colours (the same in light and
+   dark themes) and one line of text. It sits in the 340×110 window that overlay.rs opens
+   for notices. */
+.fnotice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+  padding: 8px 14px;
+  border-radius: 15px;
+  background: #000;
+  color: #fff;
+  font-size: 13px;
+  line-height: 18px;
+  box-sizing: border-box;
+}
+.fnotice-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fnotice-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fnotice-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+}
+.fnotice-dot.error {
+  background: #e5322d;
+}

@@ -754,6 +754,8 @@
     "recordingFailed": "Falha ao iniciar a gravação: {{error}}",
     "modelLoadFailed": "Falha ao carregar o modelo: {{model}}",
     "modelLoadFailedUnknown": "modelo desconhecido",
+    "modelNotFound": "Nenhum modelo de voz disponível está selecionado. Escolha um em Configurações > Modelos.",
+    "modelNotDownloaded": "O modelo ainda não foi baixado. Baixe-o em Configurações > Modelos.",
     "pasteFailedTitle": "Falha ao colar o texto",
     "pasteFailed": "Não foi possível colar o texto no aplicativo ativo.",
     "transcriptionFailedTitle": "Falha na transcrição"
@@ -776,7 +778,13 @@
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",
     "loadingModel": "Carregando modelo…",
-    "recordingLoadingModel": "Gravando, carregando modelo…"
+    "recordingLoadingModel": "Gravando, carregando modelo…",
+    "notice": {
+      "micDenied": "Sem permissão para usar o microfone",
+      "noMic": "Nenhum microfone encontrado",
+      "micFailed": "Não deu para abrir o microfone",
+      "modelMissing": "Nenhum modelo de voz baixado"
+    }
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
