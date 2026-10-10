@@ -1,16 +1,30 @@
-// Prova dos checks C27-C30 da tela de histórico (`.specs/features/history-undo/checks.md`).
+// Prova dos checks C27-C30 da tela de histórico (`.specs/features/history-undo/checks.md`) e
+// H1-H6 da home (`.specs/features/history-home/checks.md`).
 // Rode com `bun src/components/settings/history/historyModel.test.ts`: imprime `<check> ok` e sai
 // com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { HistoryDictation, HistoryEntry, Result } from "@/bindings";
-import { appName, editAction, shownText, switchText } from "./historyModel";
+import {
+  appName,
+  editAction,
+  groupByDay,
+  recoverEntry,
+  rowKind,
+  SEARCH_DEBOUNCE_MS,
+  searchQuery,
+  shownText,
+  switchText,
+  timeLabel,
+} from "./historyModel";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
 const screen = read("./HistorySettings.tsx");
 const pt = JSON.parse(read("../../../i18n/locales/pt/translation.json"));
 const en = JSON.parse(read("../../../i18n/locales/en/translation.json"));
+const app = read("../../../App.tsx");
+const sidebar = read("../../Sidebar.tsx");
 
 function dictation(over: Partial<HistoryDictation> = {}): HistoryDictation {
   return {
@@ -23,7 +37,11 @@ function dictation(over: Partial<HistoryDictation> = {}): HistoryDictation {
   };
 }
 
-function entry(d: HistoryDictation | null, id = 7): HistoryEntry {
+function entry(
+  d: HistoryDictation | null,
+  id = 7,
+  over: Partial<HistoryEntry> = {},
+): HistoryEntry {
   return {
     id,
     file_name: "fala-1.wav",
@@ -36,6 +54,9 @@ function entry(d: HistoryDictation | null, id = 7): HistoryEntry {
     post_process_requested: true,
     dictation_id: d ? "0190-id" : null,
     dictation: d,
+    paste_failed: false,
+    discarded: false,
+    ...over,
   };
 }
 
@@ -214,6 +235,173 @@ await (async () => {
     assert.equal(en.settings.history[key], enText, `en ${key}`);
   }
   ok("C30");
+}
+
+// H1 - a janela abre no histórico, primeiro na barra lateral.
+{
+  assert.ok(
+    /useState<SidebarSection>\("history"\)/.test(app),
+    "a seção inicial precisa ser history",
+  );
+  const sections = sidebar.slice(sidebar.indexOf("SECTIONS_CONFIG = {"));
+  assert.ok(
+    /SECTIONS_CONFIG = \{\s*history: \{/.test(sections),
+    "history precisa ser a primeira seção",
+  );
+  ok("H1");
+}
+
+// H2 - grupos por dia local: hoje, ontem, data; ordem preservada.
+{
+  const now = new Date(2026, 9, 9, 0, 30); // 9 out 2026, 00:30 local
+  const at = (y: number, m: number, d: number, h: number, min = 0) =>
+    Math.floor(new Date(y, m, d, h, min).getTime() / 1000);
+  const list = [
+    entry(null, 5, { timestamp: at(2026, 9, 9, 0, 10) }),
+    entry(null, 4, { timestamp: at(2026, 9, 8, 23, 59) }),
+    entry(null, 3, { timestamp: at(2026, 9, 8, 0, 0) }),
+    entry(null, 2, { timestamp: at(2026, 9, 7, 12) }),
+    entry(null, 1, { timestamp: at(2025, 9, 9, 12) }),
+  ];
+  const groups = groupByDay(list, now);
+  assert.deepEqual(
+    groups.map((g) => [g.day, g.entries.map((e) => e.id)]),
+    [
+      ["today", [5]],
+      ["yesterday", [4, 3]],
+      ["date", [2]],
+      ["date", [1]],
+    ],
+  );
+  assert.equal(groups[2].timestamp, at(2026, 9, 7, 12));
+  assert.deepEqual(groupByDay([], now), []);
+  // Virada de mês: 1º de novembro, ontem é 31 de outubro.
+  const nov = groupByDay(
+    [entry(null, 9, { timestamp: at(2026, 9, 31, 22) })],
+    new Date(2026, 10, 1, 8),
+  );
+  assert.equal(nov[0].day, "yesterday");
+  assert.equal(timeLabel(at(2026, 9, 9, 7, 5), "pt-BR"), "07:05");
+  ok("H2");
+}
+
+// H4 - busca com debounce de 200 ms; campo vazio volta à lista.
+{
+  assert.equal(SEARCH_DEBOUNCE_MS, 200);
+  assert.equal(searchQuery(""), null);
+  assert.equal(searchQuery("   "), null);
+  assert.equal(searchQuery("  reunião "), "reunião");
+  ok("H4");
+}
+
+// H5 - linha descartada e Recuperar.
+await (async () => {
+  const emptied = dictation({ final_text: "", editor: "rules" });
+  assert.equal(rowKind(entry(emptied, 7, { discarded: true })), "discarded");
+  assert.equal(
+    rowKind(entry(dictation(), 7, { paste_failed: true, discarded: true })),
+    "discarded",
+  );
+  assert.equal(rowKind(entry(dictation())), "normal");
+  assert.equal(rowKind(entry(null, 7, { transcription_text: "" })), "failed");
+
+  const restored = entry(dictation({ ...emptied, showing: "raw" }));
+  const calls: { recovered: number[]; copied: string[] } = {
+    recovered: [],
+    copied: [],
+  };
+  const recoverDeps = (
+    answer: Result<HistoryEntry, string> | "throw",
+    copyWorks = true,
+  ) => ({
+    recover: async (id: number) => {
+      calls.recovered.push(id);
+      if (answer === "throw") throw new Error("ipc");
+      return answer;
+    },
+    copy: async (text: string) => {
+      calls.copied.push(text);
+      return copyWorks;
+    },
+  });
+  const out = await recoverEntry(
+    entry(emptied, 7, { discarded: true }),
+    recoverDeps({ status: "ok", data: restored }),
+  );
+  assert.deepEqual(calls.recovered, [7]);
+  assert.deepEqual(calls.copied, ["acao de amanha"]);
+  assert.deepEqual(out, {
+    entry: restored,
+    success: true,
+    toastKey: "settings.history.recovered",
+  });
+
+  for (const answer of [
+    { status: "error", error: "History entry 7 is not discarded" } as const,
+    "throw" as const,
+  ]) {
+    calls.copied = [];
+    const outF = await recoverEntry(entry(emptied), recoverDeps(answer));
+    assert.deepEqual(calls.copied, []);
+    assert.deepEqual(outF, {
+      entry: null,
+      success: false,
+      toastKey: "settings.history.recoverError",
+    });
+  }
+  const outC = await recoverEntry(
+    entry(emptied),
+    recoverDeps({ status: "ok", data: restored }, false),
+  );
+  assert.deepEqual(outC, {
+    entry: restored,
+    success: false,
+    toastKey: "settings.history.copyError",
+  });
+
+  ok("H5");
+})();
+
+// H6 - as chaves novas nos dois idiomas.
+{
+  const want: Record<string, [string, string]> = {
+    today: ["Hoje", "Today"],
+    yesterday: ["Ontem", "Yesterday"],
+    searchPlaceholder: ["Buscar nos ditados", "Search dictations"],
+    clearSearch: ["Limpar busca", "Clear search"],
+    searchNoResults: ["Nenhum ditado encontrado.", "No dictations found."],
+    searchError: [
+      "Não foi possível buscar no histórico.",
+      "Could not search the history.",
+    ],
+    discarded: ["Este ditado foi descartado.", "This dictation was discarded."],
+    recover: ["Recuperar", "Recover"],
+    recovered: [
+      "Ditado recuperado e copiado",
+      "Dictation recovered and copied",
+    ],
+    recoverError: [
+      "Não foi possível recuperar o ditado.",
+      "Could not recover the dictation.",
+    ],
+  };
+  for (const [key, [ptText, enText]] of Object.entries(want)) {
+    assert.equal(pt.settings.history[key], ptText, `pt ${key}`);
+    assert.equal(en.settings.history[key], enText, `en ${key}`);
+  }
+  for (const [key, ptText, enText] of [
+    ["microphone", "Microfone", "Microphone"],
+    ["microphoneAuto", "Automático", "Automatic"],
+    [
+      "microphoneAutoWithDevice",
+      "Automático ({{device}})",
+      "Automatic ({{device}})",
+    ],
+  ]) {
+    assert.equal(pt.tray[key], ptText, `pt tray ${key}`);
+    assert.equal(en.tray[key], enText, `en tray ${key}`);
+  }
+  ok("H6");
 }
 
 console.log("history: all assertions passed");

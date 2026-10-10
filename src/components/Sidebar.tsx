@@ -32,16 +32,16 @@ interface SectionConfig {
 }
 
 export const SECTIONS_CONFIG = {
-  general: {
-    labelKey: "sidebar.general",
-    icon: FalaMark,
-    component: GeneralSettings,
-    enabled: () => true,
-  },
   history: {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  general: {
+    labelKey: "sidebar.general",
+    icon: FalaMark,
+    component: GeneralSettings,
     enabled: () => true,
   },
   models: {
