@@ -864,6 +864,7 @@ impl TranscriptionCoordinator {
         hold_threshold: Duration,
         external: bool,
     ) {
+        crate::dictation_metrics::key_event(is_pressed);
         if self
             .tx
             .send(Command::Input(InputEvent {

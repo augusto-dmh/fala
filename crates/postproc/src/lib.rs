@@ -2,10 +2,13 @@
 //!
 //! Trait `Formatter`: regras determinísticas pt-BR (`Rules`) e o Gemini (`Gemini`) acima de 15
 //! palavras. O LLM recebe só o texto, o nome do app e o dicionário; nunca áudio, tela ou campo
-//! ativo (ADR-0004). O `Postprocessor` espera o LLM por 2 s; depois disso fica o texto das
+//! ativo (ADR-0004). O nível de limpeza e o destino (derivado do nome do app) só mudam o texto
+//! do prompt. O `Postprocessor` espera o LLM por 2 s; depois disso fica o texto das
 //! regras, e a resposta que chegar até o prazo tardio vira uma `LateEdit` para "aplicar edição".
 
+mod destination;
 mod gemini;
+mod prompt;
 mod rules;
 
 use std::sync::mpsc;
@@ -15,7 +18,9 @@ use std::time::{Duration, Instant};
 use fala_core::{AppContext, Dictation, Dictionary, Editor, Language, Transcript};
 use fala_secrets::ApiKey;
 
-pub use gemini::{Gemini, DEFAULT_BASE_URL, DEFAULT_MODEL, SYSTEM_PROMPT};
+pub use destination::{destination_for, Destination};
+pub use gemini::{Gemini, DEFAULT_BASE_URL, DEFAULT_MODEL};
+pub use prompt::{CleanupLevel, UnknownCleanupLevel, SYSTEM_PROMPT};
 pub use rules::Rules;
 
 /// Quanto o texto espera pelo LLM antes de ser inserido com as regras (ADR-0004).
@@ -31,6 +36,8 @@ pub struct FormatContext<'a> {
     pub app: &'a AppContext,
     pub dictionary: &'a Dictionary,
     pub language: &'a Language,
+    /// Quanto o LLM mexe no texto; as regras ignoram.
+    pub cleanup: CleanupLevel,
 }
 
 /// Transforma texto ditado em texto final.
@@ -138,6 +145,7 @@ impl LateEdit {
 pub struct Postprocessor {
     llm: LlmConfig,
     late_deadline: Duration,
+    cleanup: CleanupLevel,
 }
 
 impl Postprocessor {
@@ -145,7 +153,14 @@ impl Postprocessor {
         Self {
             llm,
             late_deadline: DEFAULT_LATE_DEADLINE,
+            cleanup: CleanupLevel::default(),
         }
+    }
+
+    /// Troca o nível de limpeza pedido ao LLM (padrão `Light`).
+    pub fn with_cleanup_level(mut self, cleanup: CleanupLevel) -> Self {
+        self.cleanup = cleanup;
+        self
     }
 
     /// Troca o prazo tardio; nunca fica abaixo dos 2 s da inserção.
@@ -159,6 +174,7 @@ impl Postprocessor {
             app: &app,
             dictionary,
             language: &raw.language,
+            cleanup: self.cleanup,
         };
         let rules_text = match Rules.format(&raw.text, &ctx) {
             Ok(text) => text,
@@ -224,9 +240,17 @@ impl Postprocessor {
         let text = dictation.final_text.clone();
         let app = dictation.app.clone();
         let dictionary = dictionary.clone();
+        let language = dictation.raw.language;
+        let cleanup = self.cleanup;
         let late_deadline = self.late_deadline;
         thread::spawn(move || {
-            let _ = tx.send(gemini.call(&text, &app, &dictionary, late_deadline));
+            let ctx = FormatContext {
+                app: &app,
+                dictionary: &dictionary,
+                language: &language,
+                cleanup,
+            };
+            let _ = tx.send(gemini.call(&text, &ctx, late_deadline));
         });
         match rx.recv_timeout(INSERT_DEADLINE) {
             Ok(Ok(text)) => Ok(text),
