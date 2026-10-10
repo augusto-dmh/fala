@@ -8,6 +8,8 @@ mod catalog;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod dictation_capture;
+mod dictation_metrics;
 mod helpers;
 mod input;
 mod llm_auto;
@@ -204,6 +206,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         AudioRecordingManager::new(app_handle, transcription_manager.stream_router())
             .expect("Failed to initialize recording manager"),
     );
+    // Load the Silero VAD off the hotkey path: the first press would otherwise wait for
+    // the ONNX session before the mic opens.
+    std::thread::spawn({
+        let recording_manager = Arc::clone(&recording_manager);
+        move || {
+            if let Err(e) = recording_manager.preload_vad() {
+                log::warn!("VAD preload failed: {e}");
+            }
+        }
+    });
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     // After the history manager: its `fala.sqlite` open applies the schema migrations first.
@@ -282,6 +294,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 );
                 if opens_window {
                     show_main_window(tray.app_handle());
+                }
+                // The pointer reaching the icon refreshes the microphone list before a
+                // right click opens the menu.
+                if matches!(
+                    event,
+                    TrayIconEvent::Enter { .. } | TrayIconEvent::Click { .. }
+                ) {
+                    tray::refresh_microphones(tray.app_handle());
                 }
             });
     }
@@ -364,6 +384,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     }
                 }
             }
+            id if id == tray::MICROPHONE_AUTO_ID
+                || id.starts_with(tray::MICROPHONE_ITEM_PREFIX) =>
+            {
+                if let Some(device) = tray::parse_microphone_item(id) {
+                    let app = app.clone();
+                    // Switching the device can restart the cpal stream: off the main thread.
+                    std::thread::spawn(move || {
+                        match commands::audio::apply_selected_microphone(&app, device) {
+                            Ok(()) => log::info!("Microphone switched via tray."),
+                            Err(e) => log::error!("Failed to switch microphone via tray: {}", e),
+                        }
+                        let _ = app.emit(
+                            "settings-changed",
+                            serde_json::json!({ "setting": "selected_microphone" }),
+                        );
+                    });
+                }
+            }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
@@ -391,6 +429,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Initialize tray menu with idle state
     tray::update_tray_menu(app_handle);
+    tray::refresh_microphones(app_handle);
 
     // Apply show_tray_icon setting
     let settings = settings::get_settings(app_handle);
@@ -731,7 +770,6 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
-            shortcut::change_vad_backend_setting,
             shortcut::change_filler_word_removal_enabled_setting,
             shortcut::change_app_language_setting,
             shortcut::change_update_checks_setting,
@@ -801,6 +839,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::history::retry_history_entry_transcription,
             commands::history::undo_history_entry_edit,
             commands::history::redo_history_entry_edit,
+            commands::history::get_dictation_stats,
+            commands::history::history_search,
+            commands::history::recover_history_entry,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,
@@ -1005,6 +1046,7 @@ pub fn run(cli_args: CliArgs) {
                 app_handle.manage(model_manager);
                 app_handle.manage(transcription_manager);
                 managers::transcription::init_transcribe_backend();
+                managers::transcription::report_compute_devices();
                 managers::transcription::apply_accelerator_settings(&app_handle);
 
                 let handle = app_handle.clone();
@@ -1033,8 +1075,8 @@ pub fn run(cli_args: CliArgs) {
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title("Fala")
-                    .inner_size(680.0, 570.0)
-                    .min_inner_size(680.0, 570.0)
+                    .inner_size(960.0, 640.0)
+                    .min_inner_size(720.0, 520.0)
                     .resizable(true)
                     .maximizable(true)
                     .visible(false);
@@ -1113,11 +1155,14 @@ pub fn run(cli_args: CliArgs) {
             );
 
             // Pre-warm GPU/accelerator enumeration on a background thread. The first
-            // get_available_accelerators call enumerates ORT execution providers and
-            // transcribe-cpp compute devices, which can take a moment; without this
+            // device listing opens the GPU, which on macOS loads ggml's Metal library
+            // and compiles it when the system shader cache does not have it yet, so it
+            // stays off the startup path. get_available_accelerators then enumerates
+            // ORT execution providers and transcribe-cpp compute devices; without this
             // the cost is paid synchronously when the user first opens Advanced
             // settings, freezing the UI. Result is cached in a OnceLock.
             std::thread::spawn(|| {
+                crate::managers::transcription::report_compute_devices();
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
 

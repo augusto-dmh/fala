@@ -102,3 +102,40 @@ export function pillBars(levels: readonly number[]): number[] {
     ),
   );
 }
+
+/** How long a load runs during the recording before the pill shows it; warm loads never flash. */
+export const SLOW_LOAD_MS = 2000;
+
+/**
+ * When the in-flight model load started (`Date.now()` ms), after one `model-state-changed`
+ * event; `null` when none is in flight. Only a completed or failed load ends it: the idle
+ * watcher can send `unloaded` in the middle of a load.
+ */
+export function nextModelLoadStart(
+  current: number | null,
+  eventType: string,
+  now: number,
+): number | null {
+  switch (eventType) {
+    case "loading_started":
+      return current ?? now;
+    case "loading_completed":
+    case "loading_failed":
+      return null;
+    default:
+      return current;
+  }
+}
+
+/**
+ * Whether the pill shows the model load. After the key is released the wait is the load, so
+ * at once; while recording the mic is already capturing, so only once the load is slow.
+ */
+export function showsModelLoading(
+  mode: PillMode,
+  loadStart: number | null,
+  now: number,
+): boolean {
+  if (loadStart === null) return false;
+  return mode === "processing" || now - loadStart >= SLOW_LOAD_MS;
+}

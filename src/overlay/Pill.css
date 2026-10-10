@@ -53,6 +53,35 @@
     opacity: 0.55;
   }
 }
+/* The model is still loading: a thin light ring inside the capsule and a sweep across it, over
+   any tone. Processing swaps its pulse for the sweep. */
+.fpill.loading {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6);
+}
+.fpill.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: fpill-loading-sweep 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.fpill.processing.loading {
+  animation: none;
+}
+@keyframes fpill-loading-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .fpill.processing {
     animation: none;
@@ -62,6 +91,31 @@
     animation: none;
     opacity: 1;
   }
+  .fpill.loading::after {
+    animation: none;
+    display: none;
+  }
+}
+/* The meeting indicator: a dot and the recorded time, for as long as the meeting records. */
+.fpill.meeting {
+  gap: 6px;
+  width: 96px;
+  color: #fff;
+  font:
+    600 12px/1 ui-monospace,
+    monospace;
+}
+.fpill.meeting .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: #e5322d;
+}
+.fpill.meeting.paused .dot {
+  background: #9ca3af;
+}
+.fpill.meeting.muted .dot {
+  background: #d97706;
 }
 /* The meeting indicator: a dot and the recorded time, for as long as the meeting records. */
 .fpill.meeting {
