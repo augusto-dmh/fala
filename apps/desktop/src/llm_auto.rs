@@ -137,7 +137,7 @@ pub(crate) fn format_with_late_edit(
                 language: &dictation.raw.language,
                 cleanup: CleanupLevel::default(),
             };
-            Rules
+            Rules::default()
                 .format(&fuzzy.apply(dictation.raw.text.clone()), &ctx)
                 .ok()
         }
