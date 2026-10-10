@@ -8,6 +8,9 @@
     "dictationLanguage": "Dictation language",
     "languagePtBr": "Portuguese (Brazil)",
     "languageEn": "English",
+    "microphone": "Microphone",
+    "microphoneAuto": "Automatic",
+    "microphoneAutoWithDevice": "Automatic ({{device}})",
     "quit": "Quit",
     "cancel": "Cancel",
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
