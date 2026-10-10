@@ -4,7 +4,7 @@ Codemap vivo. Muda no mesmo commit que cria, move ou remove um crate. O porquê 
 
 ## Visão geral
 
-O Fala captura áudio (microfone e, na fase 2, áudio do sistema), segmenta com VAD e transcreve localmente (Parakeet). Opcionalmente formata o texto com um LLM e insere o resultado no app ativo. Tudo roda na máquina do usuário e não há backend. As chamadas de rede opcionais são três, todas desligáveis: texto do ditado para o LLM, áudio de reunião para o ASR em nuvem, transcrição para o LLM de notas.
+O Fala captura áudio (microfone e, na fase 2, áudio do sistema), segmenta com VAD e transcreve localmente (Parakeet). Opcionalmente formata o texto com um LLM e insere o resultado no app ativo. Tudo roda na máquina do usuário e não há backend. As chamadas de rede opcionais são três, todas desligáveis: texto do ditado para o LLM; áudio de reunião para o ASR em nuvem; transcrição, anotações e os campos enumerados na ADR-0016 para o LLM de notas, nunca em sessão só local.
 
 ```
 hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc ─▶ inject ─▶ app ativo
@@ -17,7 +17,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 |---|---|---|
 | `crates/core` | `fala-core` | tipos (`Event`, `Settings`, `Utterance`, `Session`), config, dicionário pessoal, erros |
 | `crates/hotkey` | `fala-hotkey` | atalho global com press/release: trait `GlobalHotkey` e `platform_hotkey`. Windows: hook `WH_KEYBOARD_LL` do `handy-keys`. Linux: `Unsupported` até o portal GlobalShortcuts da fase 3 |
-| `crates/audio` | `fala-audio` | captura (cpal, loopback WASAPI, PipeWire), VAD Silero, resample, gravador de reunião |
+| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013), VAD Silero, resample, gravador de reunião |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
@@ -37,7 +37,8 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 ## Invariantes
 
 - **Nada em `crates/` depende de `tauri`**, nem de forma transitiva. A UI só conversa com o core via `core::Event`. Verificado por `scripts/check-no-tauri-in-crates.sh` no CI.
-- **O áudio de ditado nunca é enviado pela rede.** O tipo que o representa não implementa serialização para os clientes HTTP.
+- **O áudio de ditado nunca é enviado pela rede**, nem pelo arquivo da reunião: durante um ditado, o canal do mic da reunião gravada é zerado e marcado (ADR-0015). O tipo que o representa não implementa serialização para os clientes HTTP.
+- **Um único stream por dispositivo de entrada:** o ditado e o gravador de reunião consomem a mesma captura; sem fan-out, o ditado fica bloqueado durante a gravação (ADR-0015).
 - **Nenhuma chave de API** em código, em config versionada ou em log. As chaves ficam no keyring do SO.
 - **A gravação de reunião só começa por ação explícita** e tem indicador visível enquanto dura.
 - **O código específico de plataforma** fica em `hotkey`, `audio`, `inject` e `apps/desktop`. `cargo check --workspace` passa no Linux desde a fase 1 (adaptadores ainda sem implementação retornam `Unsupported`).

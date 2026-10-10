@@ -925,6 +925,29 @@ async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
 }
 },
 /**
+ * Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
+ * recentes primeiro, como linhas do histórico.
+ */
+async historySearch(query: string) : Promise<Result<HistoryEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("history_search", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Recuperar": a linha descartada volta ao normal, com o texto que tem.
+ */
+async recoverHistoryEntry(id: number) : Promise<Result<HistoryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recover_history_entry", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * "Como estou indo": the last `days` days of dictation metrics.
  */
 async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
@@ -1096,7 +1119,15 @@ dictation_id: string | null;
 /**
  * That dictation (raw, final, editor, what it shows, app), when the store can read it.
  */
-dictation: HistoryDictation | null }
+dictation: HistoryDictation | null; 
+/**
+ * The paste failed, so the text never reached the app.
+ */
+paste_failed: boolean; 
+/**
+ * The dictation was not delivered and has text to recover (see `is_discarded`).
+ */
+discarded: boolean }
 /**
  * Qual texto o item mostra agora: o final ou, depois de desfazer, o bruto.
  */

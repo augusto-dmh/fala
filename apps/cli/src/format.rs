@@ -65,27 +65,9 @@ pub fn run(
         None => Dictionary::default(),
     };
     let gemini = if args.llm {
-        match store.get(GEMINI_PROVIDER) {
-            Ok(Some(key)) => Some(
-                Gemini::new(key)
-                    .with_model(&args.model)
-                    .with_base_url(&args.gemini_base_url),
-            ),
-            Ok(None) => {
-                let _ = writeln!(
-                    stderr,
-                    "erro: sem chave do Gemini; guarde uma com `fala-cli key set gemini`"
-                );
-                return 2;
-            }
-            Err(error @ (SecretError::Unavailable | SecretError::Store)) => {
-                let _ = writeln!(stderr, "erro: keyring indisponível ({error})");
-                return 1;
-            }
-            Err(error) => {
-                let _ = writeln!(stderr, "erro: {error}");
-                return 2;
-            }
+        match gemini_from_store(store, &args.model, &args.gemini_base_url, stderr) {
+            Ok(gemini) => Some(gemini),
+            Err(code) => return code,
         }
     } else {
         None
@@ -117,8 +99,36 @@ pub fn run(
     0
 }
 
+/// O cliente com a chave `gemini` do keyring, ou o código de saída: 1 keyring indisponível,
+/// 2 sem chave. A mensagem vai para o `stderr`; a chave nunca.
+pub(crate) fn gemini_from_store(
+    store: &dyn SecretStore,
+    model: &str,
+    base_url: &str,
+    stderr: &mut dyn Write,
+) -> Result<Gemini, u8> {
+    match store.get(GEMINI_PROVIDER) {
+        Ok(Some(key)) => Ok(Gemini::new(key).with_model(model).with_base_url(base_url)),
+        Ok(None) => {
+            let _ = writeln!(
+                stderr,
+                "erro: sem chave do Gemini; guarde uma com `fala-cli key set gemini`"
+            );
+            Err(2)
+        }
+        Err(error @ (SecretError::Unavailable | SecretError::Store)) => {
+            let _ = writeln!(stderr, "erro: keyring indisponível ({error})");
+            Err(1)
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "erro: {error}");
+            Err(2)
+        }
+    }
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::io::{BufRead, BufReader, ErrorKind};
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
@@ -249,10 +259,10 @@ mod tests {
     }
 
     /// Request line e corpo de cada request recebida.
-    type Seen = Arc<Mutex<Vec<(String, String)>>>;
+    pub(crate) type Seen = Arc<Mutex<Vec<(String, String)>>>;
 
     /// Um Gemini falso que responde `text` a toda request e guarda request line e corpo.
-    fn answering_server(text: &str) -> (String, Seen) {
+    pub(crate) fn answering_server(text: &str) -> (String, Seen) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let seen = Arc::new(Mutex::new(Vec::new()));

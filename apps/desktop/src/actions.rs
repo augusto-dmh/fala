@@ -16,11 +16,13 @@ use crate::utils::{
 };
 use crate::TranscriptionCoordinator;
 use fala_core::AppContext;
+use fala_postproc::LateEdit;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -420,6 +422,9 @@ pub(crate) struct ProcessedTranscription {
     pub llm_produced: bool,
     /// Why the LLM was asked and its text did not stay; never set by the legacy binding.
     pub fallback: Option<fala_postproc::Fallback>,
+    /// The LLM answer that missed the 2 s and may still arrive; the stop path applies it to the
+    /// saved entry, every other caller drops it.
+    pub late_edit: Option<LateEdit>,
 }
 
 /// How a transcription becomes the pasted text.
@@ -444,6 +449,7 @@ pub(crate) fn auto_processed(transcription: &str, auto: AutoFormatted) -> Proces
         post_process_prompt: None,
         llm_produced: auto.llm_produced,
         fallback: auto.fallback,
+        late_edit: None,
     }
 }
 
@@ -500,11 +506,14 @@ pub(crate) async fn process_transcription_output(
         crate::managers::history_dictations::language_from_setting(&settings.selected_language);
     let text = final_text.clone();
     match tauri::async_runtime::spawn_blocking(move || {
-        llm_auto::format(&postprocessor, &text, language, app_context)
+        llm_auto::format_with_late_edit(&postprocessor, &text, language, app_context)
     })
     .await
     {
-        Ok(auto) => auto_processed(transcription, auto),
+        Ok((auto, late_edit)) => ProcessedTranscription {
+            late_edit,
+            ..auto_processed(transcription, auto)
+        },
         Err(e) => {
             error!("Post-processing task failed: {}", e);
             auto_processed(
@@ -547,6 +556,7 @@ async fn legacy_post_process(
         post_processed_text,
         post_process_prompt,
         fallback: None,
+        late_edit: None,
     }
 }
 
@@ -757,6 +767,8 @@ impl ShortcutAction for TranscribeAction {
         // The app that receives the paste, asked once on release: the LLM gets its name and
         // the history records it.
         let app_context = fala_inject::foreground_app();
+        // A dictation into an app where the LLM stays off is saved as sensitive.
+        let sensitive = llm_auto::is_disabled_app(&get_settings(app), &app_context);
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
@@ -921,6 +933,12 @@ impl ShortcutAction for TranscribeAction {
                                     app: app_context.app_name.clone(),
                                 }
                             });
+                            // An LLM answer that missed the 2 s is applied to the saved
+                            // entry when it arrives; without a saved entry it is dropped.
+                            let late_edit = processed.late_edit;
+                            // Set by the paste below; the history marks the entry discarded.
+                            let paste_failed = Arc::new(AtomicBool::new(false));
+                            let paste_failed_for_save = Arc::clone(&paste_failed);
                             let save_history = move || {
                                 let pasted = Instant::now();
                                 let mut dictation_id = None;
@@ -936,8 +954,24 @@ impl ShortcutAction for TranscribeAction {
                                             llm_produced,
                                         },
                                         app: app_context,
+                                        sensitive,
+                                        paste_failed: paste_failed_for_save.load(Ordering::Acquire),
                                     }) {
-                                        Ok(entry) => dictation_id = entry.dictation_id,
+                                        Ok(saved) => {
+                                            dictation_id = saved.dictation_id;
+                                            if let Some(late_edit) = late_edit {
+                                                let hm_late = Arc::clone(&hm);
+                                                tauri::async_runtime::spawn_blocking(move || {
+                                                    llm_auto::finish_late_edit(
+                                                        late_edit,
+                                                        |text| {
+                                                            hm_late.apply_late_edit(saved.id, text)
+                                                        },
+                                                        |entry| hm_late.announce_updated(entry),
+                                                    );
+                                                });
+                                            }
+                                        }
                                         Err(err) => error!("Failed to save history entry: {}", err),
                                     }
                                 }
@@ -968,6 +1002,7 @@ impl ShortcutAction for TranscribeAction {
                                                 paste_time.elapsed()
                                             ),
                                             Err(e) => {
+                                                paste_failed.store(true, Ordering::Release);
                                                 error!("Failed to paste transcription: {}", e);
                                                 let _ = ah_clone.emit("paste-error", ());
                                             }
@@ -1014,6 +1049,8 @@ impl ShortcutAction for TranscribeAction {
                                         llm_produced: false,
                                     },
                                     app: Default::default(),
+                                    sensitive: false,
+                                    paste_failed: false,
                                 }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }

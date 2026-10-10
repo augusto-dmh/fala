@@ -8,18 +8,43 @@
     "dictationLanguage": "Idioma do ditado",
     "languagePtBr": "Português (Brasil)",
     "languageEn": "Inglês",
+    "microphone": "Microfone",
+    "microphoneAuto": "Automático",
+    "microphoneAutoWithDevice": "Automático ({{device}})",
     "quit": "Sair",
     "cancel": "Cancelar",
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
   },
-  "sidebar": {
-    "general": "Geral",
-    "models": "Modelos",
-    "advanced": "Avançado",
-    "postProcessing": "Pós-Processamento",
-    "history": "Histórico",
-    "debug": "Depuração",
-    "about": "Sobre"
+  "rail": {
+    "navigation": "Navegação principal",
+    "home": "Início",
+    "dictionary": "Dicionário",
+    "settings": "Configurações"
+  },
+  "dictionary": {
+    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita."
+  },
+  "settingsPage": {
+    "tabs": {
+      "general": "Geral",
+      "advanced": "Avançado",
+      "about": "Sobre"
+    },
+    "advancedPages": {
+      "title": "Mais opções",
+      "models": {
+        "title": "Modelos",
+        "description": "Modelo de transcrição, downloads e aceleração"
+      },
+      "postProcessing": {
+        "title": "Pós-processamento",
+        "description": "Provedor, chave e prompts do pós-processamento herdado"
+      },
+      "debug": {
+        "title": "Depuração",
+        "description": "Logs, diagnóstico do teclado e prévias"
+      }
+    }
   },
   "onboarding": {
     "subtitle": "Para começar, escolha um modelo de transcrição",
@@ -486,11 +511,21 @@
       "transcribing": "Transcrevendo...",
       "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente.",
       "undoAiEdit": "Desfazer edição da IA",
-      "redoAiEdit": "Reaplicar edição da IA",
+      "applyAiEdit": "Aplicar edição da IA",
       "originalCopied": "Texto original copiado",
       "editedCopied": "Texto editado copiado",
       "editToggleError": "Não foi possível trocar o texto",
-      "inApp": "em {{app}}"
+      "inApp": "em {{app}}",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "searchPlaceholder": "Buscar nos ditados",
+      "clearSearch": "Limpar busca",
+      "searchNoResults": "Nenhum ditado encontrado.",
+      "searchError": "Não foi possível buscar no histórico.",
+      "discarded": "Este ditado foi descartado.",
+      "recover": "Recuperar",
+      "recovered": "Ditado recuperado e copiado",
+      "recoverError": "Não foi possível recuperar o ditado."
     },
     "debug": {
       "title": "Depuração",

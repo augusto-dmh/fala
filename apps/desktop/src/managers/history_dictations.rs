@@ -63,6 +63,21 @@ impl From<&DictationRecord> for HistoryDictation {
     }
 }
 
+/// O item mostra texto vazio, mas o bruto tem texto: o pipeline esvaziou o ditado.
+pub(crate) fn shows_emptied_text(dictation: &HistoryDictation) -> bool {
+    let shown = match dictation.showing {
+        HistoryShowing::Final => &dictation.final_text,
+        HistoryShowing::Raw => &dictation.raw_text,
+    };
+    shown.trim().is_empty() && !dictation.raw_text.trim().is_empty()
+}
+
+/// Um ditado "descartado" não chegou ao app e tem texto para recuperar: a cola falhou, ou o
+/// item mostra texto vazio com bruto. Sem texto do ASR a linha segue "a transcrição falhou".
+pub(crate) fn is_discarded(paste_failed: bool, dictation: Option<&HistoryDictation>) -> bool {
+    paste_failed || dictation.is_some_and(shows_emptied_text)
+}
+
 /// Abre `fala.sqlite`; numa falha registra o erro e devolve `None`, e o histórico segue sem vínculo.
 pub(crate) fn open_store(db: &Path, notes_dir: &Path) -> Option<Store> {
     match Store::open(db, notes_dir) {
@@ -123,13 +138,20 @@ pub(crate) fn dictation_for(
     })
 }
 
-/// Grava um item e devolve o id; com falha só no espelho, o id que o erro informa.
+/// Grava um item (sensível por `Store::add_sensitive`) e devolve o id; com falha só no espelho,
+/// o id que o erro informa.
 pub(crate) fn add_dictation(
     store: &Store,
     dictation: &Dictation,
     timestamp: i64,
+    sensitive: bool,
 ) -> Option<String> {
-    match store.add(dictation, created_at(timestamp)) {
+    let added = if sensitive {
+        store.add_sensitive(dictation, created_at(timestamp))
+    } else {
+        store.add(dictation, created_at(timestamp))
+    };
+    match added {
         Ok(record) => Some(record.id),
         Err(StorageError::Mirror { id, path, source }) => {
             error!(
@@ -212,7 +234,7 @@ pub(crate) fn backfill(conn: &Connection, store: &Store, language: Language) -> 
             editor,
             app: AppContext::default(),
         };
-        let Some(dictation_id) = add_dictation(store, &dictation, timestamp) else {
+        let Some(dictation_id) = add_dictation(store, &dictation, timestamp, false) else {
             anyhow::bail!("backfill stopped at history entry {id}");
         };
         conn.execute(
@@ -323,6 +345,8 @@ mod tests {
             app: AppContext {
                 app_name: app.map(str::to_string),
             },
+            sensitive: false,
+            paste_failed: false,
         }
     }
 
@@ -376,6 +400,106 @@ mod tests {
 
     fn not_found(store: &Store, id: &str) -> bool {
         matches!(store.get(id), Err(StorageError::NotFound(_)))
+    }
+
+    #[test]
+    fn disabled_app_marks_sensitive() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.llm_disabled_apps = vec!["keepassxc".to_string()];
+        for (app, sensitive) in [("KeePassXC", true), ("notepad", false)] {
+            let env = scratch();
+            let store = env.store();
+            let conn = history();
+            let mut e = entry(
+                "fala-1.wav",
+                "senha nova",
+                "Senha nova",
+                false,
+                None,
+                Some(app),
+            );
+            e.sensitive = crate::llm_auto::is_disabled_app(&settings, &e.app);
+
+            let saved = save(&conn, Some(&store), e, 1);
+
+            let record = store.get(&link(&conn, saved.id).unwrap()).unwrap();
+            assert_eq!(record.sensitive, sensitive, "{app}");
+        }
+    }
+
+    #[test]
+    fn retry_keeps_sensitive() {
+        for sensitive in [true, false] {
+            let env = scratch();
+            let store = env.store();
+            let conn = history();
+            let mut e = entry(
+                "fala-1.wav",
+                "velho",
+                "Velho",
+                false,
+                None,
+                Some("keepassxc"),
+            );
+            e.sensitive = sensitive;
+            let saved = save(&conn, Some(&store), e, 1);
+            let old = link(&conn, saved.id).unwrap();
+
+            HistoryManager::update_transcription_with(
+                &conn,
+                Some(&store),
+                saved.id,
+                EntryTexts {
+                    transcription_text: "novo".to_string(),
+                    post_processed_text: Some("Novo".to_string()),
+                    post_process_prompt: None,
+                    pasted_text: "Novo".to_string(),
+                    llm_produced: false,
+                },
+                Language::PtBr,
+            )
+            .unwrap();
+
+            let new = link(&conn, saved.id).unwrap();
+            assert_ne!(new, old);
+            let record = store.get(&new).unwrap();
+            assert_eq!(record.dictation.final_text, "Novo", "{sensitive}");
+            assert_eq!(record.sensitive, sensitive, "{sensitive}");
+        }
+    }
+
+    #[test]
+    fn undo_after_late_edit() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let saved = save(
+            &conn,
+            Some(&store),
+            entry("fala-1.wav", "bruto", "Bruto", false, Some("Bruto"), None),
+            1,
+        );
+        let id = link(&conn, saved.id).unwrap();
+
+        let late =
+            HistoryManager::apply_late_edit_with(&conn, Some(&store), saved.id, "Bruto, editado.")
+                .unwrap();
+        let shown = late.dictation.unwrap();
+        assert_eq!(shown.editor, HistoryEditor::Llm);
+        assert_eq!(shown.showing, HistoryShowing::Raw);
+
+        let applied =
+            HistoryManager::set_showing_with(&conn, Some(&store), saved.id, Showing::Final)
+                .unwrap();
+        assert_eq!(applied.dictation.unwrap().showing, HistoryShowing::Final);
+        assert_eq!(store.get(&id).unwrap().shown_text(), "Bruto, editado.");
+
+        let undone =
+            HistoryManager::set_showing_with(&conn, Some(&store), saved.id, Showing::Raw).unwrap();
+        let undone = undone.dictation.unwrap();
+        assert_eq!(undone.showing, HistoryShowing::Raw);
+        assert_eq!(undone.editor, HistoryEditor::Llm);
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Raw);
     }
 
     #[test]
@@ -764,5 +888,214 @@ mod tests {
                 app_name: Some("notepad".to_string()),
             })
         );
+    }
+
+    /// O ditado "hum" que as regras esvaziaram: bruto com texto, colado vazio.
+    fn emptied_entry(file: &str) -> NewEntry {
+        entry(file, "hum", "", false, None, None)
+    }
+
+    fn paste_failed_entry(file: &str) -> NewEntry {
+        NewEntry {
+            paste_failed: true,
+            ..llm_entry(file)
+        }
+    }
+
+    #[test]
+    fn save_records_paste_failure() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+
+        let failed = save(&conn, Some(&store), paste_failed_entry("fala-1.wav"), 1);
+        let delivered = save(&conn, Some(&store), llm_entry("fala-2.wav"), 2);
+
+        let stored = |id: i64| -> bool {
+            conn.query_row(
+                "SELECT paste_failed FROM transcription_history WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert!(stored(failed.id));
+        assert!(failed.paste_failed && failed.discarded);
+        assert!(!stored(delivered.id));
+        assert!(!delivered.paste_failed && !delivered.discarded);
+    }
+
+    #[test]
+    fn discarded_classification() {
+        let d = |raw: &str, final_text: &str, showing| HistoryDictation {
+            raw_text: raw.to_string(),
+            final_text: final_text.to_string(),
+            editor: HistoryEditor::Rules,
+            showing,
+            app_name: None,
+        };
+        let final_ = HistoryShowing::Final;
+        let cases = [
+            // (paste_failed, dictation, discarded)
+            (true, Some(d("oi", "Oi.", final_)), true),
+            (true, None, true),
+            (false, Some(d("hum", "", final_)), true),
+            (false, Some(d("hum", "  ", final_)), true),
+            (false, Some(d("hum", "", HistoryShowing::Raw)), false),
+            (false, Some(d("oi", "Oi.", final_)), false),
+            (false, Some(d("", "", final_)), false),
+            (false, None, false),
+        ];
+        for (paste_failed, dictation, want) in cases {
+            assert_eq!(
+                is_discarded(paste_failed, dictation.as_ref()),
+                want,
+                "{paste_failed} {dictation:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn recover_restores_emptied_and_paste_failed_entries() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let emptied = save(&conn, Some(&store), emptied_entry("fala-1.wav"), 1);
+        assert!(emptied.discarded);
+
+        let recovered = HistoryManager::recover_with(&conn, Some(&store), emptied.id).unwrap();
+        assert!(!recovered.discarded);
+        let dictation = recovered.dictation.unwrap();
+        assert_eq!(dictation.showing, HistoryShowing::Raw);
+        assert_eq!(dictation.raw_text, "hum");
+        let id = link(&conn, emptied.id).unwrap();
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Raw);
+
+        let failed = save(&conn, Some(&store), paste_failed_entry("fala-2.wav"), 2);
+        let recovered = HistoryManager::recover_with(&conn, Some(&store), failed.id).unwrap();
+        assert!(!recovered.paste_failed && !recovered.discarded);
+        assert_eq!(
+            recovered.dictation.unwrap().showing,
+            HistoryShowing::Final,
+            "a paste failure keeps the text it had"
+        );
+        let page = HistoryManager::page_with(&conn, Some(&store), None, Some(10)).unwrap();
+        assert!(page.entries.iter().all(|e| !e.discarded));
+
+        // Sem store, a falha de cola ainda se recupera pelo history.db.
+        let unlinked = save(&conn, None, paste_failed_entry("fala-3.wav"), 3);
+        let recovered = HistoryManager::recover_with(&conn, None, unlinked.id).unwrap();
+        assert!(!recovered.paste_failed && !recovered.discarded);
+    }
+
+    #[test]
+    fn recover_refuses_entries_that_are_not_discarded() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let delivered = save(&conn, Some(&store), llm_entry("fala-1.wav"), 1);
+        let failed = save(
+            &conn,
+            Some(&store),
+            entry("fala-2.wav", "", "", false, None, None),
+            2,
+        );
+
+        for id in [delivered.id, failed.id, 999] {
+            assert!(
+                HistoryManager::recover_with(&conn, Some(&store), id).is_err(),
+                "{id}"
+            );
+        }
+        let id = link(&conn, delivered.id).unwrap();
+        assert_eq!(store.get(&id).unwrap().showing, Showing::Final);
+    }
+
+    #[test]
+    fn search_finds_entries_without_accents_newest_first() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let old = save(
+            &conn,
+            Some(&store),
+            entry(
+                "fala-1.wav",
+                "reunião amanhã",
+                "Reunião amanhã.",
+                false,
+                None,
+                None,
+            ),
+            1_790_000_100,
+        );
+        save(
+            &conn,
+            Some(&store),
+            entry(
+                "fala-2.wav",
+                "outra coisa",
+                "Outra coisa.",
+                false,
+                None,
+                None,
+            ),
+            1_790_000_200,
+        );
+        let new = save(
+            &conn,
+            Some(&store),
+            entry(
+                "fala-3.wav",
+                "reuniao de novo",
+                "Reuniao de novo.",
+                false,
+                None,
+                Some("slack"),
+            ),
+            1_790_000_300,
+        );
+
+        let found = HistoryManager::search_with(&conn, Some(&store), "REUNIAO").unwrap();
+
+        let ids: Vec<i64> = found.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![new.id, old.id]);
+        assert_eq!(
+            found[0]
+                .dictation
+                .as_ref()
+                .and_then(|d| d.app_name.as_deref()),
+            Some("slack")
+        );
+        assert!(
+            HistoryManager::search_with(&conn, Some(&store), "inexistente")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn search_skips_dictations_without_rows_and_needs_the_store() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let saved = save(&conn, Some(&store), llm_entry("fala-1.wav"), 1);
+        let orphan = dictation_for(
+            "acao da cli",
+            "Ação da CLI.",
+            false,
+            Language::PtBr,
+            AppContext::default(),
+        )
+        .unwrap();
+        add_dictation(&store, &orphan, 2, false).unwrap();
+
+        let found = HistoryManager::search_with(&conn, Some(&store), "acao").unwrap();
+
+        assert_eq!(
+            found.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![saved.id]
+        );
+        assert!(HistoryManager::search_with(&conn, None, "acao").is_err());
     }
 }

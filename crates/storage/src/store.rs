@@ -12,7 +12,9 @@ use crate::mirror::{self, DITADOS};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
 /// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
-const SCHEMA_VERSION: i64 = 1;
+///
+/// 1: as tabelas de `SCHEMA_1`. 2: as mesmas, com `auto_vacuum = INCREMENTAL`.
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_1: &str = "
 CREATE TABLE dictations (
@@ -54,18 +56,43 @@ pub struct Store {
 
 impl Store {
     /// Abre (ou cria) o banco em WAL com `busy_timeout` de 5 s e aplica o schema.
+    ///
+    /// Banco novo nasce com `auto_vacuum = INCREMENTAL`, que só vale antes da primeira tabela.
+    /// Banco na versão 1 passa por um `VACUUM` uma vez; se outro processo o segura, a migração
+    /// fica para a próxima abertura. Com a versão em dia, as páginas livres voltam ao SO.
     pub fn open(db: &Path, notes_dir: &Path) -> Result<Self, StorageError> {
         if let Some(dir) = db.parent().filter(|d| !d.as_os_str().is_empty()) {
             fs::create_dir_all(dir)?;
         }
         let conn = Connection::open(db)?;
         conn.busy_timeout(std::time::Duration::from_millis(5000))?;
-        conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version < SCHEMA_VERSION {
-            conn.execute_batch(&format!(
+        if version == 0 {
+            conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+        }
+        conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
+        match version {
+            0 => conn.execute_batch(&format!(
                 "BEGIN; {SCHEMA_1} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
-            ))?;
+            ))?,
+            1 => {
+                // `VACUUM` não roda dentro de transação; se cair entre ele e a versão, roda de novo.
+                let migrated = conn.execute_batch(&format!(
+                    "PRAGMA auto_vacuum = INCREMENTAL; VACUUM; PRAGMA user_version = {SCHEMA_VERSION};"
+                ));
+                if let Err(e) = migrated {
+                    log::warn!("fala.sqlite: VACUUM da migração adiado: {e}");
+                }
+            }
+            _ => {
+                // Sem página livre, nada de pedir a trava de escrita (o MCP só lê).
+                let free: i64 = conn.pragma_query_value(None, "freelist_count", |r| r.get(0))?;
+                if free > 0
+                    && let Err(e) = incremental_vacuum(&conn)
+                {
+                    log::warn!("fala.sqlite: incremental_vacuum adiado: {e}");
+                }
+            }
         }
         conn.execute_batch(metrics::SCHEMA)?;
         Ok(Store {
@@ -179,6 +206,33 @@ impl Store {
         self.set_showing(id, Showing::Final)
     }
 
+    /// Guarda a resposta do LLM que chegou depois da colagem: o item passa a ter `final = text`,
+    /// `editor = llm` e a mostrar o bruto, que é o que foi colado, até a pessoa aplicar a edição
+    /// com `redo`. Bruto, app, data e marca de sensível ficam.
+    ///
+    /// Id desconhecido devolve `NotFound` e texto em branco devolve `EmptyEdit`, sem mudar nada.
+    pub fn apply_late_edit(&self, id: &str, text: &str) -> Result<DictationRecord, StorageError> {
+        if text.trim().is_empty() {
+            return Err(StorageError::EmptyEdit(id.to_string()));
+        }
+        let mut record = self.get(id)?;
+        self.conn.execute(
+            "UPDATE dictations SET final = ?1, edited_by = ?2, showing = ?3 WHERE id = ?4",
+            params![
+                text,
+                mirror::editor_str(Editor::Llm),
+                Showing::Raw.as_str(),
+                id
+            ],
+        )?;
+        record.dictation.final_text = text.to_string();
+        record.dictation.editor = Editor::Llm;
+        record.showing = Showing::Raw;
+        log::debug!("edição tardia aplicada ao ditado {id}");
+        self.write_mirror(&record)?;
+        Ok(record)
+    }
+
     /// Apaga um item: a linha (o FTS sai pelo gatilho) e depois o `.md`.
     ///
     /// Id desconhecido devolve `NotFound` sem mudar nada; `.md` já ausente não é erro. Se só a
@@ -275,6 +329,14 @@ impl Store {
             source,
         })
     }
+}
+
+/// Devolve todas as páginas livres. O pragma libera uma página por passo, então é lido até o fim.
+fn incremental_vacuum(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA incremental_vacuum")?;
+    let mut rows = stmt.query([])?;
+    while rows.next()?.is_some() {}
+    Ok(())
 }
 
 fn insert(conn: &Connection, record: &DictationRecord) -> Result<(), StorageError> {

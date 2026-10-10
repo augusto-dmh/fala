@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-02
 ---
 # LLM de notas de reunião: só texto, payload enumerado, nada em sessão "só local"
@@ -23,10 +23,10 @@ Evidência: design doc §3.4 e §6; `fala-research/pitches/fase-2-reuniao-videos
 Payload enumerado, só texto, pela chave do usuário (ADR-0008), e nenhuma chamada em sessão "só local". Num repo público, quem instala confere pela ADR e pelo teste o que sai sobre terceiros; o payload livre não dá essa garantia; deixar a sessão "só local" chamar o LLM contradiz o que o usuário entende ao marcá-la; e o LLM local fica fora até haver medição. O provedor segue o design doc (Claude) e é configuração, como o modelo: trocar de provedor não exige ADR nova, desde que o payload continue o desta lista.
 
 O payload de uma geração de notas contém só:
-* a transcrição da sessão com timestamps, id por segmento e rótulos de falante ("Eu", "Pessoa N" ou o nome que o usuário aplicou), incluindo os marcadores "trecho de ditado omitido" (ADR-0015, proposta);
+* a transcrição da sessão com timestamps, id por segmento e rótulos de falante ("Eu", "Pessoa N" ou o nome que o usuário aplicou), incluindo os marcadores "trecho de ditado omitido" (ADR-0015);
 * as anotações que o usuário digitou durante a sessão, com id por linha (para os ponteiros da nota gerada);
 * o título, a data e a hora de início da sessão e, se houver, título e horário do evento do calendário;
-* o template escolhido (instruções e seções);
+* o template escolhido (nome, propósito, estilo e seções com instrução);
 * o perfil do usuário (campo de texto em `Settings`), o idioma das notas e o dicionário pessoal;
 * os nomes dos participantes, para sugerir nomes de falantes; participante sem nome não entra, e nunca se deriva nome da parte local de um e-mail.
 

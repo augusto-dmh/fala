@@ -98,6 +98,8 @@ pub enum StorageError {
     NotFound(String),
     #[error("o ditado {0} não tem edição para desfazer")]
     NothingToUndo(String),
+    #[error("a edição tardia do ditado {0} está em branco")]
+    EmptyEdit(String),
     /// A linha foi gravada no banco, mas o `.md` não.
     #[error("ditado {id} gravado no banco, mas o espelho {path} falhou: {source}")]
     Mirror {
