@@ -775,6 +775,7 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::undo_history_entry_edit,
             commands::history::redo_history_entry_edit,
+            commands::history::recover_history_entry,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,

@@ -738,6 +738,8 @@ mod tests {
             post_process_requested: false,
             dictation_id: None,
             dictation: None,
+            paste_failed: false,
+            discarded: false,
         }
     }
 
