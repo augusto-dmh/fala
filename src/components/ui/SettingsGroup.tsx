@@ -6,26 +6,26 @@ interface SettingsGroupProps {
   children: React.ReactNode;
 }
 
+/** A group of settings rows: a sentence-case subtitle, then one card per row,
+ *  4 px apart, as in the Windows 11 Settings app. */
 export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   title,
   description,
   children,
 }) => {
   return (
-    <div className="space-y-2">
+    <section className="space-y-2">
       {title && (
-        <div className="px-4">
-          <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-            {title}
-          </h2>
+        <div className="px-1">
+          <h2 className="text-body font-semibold text-text">{title}</h2>
           {description && (
-            <p className="text-xs text-mid-gray mt-1">{description}</p>
+            <p className="text-caption text-text-2 mt-0.5">{description}</p>
           )}
         </div>
       )}
-      <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-        <div className="divide-y divide-mid-gray/20">{children}</div>
+      <div className="flex flex-col gap-1 [&>*]:bg-surface-1 [&>*]:border [&>*]:border-border [&>*]:rounded-lg">
+        {children}
       </div>
-    </div>
+    </section>
   );
 };
