@@ -107,7 +107,7 @@ function deps(
     "o botão de copiar precisa copiar shownText(entry)",
   );
   assert.ok(
-    /:\s*hasTranscription\s*\?\s*shownText\(entry\)/.test(screen),
+    /line-clamp-2[\s\S]{0,120}\{shownText\(entry\)\}/.test(screen),
     "o parágrafo do item precisa mostrar shownText(entry)",
   );
   assert.ok(
@@ -133,7 +133,7 @@ function deps(
     "a tela precisa decidir o botão por editAction(entry)",
   );
   assert.ok(
-    /\{action && \(/.test(screen),
+    /\{action && /.test(screen),
     "o botão só aparece quando editAction não é nulo",
   );
   assert.ok(screen.includes('t("settings.history.undoAiEdit")'));
@@ -192,9 +192,8 @@ await (async () => {
   assert.ok(screen.includes("redo: commands.redoHistoryEntryEdit"));
   assert.ok(screen.includes("copy: copyToClipboard"));
   assert.ok(
-    /if \(outcome\.entry\)[\s\S]{0,200}e\.id === replaced\.id \? replaced : e/.test(
-      screen,
-    ),
+    /if \(outcome\.entry\) \{\s*updateEntry\(outcome\.entry\)/.test(screen) &&
+      screen.includes("list.map((e) => (e.id === entry.id ? entry : e))"),
     "a tela precisa trocar a entrada pela devolvida",
   );
   assert.ok(
@@ -282,7 +281,18 @@ await (async () => {
   );
   assert.equal(nov[0].day, "yesterday");
   assert.equal(timeLabel(at(2026, 9, 9, 7, 5), "pt-BR"), "07:05");
+  assert.ok(screen.includes("groupByDay(shown, new Date())"));
+  assert.ok(screen.includes("t(`settings.history.${group.day}`)"));
   ok("H2");
+}
+
+// H3 - texto em até duas linhas, hora numa coluna.
+{
+  assert.ok(
+    screen.includes('expanded ? "whitespace-pre-wrap" : "line-clamp-2"'),
+  );
+  assert.ok(screen.includes("timeLabel(entry.timestamp, i18n.language)"));
+  ok("H3");
 }
 
 // H4 - busca com debounce de 200 ms; campo vazio volta à lista.
@@ -291,6 +301,10 @@ await (async () => {
   assert.equal(searchQuery(""), null);
   assert.equal(searchQuery("   "), null);
   assert.equal(searchQuery("  reunião "), "reunião");
+  assert.ok(screen.includes("commands.historySearch(q)"));
+  assert.ok(/setTimeout\([\s\S]*?SEARCH_DEBOUNCE_MS\)/.test(screen));
+  assert.ok(/if \(q === null\) \{\s*setResults\(null\)/.test(screen));
+  assert.ok(screen.includes("const shown = results ?? entries;"));
   ok("H4");
 }
 
@@ -359,6 +373,16 @@ await (async () => {
     toastKey: "settings.history.copyError",
   });
 
+  assert.ok(screen.includes("recover: commands.recoverHistoryEntry"));
+  assert.ok(
+    /kind === "discarded"[\s\S]{0,200}t\("settings\.history\.discarded"\)[\s\S]{0,300}t\("settings\.history\.recover"\)/.test(
+      screen,
+    ),
+    "a linha descartada mostra o aviso e o botão Recuperar",
+  );
+  assert.ok(
+    /text-text\/40">\s*\{t\("settings\.history\.discarded"\)/.test(screen),
+  );
   ok("H5");
 })();
 
