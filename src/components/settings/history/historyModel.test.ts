@@ -1,4 +1,5 @@
-// Prova dos checks C27-C30 da tela de histórico (`.specs/features/history-undo/checks.md`).
+// Prova dos checks C27-C30 da tela de histórico (`.specs/features/history-undo/checks.md`) e
+// C2, C8 e C9 da edição tardia (`.specs/features/llm-late-edit/checks.md`).
 // Rode com `bun src/components/settings/history/historyModel.test.ts`: imprime `<check> ok` e sai
 // com erro na primeira falha.
 import assert from "node:assert/strict";
@@ -116,7 +117,7 @@ function deps(
     "o botão só aparece quando editAction não é nulo",
   );
   assert.ok(screen.includes('t("settings.history.undoAiEdit")'));
-  assert.ok(screen.includes('t("settings.history.redoAiEdit")'));
+  assert.ok(screen.includes('t("settings.history.applyAiEdit")'));
   ok("C28");
 }
 
@@ -200,7 +201,7 @@ await (async () => {
 {
   const want: Record<string, [string, string]> = {
     undoAiEdit: ["Desfazer edição da IA", "Undo AI edit"],
-    redoAiEdit: ["Reaplicar edição da IA", "Reapply AI edit"],
+    applyAiEdit: ["Aplicar edição da IA", "Apply AI edit"],
     originalCopied: ["Texto original copiado", "Original text copied"],
     editedCopied: ["Texto editado copiado", "Edited text copied"],
     editToggleError: [
@@ -215,5 +216,74 @@ await (async () => {
   }
   ok("C30");
 }
+
+// C2 - "Desfazer edição da IA" só para llm mostrando o final; nada para rules, none ou sem vínculo.
+{
+  for (const [d, want] of [
+    [dictation({ editor: "llm", showing: "final" }), "undo"],
+    [dictation({ editor: "rules", showing: "final" }), null],
+    [dictation({ editor: "rules", showing: "raw" }), null],
+    [dictation({ editor: "none", showing: "final" }), null],
+    [dictation({ editor: "none", showing: "raw" }), null],
+    [null, null],
+  ] as const) {
+    assert.equal(editAction(entry(d)), want, JSON.stringify(d));
+  }
+  ok("C2");
+}
+
+// C8 - apply label for redo: llm mostrando o bruto oferece "Aplicar edição da IA".
+{
+  assert.equal(
+    editAction(entry(dictation({ editor: "llm", showing: "raw" }))),
+    "redo",
+  );
+  assert.ok(
+    /action === "undo"\s*\?\s*t\("settings\.history\.undoAiEdit"\)\s*:\s*t\("settings\.history\.applyAiEdit"\)/.test(
+      screen,
+    ),
+    "o botão de redo precisa usar settings.history.applyAiEdit",
+  );
+  assert.equal(pt.settings.history.applyAiEdit, "Aplicar edição da IA");
+  assert.equal(en.settings.history.applyAiEdit, "Apply AI edit");
+  ok("C8 apply label for redo");
+}
+
+// C9 - aplicar a edição tardia troca a entrada e copia; desfazer volta a oferecer "Aplicar".
+await (async () => {
+  // A edição tardia chegou: o item mostra o bruto colado e tem o texto do LLM como final.
+  const late = entry(
+    dictation({
+      raw_text: "texto colado",
+      final_text: "Texto do LLM.",
+      showing: "raw",
+    }),
+  );
+  const applied = entry(
+    dictation({
+      raw_text: "texto colado",
+      final_text: "Texto do LLM.",
+      showing: "final",
+    }),
+  );
+  const r = deps({ status: "ok", data: applied });
+  const outR = await switchText(late, editAction(late)!, r.deps);
+  assert.deepEqual(r.calls.redo, [7]);
+  assert.deepEqual(r.calls.undo, []);
+  assert.deepEqual(r.calls.copied, ["Texto do LLM."]);
+  assert.deepEqual(outR, {
+    entry: applied,
+    success: true,
+    toastKey: "settings.history.editedCopied",
+  });
+  ok("C9 switchText redo");
+
+  const u = deps({ status: "ok", data: late });
+  const outU = await switchText(applied, editAction(applied)!, u.deps);
+  assert.deepEqual(u.calls.undo, [7]);
+  assert.deepEqual(outU.entry, late);
+  assert.equal(editAction(outU.entry!), "redo");
+  ok("C9 undo after apply offers apply again");
+})();
 
 console.log("history: all assertions passed");

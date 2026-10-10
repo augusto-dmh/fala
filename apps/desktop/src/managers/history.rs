@@ -13,7 +13,7 @@ use tauri_specta::Event;
 
 use crate::managers::history_dictations::{self, HistoryDictation};
 use fala_core::{AppContext, Language};
-use fala_storage::{Showing, Store};
+use fala_storage::{Showing, StorageError, Store};
 
 /// Database migrations for transcription history.
 /// Each migration is applied in order. The library tracks which migrations
@@ -95,6 +95,8 @@ pub struct NewEntry {
     pub texts: EntryTexts,
     /// The app that had focus when the user released the shortcut.
     pub app: AppContext,
+    /// The app is in `llm_disabled_apps`: the dictation is saved as sensitive.
+    pub sensitive: bool,
 }
 
 pub struct HistoryManager {
@@ -322,6 +324,7 @@ impl HistoryManager {
             post_process_requested,
             texts,
             app,
+            sensitive,
         } = entry;
         let title = Self::format_timestamp_title(timestamp);
         let dictation_id = store.and_then(|store| {
@@ -332,7 +335,7 @@ impl HistoryManager {
                 language,
                 app,
             )?;
-            history_dictations::add_dictation(store, &dictation, timestamp)
+            history_dictations::add_dictation(store, &dictation, timestamp, sensitive)
         });
 
         conn.execute(
@@ -431,10 +434,11 @@ impl HistoryManager {
                 params![id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
-            let app = old_link
+            // The replacement keeps the app and the sensitive mark of the dictation it replaces.
+            let (app, sensitive) = old_link
                 .as_deref()
                 .and_then(|old| store.get(old).ok())
-                .map(|record| record.dictation.app)
+                .map(|record| (record.dictation.app, record.sensitive))
                 .unwrap_or_default();
             let new_link = history_dictations::dictation_for(
                 &texts.transcription_text,
@@ -443,7 +447,9 @@ impl HistoryManager {
                 language,
                 app,
             )
-            .and_then(|dictation| history_dictations::add_dictation(store, &dictation, timestamp));
+            .and_then(|dictation| {
+                history_dictations::add_dictation(store, &dictation, timestamp, sensitive)
+            });
             if let Some(new_link) = new_link {
                 conn.execute(
                     "UPDATE transcription_history SET dictation_id = ?1 WHERE id = ?2",
@@ -874,6 +880,51 @@ impl HistoryManager {
         )?;
 
         Ok(())
+    }
+
+    /// Keeps the LLM answer that arrived after the paste on the entry's dictation (see
+    /// `Store::apply_late_edit`); history.db and the pasted text stay as they were.
+    pub fn apply_late_edit(&self, id: i64, text: &str) -> Result<HistoryEntry> {
+        let conn = self.get_connection()?;
+        let store = self.lock_store();
+        Self::apply_late_edit_with(&conn, store.as_deref(), id, text)
+    }
+
+    pub(crate) fn apply_late_edit_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        id: i64,
+        text: &str,
+    ) -> Result<HistoryEntry> {
+        let store = store.ok_or_else(|| anyhow!("fala.sqlite is not available"))?;
+        let mut entry = Self::get_entry_by_id_with(conn, id)?
+            .ok_or_else(|| anyhow!("History entry {} not found", id))?;
+        let dictation_id = entry
+            .dictation_id
+            .clone()
+            .ok_or_else(|| anyhow!("History entry {} has no dictation", id))?;
+        let record = match store.apply_late_edit(&dictation_id, text) {
+            Ok(record) => record,
+            Err(StorageError::Mirror { path, source, .. }) => {
+                error!(
+                    "Late edit of dictation {} saved, but its mirror {} failed: {}",
+                    dictation_id,
+                    path.display(),
+                    source
+                );
+                store.get(&dictation_id).map_err(|e| anyhow!("{}", e))?
+            }
+            Err(e) => return Err(anyhow!("{}", e)),
+        };
+        entry.dictation = Some(HistoryDictation::from(&record));
+        Ok(entry)
+    }
+
+    /// Tells the front an entry changed (`history-update-payload` `updated`).
+    pub fn announce_updated(&self, entry: HistoryEntry) {
+        if let Err(e) = (HistoryUpdatePayload::Updated { entry }).emit(&self.app_handle) {
+            error!("Failed to emit history-updated event: {}", e);
+        }
     }
 
     /// Undo (`Showing::Raw`) or redo (`Showing::Final`) the edit of an entry's dictation.
