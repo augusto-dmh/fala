@@ -322,6 +322,14 @@
         "label": "Audio Feedback",
         "description": "Play sound when recording starts and stops"
       },
+      "pauseMediaWhileRecording": {
+        "label": "Pause media while dictating",
+        "description": "Pauses the music and videos playing while you dictate, and resumes only what Fala paused"
+      },
+      "pauseMediaOnMeeting": {
+        "label": "Pause media while recording a meeting",
+        "description": "Pauses the music and videos playing while the meeting records, so they stay out of the recording, and resumes only what Fala paused"
+      },
       "outputDevice": {
         "title": "Output Device",
         "description": "Select your preferred audio output device for feedback sounds",

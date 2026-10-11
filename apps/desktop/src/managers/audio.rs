@@ -2,6 +2,7 @@ use crate::audio_toolkit::list_input_devices;
 use crate::dictation_capture::{DictationRecorder, MicSignal, VadPolicy};
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
+use crate::media_pause::{self, Owner, PauseGate};
 use crate::settings::{get_settings, write_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
@@ -338,6 +339,8 @@ pub struct AudioRecordingManager {
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
     mute_state: Arc<Mutex<MuteState>>,
+    /// A media pause asked by the current dictation and not resumed yet.
+    media_pause: Arc<PauseGate>,
     close_generation: Arc<AtomicU64>,
     cancel_generation: Arc<AtomicU64>,
     stream_router: Arc<StreamRouter>,
@@ -383,6 +386,7 @@ impl AudioRecordingManager {
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
             mute_state: Arc::new(Mutex::new(MuteState::default())),
+            media_pause: Arc::new(PauseGate::default()),
             close_generation: Arc::new(AtomicU64::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
             stream_router,
@@ -576,6 +580,25 @@ impl AudioRecordingManager {
         }
     }
 
+    /// Pauses the media playing on the PC when `pause_media_while_recording` is on and the
+    /// recording of `generation` is still the current one. A stop invalidates the generation
+    /// before it resumes, so a late pause never strands the media paused.
+    pub fn pause_media(&self, generation: u64) {
+        if !get_settings(&self.app_handle).pause_media_while_recording {
+            return;
+        }
+        self.media_pause.pause_if(
+            || self.is_recording_readiness_current(generation),
+            || media_pause::pause(Owner::Dictation),
+        );
+    }
+
+    /// Plays again what [`Self::pause_media`] paused; nothing when it paused nothing.
+    pub fn resume_media(&self) {
+        self.media_pause
+            .resume(|| media_pause::resume(Owner::Dictation));
+    }
+
     pub fn preload_vad(&self) -> Result<(), anyhow::Error> {
         let mut recorder_opt = self.recorder.lock().unwrap();
         if recorder_opt.is_none() {
@@ -722,6 +745,7 @@ impl AudioRecordingManager {
             }
             mute_guard.did_mute = false;
         }
+        self.resume_media();
 
         if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             // If still recording, stop first.
@@ -1020,6 +1044,7 @@ impl AudioRecordingManager {
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
         self.invalidate_recording_readiness();
+        self.resume_media();
         self.cancel_generation.fetch_add(1, Ordering::AcqRel);
         let mut state = self.state.lock().unwrap();
 

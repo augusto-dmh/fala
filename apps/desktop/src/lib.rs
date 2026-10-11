@@ -15,6 +15,7 @@ mod input;
 mod llm_auto;
 mod llm_client;
 mod managers;
+mod media_pause;
 mod meeting;
 mod memory;
 mod overlay;
@@ -767,6 +768,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
+            shortcut::change_pause_media_while_recording_setting,
+            shortcut::change_pause_media_on_meeting_setting,
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
