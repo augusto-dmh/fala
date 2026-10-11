@@ -30,6 +30,8 @@ pub(crate) enum MediaAction {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Playback {
     Playing,
+    // Only SMTC reports it; outside Windows nothing is paused.
+    #[cfg_attr(not(windows), allow(dead_code))]
     Paused,
     /// Stopped, closed, changing, or unreadable.
     Other,
