@@ -27,7 +27,21 @@
     "meetings": "Reuniões"
   },
   "dictionary": {
-    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita."
+    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita.",
+    "search": "Buscar no dicionário",
+    "replacements": {
+      "title": "Falado → escrito",
+      "description": "Quando você disser a forma falada, o Fala escreve a outra. Vale para a palavra inteira, sem diferenciar maiúsculas nem acentos, antes da IA de formatação e também com ela desligada. Só a forma escrita vai para a IA.",
+      "spokenPlaceholder": "fala sql",
+      "writtenPlaceholder": "Fala.sqlite",
+      "spokenLabel": "Forma falada",
+      "writtenLabel": "Forma escrita",
+      "add": "Adicionar",
+      "remove": "Remover {{spoken}} → {{written}}",
+      "duplicate": "\"{{spoken}}\" já tem uma forma escrita",
+      "uses_one": "1 uso",
+      "uses_other": "{{count}} usos"
+    }
   },
   "settingsPage": {
     "tabs": {
