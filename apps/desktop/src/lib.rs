@@ -14,7 +14,9 @@ mod helpers;
 mod input;
 mod llm_auto;
 mod llm_client;
+mod long_dictation;
 mod managers;
+mod media_pause;
 mod meeting;
 mod memory;
 mod overlay;
@@ -449,6 +451,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+    // Rest in the idle pill when it is on; the overlay page shows it once it listens
+    // (`pill_overlay_ready`).
+    overlay::apply_idle_setting(app_handle, &settings);
 }
 
 #[tauri::command]
@@ -737,6 +742,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_selected_language_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
+            shortcut::change_pill_idle_visible_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,
@@ -764,9 +770,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::update_custom_words,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
+            shortcut::change_cleanup_level_setting,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
+            shortcut::change_pause_media_while_recording_setting,
+            shortcut::change_pause_media_on_meeting_setting,
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
@@ -818,6 +827,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::open_microphone_privacy_settings,
             commands::audio::open_microphone_settings,
             commands::audio::open_microphone_troubleshooting,
+            overlay::pill_overlay_ready,
+            overlay::set_idle_pill_hover,
+            overlay::open_home_from_pill,
             commands::audio::get_available_microphones,
             commands::audio::set_selected_microphone,
             commands::audio::get_selected_microphone,

@@ -831,6 +831,19 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
     // Reposition in case the window needs to re-center for the new style.
     crate::utils::update_overlay_position(&app);
 
+    // The idle pill exists only while a pill style is on.
+    crate::overlay::apply_idle_setting(&app, &settings::get_settings(&app));
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_pill_idle_visible_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.pill_idle_visible = enabled;
+    settings::write_settings(&app, settings.clone());
+    crate::overlay::apply_idle_setting(&app, &settings);
     Ok(())
 }
 
@@ -979,6 +992,18 @@ pub fn update_custom_words(app: AppHandle, words: Vec<String>) -> Result<(), Str
 pub fn change_llm_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.llm_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cleanup_level_setting(
+    app: AppHandle,
+    level: settings::CleanupLevel,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cleanup_level = level;
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1417,6 +1442,27 @@ pub fn set_post_process_selected_prompt(app: AppHandle, id: String) -> Result<()
 pub fn change_mute_while_recording_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.mute_while_recording = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_pause_media_while_recording_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.pause_media_while_recording = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_pause_media_on_meeting_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.pause_media_on_meeting = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }

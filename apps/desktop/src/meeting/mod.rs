@@ -33,7 +33,9 @@ use specta::Type;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 
+use crate::audio_feedback::{self, SoundType};
 use crate::managers::audio::AudioRecordingManager;
+use crate::media_pause::{self, MediaAction, Owner};
 use recorder::{Control, Report};
 
 /// The working WAV inside `audio/<id>/`; `fala-retention` turns it into `mic.opus` and
@@ -181,6 +183,29 @@ pub(crate) fn check_start(
 /// The consent date as stored in settings: RFC 3339 with the local offset, in seconds.
 pub(crate) fn consent_stamp(at: DateTime<FixedOffset>) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, false)
+}
+
+/// The sound a session effect plays when feedback sounds are on. It reinforces the indicator and
+/// never replaces it (ADR-0005).
+pub(crate) fn meeting_sound(effect: &Effect) -> Option<SoundType> {
+    match effect {
+        Effect::StartCapture => Some(SoundType::MeetingStart),
+        Effect::PauseCapture => Some(SoundType::MeetingPause),
+        Effect::ResumeCapture => Some(SoundType::MeetingResume),
+        _ => None,
+    }
+}
+
+/// What a session effect does to the media playing on the PC: paused exactly while the capture
+/// records, so music never leaks into the system channel.
+pub(crate) fn media_action(effect: &Effect) -> Option<MediaAction> {
+    match effect {
+        Effect::StartCapture | Effect::ResumeCapture => Some(MediaAction::Pause),
+        Effect::PauseCapture | Effect::FinalizeCapture | Effect::HideIndicator => {
+            Some(MediaAction::Resume)
+        }
+        _ => None,
+    }
 }
 
 /// The `recording-error` type that refuses a dictation while a meeting records, if any.
@@ -466,7 +491,10 @@ impl MeetingManager {
                         }
                     };
                     match recorder::spawn(system.clone(), dir.join(WORK_WAV), sink) {
-                        Ok(tx) => control = Some(tx),
+                        Ok(tx) => {
+                            control = Some(tx);
+                            self.feedback(&Effect::StartCapture);
+                        }
                         Err(e) => {
                             hide_indicator(&self.app);
                             self.restore_dictation_mic();
@@ -628,8 +656,26 @@ impl MeetingManager {
         self.publish(&mut inner);
     }
 
+    /// The sound of a session effect and what it does to the media playing on the PC.
+    fn feedback(&self, effect: &Effect) {
+        if let Some(sound) = meeting_sound(effect) {
+            audio_feedback::play_feedback_sound(&self.app, sound);
+        }
+        match media_action(effect) {
+            Some(MediaAction::Pause) => {
+                if crate::settings::get_settings(&self.app).pause_media_on_meeting {
+                    media_pause::pause(Owner::Meeting);
+                }
+            }
+            // Always: a pause asked before the setting went off is still resumed.
+            Some(MediaAction::Resume) => media_pause::resume(Owner::Meeting),
+            None => {}
+        }
+    }
+
     fn run_effects(&self, inner: &mut Inner, effects: Vec<Effect>) {
         for effect in effects {
+            self.feedback(&effect);
             match effect {
                 Effect::WarnLowDisk { free_bytes } => {
                     inner.status.low_disk_bytes = Some(free_bytes)
@@ -829,6 +875,47 @@ mod tests {
         assert_eq!(
             tray_start(Some("2026-10-09T22:14:03-03:00")),
             TrayStart::Start
+        );
+    }
+
+    #[test]
+    fn each_session_step_plays_its_sound_and_moves_the_media() {
+        let mut session = MeetingSession::new(SessionConfig {
+            id: SessionId::generate(1_000).unwrap(),
+            mode: SessionMode::Meeting,
+            title: String::new(),
+            local_only: false,
+            cap: RecordingCap::default(),
+        });
+        let mut step = |at: u64, input: Input| {
+            let effects = session.apply(UnixMillis(at), input).unwrap();
+            let sounds: Vec<_> = effects.iter().filter_map(meeting_sound).collect();
+            let media: Vec<_> = effects.iter().filter_map(media_action).collect();
+            (sounds, media)
+        };
+        let start = Input::User(UserAction::StartRecording {
+            free_disk_bytes: u64::MAX,
+        });
+        assert_eq!(
+            step(1_000, start),
+            (vec![SoundType::MeetingStart], vec![MediaAction::Pause])
+        );
+        assert_eq!(
+            step(2_000, Input::User(UserAction::PauseRecording)),
+            (vec![SoundType::MeetingPause], vec![MediaAction::Resume])
+        );
+        assert_eq!(
+            step(3_000, Input::User(UserAction::ResumeRecording)),
+            (vec![SoundType::MeetingResume], vec![MediaAction::Pause])
+        );
+        // Stopping has no sound of its own; the media plays again once the capture closes.
+        assert_eq!(
+            step(4_000, Input::User(UserAction::StopRecording)),
+            (vec![], vec![MediaAction::Resume])
+        );
+        assert_eq!(
+            step(5_000, Input::CaptureFinalized),
+            (vec![], vec![MediaAction::Resume])
         );
     }
 
