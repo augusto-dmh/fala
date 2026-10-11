@@ -19,6 +19,19 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Fala:$ORIGIN/../lib");
     }
 
+    // Windows: `rfd` (under tauri-plugin-dialog) imports TaskDialogIndirect, which
+    // only comctl32 v6 exports. tauri_build gives the app exe a manifest that binds
+    // v6; test binaries get none (cargo's `rustc-link-arg-tests` reaches integration
+    // tests only, and this package has just lib unit tests), so the loader resolves
+    // the v5 comctl32 from System32 and the test binary dies at startup with
+    // STATUS_ENTRYPOINT_NOT_FOUND before running a single test. Delay-load comctl32
+    // instead: the import resolves on first call, which no test makes, and the app
+    // exe resolves it under its own manifest as before.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rustc-link-arg=/DELAYLOAD:comctl32.dll");
+        println!("cargo:rustc-link-arg=delayimp.lib");
+    }
+
     // Stage transcribe-cpp's shared runtime libraries (and the dlopen'd ggml
     // backend modules) for the installer. Self-gates on the shared /
     // dynamic-backends posture used by Linux and Windows; it's a no-op for the
