@@ -53,7 +53,8 @@ fn formatter_at(settings: &AppSettings, use_llm: bool, base_url: &str) -> AutoFo
             enabled: settings.llm_enabled && use_llm,
             gemini,
             disabled_apps: settings.llm_disabled_apps.clone(),
-        }),
+        })
+        .with_cleanup_level(settings.cleanup_level.into()),
         dictionary: crate::dictionary::dictionary(settings),
         fuzzy: Fuzzy::deferred(settings),
     }
@@ -357,6 +358,35 @@ Personal dictionary:
             ),
             "{prompt}"
         );
+    }
+
+    #[test]
+    fn cleanup_level_reaches_the_llm_prompt() {
+        use crate::settings::CleanupLevel as Setting;
+        let server = FakeGemini::ok(Duration::ZERO);
+        let levels = [
+            (Setting::Verbatim, CleanupLevel::Verbatim),
+            (Setting::Light, CleanupLevel::Light),
+            (Setting::Medium, CleanupLevel::Medium),
+            (Setting::Heavy, CleanupLevel::Heavy),
+        ];
+        for (index, (setting, level)) in levels.into_iter().enumerate() {
+            let mut settings = settings_with_key();
+            settings.cleanup_level = setting;
+            assert!(run(&settings, &server, SIXTEEN, app("notepad")).llm_produced);
+            let prompt = system_prompt(&server, index);
+            for other in CleanupLevel::ALL {
+                assert_eq!(
+                    prompt.contains(other.instruction()),
+                    other == level,
+                    "{setting:?} asked, {other} in the prompt? {prompt}"
+                );
+            }
+        }
+
+        // The default store asks for the light level, as before the setting existed.
+        assert!(run(&settings_with_key(), &server, SIXTEEN, app("notepad")).llm_produced);
+        assert!(system_prompt(&server, levels.len()).contains(CleanupLevel::Light.instruction()));
     }
 
     #[test]

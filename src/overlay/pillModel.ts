@@ -1,4 +1,5 @@
 import type { ShortcutActivation } from "@/bindings";
+import { formatKeyCombination } from "@/lib/utils/keyboard";
 
 /** What the pill draws: the mic is listening, or the dictation is being turned into text. */
 export type PillMode = "recording" | "processing";
@@ -10,7 +11,8 @@ export type OverlayEvent =
   | "transcribing"
   | "processing"
   | "meeting"
-  | "meeting_paused";
+  | "meeting_paused"
+  | "idle";
 
 export const PILL_BARS = 10;
 
@@ -31,8 +33,21 @@ export function toPillMode(event: OverlayEvent): PillMode | null {
     case "streaming":
     case "meeting":
     case "meeting_paused":
+    case "idle":
       return null;
   }
+}
+
+/** The keys of a binding as the idle pill shows them, one chip each (`ctrl+meta` -> Ctrl, Meta). */
+export function idleKeys(binding: string | undefined): string[] {
+  return binding ? formatKeyCombination(binding, "unknown").split(" + ") : [];
+}
+
+/** The idle pill mentions the double tap only for the default activation, which has it. */
+export function showsDoubleTapHint(
+  activation: ShortcutActivation | undefined,
+): boolean {
+  return activation === "push_to_talk_double_tap";
 }
 
 /** `mm:ss`, or `h:mm:ss` from one hour on: the recorded time the meeting pill shows. */

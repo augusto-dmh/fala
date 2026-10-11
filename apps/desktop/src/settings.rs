@@ -280,6 +280,14 @@ impl SoundTheme {
     pub fn to_stop_path(self) -> String {
         format!("resources/{}_stop.wav", self.as_str())
     }
+
+    pub fn to_meeting_pause_path(self) -> String {
+        format!("resources/{}_meeting_pause.wav", self.as_str())
+    }
+
+    pub fn to_meeting_resume_path(self) -> String {
+        format!("resources/{}_meeting_resume.wav", self.as_str())
+    }
 }
 
 /// UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
@@ -331,6 +339,29 @@ pub enum VadBackend {
     #[default]
     Silero,
     Earshot,
+}
+
+/// How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
+/// The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CleanupLevel {
+    Verbatim,
+    #[default]
+    Light,
+    Medium,
+    Heavy,
+}
+
+impl From<CleanupLevel> for fala_postproc::CleanupLevel {
+    fn from(level: CleanupLevel) -> Self {
+        match level {
+            CleanupLevel::Verbatim => Self::Verbatim,
+            CleanupLevel::Light => Self::Light,
+            CleanupLevel::Medium => Self::Medium,
+            CleanupLevel::Heavy => Self::Heavy,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Type)]
@@ -589,6 +620,12 @@ pub struct AppSettings {
     pub post_process_selected_prompt_id: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
+    /// Pause the media playing on the PC while dictating; off by default.
+    #[serde(default)]
+    pub pause_media_while_recording: bool,
+    /// Pause the media playing on the PC while a meeting records; on by default.
+    #[serde(default = "default_pause_media_on_meeting")]
+    pub pause_media_on_meeting: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
@@ -644,12 +681,19 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Keep a quiet pill on screen between dictations, with the shortcut on hover. Windows only,
+    /// and only while `overlay_style` shows a pill.
+    #[serde(default = "default_pill_idle_visible")]
+    pub pill_idle_visible: bool,
     /// The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
     #[serde(default = "default_llm_enabled")]
     pub llm_enabled: bool,
     /// Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
     #[serde(default = "default_llm_disabled_apps")]
     pub llm_disabled_apps: Vec<String>,
+    /// How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
+    #[serde(default)]
+    pub cleanup_level: CleanupLevel,
     /// When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
@@ -784,10 +828,23 @@ fn default_post_process_enabled() -> bool {
     false
 }
 
+/// Music playing during a meeting leaks into the system channel of the recording.
+fn default_pause_media_on_meeting() -> bool {
+    true
+}
+
 fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
         .unwrap_or_else(|| "en".to_string())
+}
+
+/// The idle pill appears only for whoever turns it on: on by default it would show up, unasked,
+/// for everyone who already uses the app.
+pub const PILL_IDLE_VISIBLE_DEFAULT: bool = false;
+
+fn default_pill_idle_visible() -> bool {
+    PILL_IDLE_VISIBLE_DEFAULT
 }
 
 fn default_show_tray_icon() -> bool {
@@ -1106,6 +1163,8 @@ pub fn get_default_settings() -> AppSettings {
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
         mute_while_recording: false,
+        pause_media_while_recording: false,
+        pause_media_on_meeting: default_pause_media_on_meeting(),
         append_trailing_space: false,
         app_language: default_app_language(),
         theme: default_theme(),
@@ -1127,8 +1186,10 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        pill_idle_visible: default_pill_idle_visible(),
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
+        cleanup_level: CleanupLevel::default(),
         meeting_consent_accepted_at: None,
     }
 }
@@ -1481,6 +1542,16 @@ mod tests {
         assert!(settings.bindings.is_empty());
     }
 
+    #[test]
+    fn media_pause_is_off_for_dictation_and_on_for_meetings() {
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        let fresh = get_default_settings();
+        for settings in [stored, fresh] {
+            assert!(!settings.pause_media_while_recording);
+            assert!(settings.pause_media_on_meeting);
+        }
+    }
+
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to
     /// disk. This pins backwards compatibility: it must always parse strictly
     /// (no salvage). Schema migrations may then rewrite fields whose native
@@ -1729,6 +1800,20 @@ mod tests {
     fn default_overlay_style_is_live_when_overlay_defaults_on() {
         let settings = get_default_settings();
         assert_eq!(settings.overlay_style, OverlayStyle::Live);
+    }
+
+    #[test]
+    fn pill_idle_defaults_off() {
+        assert!(!get_default_settings().pill_idle_visible);
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!stored.pill_idle_visible);
+        let source = include_str!("settings.rs");
+        let production = &source[..source.find("#[cfg(test)]").unwrap()];
+        assert_eq!(
+            production.matches("PILL_IDLE_VISIBLE_DEFAULT").count(),
+            2,
+            "the default lives in one constant"
+        );
     }
 
     #[test]
@@ -2124,6 +2209,59 @@ mod tests {
                 .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
             apply_settings_migrations(&mut settings, &raw);
             assert_eq!(settings.selected_language, stored, "stored '{stored}'");
+        }
+    }
+
+    #[test]
+    fn cleanup_level_defaults_to_light() {
+        assert_eq!(get_default_settings().cleanup_level, CleanupLevel::Light);
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(from_empty.cleanup_level, CleanupLevel::Light);
+        let old_store = migrated(schema_2_store("ctrl+space"));
+        assert_eq!(old_store.cleanup_level, CleanupLevel::Light);
+    }
+
+    #[test]
+    fn invalid_cleanup_level_is_salvaged_to_light() {
+        for invalid in [serde_json::json!("extreme"), serde_json::json!(42)] {
+            let mut stored = default_settings_json();
+            let map = stored.as_object_mut().unwrap();
+            map.insert(
+                "selected_model".into(),
+                serde_json::json!("parakeet-tdt-0.6b-v3"),
+            );
+            map.insert("onboarding_completed".into(), serde_json::json!(true));
+            map.insert("cleanup_level".into(), invalid.clone());
+            assert!(
+                serde_json::from_value::<AppSettings>(stored.clone()).is_err(),
+                "{invalid} must fail the strict parse"
+            );
+
+            let salvaged = salvage_settings(&stored);
+            assert_eq!(salvaged.cleanup_level, CleanupLevel::Light, "{invalid}");
+            assert_eq!(salvaged.selected_model, "parakeet-tdt-0.6b-v3");
+            assert!(salvaged.onboarding_completed);
+        }
+    }
+
+    #[test]
+    fn stored_cleanup_levels_round_trip() {
+        for (literal, level) in [
+            ("verbatim", CleanupLevel::Verbatim),
+            ("light", CleanupLevel::Light),
+            ("medium", CleanupLevel::Medium),
+            ("heavy", CleanupLevel::Heavy),
+        ] {
+            let mut raw = schema_2_store("ctrl+space");
+            raw["cleanup_level"] = serde_json::json!(literal);
+            let settings = migrated(raw);
+            assert_eq!(settings.cleanup_level, level, "stored '{literal}'");
+            assert_eq!(
+                serde_json::to_value(&settings).unwrap()["cleanup_level"],
+                literal
+            );
+            assert_eq!(fala_postproc::CleanupLevel::from(level).as_str(), literal);
         }
     }
 

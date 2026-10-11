@@ -16,7 +16,7 @@ const FRAME: usize = 960;
 /// Maior pacote que o libopus devolve.
 const MAX_PACKET: usize = 4000;
 /// Maior quadro que um pacote decodifica (120 ms a 48 kHz).
-const MAX_DECODED: usize = 5760;
+pub(crate) const MAX_DECODED: usize = 5760;
 /// Um page Ogg por segundo de áudio: dá pontos de busca para tocar um trecho (2.F9).
 const PACKETS_PER_PAGE: usize = 50;
 const VENDOR: &str = "fala-retention (libopus)";
@@ -283,7 +283,7 @@ fn new_encoder() -> Result<Encoder, RetentionError> {
 }
 
 /// Devolve o pre-skip de um `OpusHead` mono de 48 kHz.
-fn parse_head(data: &[u8]) -> Result<u16, String> {
+pub(crate) fn parse_head(data: &[u8]) -> Result<u16, String> {
     if data.len() < 19 || !data.starts_with(b"OpusHead") {
         return Err("primeiro pacote não é OpusHead".into());
     }

@@ -17,13 +17,13 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 |---|---|---|
 | `crates/core` | `fala-core` | tipos (`Event`, `Settings`, `Utterance`, `Session`), config, dicionário pessoal, erros |
 | `crates/hotkey` | `fala-hotkey` | atalho global com press/release: trait `GlobalHotkey` e `platform_hotkey`. Windows: hook `WH_KEYBOARD_LL` do `handy-keys`. Linux: `Unsupported` até o portal GlobalShortcuts da fase 3 |
-| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013), VAD Silero, resample, gravador de reunião |
+| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013), VAD Silero, resample, gravador de reunião, quem captura o mic agora (`AudioActivity`: `IAudioSessionManager2` no Windows, `Unsupported` no Linux) |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
 | `crates/inject` | `fala-inject` | inserção no app ativo: trait `Injector` e `platform_injector` (clipboard + acorde com restore; Windows por `arboard` e `enigo`, Linux `Unsupported` até a fase 3), o acorde por app (`is_terminal`, `PasteChord::for_app`: Shift+Insert em terminal) e o app em primeiro plano (`foreground_app`) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
-| `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID), modos e o aviso de canal mudo (`MuteWatch`) |
+| `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID), modos, o aviso de canal mudo (`MuteWatch`) e o detector de call (`CallDetector`: exe → app, "Gravar?" e "Parar?", só pergunta) |
 | `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |
 | `crates/mcp` | `fala-mcp` | servidor MCP local (stdio, só leitura, desligado sem `mcp.toml`) sobre o histórico do `storage`, servido por `fala-cli mcp` (ADR-0010, proposta) |
 | `crates/notes` | `fala-notes` | notas de reunião: payload enumerado da ADR-0016, trait `NotesLlm` com o cliente Claude, Markdown humano × gerado com ponteiros, templates |

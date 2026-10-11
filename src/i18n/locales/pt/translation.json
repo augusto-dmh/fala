@@ -24,7 +24,55 @@
     "home": "Início",
     "dictionary": "Dicionário",
     "settings": "Configurações",
-    "meetings": "Reuniões"
+    "meetings": "Reuniões",
+    "stats": "Desempenho"
+  },
+  "stats": {
+    "description": "Medido só neste computador; nada sai da máquina.",
+    "period": {
+      "label": "Período",
+      "days": "{{count}} dias"
+    },
+    "counts": {
+      "dictations": "Ditados",
+      "words": "Palavras",
+      "perDay": "Palavras por dia com ditado"
+    },
+    "latency": {
+      "title": "Latência",
+      "stage": "Etapa",
+      "p50": "p50",
+      "p90": "p90",
+      "budget": "Meta / máximo",
+      "aboveTarget": "acima da meta",
+      "aboveMax": "acima do máximo"
+    },
+    "rows": {
+      "e2e": "Soltar → texto, sem IA",
+      "e2e_llm": "Soltar → texto, com IA",
+      "asr": "Reconhecimento",
+      "llm": "IA",
+      "paste": "Colagem",
+      "speech": "Duração da fala"
+    },
+    "ai": {
+      "title": "IA",
+      "attempts": "Tentativas",
+      "fallbacks": "Quedas para as regras",
+      "share": "Quedas por tentativa"
+    },
+    "perDay": {
+      "title": "Palavras por dia",
+      "bar": "{{day}} · palavras: {{words}}"
+    },
+    "copy": "Copiar resumo",
+    "copied": "Resumo copiado.",
+    "copyFailed": "Não foi possível copiar o resumo.",
+    "empty": "Ainda não há ditados medidos neste período.",
+    "error": "Não foi possível ler as métricas: {{error}}",
+    "markdown": {
+      "title": "Desempenho do ditado: últimos {{days}} dias"
+    }
   },
   "dictionary": {
     "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita.",
@@ -305,6 +353,37 @@
         "label": "Formatar ditados com IA",
         "description": "Acima de 15 palavras, o Gemini formata o texto ditado. Só o texto e o nome do app saem da máquina; o áudio nunca sai."
       },
+      "cleanup": {
+        "title": "Quanto a IA mexe no texto",
+        "description": "O mesmo ditado em cada nível. Vale para o próximo ditado.",
+        "rawLabel": "Você disse",
+        "raw": "é... então, tipo, a reunião vai ser na terça, não, na quarta às três, e eu queria que vocês trouxessem os números né",
+        "default": "Padrão",
+        "inactive": "Vale quando a IA formata o ditado: ligue a IA e cole a chave do Gemini.",
+        "footer": "O original nunca se perde: Desfazer edição da IA, no Início.",
+        "levels": {
+          "verbatim": {
+            "label": "Literal",
+            "description": "Mantém cada palavra, até as hesitações; só pontua e corrige erros de transcrição.",
+            "example": "É... então, tipo, a reunião vai ser na terça, não, na quarta às três, e eu queria que vocês trouxessem os números, né?"
+          },
+          "light": {
+            "label": "Leve",
+            "description": "Tira hesitações e falsos começos e aplica as autocorreções; o resto fica com as suas palavras.",
+            "example": "A reunião vai ser na quarta às três, e eu queria que vocês trouxessem os números."
+          },
+          "medium": {
+            "label": "Média",
+            "description": "Também corrige a gramática e divide frases longas, sem mudar o tom.",
+            "example": "A reunião será na quarta, às três. Queria que vocês trouxessem os números."
+          },
+          "heavy": {
+            "label": "Forte",
+            "description": "Reescreve para ficar claro e curto, sem acrescentar nada nem mudar o sentido.",
+            "example": "Reunião na quarta às 15h; tragam os números."
+          }
+        }
+      },
       "apiKey": {
         "title": "Chave do Gemini",
         "description": "Fica no cofre de senhas do sistema. Sem chave, só as regras locais formatam o texto.",
@@ -335,6 +414,14 @@
       "audioFeedback": {
         "label": "Feedback de Áudio",
         "description": "Reproduzir som quando a gravação iniciar e parar"
+      },
+      "pauseMediaWhileRecording": {
+        "label": "Pausar a mídia ao ditar",
+        "description": "Pausa a música e os vídeos que estão tocando enquanto você dita e retoma só o que o Fala pausou"
+      },
+      "pauseMediaOnMeeting": {
+        "label": "Pausar a mídia ao gravar reunião",
+        "description": "Pausa a música e os vídeos que estão tocando enquanto a reunião grava, para que não entrem na gravação, e retoma só o que o Fala pausou"
       },
       "outputDevice": {
         "title": "Dispositivo de Saída",
@@ -406,6 +493,10 @@
             "top": "Superior"
           }
         }
+      },
+      "idlePill": {
+        "label": "Mostrar a pílula em repouso",
+        "description": "Deixa uma pílula discreta na tela entre os ditados; passe o mouse para ver o atalho e clique para abrir o Fala. Ela some enquanto um app está em tela cheia."
       },
       "pasteMethod": {
         "title": "Método de Colar",
@@ -728,6 +819,67 @@
       "whatsNewUpdates": {
         "label": "Mostrar novidades",
         "description": "Mostrar notas de versão após atualizações do Fala"
+      },
+      "privacy": {
+        "title": "Privacidade",
+        "description": "O que sai deste computador, para onde e se está ligado agora. Esta seção só mostra; cada ajuste fica na sua própria tela.",
+        "columns": {
+          "sends": "Sai",
+          "destination": "Para"
+        },
+        "channels": {
+          "dictation": {
+            "name": "Ditado",
+            "sends": "Nunca o áudio. Só o texto ditado, o nome do app e o seu dicionário, com a IA ligada e a chave salva, acima de 15 palavras e fora dos apps sem IA.",
+            "destination": "Google (Gemini), pela sua chave"
+          },
+          "experimentalPostProcess": {
+            "name": "Pós-processamento (experimental)",
+            "sends": "Nunca o áudio. O texto ditado com o atalho de pós-processamento e o prompt escolhido.",
+            "destination": "{{provider}}, pela sua chave"
+          },
+          "meetingTranscription": {
+            "name": "Reunião: transcrição",
+            "sends": "O áudio dos dois canais da reunião (o seu microfone e o som do computador), só quando você pede a transcrição.",
+            "destination": "ElevenLabs, pela sua chave"
+          },
+          "meetingNotes": {
+            "name": "Reunião: notas",
+            "sends": "Nunca o áudio. A transcrição, as suas anotações, o título, a data e a hora, o modelo de nota, o idioma e o dicionário, só quando você pede as notas.",
+            "destination": "Anthropic (Claude), pela sua chave"
+          },
+          "mcp": {
+            "name": "Histórico para assistentes (MCP)",
+            "sends": "Ditados que não são dos apps sem IA, só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
+            "destination": "O assistente local que você configurou, que pode mandá-los ao provedor dele"
+          },
+          "telemetry": {
+            "name": "Telemetria, conta e servidor do Fala",
+            "sends": "Nada. O Fala não tem servidor, conta nem telemetria. Fora os canais acima, ele só baixa os modelos de transcrição, sem enviar dado seu.",
+            "destination": "Ninguém"
+          }
+        },
+        "status": {
+          "on": "Ligado",
+          "off": "Desligado",
+          "keySet": "Chave salva",
+          "keyMissing": "Sem chave",
+          "unknown": "Não verificado",
+          "doesNotExist": "Não existe"
+        },
+        "keys": {
+          "title": "Onde ficam as chaves",
+          "description": "No cofre de senhas do sistema (Gerenciador de Credenciais, no Windows). O Fala nunca mostra o valor de uma chave."
+        },
+        "audio": {
+          "title": "Onde fica o áudio das reuniões",
+          "description": "Nesta pasta, neste computador. Só sai para a transcrição, quando você pede."
+        },
+        "decisions": {
+          "title": "Decisões de privacidade",
+          "description": "Cada canal acima segue uma decisão registrada no repositório público.",
+          "button": "Ver no GitHub"
+        }
       }
     }
   },
@@ -794,6 +946,11 @@
     }
   },
   "overlay": {
+    "idle": {
+      "dictate": "Ditar",
+      "doubleTap": "toque duplo para travar",
+      "label": "Fala em repouso: passe o mouse para ver o atalho"
+    },
     "recording": "Gravando",
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",
