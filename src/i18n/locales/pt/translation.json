@@ -1035,6 +1035,16 @@
       "notes": "Notas",
       "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
     },
+    "source": {
+      "open": "Ver de onde veio esta linha",
+      "title": "Fonte",
+      "none": "Esta linha não tem trecho de origem.",
+      "typed": "Suas anotações",
+      "goTo": "Ir para {{time}} na transcrição",
+      "play": "Tocar o trecho",
+      "stop": "Parar",
+      "noAudio": "O áudio desta reunião não está mais no disco."
+    },
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
