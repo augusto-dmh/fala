@@ -698,6 +698,67 @@
         "label": "Show What's New",
         "description": "Show release notes after Fala updates"
       },
+      "privacy": {
+        "title": "Privacy",
+        "description": "What leaves this computer, where it goes and whether it is on right now. This section only shows; each setting stays on its own page.",
+        "columns": {
+          "sends": "Sends",
+          "destination": "To"
+        },
+        "channels": {
+          "dictation": {
+            "name": "Dictation",
+            "sends": "Never the audio. Only the dictated text, the app name and your dictionary, with AI on and a key saved, above 15 words and outside the apps without AI.",
+            "destination": "Google (Gemini), with your key"
+          },
+          "experimentalPostProcess": {
+            "name": "Post-processing (experimental)",
+            "sends": "Never the audio. The text dictated with the post-processing shortcut and the chosen prompt.",
+            "destination": "{{provider}}, with your key"
+          },
+          "meetingTranscription": {
+            "name": "Meeting: transcription",
+            "sends": "The audio of both meeting channels (your microphone and the computer sound), only when you ask for the transcript.",
+            "destination": "ElevenLabs, with your key"
+          },
+          "meetingNotes": {
+            "name": "Meeting: notes",
+            "sends": "Never the audio. The transcript, your notes, the title, date and time, the note template, the language and the dictionary, only when you ask for notes.",
+            "destination": "Anthropic (Claude), with your key"
+          },
+          "mcp": {
+            "name": "History for assistants (MCP)",
+            "sends": "Dictations not made in the apps without AI, read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
+            "destination": "The local assistant you set up, which may send them to its own provider"
+          },
+          "telemetry": {
+            "name": "Telemetry, account and Fala server",
+            "sends": "Nothing. Fala has no server, account or telemetry. Apart from the channels above, it only downloads the transcription models, sending none of your data.",
+            "destination": "No one"
+          }
+        },
+        "status": {
+          "on": "On",
+          "off": "Off",
+          "keySet": "Key saved",
+          "keyMissing": "No key",
+          "unknown": "Not checked",
+          "doesNotExist": "Does not exist"
+        },
+        "keys": {
+          "title": "Where the keys are kept",
+          "description": "In the system password vault (Credential Manager, on Windows). Fala never shows the value of a key."
+        },
+        "audio": {
+          "title": "Where meeting audio is kept",
+          "description": "In this folder, on this computer. It only leaves for the transcription, when you ask."
+        },
+        "decisions": {
+          "title": "Privacy decisions",
+          "description": "Each channel above follows a decision recorded in the public repository.",
+          "button": "View on GitHub"
+        }
+      },
       "appDataDirectory": {
         "title": "App Data Directory",
         "description": "Location where Fala stores its data"
