@@ -157,6 +157,8 @@ windows = { version = "0.61.3", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
+  # Wait for the shortcut's modifiers to be released before pasting the last dictation.
+  "Win32_UI_Input_KeyboardAndMouse",
   # Free disk space before a meeting recording starts.
   "Win32_Storage_FileSystem",
 ] }
