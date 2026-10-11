@@ -9,7 +9,10 @@
 //! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo).
 //! O desktop grava o ditado por aqui (`Mic::open_device` com o dispositivo e o canal dos
 //! settings). Ainda por vir: Opus no fim da reunião.
+//! Atividade: `platform_activity` diz quais processos capturam o microfone agora (só leitura), o
+//! sinal da detecção de call.
 
+mod activity;
 mod capture;
 mod meeting;
 mod mic;
@@ -18,6 +21,7 @@ mod vad;
 
 use std::path::PathBuf;
 
+pub use activity::{platform_activity, AudioActivity, MicHolder};
 pub use capture::{
     DictationCapture, BLOCK_MAX_SAMPLES, BLOCK_MIN_SAMPLES, HANGOVER_FRAMES, MAX_UTTERANCE_SAMPLES,
     ONSET_FRAMES, PREBUFFER_SAMPLES, PRE_ROLL_FRAMES,
@@ -55,6 +59,9 @@ pub enum AudioError {
         name: String,
         available: Vec<String>,
     },
+    /// O SO atual ainda não tem esta função (ADR-0007: os adaptadores Linux chegam na fase 3).
+    #[error("sem suporte neste sistema: {0}")]
+    Unsupported(&'static str),
     #[error("WAV {}: {reason}", path.display())]
     Wav { path: PathBuf, reason: String },
 }
