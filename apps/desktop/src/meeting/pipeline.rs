@@ -314,6 +314,13 @@ pub(crate) struct Work {
     notes: Option<SessionId>,
 }
 
+impl Work {
+    /// A transcription or notes job is running.
+    pub(crate) fn is_busy(&self) -> bool {
+        self.transcribing.is_some() || self.notes.is_some()
+    }
+}
+
 /// Clears the job slot when the job ends, however it ends.
 struct WorkGuard<'a> {
     work: &'a std::sync::Mutex<Work>,

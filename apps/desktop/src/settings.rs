@@ -570,6 +570,13 @@ pub struct AppSettings {
     /// see the current release's notes — see `apply_settings_migrations`.
     #[serde(default = "default_whats_new_last_seen_version")]
     pub whats_new_last_seen_version: String,
+    /// The version "Depois" dismissed; the automatic checks do not offer it again (ADR-0018).
+    #[serde(default)]
+    pub dismissed_update_version: Option<String>,
+    /// The notes of the update being installed, written just before the installer runs, so the
+    /// What's New after the relaunch shows the same text as the release and `latest.json`.
+    #[serde(default)]
+    pub update_release_notes: Option<StoredReleaseNote>,
     #[serde(default = "default_model")]
     pub selected_model: String,
     #[serde(default)]
@@ -1197,6 +1204,8 @@ pub fn get_default_settings() -> AppSettings {
         update_checks_enabled: default_update_checks_enabled(),
         show_whats_new_on_update: default_show_whats_new_on_update(),
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
+        dismissed_update_version: None,
+        update_release_notes: None,
         selected_model: "".to_string(),
         onboarding_completed: false,
         always_on_microphone: false,
@@ -1527,6 +1536,29 @@ fn unbind_legacy_post_process_shortcut(settings: &mut AppSettings) {
 /// signed release flow exists (ADR-0008, docs/RELEASE.md). Mirrors
 /// `UPDATER_ENABLED` in `src/lib/updater.ts`; flip both together.
 pub const UPDATER_ENABLED: bool = false;
+
+/// Release notes kept across the update's relaunch.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct StoredReleaseNote {
+    pub version: String,
+    pub markdown: String,
+}
+
+/// Stores the notes of the update about to install and saves the store now: on Windows the
+/// installer ends the process right after, before the store's debounced save would run.
+pub fn remember_release_notes(app: &AppHandle, note: StoredReleaseNote) {
+    let mut settings = get_settings(app);
+    settings.update_release_notes = Some(note);
+    write_settings(app, settings);
+    match app.store(crate::portable::store_path(SETTINGS_STORE_PATH)) {
+        Ok(store) => {
+            if let Err(e) = store.save() {
+                warn!("Failed to save the release notes before the update: {e}");
+            }
+        }
+        Err(e) => warn!("Failed to open the settings store: {e}"),
+    }
+}
 
 /// Update checks are forced off (without touching the persisted setting) when
 /// `FALA_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
