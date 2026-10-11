@@ -53,13 +53,16 @@ export function titleOf(summary: MeetingSummary, t: Translate): string {
   return title || t("meeting.untitled", { date: when(summary.created_at) });
 }
 
+/** "Eu" for the mic outside in-person mode, "Pessoa N" otherwise. */
+export function speakerOf(line: MeetingLine, t: Translate): string {
+  return line.person === null
+    ? t("meeting.speaker.me")
+    : t("meeting.speaker.person", { n: line.person });
+}
+
 /** `[mm:ss] Eu: texto` / `[mm:ss] Pessoa 2: texto`. */
 export function lineText(line: MeetingLine, t: Translate): string {
-  const who =
-    line.person === null
-      ? t("meeting.speaker.me")
-      : t("meeting.speaker.person", { n: line.person });
-  return `[${clock(line.t0_ms)}] ${who}: ${line.text}`;
+  return `[${clock(line.t0_ms)}] ${speakerOf(line, t)}: ${line.text}`;
 }
 
 /**

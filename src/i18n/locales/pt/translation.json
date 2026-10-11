@@ -76,7 +76,21 @@
     }
   },
   "dictionary": {
-    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita."
+    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita.",
+    "search": "Buscar no dicionário",
+    "replacements": {
+      "title": "Falado → escrito",
+      "description": "Quando você disser a forma falada, o Fala escreve a outra. Vale para a palavra inteira, sem diferenciar maiúsculas nem acentos, antes da IA de formatação e também com ela desligada. Só a forma escrita vai para a IA.",
+      "spokenPlaceholder": "fala sql",
+      "writtenPlaceholder": "Fala.sqlite",
+      "spokenLabel": "Forma falada",
+      "writtenLabel": "Forma escrita",
+      "add": "Adicionar",
+      "remove": "Remover {{spoken}} → {{written}}",
+      "duplicate": "\"{{spoken}}\" já tem uma forma escrita",
+      "uses_one": "1 uso",
+      "uses_other": "{{count}} usos"
+    }
   },
   "settingsPage": {
     "tabs": {
@@ -1034,6 +1048,16 @@
       "noTranscript": "Ainda sem transcrição.",
       "notes": "Notas",
       "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
+    },
+    "source": {
+      "open": "Ver de onde veio esta linha",
+      "title": "Fonte",
+      "none": "Esta linha não tem trecho de origem.",
+      "typed": "Suas anotações",
+      "goTo": "Ir para {{time}} na transcrição",
+      "play": "Tocar o trecho",
+      "stop": "Parar",
+      "noAudio": "O áudio desta reunião não está mais no disco."
     },
     "speaker": {
       "me": "Eu",

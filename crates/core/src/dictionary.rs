@@ -1,12 +1,47 @@
 use serde::{Deserialize, Serialize};
 
-/// Termos do dicionário pessoal, normalizados: sem espaço nas pontas, sem vazios e sem
-/// duplicatas que só diferem em maiúsculas (fica a primeira grafia, na ordem recebida).
-/// Desserializar passa pela mesma normalização de `Dictionary::new`.
+/// O dicionário pessoal: termos (a grafia certa de um nome) e pares "falado → escrito".
+///
+/// Os termos ficam normalizados: sem espaço nas pontas, sem vazios e sem duplicatas que só
+/// diferem em maiúsculas (fica a primeira grafia, na ordem recebida). O escrito de cada par
+/// também é termo, porque é o que o LLM recebe; o falado nunca é. Desserializar passa pela mesma
+/// normalização de `Dictionary::new` e `with_replacements`, e um JSON sem `replacements` carrega
+/// sem pares.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(from = "DictionaryTerms")]
+#[serde(from = "DictionaryRaw")]
 pub struct Dictionary {
     terms: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    replacements: Vec<Replacement>,
+}
+
+/// Um par "falado → escrito": quando o ditado tem `spoken`, o texto final tem `written`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Replacement {
+    spoken: String,
+    written: String,
+}
+
+impl Replacement {
+    /// `None` se o falado ou o escrito ficam vazios sem os espaços das pontas. Espaços seguidos
+    /// no falado viram um.
+    pub fn new(spoken: impl AsRef<str>, written: impl AsRef<str>) -> Option<Self> {
+        let spoken = spoken
+            .as_ref()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let written = written.as_ref().trim().to_string();
+        (!spoken.is_empty() && !written.is_empty()).then_some(Self { spoken, written })
+    }
+
+    pub fn spoken(&self) -> &str {
+        &self.spoken
+    }
+
+    pub fn written(&self) -> &str {
+        &self.written
+    }
 }
 
 impl Dictionary {
@@ -15,17 +50,54 @@ impl Dictionary {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let mut seen = std::collections::HashSet::new();
-        let terms = terms
-            .into_iter()
-            .map(|term| term.as_ref().trim().to_string())
-            .filter(|term| !term.is_empty() && seen.insert(term.to_lowercase()))
-            .collect();
-        Self { terms }
+        let mut dictionary = Self::default();
+        for term in terms {
+            dictionary.push_term(term.as_ref());
+        }
+        dictionary
     }
 
+    /// Acrescenta pares, na ordem recebida. Par vazio some; falado repetido (sem caixa) fica com
+    /// o primeiro. O escrito entra nos termos se ainda não estiver lá.
+    pub fn with_replacements<I, S, W>(mut self, pairs: I) -> Self
+    where
+        I: IntoIterator<Item = (S, W)>,
+        S: AsRef<str>,
+        W: AsRef<str>,
+    {
+        for (spoken, written) in pairs {
+            let Some(pair) = Replacement::new(spoken, written) else {
+                continue;
+            };
+            let key = pair.spoken.to_lowercase();
+            if self
+                .replacements
+                .iter()
+                .any(|known| known.spoken.to_lowercase() == key)
+            {
+                continue;
+            }
+            self.push_term(&pair.written);
+            self.replacements.push(pair);
+        }
+        self
+    }
+
+    fn push_term(&mut self, term: &str) {
+        let term = term.trim();
+        let key = term.to_lowercase();
+        if !term.is_empty() && !self.terms.iter().any(|t| t.to_lowercase() == key) {
+            self.terms.push(term.to_string());
+        }
+    }
+
+    /// Os termos e o escrito de cada par: o que o LLM recebe.
     pub fn terms(&self) -> &[String] {
         &self.terms
+    }
+
+    pub fn replacements(&self) -> &[Replacement] {
+        &self.replacements
     }
 
     pub fn is_empty(&self) -> bool {
@@ -34,13 +106,19 @@ impl Dictionary {
 }
 
 #[derive(Deserialize)]
-struct DictionaryTerms {
+struct DictionaryRaw {
     terms: Vec<String>,
+    #[serde(default)]
+    replacements: Vec<Replacement>,
 }
 
-impl From<DictionaryTerms> for Dictionary {
-    fn from(raw: DictionaryTerms) -> Self {
-        Dictionary::new(raw.terms)
+impl From<DictionaryRaw> for Dictionary {
+    fn from(raw: DictionaryRaw) -> Self {
+        Dictionary::new(raw.terms).with_replacements(
+            raw.replacements
+                .into_iter()
+                .map(|pair| (pair.spoken, pair.written)),
+        )
     }
 }
 
@@ -59,9 +137,56 @@ mod tests {
         let json = r#"{"terms":[" Fala ","fala","","ADR","  "]}"#;
         let dictionary: Dictionary = serde_json::from_str(json).unwrap();
         assert_eq!(dictionary.terms(), ["Fala", "ADR"]);
+        assert!(dictionary.replacements().is_empty());
         assert_eq!(
             serde_json::to_string(&dictionary).unwrap(),
             r#"{"terms":["Fala","ADR"]}"#
         );
+    }
+
+    #[test]
+    fn replacements_are_normalized() {
+        let dictionary = Dictionary::new(["Fala"]).with_replacements([
+            ("  fala   sql ", " Fala.sqlite "),
+            ("", "vazio"),
+            ("vazio", "  "),
+            ("FALA SQL", "outra coisa"),
+            ("btw", "by the way"),
+            ("fala", "fala"),
+        ]);
+        let pairs: Vec<(&str, &str)> = dictionary
+            .replacements()
+            .iter()
+            .map(|p| (p.spoken(), p.written()))
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                ("fala sql", "Fala.sqlite"),
+                ("btw", "by the way"),
+                ("fala", "fala")
+            ]
+        );
+        // O escrito vira termo uma vez; o falado nunca.
+        assert_eq!(dictionary.terms(), ["Fala", "Fala.sqlite", "by the way"]);
+        assert!(!Dictionary::default()
+            .with_replacements([("btw", "by the way")])
+            .is_empty());
+    }
+
+    #[test]
+    fn replacements_round_trip() {
+        let dictionary = Dictionary::new(["ADR"]).with_replacements([("btw", "by the way")]);
+        let json = serde_json::to_string(&dictionary).unwrap();
+        assert_eq!(
+            json,
+            r#"{"terms":["ADR","by the way"],"replacements":[{"spoken":"btw","written":"by the way"}]}"#
+        );
+        let back: Dictionary = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, dictionary);
+        let raw = r#"{"terms":[],"replacements":[{"spoken":" ","written":"x"},{"spoken":"a b","written":"AB"}]}"#;
+        let loaded: Dictionary = serde_json::from_str(raw).unwrap();
+        assert_eq!(loaded.replacements().len(), 1);
+        assert_eq!(loaded.terms(), ["AB"]);
     }
 }

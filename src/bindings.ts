@@ -320,6 +320,17 @@ async updateCustomWords(words: string[]) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Stores the pairs and returns them as stored.
+ */
+async updateDictionaryReplacements(replacements: DictionaryReplacement[]) : Promise<Result<DictionaryReplacement[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_dictionary_replacements", { replacements }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeLlmEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_llm_enabled_setting", { enabled }) };
@@ -1325,6 +1336,10 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  */
 selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; 
 /**
+ * Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
+ */
+dictionary_replacements?: DictionaryReplacement[]; 
+/**
  * What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
  */
 notes_profile?: string; notes_language?: NotesLanguage; 
@@ -1404,6 +1419,10 @@ export type DictationDay = { day: string; dictations: number; words: number }
  * `e2e_llm` with it asked.
  */
 export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
+/**
+ * A spoken -> written pair as stored. `uses` counts every occurrence the rules replaced.
+ */
+export type DictionaryReplacement = { spoken: string; written: string; uses?: number }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,

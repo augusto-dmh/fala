@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  DictionaryReplacement,
   CleanupLevel,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
@@ -136,6 +137,20 @@ const settingUpdaters: {
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),
   custom_words: (value) => commands.updateCustomWords(value as string[]),
+  dictionary_replacements: async (value) => {
+    const result = await commands.updateDictionaryReplacements(
+      value as DictionaryReplacement[],
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    // Show the pairs as stored: normalized, with the stored use counts.
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, dictionary_replacements: result.data }
+        : null,
+    }));
+  },
   llm_enabled: (value) => commands.changeLlmEnabledSetting(value as boolean),
   notes_profile: (value) => commands.changeNotesProfileSetting(value as string),
   notes_language: (value) =>

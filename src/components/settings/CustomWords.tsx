@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useSettings } from "../../hooks/useSettings";
+import { matchesQuery } from "../../lib/utils/search";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
@@ -9,6 +10,8 @@ import { SettingContainer } from "../ui/SettingContainer";
 interface CustomWordsProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
+  /** Shows only the terms that contain it. */
+  filter?: string;
 }
 
 const normalizeCustomWord = (word: string) =>
@@ -18,11 +21,14 @@ const normalizeCustomWord = (word: string) =>
     .trim();
 
 export const CustomWords: React.FC<CustomWordsProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "tooltip", grouped = false, filter = "" }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
     const [newWord, setNewWord] = useState("");
     const customWords = getSetting("custom_words") || [];
+    const visibleWords = customWords.filter((word) =>
+      matchesQuery(word, filter),
+    );
     const normalizedWord = normalizeCustomWord(newWord);
 
     const handleAddWord = () => {
@@ -88,11 +94,11 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
             </Button>
           </div>
         </SettingContainer>
-        {customWords.length > 0 && (
+        {visibleWords.length > 0 && (
           <div
             className={`px-4 p-2 ${grouped ? "" : "rounded-lg border border-mid-gray/20"} flex flex-wrap gap-1`}
           >
-            {customWords.map((word) => (
+            {visibleWords.map((word) => (
               <Button
                 key={word}
                 onClick={() => handleRemoveWord(word)}
