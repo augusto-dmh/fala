@@ -3,8 +3,8 @@
 //! the LLM is on, the `gemini` key is set, the app is not in `llm_disabled_apps` and the text has
 //! more than 15 words. An unknown app keeps the LLM on (D4 of the phase 1 plan).
 //!
-//! `custom_words` is the personal dictionary: the rules apply its spelling and the Gemini gets it
-//! in the prompt. While the LLM is configured, the inherited fuzzy correction waits until the
+//! `custom_words` and `dictionary_replacements` are the personal dictionary: the rules apply its
+//! spelling and its spoken -> written pairs, and the Gemini gets the terms in the prompt. While the LLM is configured, the inherited fuzzy correction waits until the
 //! LLM is out of the way and only touches text the LLM did not write.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -12,8 +12,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use anyhow::Result;
 use fala_core::{AppContext, Dictionary, Editor, Language, Transcript};
 use fala_postproc::{
-    CleanupLevel, Fallback, FormatContext, Formatter, Gemini, LateEdit, LlmConfig, Postprocessor,
-    Rules, DEFAULT_BASE_URL,
+    CleanupLevel, Fallback, FormatContext, Gemini, LateEdit, LlmConfig, Postprocessor, Rules,
+    DEFAULT_BASE_URL,
 };
 use fala_secrets::ApiKey;
 use log::{debug, error};
@@ -28,6 +28,8 @@ pub(crate) struct AutoFormatted {
     pub final_text: String,
     pub llm_produced: bool,
     pub fallback: Option<Fallback>,
+    /// The spoken form of each dictionary pair the rules applied, once per occurrence.
+    pub replaced: Vec<String>,
 }
 
 /// The `Postprocessor` the settings describe, the personal dictionary and the fuzzy correction
@@ -53,7 +55,7 @@ fn formatter_at(settings: &AppSettings, use_llm: bool, base_url: &str) -> AutoFo
             disabled_apps: settings.llm_disabled_apps.clone(),
         })
         .with_cleanup_level(settings.cleanup_level.into()),
-        dictionary: Dictionary::new(&settings.custom_words),
+        dictionary: crate::dictionary::dictionary(settings),
         fuzzy: Fuzzy::deferred(settings),
     }
 }
@@ -126,6 +128,7 @@ pub(crate) fn format_with_late_edit(
         formatted.late_edit.is_some()
     );
     let llm_produced = editor == Editor::Llm;
+    let mut hits = formatted.replaced;
     let dictation = formatted.dictation;
     // Text the LLM did not write goes through the fuzzy correction and then the rules, the
     // order it had before the LLM: the fuzzy matcher reads ASR text, and the rules fix the
@@ -138,16 +141,22 @@ pub(crate) fn format_with_late_edit(
                 language: &dictation.raw.language,
                 cleanup: CleanupLevel::default(),
             };
-            Rules::default()
-                .format(&fuzzy.apply(dictation.raw.text.clone()), &ctx)
-                .ok()
+            let (text, refixed_hits) =
+                Rules::default().format_with_hits(&fuzzy.apply(dictation.raw.text.clone()), &ctx);
+            hits = refixed_hits;
+            Some(text)
         }
         _ => None,
     };
+    let replacements = formatter.dictionary.replacements();
     let auto = AutoFormatted {
         final_text: refixed.unwrap_or(dictation.final_text),
         llm_produced,
         fallback: formatted.fallback,
+        replaced: hits
+            .into_iter()
+            .filter_map(|i| replacements.get(i).map(|pair| pair.spoken().to_string()))
+            .collect(),
     };
     (auto, formatted.late_edit)
 }
@@ -516,7 +525,8 @@ Personal dictionary:
             AutoFormatted {
                 final_text: answer.to_string(),
                 llm_produced: true,
-                fallback: None
+                fallback: None,
+                replaced: Vec::new(),
             }
         );
     }
@@ -555,6 +565,36 @@ Personal dictionary:
     }
 
     #[test]
+    fn replacements_are_applied_and_reported() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        let mut settings = crate::settings::get_default_settings();
+        settings.dictionary_replacements = vec![crate::dictionary::DictionaryReplacement {
+            spoken: "fala sql".to_string(),
+            written: "Fala.sqlite".to_string(),
+            uses: 0,
+        }];
+        let auto = run(
+            &settings,
+            &server,
+            "abre o fala sql e o Fala-SQL",
+            app("notepad"),
+        );
+        assert_eq!(auto.final_text, "Abre o Fala.sqlite e o Fala.sqlite");
+        assert_eq!(auto.replaced, ["fala sql", "fala sql"]);
+        assert!(!auto.llm_produced);
+
+        // With the LLM configured, text it did not write goes through the deferred fuzzy and
+        // the rules again; the uses come from that second pass, not twice.
+        let mut keyed = settings_with_key();
+        keyed.custom_words = words(&["Augusto"]);
+        keyed.dictionary_replacements = settings.dictionary_replacements.clone();
+        let short = run(&keyed, &server, "o agusto abriu o fala sql", app("notepad"));
+        assert_eq!(short.final_text, "O Augusto abriu o Fala.sqlite");
+        assert_eq!(short.replaced, ["fala sql"]);
+        assert_eq!(server.requests(), 0);
+    }
+
+    #[test]
     fn custom_words_are_normalized() {
         assert_eq!(
             normalize_words(words(&[" Fala ", "fala", "", "ChargeBee", "  "])),
@@ -572,6 +612,7 @@ Personal dictionary:
                 final_text: LLM_TEXT.to_string(),
                 llm_produced: true,
                 fallback: None,
+                replaced: Vec::new(),
             }
         );
         assert_eq!(server.requests(), 1);

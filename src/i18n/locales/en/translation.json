@@ -76,7 +76,21 @@
     }
   },
   "dictionary": {
-    "description": "Words, names and terms Fala should recognise when you dictate."
+    "description": "Words, names and terms Fala should recognise when you dictate.",
+    "search": "Search the dictionary",
+    "replacements": {
+      "title": "Spoken → written",
+      "description": "When you say the spoken form, Fala writes the other one. It matches whole words, ignoring case and accents, before the formatting AI and also with it off. Only the written form goes to the AI.",
+      "spokenPlaceholder": "btw",
+      "writtenPlaceholder": "by the way",
+      "spokenLabel": "Spoken form",
+      "writtenLabel": "Written form",
+      "add": "Add",
+      "remove": "Remove {{spoken}} → {{written}}",
+      "duplicate": "\"{{spoken}}\" already has a written form",
+      "uses_one": "1 use",
+      "uses_other": "{{count}} uses"
+    }
   },
   "settingsPage": {
     "tabs": {
