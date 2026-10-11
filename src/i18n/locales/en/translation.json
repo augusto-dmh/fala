@@ -1036,6 +1036,16 @@
       "notes": "Notes",
       "notesAbove": "Recording now: this meeting's notes are in the field above."
     },
+    "source": {
+      "open": "See where this line came from",
+      "title": "Source",
+      "none": "This line has no source in the transcript.",
+      "typed": "Your notes",
+      "goTo": "Go to {{time}} in the transcript",
+      "play": "Play this moment",
+      "stop": "Stop",
+      "noAudio": "This meeting's audio is no longer on disk."
+    },
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"
