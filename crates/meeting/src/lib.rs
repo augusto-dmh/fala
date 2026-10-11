@@ -12,11 +12,16 @@
 mod cap;
 mod id;
 mod mute;
+mod route;
 mod session;
 
 pub use cap::RecordingCap;
 pub use id::{SessionId, SessionMode};
 pub use mute::{MuteWatch, Muted, MUTE_WARN_AFTER};
+pub use route::{
+    OutputWatch, ZeroWatch, Zeroed, ELSEWHERE_AFTER, ELSEWHERE_GAP, OUTPUT_PEAK, ZERO_PEAK,
+    ZERO_WARN_AFTER,
+};
 pub use session::{
     Effect, Gap, GapKind, Indicator, IndicatorKind, Input, Levels, MeetingSession, SessionConfig,
     SessionState, StopReason, UnixMillis, UserAction, LOW_DISK_WARN_BYTES, MIN_FREE_DISK_BYTES,
