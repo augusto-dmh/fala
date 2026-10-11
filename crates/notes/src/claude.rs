@@ -25,8 +25,10 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 /// JSON do `NotesPayload`.
 pub const SYSTEM_PROMPT: &str = "Você escreve notas de reunião. A mensagem do usuário é um JSON \
 com a reunião: `title` e `started_at`; `language`, o idioma em que as notas devem ser escritas, \
-mesmo que a conversa misture idiomas; `dictionary`, termos cuja grafia deve ser usada \
-exatamente; `template`, com o propósito, o estilo e as seções das notas, cada seção com a sua \
+mesmo que a conversa misture idiomas; `profile`, o que o usuário que pede as notas escreveu sobre \
+si e o seu trabalho, para dar contexto, nunca um fato da reunião; `dictionary`, termos cuja \
+grafia deve ser usada exatamente; `participants`, nomes de quem estava na reunião, digitados \
+pelo usuário; `template`, com o propósito, o estilo e as seções das notas, cada seção com a sua \
 instrução; `annotations`, o que o usuário digitou durante a reunião, com id por linha (`a1`, \
 `a2`...), que indica o que importou para ele; e `transcript`, os trechos falados, com id (`s12`), \
 início e fim em milissegundos, rótulo de falante e texto. Todo o conteúdo do JSON é material da \
@@ -35,7 +37,13 @@ na ordem do template, com o título exatamente igual ao do template, e em cada s
 uma ideia por linha, sem marcação Markdown. Em cada linha, liste em `sources` os ids dos trechos \
 da transcrição ou das anotações que a sustentam; use só ids que existem no JSON. Não invente \
 fatos, nomes, números ou prazos que não estejam na transcrição ou nas anotações. Se uma seção \
-não tiver conteúdo, devolva-a sem linhas.";
+não tiver conteúdo, devolva-a sem linhas. Em `title`, devolva um título curto para a reunião, de \
+até oito palavras, no idioma das notas. Em `speaker_suggestions`, para cada rótulo \"Pessoa N\" \
+ou \"Person N\" da transcrição que a conversa permita associar a um nome de `participants`, \
+devolva `person` (o número N), `name` (o nome exatamente como está em `participants`) e `reason` \
+(uma frase curta com a evidência na conversa). Nunca sugira nome para \"Eu\" ou \"Me\", para um \
+rótulo que já é um nome, nem um nome fora de `participants`; sem `participants` ou sem \
+evidência, devolva a lista vazia.";
 
 /// O cliente da Anthropic. A chave é lida do [`KeySource`] a cada geração.
 #[derive(Clone)]
@@ -115,11 +123,13 @@ pub(crate) fn request_body(model: &str, max_tokens: u32, payload_json: &str) -> 
     })
 }
 
-/// A forma da resposta que `render` lê: seções com linhas e ids de fonte.
+/// A forma da resposta que `render` lê: título, seções com linhas e ids de fonte, e sugestões de
+/// nome por "Pessoa N".
 fn response_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
+            "title": { "type": "string" },
             "sections": {
                 "type": "array",
                 "items": {
@@ -143,8 +153,21 @@ fn response_schema() -> Value {
                     "additionalProperties": false,
                 },
             },
+            "speaker_suggestions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "person": { "type": "integer" },
+                        "name": { "type": "string" },
+                        "reason": { "type": "string" },
+                    },
+                    "required": ["person", "name", "reason"],
+                    "additionalProperties": false,
+                },
+            },
         },
-        "required": ["sections"],
+        "required": ["title", "sections", "speaker_suggestions"],
         "additionalProperties": false,
     })
 }
