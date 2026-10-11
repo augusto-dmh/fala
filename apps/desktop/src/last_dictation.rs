@@ -123,9 +123,9 @@ pub fn paste_last(app: &AppHandle, from_tray: bool) {
 }
 
 /// Remembers the app in the foreground when the pointer reaches the tray icon, before the
-/// menu takes the focus.
+/// menu takes the focus. Windows only: the tray's pointer events are wired there.
+#[cfg(windows)]
 pub fn remember_foreground() {
-    #[cfg(windows)]
     platform::remember_foreground();
 }
 
