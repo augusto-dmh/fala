@@ -331,6 +331,14 @@ async changeLlmDisabledAppsSetting(apps: string[]) : Promise<Result<string[], st
     else return { status: "error", error: e  as any };
 }
 },
+async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cleanup_level_setting", { level }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Temporarily unregister all bindings while the user is recording a
  * shortcut in the UI. This avoids firing actions while keys are recorded.
@@ -1273,6 +1281,10 @@ llm_enabled?: boolean;
  */
 llm_disabled_apps?: string[]; 
 /**
+ * How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
+ */
+cleanup_level?: CleanupLevel; 
+/**
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
  */
@@ -1281,6 +1293,11 @@ export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+/**
+ * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
+ * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
+ */
+export type CleanupLevel = "verbatim" | "light" | "medium" | "heavy"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 /**

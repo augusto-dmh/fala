@@ -764,6 +764,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::update_custom_words,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
+            shortcut::change_cleanup_level_setting,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,

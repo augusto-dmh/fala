@@ -983,6 +983,18 @@ pub fn change_llm_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_cleanup_level_setting(
+    app: AppHandle,
+    level: settings::CleanupLevel,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cleanup_level = level;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Stores the list in the form `fala-inject` reports app names and returns what was stored.
 #[tauri::command]
 #[specta::specta]
