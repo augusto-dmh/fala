@@ -357,9 +357,11 @@ mod tests {
     use std::cell::RefCell;
 
     /// Media sessions by index, with every pause and play the code sent.
+    #[derive(Default)]
     struct FakeMedia {
         state: RefCell<Vec<Playback>>,
-        calls: RefCell<Vec<(&'static str, usize)>>,
+        pauses: RefCell<Vec<usize>>,
+        plays: RefCell<Vec<usize>>,
         /// Players that refuse a pause.
         refuses_pause: Vec<usize>,
     }
@@ -368,8 +370,7 @@ mod tests {
         fn new(state: &[Playback]) -> Self {
             Self {
                 state: RefCell::new(state.to_vec()),
-                calls: RefCell::new(Vec::new()),
-                refuses_pause: Vec::new(),
+                ..Self::default()
             }
         }
 
@@ -384,21 +385,11 @@ mod tests {
         }
 
         fn plays(&self) -> Vec<usize> {
-            self.calls
-                .borrow()
-                .iter()
-                .filter(|(call, _)| *call == "play")
-                .map(|(_, session)| *session)
-                .collect()
+            self.plays.borrow().clone()
         }
 
         fn pauses(&self) -> Vec<usize> {
-            self.calls
-                .borrow()
-                .iter()
-                .filter(|(call, _)| *call == "pause")
-                .map(|(_, session)| *session)
-                .collect()
+            self.pauses.borrow().clone()
         }
     }
 
@@ -414,7 +405,7 @@ mod tests {
         }
 
         fn pause(&self, session: &usize) -> bool {
-            self.calls.borrow_mut().push(("pause", *session));
+            self.pauses.borrow_mut().push(*session);
             if self.refuses_pause.contains(session) {
                 return false;
             }
@@ -423,7 +414,7 @@ mod tests {
         }
 
         fn play(&self, session: &usize) -> bool {
-            self.calls.borrow_mut().push(("play", *session));
+            self.plays.borrow_mut().push(*session);
             self.set(*session, Playback::Playing);
             true
         }
@@ -454,7 +445,7 @@ mod tests {
         let mut paused = Paused::new();
         assert_eq!(paused.pause_playing(&&media), 0);
         assert_eq!(paused.resume(&&media), 0);
-        assert!(media.calls.borrow().is_empty());
+        assert!(media.pauses().is_empty() && media.plays().is_empty());
     }
 
     #[test]
@@ -520,7 +511,7 @@ mod tests {
             None
         });
         assert_eq!(opens, 2);
-        assert!(media.calls.borrow().is_empty());
+        assert!(media.pauses().is_empty() && media.plays().is_empty());
         // SMTC came back: the next pause uses it, and the control is kept.
         worker.handle(Command::Pause(Owner::Dictation), || Some(&media));
         worker.handle(Command::Resume(Owner::Dictation), || {
