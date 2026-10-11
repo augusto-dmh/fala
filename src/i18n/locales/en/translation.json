@@ -24,7 +24,55 @@
     "home": "Home",
     "dictionary": "Dictionary",
     "settings": "Settings",
-    "meetings": "Meetings"
+    "meetings": "Meetings",
+    "stats": "Performance"
+  },
+  "stats": {
+    "description": "Measured on this computer only; nothing leaves the machine.",
+    "period": {
+      "label": "Period",
+      "days": "{{count}} days"
+    },
+    "counts": {
+      "dictations": "Dictations",
+      "words": "Words",
+      "perDay": "Words per day with dictation"
+    },
+    "latency": {
+      "title": "Latency",
+      "stage": "Stage",
+      "p50": "p50",
+      "p90": "p90",
+      "budget": "Target / maximum",
+      "aboveTarget": "above target",
+      "aboveMax": "above maximum"
+    },
+    "rows": {
+      "e2e": "Release → text, without AI",
+      "e2e_llm": "Release → text, with AI",
+      "asr": "Recognition",
+      "llm": "AI",
+      "paste": "Paste",
+      "speech": "Speech length"
+    },
+    "ai": {
+      "title": "AI",
+      "attempts": "Attempts",
+      "fallbacks": "Fallbacks to the rules",
+      "share": "Fallbacks per attempt"
+    },
+    "perDay": {
+      "title": "Words per day",
+      "bar": "{{day}} · words: {{words}}"
+    },
+    "copy": "Copy summary",
+    "copied": "Summary copied.",
+    "copyFailed": "Could not copy the summary.",
+    "empty": "No measured dictations in this period yet.",
+    "error": "Could not read the metrics: {{error}}",
+    "markdown": {
+      "title": "Dictation performance: last {{days}} days"
+    }
   },
   "dictionary": {
     "description": "Words, names and terms Fala should recognise when you dictate."
