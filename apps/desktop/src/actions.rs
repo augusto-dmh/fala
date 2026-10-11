@@ -764,6 +764,7 @@ impl ShortcutAction for TranscribeAction {
                     if rm_clone.is_recording_readiness_current(generation) {
                         rm_clone.apply_mute();
                     }
+                    rm_clone.pause_media(generation);
                 });
 
                 // The first recording with a microphone other than the last one named
@@ -843,6 +844,7 @@ impl ShortcutAction for TranscribeAction {
 
         // Unmute before playing audio feedback so the stop sound is audible
         rm.remove_mute();
+        rm.resume_media();
 
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);

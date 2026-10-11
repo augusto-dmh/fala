@@ -1,7 +1,8 @@
 // Prova dos checks da pill (`.specs/features/pill-redesign/checks.md`), do vermelho no modo
 // padrão de dois toques (`.specs/features/shortcut-gestures/checks.md`, C24) e do estado âmbar
 // do limite de sessão (`.specs/features/session-limit/checks.md`, C18) e do estado de carga do
-// modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`).
+// modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`) e da pílula em repouso
+// (`.specs/features/pill-idle/checks.md`, C6 a C9).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,6 +19,8 @@ import {
   toPillMode,
 } from "./pillModel";
 import { MeetingPill } from "./MeetingPill";
+import { IdlePill, type IdlePillProps } from "./IdlePill";
+import { idleKeys, showsDoubleTapHint } from "./pillModel";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -528,6 +531,119 @@ function ok(id: string) {
     "o aviso de canal mudo precisa chegar à pill",
   );
   ok("meeting-muted");
+}
+
+// pill-idle C6 - em repouso: só a cápsula, sem barras, ponto, cor nem texto; o CSS não anima nem
+// usa vermelho.
+function renderIdle(props: Partial<IdlePillProps>): string {
+  return renderToStaticMarkup(
+    <IdlePill
+      hover={false}
+      keys={["Ctrl", "Meta"]}
+      dictateLabel="Ditar"
+      doubleTapLabel="toque duplo para travar"
+      label="repouso"
+      {...props}
+    />,
+  );
+}
+const idleCss = read("./IdlePill.css");
+{
+  const html = renderIdle({});
+  assert.equal(text(html), "", html);
+  assert.equal((html.match(/<div/g) ?? []).length, 1, html);
+  for (const tag of ["<i", "<span", "<kbd", "<svg"]) {
+    assert.ok(!html.includes(tag), `${tag} no repouso: ${html}`);
+  }
+  assert.deepEqual(classes(html), ["fpill", "idle"]);
+  const body = rule(idleCss, ".fpill.idle");
+  has(body, "width: 40px", ".fpill.idle");
+  has(body, "height: 8px", ".fpill.idle");
+  has(body, "background: rgba(0, 0, 0, 0.5)", ".fpill.idle");
+  has(body, "border: 1px solid rgba(255, 255, 255, 0.5)", ".fpill.idle");
+  assert.ok(!/animation|@keyframes/.test(idleCss), "o repouso não anima");
+  assert.ok(
+    !/#e5322d|#d97706/i.test(idleCss),
+    "o repouso não usa vermelho nem âmbar",
+  );
+  // Nenhuma regra do Pill.css com cor de gravação vale para .idle.
+  assert.ok(!/\.fpill\.idle/.test(css), "o repouso fica fora do Pill.css");
+  ok("pill-idle C6");
+}
+
+// pill-idle C7 - hover: "Ditar" e um <kbd> por tecla; a dica do toque duplo só no modo padrão.
+{
+  assert.deepEqual(idleKeys("ctrl+meta"), ["Ctrl", "Meta"]);
+  assert.deepEqual(idleKeys("shift_left+space"), ["Left Shift", "Space"]);
+  assert.deepEqual(idleKeys(""), []);
+  assert.deepEqual(idleKeys(undefined), []);
+  const html = renderIdle({ hover: true });
+  assert.ok(classes(html).includes("hover"), html);
+  const kbds = [...html.matchAll(/<kbd>([^<]*)<\/kbd>/g)].map((m) => m[1]);
+  assert.deepEqual(kbds, ["Ctrl", "Meta"]);
+  assert.ok(html.includes(">Ditar<"), html);
+  assert.ok(html.includes("toque duplo para travar"), html);
+  const noHint = renderIdle({ hover: true, doubleTapLabel: null });
+  assert.ok(!noHint.includes("idle-hint"), noHint);
+  const modes = [
+    "toggle",
+    "push_to_talk",
+    "hold_or_toggle",
+    undefined,
+  ] as const;
+  assert.ok(showsDoubleTapHint("push_to_talk_double_tap"));
+  assert.ok(modes.every((mode) => !showsDoubleTapHint(mode)));
+  assert.equal(toPillMode("idle"), null);
+  // pt e en têm as mesmas chaves (`bun run check:translations`).
+  const { dictate, doubleTap, label } = locale("pt").overlay.idle;
+  assert.deepEqual([dictate, doubleTap], ["Ditar", "toque duplo para travar"]);
+  assert.ok(label);
+  ok("pill-idle C7");
+}
+
+// pill-idle C8 - o overlay liga hover e clique aos comandos; Início abre pelo evento open-home.
+{
+  const at = overlaySource.indexOf('if (state === "idle") {');
+  assert.ok(at > 0, "sem o ramo idle");
+  const idle = overlaySource.slice(at, overlaySource.indexOf("\n  }\n", at));
+  assert.ok(idle.includes("commands.setIdlePillHover(on)"), idle);
+  assert.ok(idle.includes("onMouseEnter={() => hover(true)}"), idle);
+  assert.ok(idle.includes("onMouseLeave={() => hover(false)}"), idle);
+  assert.ok(idle.includes("commands.openHomeFromPill()"), idle);
+  assert.ok(overlaySource.includes('if (event.payload === "idle")'));
+  assert.ok(overlaySource.includes("commands.pillOverlayReady()"));
+  const app = read("../App.tsx");
+  assert.match(
+    app,
+    /listen\("open-home", \(\) => \{\s*setDestination\("home"\);/,
+  );
+  const rust = read("../../apps/desktop/src/overlay.rs");
+  const open = rust.slice(rust.indexOf("pub fn open_home_from_pill"));
+  const body = open.slice(0, open.indexOf("\n}\n"));
+  assert.ok(body.includes("crate::show_main_window(&app)"), body);
+  assert.ok(body.includes('emit_to("main", "open-home", ())'), body);
+  ok("pill-idle C8");
+}
+
+// pill-idle C9 - o toggle fica logo depois do ShowOverlay, só no Windows e com a pílula ligada.
+{
+  const advanced = read("../components/settings/advanced/AdvancedSettings.tsx");
+  assert.match(
+    advanced,
+    /<ShowOverlay [^>]*\/>\s*<ShowIdlePill descriptionMode="tooltip" grouped=\{true\} \/>/,
+  );
+  const toggle = read("../components/settings/ShowIdlePill.tsx");
+  assert.ok(
+    toggle.includes(
+      'if (osType !== "windows" || getSetting("overlay_style") === "none") {\n      return null;',
+    ),
+    toggle,
+  );
+  assert.ok(toggle.includes('updateSetting("pill_idle_visible", enabled)'));
+  const { label, description } = locale("pt").settings.advanced.idlePill;
+  assert.equal(label, "Mostrar a pílula em repouso");
+  assert.ok(description);
+  ok("pill-idle C9");
 }
 
 console.log("pill: all assertions passed");
