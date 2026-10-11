@@ -3,7 +3,8 @@
 //! Ditado: `Mic` (microfone via `cpal`) entrega mono f32 na taxa do dispositivo;
 //! `DictationCapture` reamostra para 16 kHz com `rubato`, mantém o pré-buffer de 300 ms e usa o
 //! Silero VAD v4 (`vad-rs`, ADR-0009) para fechar utterances de até 15 s, entregues como
-//! `fala_core::DictationAudio` (que não implementa serialização, ADR-0003).
+//! `fala_core::DictationAudio` (que não implementa serialização, ADR-0003), e, para o ditado
+//! longo, blocos de 25-40 s fechados no silêncio.
 //! Reunião: `meeting::MeetingRecorder` grava mic e sistema (`SystemAudio`) num WAV estéreo 48 kHz
 //! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo).
 //! O desktop grava o ditado por aqui (`Mic::open_device` com o dispositivo e o canal dos
@@ -18,8 +19,8 @@ mod vad;
 use std::path::PathBuf;
 
 pub use capture::{
-    DictationCapture, HANGOVER_FRAMES, MAX_UTTERANCE_SAMPLES, ONSET_FRAMES, PREBUFFER_SAMPLES,
-    PRE_ROLL_FRAMES,
+    DictationCapture, BLOCK_MAX_SAMPLES, BLOCK_MIN_SAMPLES, HANGOVER_FRAMES, MAX_UTTERANCE_SAMPLES,
+    ONSET_FRAMES, PREBUFFER_SAMPLES, PRE_ROLL_FRAMES,
 };
 pub use meeting::{
     ChannelStats, MeetingRecorder, MeetingWav, SystemAudio, FLUSH_EVERY, LAG_FRAMES,
