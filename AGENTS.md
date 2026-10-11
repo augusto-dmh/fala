@@ -56,7 +56,7 @@ Canônico: `CONTRIBUTING.md`. Aqui só o que o agente erraria sem ler.
 - Não cite caminhos de spec locais nem IDs internos de tarefa do skill; ADRs (`docs/decisions/NNNN`), issues e fases do `ROADMAP.md` podem ser citados.
 - PR: `gh pr create --title "<mesma regra do commit>" --body-file <arquivo>` com Problem / Change / Verification / AI assistance preenchidos com fatos, em inglês, sem TODO e sem os comentários do template. Título de feat/fix na voz de quem usa.
 - Verification lista comandos exatos e contagens; o que não foi testado, diz.
-- Não faça merge, push forçado, nem mude versão ou `CHANGELOG.md`: release é humano. Remova o worktree quando a branch integrar.
+- Faça o squash do PR (`gh pr merge <N> --squash`, sozinho no comando) só com todos os checks verdes, inclusive os não obrigatórios (`windows`, `secrets`), e sem conflito. Nunca com check pendente ou falho, nem com `--admin`. Não faça push forçado nem mude versão ou `CHANGELOG.md`: release é humano. Remova o worktree quando a branch integrar.
 - Criou, renomeou ou removeu um crate: atualize o Code Map do `ARCHITECTURE.md` no mesmo commit.
 - Mudou algo que contradiz uma ADR: pare e proponha uma ADR nova. Conflito entre documentos: ADR > ARCHITECTURE > AGENTS > CONTRIBUTING, e o perdedor é corrigido no mesmo commit.
 

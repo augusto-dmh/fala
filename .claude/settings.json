@@ -3,5 +3,8 @@
     "commit": "Assisted-by: Claude Code",
     "pr": "",
     "sessionUrl": false
+  },
+  "permissions": {
+    "allow": ["Bash(gh pr merge:*)"]
   }
 }
