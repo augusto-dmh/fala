@@ -319,6 +319,20 @@ mod request {
         assert_eq!(requests.len(), 2);
         for r in &requests {
             assert_eq!(r.field("keyterms"), ["Fala", "ADR"]);
+            // Os termos do dicionário e, além deles, só os cinco campos de sempre.
+            let names: Vec<String> = r.field_names().into_iter().collect();
+            assert_eq!(
+                names,
+                [
+                    "diarize",
+                    "file",
+                    "keyterms",
+                    "language_code",
+                    "model_id",
+                    "timestamps_granularity"
+                ]
+            );
+            assert_eq!(r.parts().len(), 7, "campo repetido");
         }
 
         let off = ScribeOptions {

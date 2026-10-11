@@ -203,7 +203,9 @@ fn input() -> NotesInput {
         date: "2026-10-02".to_string(),
         start_time: "14:02".to_string(),
         language: Language::PtBr,
+        profile: String::new(),
         dictionary: Dictionary::new(["Fala"]),
+        participants: Vec::new(),
         template: builtin_templates().unwrap().remove(0),
         annotations: "decidir data\nAna: contrato".to_string(),
         transcript: vec![
@@ -263,6 +265,69 @@ fn request_carries_key_version_and_exact_body() {
     assert_eq!(keys_source.calls(), 1);
 }
 
+/// A fala de terceiros com o contexto do usuário (ADR-0016): o payload leva perfil, idioma das
+/// notas e nomes, nunca o e-mail de um participante; a resposta pede título e sugestões.
+#[test]
+fn payload_carries_profile_and_names_never_emails() {
+    let reply = json!({
+        "title": "Data do lançamento",
+        "sections": [{"title": "Resumo", "lines": []}],
+        "speaker_suggestions": [{"person": 1, "name": "Bruno Lima", "reason": "Propõe a data."}],
+    })
+    .to_string();
+    let server = FakeServer::ok(&reply);
+    let keys_source = CountingKeys::new(Some(TEST_KEY));
+    let mut input = input();
+    input.title = String::new();
+    input.profile = "PM do Fala".to_string();
+    input.participants = ["Bruno Lima", "carla@empresa.com", "Dani <dani@empresa.com>"]
+        .map(String::from)
+        .to_vec();
+    let claude = server.claude(&keys_source);
+    let notes = generate_notes(&input, &claude).unwrap();
+
+    let body = server.requests()[0].json();
+    let payload: Value =
+        serde_json::from_str(body["messages"][0]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        keys(&payload),
+        BTreeSet::from([
+            "title",
+            "started_at",
+            "language",
+            "profile",
+            "dictionary",
+            "participants",
+            "template",
+            "annotations",
+            "transcript",
+        ])
+    );
+    assert_eq!(payload["profile"], "PM do Fala");
+    assert_eq!(payload["language"], "pt-BR");
+    assert_eq!(payload["participants"], json!(["Bruno Lima"]));
+    assert!(!server.requests()[0].body.contains("empresa.com"));
+    let schema = &body["output_config"]["format"]["schema"];
+    assert_eq!(
+        schema["required"],
+        json!(["title", "sections", "speaker_suggestions"])
+    );
+
+    assert_eq!(notes.title.as_deref(), Some("Data do lançamento"));
+    assert_eq!(notes.speaker_suggestions.len(), 1);
+    assert_eq!(notes.speaker_suggestions[0].name, "Bruno Lima");
+
+    // A sugestão não muda nada sozinha: a geração seguinte ainda manda "Pessoa 1".
+    generate_notes(&input, &claude).unwrap();
+    let second: Value = serde_json::from_str(
+        server.requests()[1].json()["messages"][0]["content"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(second["transcript"][1]["speaker"], "Pessoa 1");
+}
+
 #[test]
 fn default_model_is_sonnet_5() {
     let server = FakeServer::ok(SECTIONS);
@@ -292,6 +357,8 @@ fn local_only_never_connects_nor_reads_key() {
     assert!(server.requests().is_empty());
     assert_eq!(keys_source.calls(), 0);
     assert!(!notes.generated);
+    assert_eq!(notes.title, None);
+    assert!(notes.speaker_suggestions.is_empty());
     assert_eq!(
         notes.markdown,
         "## Anotações\n\ndecidir data ^a1\n\nAna: contrato ^a2\n"

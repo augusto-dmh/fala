@@ -20,6 +20,7 @@ import { ConsentNotice } from "./ConsentNotice";
 import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
+import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
 import { errorKey, takeConsentRequest } from "./meetingModel";
 
@@ -285,6 +286,7 @@ export function MeetingsPage() {
           />
         </SettingsGroup>
       )}
+      <NotesContextSettings />
     </div>
   );
 }
