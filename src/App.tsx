@@ -207,7 +207,12 @@ function App() {
               event.payload.model_name || t("errors.modelLoadFailedUnknown"),
           }),
           {
-            description: event.payload.error,
+            description:
+              event.payload.error_code === "model_not_downloaded"
+                ? t("errors.modelNotDownloaded")
+                : event.payload.error_code === "model_not_found"
+                  ? t("errors.modelNotFound")
+                  : event.payload.error,
           },
         );
       }

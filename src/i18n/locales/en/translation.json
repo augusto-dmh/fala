@@ -762,6 +762,8 @@
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load model: {{model}}",
     "modelLoadFailedUnknown": "unknown model",
+    "modelNotFound": "No available speech model is selected. Choose one in Settings > Models.",
+    "modelNotDownloaded": "The model has not been downloaded yet. Download it in Settings > Models.",
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
     "transcriptionFailedTitle": "Transcription Failed",
@@ -786,6 +788,12 @@
     "processing": "Processing...",
     "loadingModel": "Loading model…",
     "recordingLoadingModel": "Recording, loading model…",
+    "notice": {
+      "micDenied": "No permission to use the microphone",
+      "noMic": "No microphone found",
+      "micFailed": "Couldn't open the microphone",
+      "modelMissing": "No speech model downloaded"
+    },
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused"
   },

@@ -101,6 +101,18 @@ pub fn play_limit_warning(app: &AppHandle) {
     });
 }
 
+/// A dictation that could not start (no model, or the microphone failed to open): the
+/// theme's stop chime twice, 150 ms apart. Like the limit warning, it plays even with
+/// feedback sounds off, since nothing else marks the gesture as failed when the pill is off.
+pub fn play_error_chime(app: &AppHandle) {
+    let app = app.clone();
+    thread::spawn(move || {
+        play_test_sound(&app, SoundType::Stop);
+        thread::sleep(Duration::from_millis(150));
+        play_test_sound(&app, SoundType::Stop);
+    });
+}
+
 fn play_sound_async(app: &AppHandle, path: PathBuf) {
     if !send_chime(chime_request(app, path.clone(), None)) {
         warn!(
