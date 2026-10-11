@@ -9,6 +9,7 @@ import type {
 import { Button } from "../ui/Button";
 import { AnnotationsField } from "./AnnotationsField";
 import { ClipPlayer } from "./clipPlayer";
+import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { errorKey, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
@@ -26,6 +27,8 @@ export interface MeetingViewProps {
   onCancelTranscription: () => void;
   onGenerate: (templateId: string) => void;
   onCopy: () => void;
+  /** A suggested name was applied: reload the transcript. */
+  onNamesChanged?: () => void;
 }
 
 /** One session: the draft's agenda, or the transcript, the typed notes and the notes. */
@@ -86,6 +89,11 @@ export function MeetingView(props: MeetingViewProps) {
           }
         />
       )}
+      <MeetingPeoplePanel
+        id={detail.summary.id}
+        reloadOn={detail}
+        onNamesChanged={props.onNamesChanged}
+      />
       {draft ? (
         <Button onClick={props.onRecordDraft}>
           {t("meeting.view.recordDraft")}

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
+use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
     MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary, MeetingTemplate,
 };
@@ -222,4 +223,36 @@ pub fn change_meeting_keyterms_setting(app: AppHandle, enabled: bool) -> Result<
     settings.meeting_keyterms = enabled;
     settings::write_settings(&app, settings);
     Ok(())
+}
+
+/// "Who was there" of a session and the name suggestions waiting for "apply".
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_people(
+    meetings: Meetings<'_>,
+    id: String,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.people(&id)
+}
+
+/// Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_participants(
+    meetings: Meetings<'_>,
+    id: String,
+    names: Vec<String>,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.set_participants(&id, names)
+}
+
+/// The click that applies a suggested name to "Person N"; never called by the app itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_speaker_suggestion(
+    meetings: Meetings<'_>,
+    id: String,
+    person: u32,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.apply_speaker_suggestion(&id, person)
 }
