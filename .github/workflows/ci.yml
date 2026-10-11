@@ -54,6 +54,9 @@ jobs:
       - name: Release config (ADR-0008)
         run: python3 scripts/ci/test_release_config.py
 
+      - name: Updater manifest generator (ADR-0018)
+        run: python3 scripts/ci/test_gen_latest_json.py
+
       - name: fala-cli builds without WebView
         run: cargo build -p fala-cli
 
