@@ -13,6 +13,7 @@
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
+pub(crate) mod output;
 pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
@@ -24,7 +25,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, Local, SecondsFormat};
-use fala_audio::SystemAudio;
 use fala_meeting::{
     Effect, IndicatorKind, Input, Levels, MeetingSession, MuteWatch, RecordingCap, SessionConfig,
     SessionError, SessionId, SessionMode, SessionState, StopReason, UnixMillis, UserAction,
@@ -96,6 +96,13 @@ pub struct MeetingStatus {
     pub cap_remaining_ms: Option<u64>,
     /// Free bytes when recording started with less than 2 GiB free.
     pub low_disk_bytes: Option<u64>,
+    /// The output whose sound is the system channel.
+    pub system_output: Option<String>,
+    /// Another output that plays while the system channel records zeros: the call is there.
+    pub call_output: Option<String>,
+    /// A channel in digital zero for ~3 s (the pill's dot turns amber).
+    pub zero_mic: bool,
+    pub zero_system: bool,
 }
 
 /// Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
@@ -314,6 +321,7 @@ struct Active {
     mode: MeetingMode,
     control: Sender<Control>,
     mute: MuteWatch,
+    route: output::Route,
     /// Recorded time at the last `Tick` given to the session (one per second).
     last_tick: Duration,
     /// Loudest level of each channel since the last `Tick`.
@@ -443,7 +451,8 @@ impl MeetingManager {
         title: &str,
         draft: Option<&str>,
     ) -> Result<MeetingStatus, MeetingError> {
-        let consent = crate::settings::get_settings(&self.app).meeting_consent_accepted_at;
+        let settings = crate::settings::get_settings(&self.app);
+        let consent = settings.meeting_consent_accepted_at;
         let dictation = self
             .app
             .try_state::<Arc<AudioRecordingManager>>()
@@ -476,8 +485,7 @@ impl MeetingManager {
             }),
         )?;
 
-        let system =
-            SystemAudio::default_name().map_err(|e| MeetingError::AudioDevice(e.to_string()))?;
+        let system = output::resolve(settings.meeting_output_device.as_deref())?;
         self.release_dictation_mic();
         let mut control = None;
         let mut low_disk = None;
@@ -539,11 +547,13 @@ impl MeetingManager {
             mode,
             control,
             mute: MuteWatch::new(mode.session_mode()),
+            route: output::Route::new(mode.session_mode(), &system),
             last_tick: Duration::ZERO,
             tick_levels: Levels::default(),
         });
         inner.status = MeetingStatus {
             low_disk_bytes: low_disk,
+            system_output: Some(system),
             ..MeetingStatus::default()
         };
         Ok(self.publish(&mut inner))
@@ -580,6 +590,17 @@ impl MeetingManager {
         Ok(self.publish(&mut inner))
     }
 
+    /// "Record from this device": the system channel switches to `name` while recording. Only
+    /// this session changes; the remembered choice stays as the panel set it.
+    pub fn switch_output(&self, name: &str) -> Result<MeetingStatus, MeetingError> {
+        let mut inner = self.lock();
+        let active = inner.active.as_ref().ok_or(MeetingError::NotActive)?;
+        if active.route.recording() != name {
+            self.send(&inner, Control::SwitchSystem(name.to_string()));
+        }
+        Ok(self.publish(&mut inner))
+    }
+
     /// The tray's "Record meeting": without the notice accepted, opens the window on it.
     pub fn start_from_tray(&self) {
         let consent = crate::settings::get_settings(&self.app).meeting_consent_accepted_at;
@@ -606,9 +627,15 @@ impl MeetingManager {
                 recorded,
                 mic,
                 system,
+                mic_peak,
+                system_peak,
+                outputs,
             } => {
                 let levels = Levels { mic, system };
                 let muted = active.mute.observe(recorded, levels);
+                let route = active
+                    .route
+                    .observe(recorded, mic_peak, system_peak, &outputs);
                 active.tick_levels.mic = active.tick_levels.mic.max(mic);
                 active.tick_levels.system = active.tick_levels.system.max(system);
                 let mut effects = Vec::new();
@@ -628,7 +655,19 @@ impl MeetingManager {
                 inner.status.system_level = system;
                 inner.status.muted_mic = muted.mic;
                 inner.status.muted_system = muted.system;
+                if route.apply(&mut inner.status) {
+                    let card = inner.status.call_output.is_some();
+                    crate::overlay::set_meeting_card(&self.app, card);
+                }
                 self.run_effects(&mut inner, effects);
+            }
+            Report::SystemSwitched { name, error } => {
+                if error.is_none() {
+                    active.route.switched(&name);
+                    inner.status.system_output = Some(name);
+                    inner.status.call_output = None;
+                    crate::overlay::set_meeting_card(&self.app, false);
+                }
             }
             Report::Finalized { recorded, error } => {
                 if let Some(e) = error {

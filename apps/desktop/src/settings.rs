@@ -719,6 +719,9 @@ pub struct AppSettings {
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
     pub meeting_consent_accepted_at: Option<String>,
+    /// The output whose sound a meeting records ("Meeting sound"). `None`: the default output.
+    #[serde(default)]
+    pub meeting_output_device: Option<String>,
     /// "Avisar quando uma chamada começar" (F8 `meeting-detection`): offer to record when a call
     /// app opens the mic. Off, the mic holders are not read.
     #[serde(default = "default_call_prompt_enabled")]
@@ -1255,6 +1258,7 @@ pub fn get_default_settings() -> AppSettings {
         llm_disabled_apps: default_llm_disabled_apps(),
         cleanup_level: CleanupLevel::default(),
         meeting_consent_accepted_at: None,
+        meeting_output_device: None,
         call_prompt_enabled: default_call_prompt_enabled(),
         call_prompt_muted_apps: Vec::new(),
     }

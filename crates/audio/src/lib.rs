@@ -30,6 +30,7 @@ pub use meeting::{
     ChannelStats, MeetingRecorder, MeetingWav, SystemAudio, FLUSH_EVERY, LAG_FRAMES,
     MAX_BACKLOG_FRAMES, MEETING_RATE,
 };
+pub use meeting::{OutputDevice, OutputMeter, OutputPeak};
 pub use mic::Mic;
 pub use resample::{Resampler, OUT_RATE};
 pub use vad::{SileroVad, VoiceDetector, FRAME_SAMPLES, SILERO_THRESHOLD};

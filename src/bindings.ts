@@ -1240,6 +1240,39 @@ async setMeetingTranscriptionKey(key: string) : Promise<Result<MeetingKeys, Meet
 }
 },
 /**
+ * The outputs and the remembered choice. Enumerating can stall, so it runs off the main loop.
+ */
+async meetingOutputs() : Promise<Result<MeetingOutputs, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_outputs") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remembers the output the next meetings record; `None` follows the default output.
+ */
+async setMeetingOutput(name: string | null) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_output", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Record from this device" while a meeting records.
+ */
+async switchMeetingOutput(name: string) : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("switch_meeting_output", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The profile the notes LLM receives (ADR-0016), cut to `fala_notes::PROFILE_MAX_CHARS`.
  */
 async changeNotesProfileSetting(profile: string) : Promise<Result<string, string>> {
@@ -1476,6 +1509,10 @@ cleanup_level?: CleanupLevel;
  */
 meeting_consent_accepted_at?: string | null; 
 /**
+ * The output whose sound a meeting records ("Meeting sound"). `None`: the default output.
+ */
+meeting_output_device?: string | null; 
+/**
  * "Avisar quando uma chamada começar" (F8 `meeting-detection`): offer to record when a call
  * app opens the mic. Off, the mic holders are not read.
  */
@@ -1653,6 +1690,14 @@ export type MeetingMode =
  */
 "in_person"
 /**
+ * An output the "Meeting sound" selector offers.
+ */
+export type MeetingOutput = { name: string; is_default: boolean }
+/**
+ * The outputs and the remembered choice (`None`: follow the default output).
+ */
+export type MeetingOutputs = { devices: MeetingOutput[]; selected: string | null }
+/**
  * "Who was there" of a session and the name suggestions waiting for a click.
  */
 export type MeetingPeople = { participants: string[]; suggestions: SpeakerSuggestion[] }
@@ -1681,7 +1726,19 @@ cap_remaining_ms: number | null;
 /**
  * Free bytes when recording started with less than 2 GiB free.
  */
-low_disk_bytes: number | null }
+low_disk_bytes: number | null; 
+/**
+ * The output whose sound is the system channel.
+ */
+system_output: string | null; 
+/**
+ * Another output that plays while the system channel records zeros: the call is there.
+ */
+call_output: string | null; 
+/**
+ * A channel in digital zero for ~3 s (the pill's dot turns amber).
+ */
+zero_mic: boolean; zero_system: boolean }
 /**
  * A session in the list.
  */

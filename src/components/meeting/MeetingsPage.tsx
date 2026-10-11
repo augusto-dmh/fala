@@ -8,6 +8,7 @@ import {
   type MeetingError,
   type MeetingKeys,
   type MeetingMode,
+  type MeetingOutputs,
   type MeetingStatus,
   type MeetingSummary,
   type MeetingTemplate,
@@ -34,6 +35,10 @@ const IDLE: MeetingStatus = {
   muted_system: false,
   cap_remaining_ms: null,
   low_disk_bytes: null,
+  system_output: null,
+  call_output: null,
+  zero_mic: false,
+  zero_system: false,
 };
 
 /** The Meetings page: record, the list of sessions and the open one. */
@@ -52,6 +57,7 @@ export function MeetingsPage() {
   const [transcribing, setTranscribing] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<MeetingError | string | null>(null);
+  const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await commands.listMeetings();
@@ -111,6 +117,21 @@ export function MeetingsPage() {
         .then((r) => r.status === "ok" && setLive(r.data));
     }
   }, [status.id, live?.summary.id, refresh]);
+
+  // The outputs are listed again whenever the panel goes back to idle: a headset may have been
+  // plugged in during the last call.
+  const idle = status.state === "idle";
+  useEffect(() => {
+    if (!idle) return;
+    void commands
+      .meetingOutputs()
+      .then((r) => r.status === "ok" && setOutputs(r.data));
+  }, [idle]);
+
+  const chooseOutput = (name: string | null) => {
+    setOutputs((current) => current && { ...current, selected: name });
+    void commands.setMeetingOutput(name);
+  };
 
   // The open session follows the recording: a draft that starts, a session that stops.
   const openId = selected?.summary.id ?? null;
@@ -204,8 +225,13 @@ export function MeetingsPage() {
             status={status}
             mode={mode}
             title={title}
+            outputs={outputs}
             onModeChange={setMode}
             onTitleChange={setTitle}
+            onOutputChange={chooseOutput}
+            onSwitchOutput={(name) =>
+              void act(() => commands.switchMeetingOutput(name))
+            }
             onStart={() => void start(null)}
             onNewDraft={() => void newDraft()}
             onPause={() => void act(commands.pauseMeeting)}

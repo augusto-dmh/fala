@@ -62,6 +62,10 @@ const status = (over: Partial<MeetingStatus> = {}): MeetingStatus => ({
   muted_system: false,
   cap_remaining_ms: null,
   low_disk_bytes: null,
+  system_output: null,
+  call_output: null,
+  zero_mic: false,
+  zero_system: false,
   ...over,
 });
 
@@ -71,8 +75,11 @@ const panel = (s: MeetingStatus) =>
       status={s}
       mode="meeting"
       title=""
+      outputs={null}
       onModeChange={noop}
       onTitleChange={noop}
+      onOutputChange={noop}
+      onSwitchOutput={noop}
       onStart={noop}
       onNewDraft={noop}
       onPause={noop}
