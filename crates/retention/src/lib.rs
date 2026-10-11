@@ -3,8 +3,10 @@
 //! O WAV estéreo de trabalho (L = mic, R = sistema, 48 kHz i16) vira `audio/<id>/mic.opus` e
 //! `audio/<id>/sys.opus`, Ogg Opus mono de 24 kbps. O WAV só é apagado depois de os dois
 //! arquivos decodificarem com a contagem exata de amostras. A política de retenção decide, com
-//! o relógio do chamador, quais sessões têm o áudio vencido. Sem `cfg` de plataforma nem `tauri`.
+//! o relógio do chamador, quais sessões têm o áudio vencido. `decode_range` devolve um trecho
+//! para tocar. Sem `cfg` de plataforma nem `tauri`.
 
+mod decode;
 mod encode;
 mod policy;
 
@@ -13,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use fala_meeting::SessionId;
 
+pub use decode::{decode_range, PREROLL_SAMPLES};
 pub use encode::{retain_wav, validate_opus, RetainedAudio, BITRATE_BPS, SAMPLE_RATE_HZ};
 pub use policy::{audio_due, RetainedSession, RetentionDays, RetentionPolicy};
 
@@ -40,6 +43,9 @@ pub enum RetentionError {
     /// O Opus não prova que guarda o WAV inteiro; o WAV não é apagado.
     #[error("validação de {path:?} falhou: {reason}")]
     ValidationFailed { path: PathBuf, reason: String },
+    /// O trecho pedido não pôde ser lido de um Opus retido.
+    #[error("{path:?} ilegível: {reason}")]
+    Unreadable { path: PathBuf, reason: String },
     /// Dias de retenção fora de 1 a 3650.
     #[error("{0} dias fora do intervalo de 1 a 3650")]
     DaysOutOfRange(u16),
