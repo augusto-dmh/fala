@@ -4,6 +4,7 @@
 //! Keys come only from the OS keyring (ADR-0008): `elevenlabs` for the transcript and the
 //! `anthropic` key the post-processing settings already store, for the notes.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,12 +17,13 @@ use fala_core::{Dictionary, Language};
 use fala_meeting::SessionId;
 use fala_notes::{builtin_templates, generate_notes, Claude, NotesError, NotesInput, Template};
 use fala_secrets::{ApiKey, SecretStore};
-use fala_storage::{MeetingRecord, MeetingSegment, SegmentChannel, SegmentSpeaker};
+use fala_storage::{MeetingRecord, MeetingSegment, NameSuggestion, SegmentChannel, SegmentSpeaker};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
 use super::context::{notes_settings, NotesSettings};
+use super::people::speaker_names;
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
 
 /// Keyring account of the ElevenLabs key (`fala-cli key set elevenlabs` stores the same one).
@@ -52,6 +54,10 @@ pub struct MeetingLine {
     /// `mic` or `system`.
     pub channel: String,
     pub person: Option<u32>,
+    /// The name applied to "Person N" from a suggestion; absent when there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub name: Option<String>,
     pub t0_ms: u64,
     pub t1_ms: u64,
     pub text: String,
@@ -147,6 +153,7 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
             SegmentSpeaker::Me => None,
             SegmentSpeaker::Person(n) => Some(n),
         },
+        name: None,
         t0_ms: segment.t0_ms,
         t1_ms: segment.t1_ms,
         text: segment.text.clone(),
@@ -174,8 +181,12 @@ pub(crate) fn segments_for_store(segments: Vec<Segment>) -> Vec<MeetingSegment> 
         .collect()
 }
 
-/// The stored segments as the notes crate reads them: `seq` is the id the `^sN` pointers cite.
-pub(crate) fn notes_segments(segments: &[MeetingSegment]) -> Vec<fala_notes::Segment> {
+/// The stored segments as the notes crate reads them: `seq` is the id the `^sN` pointers cite,
+/// and a "Person N" with an applied name goes by that name.
+pub(crate) fn notes_segments(
+    segments: &[MeetingSegment],
+    names: &HashMap<u32, String>,
+) -> Vec<fala_notes::Segment> {
     segments
         .iter()
         .map(|segment| fala_notes::Segment {
@@ -186,7 +197,10 @@ pub(crate) fn notes_segments(segments: &[MeetingSegment]) -> Vec<fala_notes::Seg
             },
             speaker: match segment.speaker {
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
-                SegmentSpeaker::Person(n) => fala_notes::Speaker::Person(n),
+                SegmentSpeaker::Person(n) => match names.get(&n) {
+                    Some(name) => fala_notes::Speaker::Named(name.clone()),
+                    None => fala_notes::Speaker::Person(n),
+                },
             },
             t0_ms: segment.t0_ms,
             t1_ms: segment.t1_ms,
@@ -247,11 +261,14 @@ pub(crate) fn templates() -> Vec<MeetingTemplate> {
 }
 
 /// What the notes LLM receives, from the stored session (ADR-0016 list: title, local date and
-/// start time, notes language, profile, dictionary, template, the typed notes, the transcript).
+/// start time, notes language, profile, dictionary, participants, template, the typed notes, the
+/// transcript with the applied names).
 pub(crate) fn notes_input(
     record: &MeetingRecord,
     segments: &[MeetingSegment],
     settings: &NotesSettings,
+    participants: Vec<String>,
+    names: &HashMap<u32, String>,
     template: Template,
 ) -> NotesInput {
     let start = record.started_at.unwrap_or(record.created_at);
@@ -262,10 +279,10 @@ pub(crate) fn notes_input(
         language: settings.language,
         profile: settings.profile.clone(),
         dictionary: settings.dictionary.clone(),
-        participants: Vec::new(),
+        participants,
         template,
         annotations: record.annotations.clone(),
-        transcript: notes_segments(segments),
+        transcript: notes_segments(segments, names),
         local_only: record.local_only,
     }
 }
@@ -365,7 +382,18 @@ impl MeetingManager {
         let audio_available = super::clip::audio_available(&self.session_dir(id));
         self.with_store(|store| {
             let record = store.meeting(id)?;
-            let lines = store.meeting_segments(id)?.iter().map(line).collect();
+            let names = speaker_names(store, id)?;
+            let lines = store
+                .meeting_segments(id)?
+                .iter()
+                .map(|segment| MeetingLine {
+                    name: match segment.speaker {
+                        SegmentSpeaker::Person(n) => names.get(&n).cloned(),
+                        SegmentSpeaker::Me => None,
+                    },
+                    ..line(segment)
+                })
+                .collect();
             Ok(MeetingDetail {
                 summary: summary(&record),
                 annotations: record.annotations,
@@ -392,7 +420,14 @@ impl MeetingManager {
             let segments = store.meeting_segments(id)?;
             let template = find_template(record.notes_template.as_deref().unwrap_or("geral"))
                 .or_else(|_| find_template("geral"))?;
-            let input = notes_input(&record, &segments, &settings, template);
+            let input = notes_input(
+                &record,
+                &segments,
+                &settings,
+                store.meeting_participants(id)?,
+                &speaker_names(store, id)?,
+                template,
+            );
             Ok(fala_notes::note_document(
                 &input,
                 record.notes_md.as_deref(),
@@ -503,10 +538,19 @@ impl MeetingManager {
             work: &self.work,
             notes: true,
         };
-        let (record, segments) =
-            self.with_store(|store| Ok((store.meeting(id)?, store.meeting_segments(id)?)))?;
         let settings = notes_settings(&crate::settings::get_settings(&self.app));
-        let input = notes_input(&record, &segments, &settings, template);
+        let (input, transcribed_at) = self.with_store(|store| {
+            let record = store.meeting(id)?;
+            let input = notes_input(
+                &record,
+                &store.meeting_segments(id)?,
+                &settings,
+                store.meeting_participants(id)?,
+                &speaker_names(store, id)?,
+                template,
+            );
+            Ok((input, record.transcribed_at))
+        })?;
         self.progress(id, ProgressStage::Notes);
         let claude = Claude::new(Arc::new(KeyringKeys(Arc::clone(&self.keys))));
         let notes = match generate_notes(&input, &claude) {
@@ -522,8 +566,32 @@ impl MeetingManager {
                 return Err(error);
             }
         };
-        // The generated title only fills an empty one, never a title the user typed.
+        // The suggestions wait for a click: nothing here changes a speaker label (ADR-0016).
+        let suggestions: Vec<(u32, NameSuggestion)> = notes
+            .speaker_suggestions
+            .iter()
+            .map(|s| {
+                let suggestion = NameSuggestion {
+                    name: s.name.clone(),
+                    reason: s.reason.clone(),
+                };
+                (s.person, suggestion)
+            })
+            .collect();
         self.with_store(|store| Ok(store.save_meeting_notes(id, template_id, &notes.markdown)?))?;
+        // A transcription that finished meanwhile renumbered "Person N": these suggestions point
+        // at the old numbers. The notes are saved either way.
+        let saved = self.with_store(|store| {
+            if store.meeting(id)?.transcribed_at != transcribed_at {
+                log::info!("meeting {id}: transcribed again during the notes; suggestions dropped");
+                return Ok(());
+            }
+            Ok(store.save_speaker_suggestions(id, &suggestions)?)
+        });
+        if let Err(e) = saved {
+            log::warn!("meeting {id}: speaker suggestions not stored: {e}");
+        }
+        // The generated title only fills an empty one, never a title the user typed.
         if let Some(title) = &notes.title {
             // The notes are saved; a title that fails to land only leaves the default one.
             if let Err(e) =
@@ -579,12 +647,17 @@ mod tests {
                 ..stored[0].clone()
             },
         ];
-        let notes = notes_segments(&numbered);
+        let notes = notes_segments(&numbered, &HashMap::new());
         assert_eq!(notes[0].id, 1);
         assert_eq!(notes[0].speaker, fala_notes::Speaker::Me);
         assert_eq!(notes[0].channel, fala_notes::Channel::Mic);
         assert_eq!(notes[1].id, 2);
         assert_eq!(notes[1].speaker, fala_notes::Speaker::Person(2));
+        // An applied name replaces "Person 2"; "me" never takes one.
+        let names = HashMap::from([(2, "Ana".to_string()), (1, "Bruno".to_string())]);
+        let named = notes_segments(&numbered, &names);
+        assert_eq!(named[0].speaker, fala_notes::Speaker::Me);
+        assert_eq!(named[1].speaker, fala_notes::Speaker::Named("Ana".into()));
         assert_eq!(line(&numbered[0]).person, None);
         assert_eq!(line(&numbered[1]).person, Some(2));
         assert_eq!(line(&numbered[1]).channel, "system");
@@ -685,13 +758,20 @@ mod tests {
             profile: "PM do Fala".into(),
             dictionary: Dictionary::new(["Fala"]),
         };
-        let input = notes_input(&record, &segments, &settings, template.clone());
+        let input = notes_input(
+            &record,
+            &segments,
+            &settings,
+            vec!["Ana".into()],
+            &HashMap::new(),
+            template.clone(),
+        );
         assert_eq!(input.title, "Planejamento");
         assert_eq!(input.date, "2026-10-02");
         assert_eq!(input.start_time, "14:02");
         assert_eq!(input.language, Language::PtBr);
         assert_eq!(input.profile, "PM do Fala");
-        assert!(input.participants.is_empty());
+        assert_eq!(input.participants, ["Ana"]);
         assert_eq!(input.dictionary, Dictionary::new(["Fala"]));
         assert_eq!(input.template, template);
         assert_eq!(input.annotations, "pauta: contrato");
@@ -709,7 +789,7 @@ mod tests {
             dictionary: Dictionary::default(),
         };
         assert_eq!(
-            notes_input(&draft, &[], &english, template).start_time,
+            notes_input(&draft, &[], &english, Vec::new(), &HashMap::new(), template).start_time,
             "13:50"
         );
         assert_eq!(

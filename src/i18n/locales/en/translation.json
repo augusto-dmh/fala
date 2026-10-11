@@ -1064,6 +1064,14 @@
       "me": "Me",
       "person": "Person {{n}}"
     },
+    "people": {
+      "participants": "Who was there",
+      "placeholder": "Ana Souza, Bruno Lima",
+      "hint": "Names only, separated by commas, no e-mail. They go to Anthropic with the transcript so the notes can suggest who each Person N is.",
+      "suggestions": "Name suggestions",
+      "suggestion": "Suggestion: {{person}} is {{name}}",
+      "apply": "Apply"
+    },
     "context": {
       "title": "Notes context",
       "description": "Sent to Anthropic with the transcript every time notes are generated.",

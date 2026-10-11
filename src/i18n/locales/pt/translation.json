@@ -1064,6 +1064,14 @@
       "me": "Eu",
       "person": "Pessoa {{n}}"
     },
+    "people": {
+      "participants": "Quem estava",
+      "placeholder": "Ana Souza, Bruno Lima",
+      "hint": "Só nomes, separados por vírgula, sem e-mail. Vão à Anthropic com a transcrição para as notas sugerirem quem é cada Pessoa N.",
+      "suggestions": "Sugestões de nome",
+      "suggestion": "Sugestão: {{person}} é {{name}}",
+      "apply": "Aplicar"
+    },
     "context": {
       "title": "Contexto das notas",
       "description": "Vai à Anthropic junto com a transcrição a cada geração de notas.",
