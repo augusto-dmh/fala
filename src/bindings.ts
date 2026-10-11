@@ -944,6 +944,17 @@ async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
 }
 },
 /**
+ * "Como estou indo": the last `days` days of dictation metrics.
+ */
+async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
  * recentes primeiro, como linhas do histórico.
  */
@@ -961,17 +972,6 @@ async historySearch(query: string) : Promise<Result<HistoryEntry[], string>> {
 async recoverHistoryEntry(id: number) : Promise<Result<HistoryEntry, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("recover_history_entry", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * "Como estou indo": the last `days` days of dictation metrics.
- */
-async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1175,6 +1175,36 @@ async setMeetingTranscriptionKey(key: string) : Promise<Result<MeetingKeys, Meet
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * The profile the notes LLM receives (ADR-0016), cut to `fala_notes::PROFILE_MAX_CHARS`.
+ */
+async changeNotesProfileSetting(profile: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_profile_setting", { profile }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeNotesLanguageSetting(language: NotesLanguage) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_language_setting", { language }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The dictionary as Scribe `keyterms` (ADR-0005).
+ */
+async changeMeetingKeytermsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_keyterms_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1241,7 +1271,15 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; 
+/**
+ * What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
+ */
+notes_profile?: string; notes_language?: NotesLanguage; 
+/**
+ * Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
+ */
+meeting_keyterms?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1473,6 +1511,11 @@ sha256: string | null } } |
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+/**
+ * The language meeting notes are written in (ADR-0016): pt-BR unless chosen, even when the
+ * call mixes languages; `App` follows the interface language.
+ */
+export type NotesLanguage = "pt-BR" | "en" | "app"
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**
