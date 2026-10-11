@@ -8,6 +8,7 @@
 //! LLM is out of the way and only touches text the LLM did not write.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use fala_core::{AppContext, Dictionary, Editor, Language, Transcript};
@@ -173,6 +174,22 @@ pub(crate) fn is_disabled_app(settings: &AppSettings, app: &AppContext) -> bool 
     })
 }
 
+/// Late LLM answers still on their way. They outlive the dictation, so the updater asks here
+/// before closing the app (ADR-0018).
+static LATE_EDITS: AtomicUsize = AtomicUsize::new(0);
+
+struct LateEditInFlight;
+
+impl Drop for LateEditInFlight {
+    fn drop(&mut self) {
+        LATE_EDITS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn late_edit_in_flight() -> bool {
+    LATE_EDITS.load(Ordering::SeqCst) > 0
+}
+
 /// Waits for the late answer and applies it to the saved entry; `announce` gets the updated
 /// entry. An LLM error, the late deadline or a deleted entry change nothing and only reach the
 /// log at `debug`. Blocks until the answer or the late deadline.
@@ -181,6 +198,8 @@ where
     A: FnOnce(&str) -> Result<HistoryEntry>,
     E: FnOnce(HistoryEntry),
 {
+    LATE_EDITS.fetch_add(1, Ordering::SeqCst);
+    let _in_flight = LateEditInFlight;
     let text = match late_edit.wait() {
         Ok(text) => text,
         Err(fallback) => {

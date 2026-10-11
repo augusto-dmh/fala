@@ -1,7 +1,8 @@
 {
   "tray": {
     "settings": "Configurações...",
-    "checkUpdates": "Verificar Atualizações...",
+    "checkUpdates": "Verificar atualizações...",
+    "restartToUpdate": "Reiniciar para atualizar",
     "copyLastTranscript": "Copiar o último ditado",
     "pasteLastTranscript": "Colar o último ditado",
     "unloadModel": "Descarregar modelo",

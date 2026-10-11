@@ -398,6 +398,18 @@ impl MeetingManager {
         self.lock().status.clone()
     }
 
+    /// What an update install must wait for (ADR-0018): a session that is not idle (recording,
+    /// paused, stopping or retaining its audio), and a transcription or notes job.
+    pub fn update_activity(&self) -> (bool, bool) {
+        let session = self.status().state != MeetingPhase::Idle;
+        let jobs = self
+            .work
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_busy();
+        (session, jobs)
+    }
+
     /// Records that the third-party notice was accepted, once; returns the stored date.
     pub fn accept_consent(&self) -> String {
         let mut settings = crate::settings::get_settings(&self.app);

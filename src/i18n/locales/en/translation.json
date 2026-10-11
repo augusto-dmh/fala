@@ -1,7 +1,8 @@
 {
   "tray": {
     "settings": "Settings...",
-    "checkUpdates": "Check for Updates...",
+    "checkUpdates": "Check for updates...",
+    "restartToUpdate": "Restart to update",
     "copyLastTranscript": "Copy Last Dictation",
     "pasteLastTranscript": "Paste Last Dictation",
     "unloadModel": "Unload Model",

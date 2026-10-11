@@ -565,13 +565,25 @@ async runKeyboardDiagnostic(durationSecs: number | null) : Promise<Result<Keyboa
     else return { status: "error", error: e  as any };
 }
 },
-async triggerUpdateCheck() : Promise<Result<null, string>> {
+async updateStatus() : Promise<UpdateStatus> {
+    return await TAURI_INVOKE("update_status");
+},
+async checkForUpdatesNow() : Promise<UpdateStatus> {
+    return await TAURI_INVOKE("check_for_updates_now");
+},
+async installUpdate() : Promise<Result<null, InstallRefusal>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("trigger_update_check") };
+    return { status: "ok", data: await TAURI_INVOKE("install_update") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * "Depois": that version is not offered again by the automatic checks.
+ */
+async dismissUpdate() : Promise<void> {
+    await TAURI_INVOKE("dismiss_update");
 },
 async showMainWindowCommand() : Promise<Result<null, string>> {
     try {
@@ -1388,13 +1400,15 @@ historyUpdatePayload: HistoryUpdatePayload,
 meetingProgress: MeetingProgress,
 meetingStatus: MeetingStatus,
 streamPhaseEvent: StreamPhaseEvent,
-streamTextEvent: StreamTextEvent
+streamTextEvent: StreamTextEvent,
+updateStatus: UpdateStatus
 }>({
 historyUpdatePayload: "history-update-payload",
 meetingProgress: "meeting-progress",
 meetingStatus: "meeting-status",
 streamPhaseEvent: "stream-phase-event",
-streamTextEvent: "stream-text-event"
+streamTextEvent: "stream-text-event",
+updateStatus: "update-status"
 })
 
 /** user-defined constants **/
@@ -1438,7 +1452,16 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * upgrading from before this key existed are blanked by the migration so they
  * see the current release's notes — see `apply_settings_migrations`.
  */
-whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
+whats_new_last_seen_version?: string; 
+/**
+ * The version "Depois" dismissed; the automatic checks do not offer it again (ADR-0018).
+ */
+dismissed_update_version?: string | null; 
+/**
+ * The notes of the update being installed, written just before the installer runs, so the
+ * What's New after the relaunch shows the same text as the release and `latest.json`.
+ */
+update_release_notes?: StoredReleaseNote | null; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
 /**
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
@@ -1616,6 +1639,10 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+/**
+ * Why installing now would lose work. Each one names what is running.
+ */
+export type InstallRefusal = "dictation" | "meeting_recording" | "post_processing"
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1875,6 +1902,10 @@ export type SoundTheme = "marimba" | "pop" | "custom"
  */
 export type SpeakerSuggestion = { person: number; name: string; reason: string }
 /**
+ * Release notes kept across the update's relaunch.
+ */
+export type StoredReleaseNote = { version: string; markdown: string }
+/**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
 export type StreamPhase = 
@@ -1913,6 +1944,31 @@ export type StreamWorkKind = "transcribing" | "polishing"
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+export type UpdatePhase = "idle" | "checking" | "up_to_date" | "downloading" | 
+/**
+ * Downloaded and verified; installs on click or on quit.
+ */
+"ready" | 
+/**
+ * Found, but this copy cannot install it (portable or development build).
+ */
+"available" | "installing" | "failed"
+/**
+ * What the About section and the tray show; emitted on every change.
+ */
+export type UpdateStatus = { phase: UpdatePhase; 
+/**
+ * The version on offer, from `latest.json`.
+ */
+version: string | null; downloaded: number; total: number | null; 
+/**
+ * The installer in the manifest, for a portable copy to download by hand.
+ */
+installer_url: string | null; 
+/**
+ * Set when the last install attempt was refused; cleared by the next change.
+ */
+refusal: InstallRefusal | null; error: string | null }
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 

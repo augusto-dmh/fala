@@ -62,6 +62,8 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    /// A downloaded update waits for "Reiniciar para atualizar" (ADR-0018).
+    update_ready: bool,
     /// Which dictation language item is checked, from [`tray_language_choice`].
     language_choice: Option<&'static str>,
     /// Input devices for the microphone submenu, from the [`refresh_microphones`] cache.
@@ -474,6 +476,9 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             downloaded_models,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
+            update_ready: app
+                .try_state::<crate::app_update::UpdateManager>()
+                .is_some_and(|m| m.ready_version().is_some()),
             language_choice: tray_language_choice(&settings.selected_language),
             microphones: app
                 .try_state::<TrayState>()
@@ -598,6 +603,9 @@ fn version_label() -> String {
     }
 }
 
+/// The tray item that installs a downloaded update.
+pub const UPDATE_RESTART_ID: &str = "update_restart";
+
 /// Whether the tray offers "Check for updates". Process-constant: the
 /// compile-time `UPDATER_ENABLED` and the `FALA_DISABLE_UPDATER` env flag.
 fn check_updates_item_visible() -> bool {
@@ -648,13 +656,24 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         true,
         settings_accelerator,
     )?;
-    let check_updates_i = MenuItem::with_id(
-        app,
-        "check_updates",
-        &strings.check_updates,
-        inputs.update_checks_enabled,
-        None::<&str>,
-    )?;
+    // A downloaded update takes the place of "check for updates".
+    let check_updates_i = if inputs.update_ready {
+        MenuItem::with_id(
+            app,
+            UPDATE_RESTART_ID,
+            &strings.restart_to_update,
+            true,
+            None::<&str>,
+        )?
+    } else {
+        MenuItem::with_id(
+            app,
+            "check_updates",
+            &strings.check_updates,
+            inputs.update_checks_enabled,
+            None::<&str>,
+        )?
+    };
     let last_dictation_items = last_dictation_menu_ids(inputs.busy)
         .iter()
         .map(|id| {
@@ -888,6 +907,7 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            update_ready: false,
             language_choice: Some("pt-BR"),
             microphones: Microphones {
                 names: vec!["Fifine".to_string(), "Realtek".to_string()],
@@ -970,6 +990,15 @@ mod tests {
         let updater_enabled = settings::UPDATER_ENABLED;
         assert!(!updater_enabled);
         assert!(!check_updates_item_visible());
+    }
+
+    #[test]
+    fn a_ready_update_changes_the_menu() {
+        let ready = MenuInputs {
+            update_ready: true,
+            ..inputs(false)
+        };
+        assert_ne!(ready, inputs(false));
     }
 
     #[test]

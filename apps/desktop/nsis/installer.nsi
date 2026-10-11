@@ -849,8 +849,12 @@ Function .onInstSuccess
   ${OrIf} ${Silent}
     ${GetOptions} $CMDLINE "/R" $R0
     ${IfNot} ${Errors}
-      ${GetOptions} $CMDLINE "/ARGS" $R0
-      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      ; Fala: an update installed on quit passes /NORELAUNCH, so the app stays closed.
+      ${GetOptions} $CMDLINE "/NORELAUNCH" $R0
+      ${If} ${Errors}
+        ${GetOptions} $CMDLINE "/ARGS" $R0
+        nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 FunctionEnd

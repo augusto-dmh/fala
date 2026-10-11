@@ -1,4 +1,5 @@
 mod actions;
+mod app_update;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -333,7 +334,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 let settings = settings::get_settings(app);
                 if settings::update_checks_effectively_enabled(&settings) {
                     show_main_window(app);
-                    let _ = app.emit("check-for-updates", ());
+                    tauri::async_runtime::spawn(app_update::check(app.clone(), true));
+                }
+            }
+            tray::UPDATE_RESTART_ID => {
+                // A refusal names what is running; the window shows it.
+                if app_update::install(app, true).is_err() {
+                    show_main_window(app);
                 }
             }
             "copy_last_transcript" => {
@@ -468,18 +475,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Offer to record when a call app opens the mic (F8); only asks, never records.
     call_prompt::watch::spawn(app_handle);
-}
 
-#[tauri::command]
-#[specta::specta]
-fn trigger_update_check(app: AppHandle) -> Result<(), String> {
-    let settings = settings::get_settings(&app);
-    if !settings::update_checks_effectively_enabled(&settings) {
-        return Ok(());
-    }
-    app.emit("check-for-updates", ())
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    // Signed self-update: check at startup and every ~6 h (ADR-0018).
+    app_update::spawn_checks(app_handle);
 }
 
 #[tauri::command]
@@ -810,7 +808,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::fala_keys::stop_fala_keys_recording,
             secure_input::get_secure_input_status,
             secure_input::run_keyboard_diagnostic,
-            trigger_update_check,
+            app_update::update_status,
+            app_update::check_for_updates_now,
+            app_update::install_update,
+            app_update::dismiss_update,
             show_main_window_command,
             commands::cancel_operation,
             commands::is_portable,
@@ -914,6 +915,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
             meeting::MeetingStatus,
             meeting::pipeline::MeetingProgress,
+            app_update::UpdateStatus,
         ])
 }
 
@@ -1301,6 +1303,8 @@ pub fn run(cli_args: CliArgs) {
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
             }
+            // A downloaded update installs on quit, unless a capture is running (ADR-0018).
+            app_update::install_on_quit(app);
         }
         _ => {}
     });
