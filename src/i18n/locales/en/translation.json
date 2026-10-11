@@ -304,6 +304,19 @@
         "remove": "Remove {{app}}"
       }
     },
+    "meetings": {
+      "title": "Meetings",
+      "callPrompt": {
+        "label": "Ask when a call starts",
+        "description": "When Teams, Zoom, WhatsApp or a browser opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
+      },
+      "mutedApps": {
+        "title": "Don't ask in these apps",
+        "description": "Calls in these apps show no prompt.",
+        "add": "Add app",
+        "remove": "Ask again in {{app}}"
+      }
+    },
     "sound": {
       "title": "Sound",
       "microphone": {
@@ -800,6 +813,21 @@
     },
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused"
+  },
+  "callPrompt": {
+    "offer": {
+      "title": "Looks like a call in {{app}}",
+      "body": "Record the meeting?"
+    },
+    "askStop": {
+      "title": "{{app}} let go of the microphone",
+      "body": "Stop recording?"
+    },
+    "record": "Record",
+    "notNow": "Not now",
+    "muteApp": "Don't ask in {{app}}",
+    "stop": "Stop",
+    "keepRecording": "Keep recording"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
