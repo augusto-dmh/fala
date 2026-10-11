@@ -10,6 +10,7 @@ mod clipboard;
 mod commands;
 mod dictation_capture;
 mod dictation_metrics;
+mod dictionary;
 mod helpers;
 mod input;
 mod llm_auto;
@@ -762,6 +763,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::delete_post_process_prompt,
             shortcut::set_post_process_selected_prompt,
             shortcut::update_custom_words,
+            dictionary::update_dictionary_replacements,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
             shortcut::suspend_all_bindings,
