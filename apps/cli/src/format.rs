@@ -26,7 +26,7 @@ pub struct FormatArgs {
     /// Idioma do ditado: pt-BR ou en.
     #[arg(long, default_value = "pt-BR")]
     lang: String,
-    /// Arquivo do dicionário pessoal, um termo por linha.
+    /// Arquivo do dicionário pessoal, um termo por linha; `falado -> escrito` é um par.
     #[arg(long)]
     dictionary: Option<PathBuf>,
     /// App onde o LLM fica desligado (repetível; compara sem caixa).
@@ -52,7 +52,7 @@ pub fn run(
     };
     let dictionary = match &args.dictionary {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(content) => Dictionary::new(content.lines()),
+            Ok(content) => parse_dictionary(&content),
             Err(error) => {
                 let _ = writeln!(
                     stderr,
@@ -101,6 +101,14 @@ pub fn run(
 
 /// O cliente com a chave `gemini` do keyring, ou o código de saída: 1 keyring indisponível,
 /// 2 sem chave. A mensagem vai para o `stderr`; a chave nunca.
+/// Um termo por linha; uma linha com ` -> ` é um par "falado → escrito".
+fn parse_dictionary(content: &str) -> Dictionary {
+    let (pairs, terms): (Vec<&str>, Vec<&str>) =
+        content.lines().partition(|line| line.contains(" -> "));
+    Dictionary::new(terms)
+        .with_replacements(pairs.into_iter().filter_map(|line| line.split_once(" -> ")))
+}
+
 pub(crate) fn gemini_from_store(
     store: &dyn SecretStore,
     model: &str,
@@ -198,15 +206,15 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("fala-cli-format-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let dict = dir.join("dicionario.txt");
-        std::fs::write(&dict, "ChargeBee\n").unwrap();
+        std::fs::write(&dict, "ChargeBee\nfala sql -> Fala.sqlite\n").unwrap();
         let out = format(
             &MemoryStore::default(),
             &["--dictionary", dict.to_str().unwrap()],
-            "hã eu eu eu acho que a charge bee",
+            "hã eu eu eu acho que a charge bee e o fala sql",
         );
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(out.code, 0);
-        assert_eq!(out.stdout, "Eu acho que a ChargeBee\n");
+        assert_eq!(out.stdout, "Eu acho que a ChargeBee e o Fala.sqlite\n");
         assert!(out.stderr.contains("editor: regras"), "{}", out.stderr);
     }
 
