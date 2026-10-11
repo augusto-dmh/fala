@@ -4,7 +4,7 @@ use crate::audio_feedback::{
     play_error_chime, play_feedback_sound, play_feedback_sound_blocking, SoundType,
 };
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error};
-use crate::dictation_capture::VadPolicy;
+use crate::dictation_capture::{MicSignal, VadPolicy};
 use crate::llm_auto::{self, AutoFormatted};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
@@ -25,7 +25,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
@@ -46,6 +46,39 @@ fn start_error_kind(err: &str) -> (&'static str, NoticeKind) {
         ("no_input_device", NoticeKind::NoMic)
     } else {
         ("unknown", NoticeKind::MicFailed)
+    }
+}
+
+/// The last microphone named over the pill in this run.
+static ANNOUNCED_MIC: Mutex<Option<String>> = Mutex::new(None);
+
+/// Whether the microphone that opened is named over the pill: the first one in this run,
+/// then each time it differs from the last one named.
+fn announce_mic(last: &mut Option<String>, current: &str) -> bool {
+    if last.as_deref() == Some(current) {
+        return false;
+    }
+    *last = Some(current.to_string());
+    true
+}
+
+/// What the stop path does with a finished recording.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StopOutcome {
+    /// The microphone delivered only silence: say so, keep nothing.
+    Muted,
+    /// The VAD kept no speech: drop it silently.
+    Discard,
+    Transcribe,
+}
+
+fn stop_outcome(signal: MicSignal, has_samples: bool) -> StopOutcome {
+    if signal == MicSignal::Silent {
+        StopOutcome::Muted
+    } else if !has_samples {
+        StopOutcome::Discard
+    } else {
+        StopOutcome::Transcribe
     }
 }
 
@@ -659,6 +692,11 @@ impl ShortcutAction for TranscribeAction {
         // doesn't stream (or whose capability is not known yet) gets the compact
         // pill instead of an oversized transparent live window.
         let overlay_started = Instant::now();
+        let compact_pill = match settings.overlay_style {
+            OverlayStyle::Live => !model_supports_streaming,
+            OverlayStyle::Minimal => true,
+            OverlayStyle::None => false,
+        };
         match settings.overlay_style {
             OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
@@ -727,6 +765,17 @@ impl ShortcutAction for TranscribeAction {
                         rm_clone.apply_mute();
                     }
                 });
+
+                // The first recording with a microphone other than the last one named
+                // shows its name over the compact pill.
+                if let Some(name) = rm.microphone_name().filter(|_| compact_pill) {
+                    if ANNOUNCED_MIC
+                        .lock()
+                        .is_ok_and(|mut last| announce_mic(&mut last, &name))
+                    {
+                        utils::show_notice(app, NoticeKind::MicInUse, Some(name), false);
+                    }
+                }
             }
             Err(e) => {
                 debug!("Failed to start recording: {}", e);
@@ -815,7 +864,7 @@ impl ShortcutAction for TranscribeAction {
             );
 
             let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
+            if let Some((samples, signal)) = rm.stop_recording(&binding_id, cancel_generation) {
                 debug!(
                     "Recording stopped and samples retrieved in {:?}, sample count: {}",
                     stop_recording_time.elapsed(),
@@ -830,7 +879,13 @@ impl ShortcutAction for TranscribeAction {
                     return;
                 }
 
-                if samples.is_empty() {
+                let outcome = stop_outcome(signal, !samples.is_empty());
+                if outcome == StopOutcome::Muted {
+                    debug!("Recording heard only silence; the microphone looks muted");
+                    tm.cancel_stream();
+                    utils::show_notice(&ah, NoticeKind::MicMuted, None, true);
+                    set_tray_state(&ah, TrayIconState::Idle);
+                } else if outcome == StopOutcome::Discard {
                     debug!("Recording produced no audio samples; skipping persistence");
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
@@ -903,6 +958,16 @@ impl ShortcutAction for TranscribeAction {
                                 transcription_time.elapsed(),
                                 utils::redact_text(&transcription)
                             );
+
+                            if is_blank_transcription(&transcription) {
+                                debug!("Transcription is empty; nothing to paste or keep");
+                                if let Err(e) = std::fs::remove_file(&wav_path_for_verify) {
+                                    debug!("Could not remove the empty dictation's WAV: {e}");
+                                }
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                return;
+                            }
 
                             if post_process {
                                 if use_streaming_overlay {
@@ -1176,9 +1241,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, deliver_unless_cancelled, is_blank_transcription,
-        should_use_streaming_overlay, start_error_kind, strip_think_block,
+        announce_mic, complete_unless_cancelled, deliver_unless_cancelled, is_blank_transcription,
+        should_use_streaming_overlay, start_error_kind, stop_outcome, strip_think_block,
+        StopOutcome,
     };
+    use crate::dictation_capture::MicSignal;
     use crate::settings::OverlayStyle;
     use crate::utils::NoticeKind;
     use std::future;
@@ -1222,6 +1289,41 @@ mod tests {
             start_error_kind("device is busy"),
             ("unknown", NoticeKind::MicFailed)
         );
+    }
+
+    #[test]
+    fn announce_mic_only_on_change() {
+        let mut last = None;
+        assert!(announce_mic(&mut last, "Fifine"), "first one");
+        assert!(!announce_mic(&mut last, "Fifine"), "same one");
+        assert!(announce_mic(&mut last, "Headset"), "another one");
+        assert!(announce_mic(&mut last, "Fifine"), "back to the first");
+    }
+
+    #[test]
+    fn stop_outcome_table() {
+        for has_samples in [false, true] {
+            assert_eq!(
+                stop_outcome(MicSignal::Silent, has_samples),
+                StopOutcome::Muted,
+                "silent, samples: {has_samples}"
+            );
+        }
+        for signal in [MicSignal::Heard, MicSignal::Unknown] {
+            assert_eq!(
+                stop_outcome(signal, false),
+                StopOutcome::Discard,
+                "{signal:?}"
+            );
+            assert_eq!(
+                stop_outcome(signal, true),
+                StopOutcome::Transcribe,
+                "{signal:?}"
+            );
+        }
+        assert!(is_blank_transcription(""));
+        assert!(is_blank_transcription(" \n"));
+        assert!(!is_blank_transcription("a"));
     }
 
     #[test]

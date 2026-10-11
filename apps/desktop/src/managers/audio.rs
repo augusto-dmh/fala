@@ -1,5 +1,5 @@
 use crate::audio_toolkit::list_input_devices;
-use crate::dictation_capture::{DictationRecorder, VadPolicy};
+use crate::dictation_capture::{DictationRecorder, MicSignal, VadPolicy};
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
 use crate::settings::{get_settings, write_settings, AppSettings};
@@ -917,7 +917,12 @@ impl AudioRecordingManager {
         self.cancel_generation.load(Ordering::Acquire) != generation
     }
 
-    pub fn stop_recording(&self, binding_id: &str, cancel_generation: u64) -> Option<Vec<f32>> {
+    /// The recording's samples at 16 kHz and what the microphone delivered while it ran.
+    pub fn stop_recording(
+        &self,
+        binding_id: &str,
+        cancel_generation: u64,
+    ) -> Option<(Vec<f32>, MicSignal)> {
         self.invalidate_recording_readiness();
         let mut state = self.state.lock().unwrap();
 
@@ -950,17 +955,17 @@ impl AudioRecordingManager {
                     }
                 }
 
-                let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                let (samples, signal) = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     match rec.stop() {
-                        Ok(buf) => buf,
+                        Ok(stopped) => stopped,
                         Err(e) => {
                             error!("stop() failed: {e}");
-                            Vec::new()
+                            (Vec::new(), MicSignal::Unknown)
                         }
                     }
                 } else {
                     error!("Recorder not available");
-                    Vec::new()
+                    (Vec::new(), MicSignal::Unknown)
                 };
 
                 *self.is_recording.lock().unwrap() = false;
@@ -986,14 +991,23 @@ impl AudioRecordingManager {
                 if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
                     let mut padded = samples;
                     padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
-                    Some(padded)
+                    Some((padded, signal))
                 } else {
-                    Some(samples)
+                    Some((samples, signal))
                 }
             }
             _ => None,
         }
     }
+    /// The name of the open microphone, once the stream is open.
+    pub fn microphone_name(&self) -> Option<String> {
+        self.recorder
+            .lock()
+            .ok()?
+            .as_ref()
+            .and_then(DictationRecorder::device_name)
+    }
+
     pub fn is_recording(&self) -> bool {
         // Lock-free: mirrors the `state` {Recording, Stopping} membership via
         // an atomic maintained by `set_state()`. Polled from the webview/main

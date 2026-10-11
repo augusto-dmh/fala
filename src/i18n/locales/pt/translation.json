@@ -786,10 +786,14 @@
     "loadingModel": "Carregando modelo…",
     "recordingLoadingModel": "Gravando, carregando modelo…",
     "notice": {
+      "micInUse": "Usando {{device}}",
+      "micMuted": "O microfone está mudo?",
       "micDenied": "Sem permissão para usar o microfone",
       "noMic": "Nenhum microfone encontrado",
       "micFailed": "Não deu para abrir o microfone",
-      "modelMissing": "Nenhum modelo de voz baixado"
+      "modelMissing": "Nenhum modelo de voz baixado",
+      "chooseMic": "Escolher microfone",
+      "resolve": "Resolver"
     },
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada"
