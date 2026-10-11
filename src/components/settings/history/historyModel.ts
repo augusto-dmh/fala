@@ -19,6 +19,11 @@ export function editAction(entry: HistoryEntry): EditAction | null {
   return d.showing === "final" ? "undo" : "redo";
 }
 
+/** A long dictation pasted with the AI text in some blocks and the rules in others. */
+export function partialAi(entry: HistoryEntry): boolean {
+  return entry.llm_partial;
+}
+
 /** The app the text went to, when known. */
 export function appName(entry: HistoryEntry): string | null {
   return entry.dictation?.app_name ?? null;
