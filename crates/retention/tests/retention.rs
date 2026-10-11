@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use fala_meeting::SessionId;
 use fala_retention::{
-    delete_session_audio, retain_wav, session_audio_dir, validate_opus, RetentionError,
+    decode_range, delete_session_audio, retain_wav, session_audio_dir, validate_opus,
+    RetentionError,
 };
 
 const RATE: u32 = 48_000;
@@ -338,5 +339,86 @@ mod delete {
         let tmp = tempfile::tempdir().unwrap();
         let c = SessionId::from_parts(1_727_000_000_000, 3);
         assert!(!delete_session_audio(tmp.path(), c).unwrap());
+    }
+}
+
+mod range {
+    use super::*;
+
+    const S: u64 = RATE as u64;
+    /// Um quadro Opus: a tolerância de duração e de posição.
+    const FRAME: u64 = 960;
+
+    /// 10 s de silêncio digital com bipes de 1 kHz e 100 ms: no mic em 2,0 s e 6,5 s, no
+    /// sistema em 4,0 s.
+    fn beeps(f: &Fixture) {
+        let beep = |i: u32, at: f32| {
+            let t = i as f32 / RATE as f32;
+            if (at..at + 0.1).contains(&t) {
+                0.5 * (2.0 * std::f32::consts::PI * 1_000.0 * t).sin()
+            } else {
+                0.0
+            }
+        };
+        write_wav(&f.wav, RATE, 2, 16, 10 * RATE, |i, c| {
+            if c == 0 {
+                beep(i, 2.0) + beep(i, 6.5)
+            } else {
+                beep(i, 4.0)
+            }
+        });
+        retain_wav(&f.wav, &f.dir).unwrap();
+    }
+
+    /// A primeira amostra acima de 10% da escala.
+    fn onset(pcm: &[i16]) -> u64 {
+        pcm.iter().position(|s| s.unsigned_abs() > 3_277).unwrap() as u64
+    }
+
+    fn near(actual: u64, expected: u64) -> bool {
+        actual.abs_diff(expected) <= FRAME
+    }
+
+    #[test]
+    fn beep_lands_where_it_was() {
+        let f = fixture();
+        beeps(&f);
+        let mic = f.dir.join("mic.opus");
+        let sys = f.dir.join("sys.opus");
+        // Do começo do arquivo, sem pular page nenhum.
+        let pcm = decode_range(&mic, 3 * S / 2, 3 * S).unwrap();
+        assert!(near(pcm.len() as u64, 3 * S / 2), "{}", pcm.len());
+        assert!(near(onset(&pcm), S / 2), "bipe em {}", onset(&pcm));
+        // Do meio, depois de pular pages e com pré-rolagem.
+        let pcm = decode_range(&mic, 6 * S, 7 * S).unwrap();
+        assert!(near(pcm.len() as u64, S), "{}", pcm.len());
+        assert!(near(onset(&pcm), S / 2), "bipe em {}", onset(&pcm));
+        let pcm = decode_range(&sys, 7 * S / 2, 9 * S / 2).unwrap();
+        assert!(near(onset(&pcm), S / 2), "bipe em {}", onset(&pcm));
+    }
+
+    #[test]
+    fn silence_comes_back_zero() {
+        let f = fixture();
+        beeps(&f);
+        let pcm = decode_range(&f.dir.join("mic.opus"), 7 * S / 2, 5 * S).unwrap();
+        assert!(near(pcm.len() as u64, 3 * S / 2), "{}", pcm.len());
+        let loudest = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap();
+        // O decoder deixa no máximo 1 ou 2 LSB de ruído no silêncio digital (−84 dBFS).
+        assert!(loudest <= 2, "silêncio com pico {loudest}");
+    }
+
+    #[test]
+    fn range_is_clipped_to_the_file() {
+        let f = fixture();
+        beeps(&f);
+        let mic = f.dir.join("mic.opus");
+        let tail = decode_range(&mic, 19 * S / 2, 20 * S).unwrap();
+        assert_eq!(tail.len() as u64, S / 2);
+        assert!(decode_range(&mic, 11 * S, 12 * S).unwrap().is_empty());
+        assert!(matches!(
+            decode_range(&f.wav, 0, S),
+            Err(RetentionError::Io { .. })
+        ));
     }
 }

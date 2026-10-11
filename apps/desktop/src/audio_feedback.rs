@@ -26,9 +26,16 @@ const CHIME_PLAY_MAX: Duration = Duration::from_secs(10);
 /// on it and starts a fresh thread. The stuck one is left behind with its stream.
 const CHIME_STALL: Duration = Duration::from_secs(15);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundType {
     Start,
     Stop,
+    /// A meeting starts recording: the theme's start sound.
+    MeetingStart,
+    /// A meeting recording pauses.
+    MeetingPause,
+    /// A paused meeting records again.
+    MeetingResume,
 }
 
 fn resolve_sound_path(
@@ -47,11 +54,20 @@ fn resolve_sound_path(
 }
 
 fn get_sound_path(settings: &AppSettings, sound_type: SoundType) -> String {
+    // A custom theme has only its two sounds: the meeting pauses on the stop one and resumes on
+    // the start one.
     match (settings.sound_theme, sound_type) {
-        (SoundTheme::Custom, SoundType::Start) => "custom_start.wav".to_string(),
-        (SoundTheme::Custom, SoundType::Stop) => "custom_stop.wav".to_string(),
-        (_, SoundType::Start) => settings.sound_theme.to_start_path(),
+        (
+            SoundTheme::Custom,
+            SoundType::Start | SoundType::MeetingStart | SoundType::MeetingResume,
+        ) => "custom_start.wav".to_string(),
+        (SoundTheme::Custom, SoundType::Stop | SoundType::MeetingPause) => {
+            "custom_stop.wav".to_string()
+        }
+        (_, SoundType::Start | SoundType::MeetingStart) => settings.sound_theme.to_start_path(),
         (_, SoundType::Stop) => settings.sound_theme.to_stop_path(),
+        (_, SoundType::MeetingPause) => settings.sound_theme.to_meeting_pause_path(),
+        (_, SoundType::MeetingResume) => settings.sound_theme.to_meeting_resume_path(),
     }
 }
 
@@ -469,6 +485,41 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::{mpsc, Arc};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn every_theme_has_its_meeting_sounds() {
+        use super::{get_sound_path, SoundType};
+        use crate::settings::{get_default_settings, SoundTheme};
+        let resources = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut settings = get_default_settings();
+        for theme in [SoundTheme::Marimba, SoundTheme::Pop] {
+            settings.sound_theme = theme;
+            let start = get_sound_path(&settings, SoundType::Start);
+            assert_eq!(get_sound_path(&settings, SoundType::MeetingStart), start);
+            let pause = get_sound_path(&settings, SoundType::MeetingPause);
+            let resume = get_sound_path(&settings, SoundType::MeetingResume);
+            assert!(pause.ends_with("_meeting_pause.wav"), "{pause}");
+            assert!(resume.ends_with("_meeting_resume.wav"), "{resume}");
+            for path in [start, pause, resume] {
+                let file = resources.join(&path);
+                let wav = std::fs::read(&file).unwrap_or_default();
+                assert!(wav.starts_with(b"RIFF") && wav.len() > 1_000, "{path}");
+            }
+        }
+        settings.sound_theme = SoundTheme::Custom;
+        assert_eq!(
+            get_sound_path(&settings, SoundType::MeetingPause),
+            "custom_stop.wav"
+        );
+        assert_eq!(
+            get_sound_path(&settings, SoundType::MeetingResume),
+            "custom_start.wav"
+        );
+        assert_eq!(
+            get_sound_path(&settings, SoundType::MeetingStart),
+            "custom_start.wav"
+        );
+    }
 
     #[test]
     fn chime_stream_is_reused_while_the_device_stays_the_same() {

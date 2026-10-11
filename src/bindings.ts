@@ -117,6 +117,14 @@ async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changePillIdleVisibleSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pill_idle_visible_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeDebugModeSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_debug_mode_setting", { enabled }) };
@@ -331,6 +339,14 @@ async changeLlmDisabledAppsSetting(apps: string[]) : Promise<Result<string[], st
     else return { status: "error", error: e  as any };
 }
 },
+async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cleanup_level_setting", { level }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Temporarily unregister all bindings while the user is recording a
  * shortcut in the UI. This avoids firing actions while keys are recorded.
@@ -357,6 +373,22 @@ async resumeAllBindings() : Promise<Result<null, string>> {
 async changeMuteWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_mute_while_recording_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changePauseMediaWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pause_media_while_recording_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changePauseMediaOnMeetingSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pause_media_on_meeting_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -773,6 +805,26 @@ async openMicrophoneTroubleshooting() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The overlay page mounted (at startup, or after a reload): from here on it hears
+ * `show-overlay`, so an idle pill shown before it listened is shown again.
+ */
+async pillOverlayReady() : Promise<void> {
+    await TAURI_INVOKE("pill_overlay_ready");
+},
+/**
+ * The cursor entered or left the idle pill: the window grows for the shortcut card or shrinks
+ * back, without taking focus.
+ */
+async setIdlePillHover(hover: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_idle_pill_hover", { hover });
+},
+/**
+ * A click on the idle pill opens the main window on Início.
+ */
+async openHomeFromPill() : Promise<void> {
+    await TAURI_INVOKE("open_home_from_pill");
+},
 async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };
@@ -1175,49 +1227,6 @@ async setMeetingTranscriptionKey(key: string) : Promise<Result<MeetingKeys, Meet
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * The card the prompt window should show now, for a window that just loaded.
- */
-async callPromptCurrent() : Promise<CallPromptPayload | null> {
-    return await TAURI_INVOKE("call_prompt_current");
-},
-/**
- * The person answered the card, or its countdown ran out. Async so that starting a recording
- * stays off the main thread, like `start_meeting`.
- */
-async answerCallPrompt(answer: CallPromptAnswer) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("answer_call_prompt", { answer }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async callPromptApps() : Promise<CallAppInfo[]> {
-    return await TAURI_INVOKE("call_prompt_apps");
-},
-/**
- * "Avisar quando uma chamada começar"; off, the mic holders are not read at all.
- */
-async changeCallPromptEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_call_prompt_enabled_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * "Não avisar nestes apps"; returns what was stored (known ids, once each).
- */
-async changeCallPromptMutedAppsSetting(apps: string[]) : Promise<Result<string[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_call_prompt_muted_apps_setting", { apps }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 }
 }
 
@@ -1284,7 +1293,15 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+/**
+ * Pause the media playing on the PC while dictating; off by default.
+ */
+pause_media_while_recording?: boolean; 
+/**
+ * Pause the media playing on the PC while a meeting records; on by default.
+ */
+pause_media_on_meeting?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1308,6 +1325,11 @@ vad_backend?: VadBackend;
  */
 overlay_style?: OverlayStyle; 
 /**
+ * Keep a quiet pill on screen between dictations, with the shortcut on hover. Windows only,
+ * and only while `overlay_style` shows a pill.
+ */
+pill_idle_visible?: boolean; 
+/**
  * The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
  */
 llm_enabled?: boolean; 
@@ -1316,44 +1338,23 @@ llm_enabled?: boolean;
  */
 llm_disabled_apps?: string[]; 
 /**
+ * How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
+ */
+cleanup_level?: CleanupLevel; 
+/**
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
  */
-meeting_consent_accepted_at?: string | null; 
-/**
- * "Avisar quando uma chamada começar" (F8 `meeting-detection`): offer to record when a call
- * app opens the mic. Off, the mic holders are not read.
- */
-call_prompt_enabled?: boolean; 
-/**
- * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
- */
-call_prompt_muted_apps?: string[] }
+meeting_consent_accepted_at?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 /**
- * A call app the detector knows, for the settings list.
+ * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
+ * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
  */
-export type CallAppInfo = { id: string; name: string }
-/**
- * The person's answer, or the countdown running out.
- */
-export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "expired"
-export type CallPromptKind = 
-/**
- * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
- */
-"offer" | 
-/**
- * "Parar a gravação?" with [Parar] [Continuar].
- */
-"ask_stop"
-/**
- * What the card shows.
- */
-export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; countdown_ms: number }
+export type CleanupLevel = "verbatim" | "light" | "medium" | "heavy"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 /**
@@ -1430,7 +1431,11 @@ export type MeetingDetail = { summary: MeetingSummary;
 /**
  * Notes typed before (agenda) and during the call.
  */
-annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null }
+annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null; 
+/**
+ * Both retained Opus files are on disk, so a transcript line can be played.
+ */
+audio_available: boolean }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.

@@ -20,6 +20,7 @@ import { Rail, type RailDestination } from "./components/Rail";
 import { HomePage } from "./components/HomePage";
 import { DictionaryPage } from "./components/DictionaryPage";
 import { MeetingsPage } from "./components/meeting/MeetingsPage";
+import { StatsPage } from "./components/stats/StatsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { type SettingsView } from "./components/settingsNav";
 import { WhatsNewGate } from "./components/whats-new";
@@ -233,6 +234,16 @@ function App() {
     };
   }, []);
 
+  // A click on the idle pill opens Início.
+  useEffect(() => {
+    const unlisten = listen("open-home", () => {
+      setDestination("home");
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const revealMainWindowForPermissions = async () => {
     try {
       await commands.showMainWindowCommand();
@@ -374,6 +385,7 @@ function App() {
               {destination === "home" && <HomePage />}
               {destination === "dictionary" && <DictionaryPage />}
               {destination === "meetings" && <MeetingsPage />}
+              {destination === "stats" && <StatsPage />}
               {destination === "settings" && (
                 <SettingsPage
                   view={settingsView}
