@@ -3,7 +3,7 @@
 Profile: light
 Plan: `.specs/features/meeting-panel/plan.md`
 
-38 checks in 6 slices · 7 one-way doors · 2 open, of which 0 block (1 blocks go-live)
+43 checks in 6 slices (C39-C42 added after verification round 1, C43 after round 2) · 7 one-way doors · 2 open, of which 0 block (1 blocks go-live)
 
 Todo `cargo` roda com `CARGO_TARGET_DIR=/home/augusto/projects/fala/target CARGO_BUILD_JOBS=2`, um por vez, depois do guard de RAM (`free -m`). As provas do frontend rodam no padrão do repo (`bun <arquivo>.test.tsx`, que imprime `<check> ok` e sai com erro na primeira falha). "manual" marca o que só se vê com o app aberto; o Linux roda o `tauri dev`, e o que só o Windows mostra fica `TODO(windows)`.
 
@@ -136,7 +136,7 @@ Proof: `bun src/components/meeting/meeting.test.tsx` (check `C33`)
 Proof: `bash .specs/features/meeting-panel/proofs/no_content_in_logs.sh`
 
 **C35** - Progresso e cancelamento da transcrição vêm do `fala-asr` sem mudança: o `on_progress` vira `MeetingProgressEvent` e o cancelamento usa o mesmo `CancelToken` (AC 30)
-Proof: `cargo test -p fala-asr --test meeting_scribe progress::heartbeat_every_second_while_waiting -- --exact`
+Proof: `cargo test -p fala-asr --test meeting_scribe progress::reports_at_least_every_second -- --exact`
 Proof: `cargo test -p fala-asr --test meeting_scribe progress::cancel_returns_within_a_second -- --exact`
 Proof: `bash .specs/features/meeting-panel/proofs/cancel_token_wired.sh`
 
@@ -147,6 +147,23 @@ Proof: `bun src/components/meeting/meeting.test.tsx` (checks `C36-empty`, `C36-l
 Proof: `bun run lint`
 Proof: `bun run check:translations`
 Proof: `bunx tsc --noEmit`
+
+### Round 1 additions - defects the verifier found outside the checks
+
+**C39** - `MeetingManager::retain` holds the `retaining` lock before it looks at the WAV, so the stop's worker and a "Transcrever" click never convert the same session at once (ADR-0014; verifier F1)
+Proof: `bash .specs/features/meeting-panel/proofs/round1_fixes.sh`
+
+**C40** - `start_microphone_stream` refuses first while a meeting records, so no path (always-on toggle, device change) opens a second stream on the meeting mic (ADR-0015; verifier F2)
+Proof: `bash .specs/features/meeting-panel/proofs/round1_fixes.sh`
+
+**C41** - `start` writes the session row only after `recorder::spawn` succeeded: a device that fails leaves no session (verifier F6)
+Proof: `bash .specs/features/meeting-panel/proofs/round1_fixes.sh`
+
+**C42** - The open session shows no notes field while it records (one field per session), reloads when the recording state changes, and the tray's notice request is left for the page only when the page is not open (the app checks the current section; the page consumes the request on mount and never in its listener), so the notice never comes back after it was accepted (verifier F3, F8; reworded in round 2, see Handoff)
+Proof: `bun src/components/meeting/meeting.test.tsx` (check `C42`)
+
+**C43** - Switching to "always-on microphone" during a meeting stores the mode without opening the mic (it opens when the meeting ends); the tray's pause, resume and stop run off the event loop; a capture that fails removes its empty `audio/<id>/` (verifier round 2: N1, F5, F6)
+Proof: `bash .specs/features/meeting-panel/proofs/round1_fixes.sh`
 
 ## Coverage
 
@@ -198,3 +215,12 @@ Tamanho estimado, por `wc -c` dos arquivos que cada slice lê ou escreve, dividi
 - Corte, se precisar: S1 (crates) | S2-S5 (desktop Rust) | S6 (frontend), na troca de superfície.
 - Mechanism: one builder (compaction accepted) - delegado pelo Augusto em 2026-10-09; o painel tem contexto de sobra e um builder evita reler o desktop três vezes.
 - PRs empilhados, alvo ≤ 400 linhas cada: A storage schema 2; B crates (`MuteWatch`, `default_name`, `note_document`); C desktop gravação (S2-S4 Rust); D desktop processamento (S5 Rust); E UI (tray, pill, página, `bindings.ts`). Um único `git push` com todas as branches, por causa do hook de ~43 min.
+
+- **Boundary:** C1-C38 built on the stacked branches `feat/meeting-storage` (C1-C9, C37), `feat/meeting-crate-helpers` (C23, C24, C32), `feat/meeting-desktop-recording` (C10, C11, C13, C18-C21, C26, C38), `feat/meeting-desktop-indicator` (C15, C16, C17), `feat/meeting-desktop-notes` (C28-C31, C34, C35), `feat/meeting-desktop-page` (C12, C25, C27, C33, C36); the proof scripts live in `proofs/` on `docs/meeting-panel-verification`
+- **Settled mid-build:** pedido #2 do orquestrador (N5 do `research/20`): rascunho = linha de `meetings` com `started_at` nulo, revisado na door 1 antes de qualquer commit; a pauta vai como anotações (ADR-0016). O sink padrão vem de `pw-metadata 0 default.audio.sink` (o `pactl` não existe nesta máquina). Os eventos se chamam `MeetingStatus` e `MeetingProgress` (kebab `meeting-status`, `meeting-progress`) e `transcribe_meeting`/`get_meeting` devolvem `MeetingLine` (`person: null` = "Eu"), não `MeetingSegment`. O builder do specta virou `specta_builder()` para um teste `#[ignore]` regenerar `bindings.ts` sem abrir o app. O consentimento aparece inline na página (o `Dialog` usa portal e não renderiza no teste). PRs C (`recording`, ~1 640 linhas) e F (`page`, ~1 150) passam de 1 000 linhas e levam a label `large-change` com justificativa no corpo.
+- **Abandoned:** `pactl get-default-sink` (ausente no Ubuntu do Augusto). O guard de RAM: o swap ficou em ~200-300 MB livres a noite toda com 6-7 GB de RAM disponível (páginas paradas); depois de esperar 2 min, os `cargo` rodaram com 2 jobs um de cada vez. Manuais C14, C17 (2ª prova) e C22 não rodaram: exigem clicar no app e gravar áudio real da sala, sem ninguém na máquina; ficam para o Augusto no `tauri dev` (e `TODO(windows)` no Alienware).
+- **Verification round 1 (FAIL, 34/38):** C14 and C22 not run (manual), C17 partial (manual half), C35 named a test that does not exist (`--exact` ran 0 tests and exited 0). Fixed: the C35 selector now names `progress::reports_at_least_every_second`, the test that asserts the same claim (≤ 1 s between progress calls); the claim is unchanged. Findings F1, F2, F3, F6, F8 fixed and proven by the new C39-C42; F5 (tray start blocked the event loop while devices open) fixed by starting from the tray on a thread. F7 (stored duration from the clock, not the frames): no change, `MeetingRecorder::finish` writes exactly up to the clock, so the frames are the clock × 48 000. Precision gaps noted, checks not reworded: C28 says `segments_for_store` numbers the segments, but storage numbers them (C5 proves it); C21's "the status carries it" is not asserted; C33/C36-error/C36-key read the page source instead of rendering the page.
+- **Verification round 2 (FAIL, 38/42):** C14, C22 not run and C17 partial (manual, unchanged). C42 partial: App.tsx and the page both reacted to `meeting-consent-required`, and Tauri calls listeners in arbitrary order, so the request could survive an acceptance (F8 not fixed). Fixed in round 3 by deciding in App.tsx from the current section; C42 was reworded to the mechanism (it was added by this pane in round 1, not approved by a person). N1 (introduced by the F2 fix: always-on toggle during a meeting desynced the setting) fixed by storing the mode and deferring the stream; F5's rest (tray pause/stop on the event loop) and F6's rest (empty `audio/<id>/`) fixed; all three proven by the new C43. N2 (stop: the last notes save and the page reload are separate async commands) observed, not reproduced, left as is.
+- **Verification round 3 (FAIL, 39/43, last round allowed):** left: C14, C22 (manual, not run), C17 (manual half), C43 partial (clause c: `start` creates `audio/<id>/` before `default_name()` and the disk check, so those two errors leave an empty folder; cosmetic, not fixed after the last round). F5, F8, N1 fixed; N2 and N3 (a narrow window between releasing the dictation mic and showing the indicator) observed, not reproduced.
+- **Where it stopped (2026-10-09, night):** the stack is rebased onto `07d2aa3` (#56, ADRs 0013-0016 accepted; ADR-0015's "without fan-out, dictation is blocked" is what the code does). The single `git push` of the 8 branches was refused by the agent's permission classifier, so nothing is pushed and no PR is open. `pr-bodies/` in the worktree (untracked) holds the 8 PR bodies and `open-prs.sh`, which pushes once under the builder lock and opens the stacked PRs (C and F with `large-change`).
+- **Pushed (2026-10-10, 00:40-01:20):** after the classifier refused the single push of all branches, the orchestrator asked for one push per branch; each passed the pre-push hook (workspace clippy and tests) after touching the crate sources against the stale shared target. PRs #73 (plan), #80 (storage), #81 (crate helpers), #82 (recording, `large-change`), #83 (indicator), #84 (notes), the page PR and this one, stacked in that order. The stack stays on `07d2aa3`: #58 landed on `main` meanwhile without textual conflict (`git merge-tree` clean; it adds `StorageError::EmptyEdit`, which `MeetingError`'s catch-all maps), and rebasing would have needed a force push of #73.
