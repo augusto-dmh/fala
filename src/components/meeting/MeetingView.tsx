@@ -48,7 +48,7 @@ export function MeetingView(props: MeetingViewProps) {
       )}
       <MeetingPeoplePanel
         id={detail.summary.id}
-        notes={detail.notes_md}
+        reloadOn={detail}
         onNamesChanged={props.onNamesChanged}
       />
       {draft ? (

@@ -1,18 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   commands,
+  type MeetingError,
   type MeetingPeople,
   type SpeakerSuggestion,
 } from "@/bindings";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { parseParticipants } from "./meetingModel";
+import { errorKey, parseParticipants } from "./meetingModel";
 
 export interface MeetingPeoplePanelProps {
   id: string;
-  /** The stored notes: a new generation may bring new suggestions. */
-  notes: string | null;
+  /**
+   * Changes whenever the session is reloaded: a generation may bring suggestions, a new
+   * transcription removes them.
+   */
+  reloadOn: unknown;
   /** A name was applied: the transcript labels changed. */
   onNamesChanged?: () => void;
 }
@@ -23,42 +27,56 @@ export interface MeetingPeoplePanelProps {
  */
 export function MeetingPeoplePanel({
   id,
-  notes,
+  reloadOn,
   onNamesChanged,
 }: MeetingPeoplePanelProps) {
   const { t } = useTranslation();
   const [people, setPeople] = useState<MeetingPeople | null>(null);
   const [typed, setTyped] = useState("");
+  const [error, setError] = useState<MeetingError | null>(null);
+  // While the field has focus, a reload does not overwrite what is being typed.
+  const editing = useRef(false);
 
   useEffect(() => {
     let current = true;
     void commands.meetingPeople(id).then((result) => {
-      if (current && result.status === "ok") {
+      if (!current) return;
+      if (result.status === "ok") {
         setPeople(result.data);
-        setTyped(result.data.participants.join(", "));
-      }
+        if (!editing.current) setTyped(result.data.participants.join(", "));
+      } else setError(result.error);
     });
     return () => {
       current = false;
     };
-  }, [id, notes]);
+  }, [id, reloadOn]);
 
   const save = async () => {
+    editing.current = false;
+    // Before the first load there is nothing to compare with: saving would erase the list.
+    if (people === null) return;
     const names = parseParticipants(typed);
-    if (people && names.join("\n") === people.participants.join("\n")) return;
+    if (names.join("\n") === people.participants.join("\n")) return;
     const result = await commands.setMeetingParticipants(id, names);
     if (result.status === "ok") {
+      setError(null);
       setPeople(result.data);
       setTyped(result.data.participants.join(", "));
-    }
+    } else setError(result.error);
   };
 
   const apply = async (person: number) => {
     const result = await commands.applySpeakerSuggestion(id, person);
     if (result.status === "ok") {
+      setError(null);
       setPeople(result.data);
       onNamesChanged?.();
+      return;
     }
+    setError(result.error);
+    // The suggestion may be gone (a new transcription): show what is stored now.
+    const fresh = await commands.meetingPeople(id);
+    if (fresh.status === "ok") setPeople(fresh.data);
   };
 
   return (
@@ -69,12 +87,20 @@ export function MeetingPeoplePanel({
           value={typed}
           placeholder={t("meeting.people.placeholder")}
           onChange={(event) => setTyped(event.target.value)}
+          onFocus={() => {
+            editing.current = true;
+          }}
           onBlur={() => void save()}
         />
         <span className="text-caption text-text-2">
           {t("meeting.people.hint")}
         </span>
       </label>
+      {error !== null && (
+        <p role="alert" className="text-sm text-red-500">
+          {t(errorKey(error))}
+        </p>
+      )}
       {people && (
         <SuggestionList
           suggestions={people.suggestions}
