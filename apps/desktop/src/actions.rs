@@ -6,12 +6,15 @@ use crate::audio_feedback::{
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error};
 use crate::dictation_capture::{MicSignal, VadPolicy};
 use crate::llm_auto::{self, AutoFormatted};
+use crate::long_dictation::Transcribe;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, ModelUnloadTimeout, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay, NoticeKind,
@@ -70,6 +73,12 @@ enum StopOutcome {
     /// The VAD kept no speech: drop it silently.
     Discard,
     Transcribe,
+}
+
+/// A long dictation is transcribed block by block while it records only when the VAD can cut on
+/// silence (a streaming model has its own path) and the model stays loaded between blocks.
+fn transcribes_in_blocks(policy: VadPolicy, unload: ModelUnloadTimeout) -> bool {
+    policy == VadPolicy::Offline && unload != ModelUnloadTimeout::Immediately
 }
 
 fn stop_outcome(signal: MicSignal, has_samples: bool) -> StopOutcome {
@@ -686,6 +695,10 @@ impl ShortcutAction for TranscribeAction {
         if model_supports_streaming {
             tm.start_stream();
         }
+        let blocks = transcribes_in_blocks(vad_policy, settings.model_unload_timeout).then(|| {
+            let tm = Arc::clone(&tm);
+            Arc::new(move |block: Vec<f32>| tm.transcribe(block)) as Transcribe
+        });
         let plan_elapsed = plan_started.elapsed();
 
         // Sizing the overlay follows the same advertised capability. A model that
@@ -716,7 +729,7 @@ impl ShortcutAction for TranscribeAction {
 
         let mut recording_error: Option<String> = None;
         let recording_start_time = Instant::now();
-        match rm.try_start_recording(&binding_id, vad_policy) {
+        match rm.try_start_recording(&binding_id, vad_policy, blocks) {
             Ok(readiness) => {
                 debug!(
                     "Recording request accepted in {:?}; waiting for first microphone samples",
@@ -764,6 +777,7 @@ impl ShortcutAction for TranscribeAction {
                     if rm_clone.is_recording_readiness_current(generation) {
                         rm_clone.apply_mute();
                     }
+                    rm_clone.pause_media(generation);
                 });
 
                 // The first recording with a microphone other than the last one named
@@ -843,6 +857,7 @@ impl ShortcutAction for TranscribeAction {
 
         // Unmute before playing audio feedback so the stop sound is audible
         rm.remove_mute();
+        rm.resume_media();
 
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);
@@ -883,6 +898,7 @@ impl ShortcutAction for TranscribeAction {
                 if outcome == StopOutcome::Muted {
                     debug!("Recording heard only silence; the microphone looks muted");
                     tm.cancel_stream();
+                    rm.block_queue().cancel();
                     utils::show_notice(&ah, NoticeKind::MicMuted, None, true);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else if outcome == StopOutcome::Discard {
@@ -890,6 +906,7 @@ impl ShortcutAction for TranscribeAction {
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
+                    rm.block_queue().cancel();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else {
@@ -905,8 +922,10 @@ impl ShortcutAction for TranscribeAction {
 
                     // Transcribe concurrently with WAV save. If a live stream was
                     // running, finalize it and use its text (all audio was already
-                    // fed to the stream); otherwise batch-transcribe the samples.
+                    // fed to the stream); otherwise batch-transcribe the samples,
+                    // or, for a long dictation, only what the blocks left.
                     let transcription_time = Instant::now();
+                    let mut asr_blocks = 1;
                     let transcription_result = match tm.finalize_stream() {
                         // A finalized stream with usable text wins. An empty result
                         // (no active stream, produced nothing, or a finalize error
@@ -915,7 +934,14 @@ impl ShortcutAction for TranscribeAction {
                         // surfaced instead — the worker may still hold the engine,
                         // so a batch fallback would contend with it.
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
+                        Ok(_) => match rm.block_queue().finish(&samples) {
+                            Some(done) => {
+                                asr_blocks = done.blocks;
+                                done.text
+                            }
+                            None if rm.was_cancelled_since(cancel_generation) => Ok(String::new()),
+                            None => tm.transcribe(samples),
+                        },
                         Err(err) => Err(err),
                     };
                     let asr_done = Instant::now();
@@ -1021,6 +1047,7 @@ impl ShortcutAction for TranscribeAction {
                                     format_done,
                                     paste_start: Instant::now(),
                                     speech_samples: sample_count,
+                                    blocks: asr_blocks,
                                     words: pasted_text.split_whitespace().count(),
                                     lang:
                                         crate::managers::history_dictations::language_from_setting(
@@ -1191,6 +1218,28 @@ impl ShortcutAction for CancelAction {
     }
 }
 
+// Paste the last dictation again: on release, once the shortcut's keys are up.
+struct PasteLastAction;
+
+impl ShortcutAction for PasteLastAction {
+    fn start(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+
+    fn stop(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::last_dictation::paste_last(app, false);
+    }
+}
+
+// Copy the last dictation to the clipboard.
+struct CopyLastAction;
+
+impl ShortcutAction for CopyLastAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::last_dictation::copy_last(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Test Action
 struct TestAction;
 
@@ -1230,6 +1279,14 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "paste_last".to_string(),
+        Arc::new(PasteLastAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "copy_last".to_string(),
+        Arc::new(CopyLastAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
@@ -1298,6 +1355,18 @@ mod tests {
         assert!(!announce_mic(&mut last, "Fifine"), "same one");
         assert!(announce_mic(&mut last, "Headset"), "another one");
         assert!(announce_mic(&mut last, "Fifine"), "back to the first");
+    }
+
+    #[test]
+    fn only_offline_vad_with_a_resident_model_uses_blocks() {
+        use super::transcribes_in_blocks;
+        use crate::dictation_capture::VadPolicy;
+        use crate::settings::ModelUnloadTimeout as U;
+        assert!(transcribes_in_blocks(VadPolicy::Offline, U::Never));
+        assert!(transcribes_in_blocks(VadPolicy::Offline, U::Min5));
+        assert!(!transcribes_in_blocks(VadPolicy::Offline, U::Immediately));
+        assert!(!transcribes_in_blocks(VadPolicy::Streaming, U::Never));
+        assert!(!transcribes_in_blocks(VadPolicy::Disabled, U::Never));
     }
 
     #[test]

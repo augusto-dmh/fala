@@ -2,7 +2,8 @@
   "tray": {
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
-    "copyLastTranscript": "Copy Last Transcript",
+    "copyLastTranscript": "Copy Last Dictation",
+    "pasteLastTranscript": "Paste Last Dictation",
     "unloadModel": "Unload Model",
     "model": "Model",
     "dictationLanguage": "Dictation language",
@@ -24,7 +25,55 @@
     "home": "Home",
     "dictionary": "Dictionary",
     "settings": "Settings",
-    "meetings": "Meetings"
+    "meetings": "Meetings",
+    "stats": "Performance"
+  },
+  "stats": {
+    "description": "Measured on this computer only; nothing leaves the machine.",
+    "period": {
+      "label": "Period",
+      "days": "{{count}} days"
+    },
+    "counts": {
+      "dictations": "Dictations",
+      "words": "Words",
+      "perDay": "Words per day with dictation"
+    },
+    "latency": {
+      "title": "Latency",
+      "stage": "Stage",
+      "p50": "p50",
+      "p90": "p90",
+      "budget": "Target / maximum",
+      "aboveTarget": "above target",
+      "aboveMax": "above maximum"
+    },
+    "rows": {
+      "e2e": "Release → text, without AI",
+      "e2e_llm": "Release → text, with AI",
+      "asr": "Recognition",
+      "llm": "AI",
+      "paste": "Paste",
+      "speech": "Speech length"
+    },
+    "ai": {
+      "title": "AI",
+      "attempts": "Attempts",
+      "fallbacks": "Fallbacks to the rules",
+      "share": "Fallbacks per attempt"
+    },
+    "perDay": {
+      "title": "Words per day",
+      "bar": "{{day}} · words: {{words}}"
+    },
+    "copy": "Copy summary",
+    "copied": "Summary copied.",
+    "copyFailed": "Could not copy the summary.",
+    "empty": "No measured dictations in this period yet.",
+    "error": "Could not read the metrics: {{error}}",
+    "markdown": {
+      "title": "Dictation performance: last {{days}} days"
+    }
   },
   "dictionary": {
     "description": "Words, names and terms Fala should recognise when you dictate."
@@ -221,6 +270,7 @@
         "none": "No shortcuts configured",
         "notFound": "Shortcut not found",
         "pressKeys": "Press keys...",
+        "unset": "No shortcut",
         "bindings": {
           "transcribe": {
             "name": "Transcribe Shortcut",
@@ -233,6 +283,14 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "paste_last": {
+            "name": "Paste last dictation",
+            "description": "Pastes the last dictation again into the focused field. Does nothing during a dictation."
+          },
+          "copy_last": {
+            "name": "Copy last dictation",
+            "description": "Puts the last dictation on the clipboard."
           }
         },
         "errors": {
@@ -291,6 +349,37 @@
         "label": "Format dictations with AI",
         "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does."
       },
+      "cleanup": {
+        "title": "How much the AI changes the text",
+        "description": "The same dictation at each level. Applies to the next dictation.",
+        "rawLabel": "You said",
+        "raw": "uh... so, like, the meeting's gonna be on Tuesday, no, Wednesday at three, and I wanted you guys to bring the numbers, you know",
+        "default": "Default",
+        "inactive": "Levels apply only when the AI formats the dictation: turn the AI on and paste the Gemini key.",
+        "footer": "The original is never lost: Undo AI edit, on Home.",
+        "levels": {
+          "verbatim": {
+            "label": "Verbatim",
+            "description": "Keeps every word, even the hesitations; only adds punctuation and fixes transcription errors.",
+            "example": "Uh... so, like, the meeting's gonna be on Tuesday, no, Wednesday at three, and I wanted you guys to bring the numbers, you know?"
+          },
+          "light": {
+            "label": "Light",
+            "description": "Removes hesitations and false starts and applies your self-corrections; everything else stays in your words.",
+            "example": "The meeting's gonna be on Wednesday at three, and I wanted you guys to bring the numbers."
+          },
+          "medium": {
+            "label": "Medium",
+            "description": "Also fixes the grammar and splits long sentences, without changing the tone.",
+            "example": "The meeting will be on Wednesday, at three. I'd like you to bring the numbers."
+          },
+          "heavy": {
+            "label": "Strong",
+            "description": "Rewrites for clarity and brevity, without adding anything or changing the meaning.",
+            "example": "Meeting Wednesday at 3 p.m.; bring the numbers."
+          }
+        }
+      },
       "apiKey": {
         "title": "Gemini key",
         "description": "Kept in the system password vault. Without a key, only the local rules format the text.",
@@ -321,6 +410,14 @@
       "audioFeedback": {
         "label": "Audio Feedback",
         "description": "Play sound when recording starts and stops"
+      },
+      "pauseMediaWhileRecording": {
+        "label": "Pause media while dictating",
+        "description": "Pauses the music and videos playing while you dictate, and resumes only what Fala paused"
+      },
+      "pauseMediaOnMeeting": {
+        "label": "Pause media while recording a meeting",
+        "description": "Pauses the music and videos playing while the meeting records, so they stay out of the recording, and resumes only what Fala paused"
       },
       "outputDevice": {
         "title": "Output Device",
@@ -392,6 +489,10 @@
             "top": "Top"
           }
         }
+      },
+      "idlePill": {
+        "label": "Show the pill at rest",
+        "description": "Keeps a quiet pill on screen between dictations; hover it to see the shortcut and click it to open Fala. It hides while an app is full screen."
       },
       "pasteMethod": {
         "title": "Paste Method",
@@ -698,6 +799,67 @@
         "label": "Show What's New",
         "description": "Show release notes after Fala updates"
       },
+      "privacy": {
+        "title": "Privacy",
+        "description": "What leaves this computer, where it goes and whether it is on right now. This section only shows; each setting stays on its own page.",
+        "columns": {
+          "sends": "Sends",
+          "destination": "To"
+        },
+        "channels": {
+          "dictation": {
+            "name": "Dictation",
+            "sends": "Never the audio. Only the dictated text, the app name and your dictionary, with AI on and a key saved, above 15 words and outside the apps without AI.",
+            "destination": "Google (Gemini), with your key"
+          },
+          "experimentalPostProcess": {
+            "name": "Post-processing (experimental)",
+            "sends": "Never the audio. The text dictated with the post-processing shortcut and the chosen prompt.",
+            "destination": "{{provider}}, with your key"
+          },
+          "meetingTranscription": {
+            "name": "Meeting: transcription",
+            "sends": "The audio of both meeting channels (your microphone and the computer sound), only when you ask for the transcript.",
+            "destination": "ElevenLabs, with your key"
+          },
+          "meetingNotes": {
+            "name": "Meeting: notes",
+            "sends": "Never the audio. The transcript, your notes, the title, date and time, the note template, the language and the dictionary, only when you ask for notes.",
+            "destination": "Anthropic (Claude), with your key"
+          },
+          "mcp": {
+            "name": "History for assistants (MCP)",
+            "sends": "Dictations not made in the apps without AI, read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
+            "destination": "The local assistant you set up, which may send them to its own provider"
+          },
+          "telemetry": {
+            "name": "Telemetry, account and Fala server",
+            "sends": "Nothing. Fala has no server, account or telemetry. Apart from the channels above, it only downloads the transcription models, sending none of your data.",
+            "destination": "No one"
+          }
+        },
+        "status": {
+          "on": "On",
+          "off": "Off",
+          "keySet": "Key saved",
+          "keyMissing": "No key",
+          "unknown": "Not checked",
+          "doesNotExist": "Does not exist"
+        },
+        "keys": {
+          "title": "Where the keys are kept",
+          "description": "In the system password vault (Credential Manager, on Windows). Fala never shows the value of a key."
+        },
+        "audio": {
+          "title": "Where meeting audio is kept",
+          "description": "In this folder, on this computer. It only leaves for the transcription, when you ask."
+        },
+        "decisions": {
+          "title": "Privacy decisions",
+          "description": "Each channel above follows a decision recorded in the public repository.",
+          "button": "View on GitHub"
+        }
+      },
       "appDataDirectory": {
         "title": "App Data Directory",
         "description": "Location where Fala stores its data"
@@ -783,6 +945,11 @@
     }
   },
   "overlay": {
+    "idle": {
+      "dictate": "Dictate",
+      "doubleTap": "double-tap to lock",
+      "label": "Fala at rest: hover to see the shortcut"
+    },
     "recording": "Recording",
     "transcribing": "Transcribing...",
     "processing": "Processing...",

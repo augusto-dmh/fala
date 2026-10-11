@@ -12,9 +12,12 @@ mod dictation_capture;
 mod dictation_metrics;
 mod helpers;
 mod input;
+mod last_dictation;
 mod llm_auto;
 mod llm_client;
+mod long_dictation;
 mod managers;
+mod media_pause;
 mod meeting;
 mod memory;
 mod overlay;
@@ -303,6 +306,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 ) {
                     tray::refresh_microphones(tray.app_handle());
                 }
+                // Still the user's app: the menu has not taken the focus yet. "Colar o último
+                // ditado" gives it back before pasting.
+                if matches!(event, TrayIconEvent::Enter { .. }) {
+                    last_dictation::remember_foreground();
+                }
             });
     }
     #[cfg(not(target_os = "windows"))]
@@ -327,7 +335,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 }
             }
             "copy_last_transcript" => {
-                tray::copy_last_transcript(app);
+                last_dictation::copy_last(app);
+            }
+            "paste_last_transcript" => {
+                last_dictation::paste_last(app, true);
             }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
@@ -449,6 +460,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+    // Rest in the idle pill when it is on; the overlay page shows it once it listens
+    // (`pill_overlay_ready`).
+    overlay::apply_idle_setting(app_handle, &settings);
 }
 
 #[tauri::command]
@@ -737,6 +751,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_selected_language_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
+            shortcut::change_pill_idle_visible_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,
@@ -764,9 +779,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::update_custom_words,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
+            shortcut::change_cleanup_level_setting,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
+            shortcut::change_pause_media_while_recording_setting,
+            shortcut::change_pause_media_on_meeting_setting,
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
@@ -818,6 +836,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::open_microphone_privacy_settings,
             commands::audio::open_microphone_settings,
             commands::audio::open_microphone_troubleshooting,
+            overlay::pill_overlay_ready,
+            overlay::set_idle_pill_hover,
+            overlay::open_home_from_pill,
             commands::audio::get_available_microphones,
             commands::audio::set_selected_microphone,
             commands::audio::get_selected_microphone,
@@ -915,7 +936,18 @@ pub fn run(cli_args: CliArgs) {
         )
         .expect("Failed to export typescript bindings");
 
-    let invoke_handler = specta_builder.invoke_handler();
+    let specta_handler = specta_builder.invoke_handler();
+    // `meeting_clip` answers with raw WAV bytes, which tauri-specta cannot type; it goes to its
+    // own handler and every other command to the typed one.
+    let clip_handler: fn(tauri::ipc::Invoke) -> bool =
+        tauri::generate_handler![commands::meeting::meeting_clip];
+    let invoke_handler = move |invoke: tauri::ipc::Invoke| {
+        if invoke.message.command() == "meeting_clip" {
+            clip_handler(invoke)
+        } else {
+            specta_handler(invoke)
+        }
+    };
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.

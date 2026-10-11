@@ -100,7 +100,7 @@ impl Store {
                 }
             }
         }
-        conn.execute_batch(metrics::SCHEMA)?;
+        metrics::apply_schema(&conn)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),
