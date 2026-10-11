@@ -58,7 +58,8 @@ pub(crate) struct Response {
 
 #[derive(Debug, Deserialize)]
 struct ResponseSuggestion {
-    person: u32,
+    /// Lido largo: um número fora de `u32` descarta só a sugestão, não as notas.
+    person: i64,
     name: String,
     #[serde(default)]
     reason: String,
@@ -157,8 +158,10 @@ fn speaker_suggestions(input: &NotesInput, response: &Response) -> Vec<SpeakerSu
     }
     let mut out: Vec<SpeakerSuggestion> = Vec::new();
     for suggestion in &response.speaker_suggestions {
-        if !people.contains(&suggestion.person) || out.iter().any(|s| s.person == suggestion.person)
-        {
+        let Ok(person) = u32::try_from(suggestion.person) else {
+            continue;
+        };
+        if !people.contains(&person) || out.iter().any(|s| s.person == person) {
             continue;
         }
         let wanted = one_line(&suggestion.name).to_lowercase();
@@ -169,7 +172,7 @@ fn speaker_suggestions(input: &NotesInput, response: &Response) -> Vec<SpeakerSu
             continue;
         }
         out.push(SpeakerSuggestion {
-            person: suggestion.person,
+            person,
             name: name.clone(),
             reason: short_line(&suggestion.reason, REASON_MAX_CHARS),
         });
@@ -610,12 +613,15 @@ de novembro",
             "Fecho com o jurídico.",
         ));
         input.participants.push("carla@empresa.com".to_string());
+        input.participants.push("Dani".to_string());
         let response = parse_response(&with_extras(
             "",
             serde_json::json!([
                 {"person": 1, "name": "bruno lima", "reason": "Propõe a data,
             como o Bruno na pauta."},
-                {"person": 1, "name": "Ana", "reason": "segunda para a mesma pessoa"},
+                {"person": 1, "name": "Dani", "reason": "segunda para a mesma pessoa"},
+                {"person": -1, "name": "Dani", "reason": "número negativo"},
+                {"person": 4_294_967_297_i64, "name": "Dani", "reason": "fora de u32"},
                 {"person": 7, "name": "Bruno Lima", "reason": "Pessoa 7 não existe"},
                 {"person": 0, "name": "Bruno Lima", "reason": "Pessoa 0 não existe"},
                 {"person": 2, "name": "Ana", "reason": "Ana já é rótulo"},
