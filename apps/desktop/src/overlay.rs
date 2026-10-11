@@ -2,7 +2,7 @@ use crate::input;
 use crate::meeting::MeetingIndicator;
 use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
@@ -58,11 +58,21 @@ const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 const OVERLAY_NOTICE_WIDTH: f64 = 340.0;
 const OVERLAY_NOTICE_HEIGHT: f64 = 110.0;
 
+// The idle pill: a 40x8 capsule (`.fpill.idle` in Pill.css) in a window just large enough to
+// hover, so the transparent area that takes clicks stays small. On hover the window grows for the
+// shortcut card (`.fpill.idle.hover`).
+const OVERLAY_IDLE_WIDTH: f64 = 64.0;
+const OVERLAY_IDLE_HEIGHT: f64 = 20.0;
+const OVERLAY_IDLE_HOVER_WIDTH: f64 = 300.0;
+const OVERLAY_IDLE_HOVER_HEIGHT: f64 = 64.0;
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
     match state {
         "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
         "notice" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
+        "idle" => (OVERLAY_IDLE_WIDTH, OVERLAY_IDLE_HEIGHT),
+        "idle_hover" => (OVERLAY_IDLE_HOVER_WIDTH, OVERLAY_IDLE_HOVER_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -634,6 +644,7 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
             );
         }
 
+        SHOWN.store(Shown::of(state) as u8, Ordering::SeqCst);
         let _ = overlay_window.emit("show-overlay", state);
     }
 }
@@ -765,10 +776,11 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
 
         #[cfg(target_os = "windows")]
         {
-            let state = if WINDOWS_OVERLAY_IS_STREAMING.load(Ordering::Relaxed) {
-                "streaming"
-            } else {
-                "recording"
+            let state = match Shown::load() {
+                Shown::Idle => "idle",
+                Shown::IdleHover => "idle_hover",
+                _ if WINDOWS_OVERLAY_IS_STREAMING.load(Ordering::Relaxed) => "streaming",
+                _ => "recording",
             };
             let (width, height) = overlay_dimensions(state);
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
@@ -806,6 +818,10 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         show_meeting_overlay(app_handle);
         return;
     }
+    // Already resting in the idle pill, which stays: no fade out and back in.
+    if matches!(Shown::load(), Shown::Idle | Shown::IdleHover) && current_rest() == Rest::Idle {
+        return;
+    }
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -814,18 +830,264 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         let scheduled_at = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
         // Emit event to trigger fade-out animation
         let _ = overlay_window.emit("hide-overlay", ());
-        // Hide the window after a short delay to allow animation to complete,
-        // unless a newer session has shown the overlay again by then.
+        // Hide the window (or rest in the idle pill) after a short delay to allow the animation
+        // to complete, unless a newer session has shown the overlay again by then.
         let window_clone = overlay_window.clone();
+        let handle = app_handle.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(300));
             if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) != scheduled_at {
                 log::debug!("Skipping stale overlay hide: a newer session is showing the overlay");
                 return;
             }
-            let _ = window_clone.hide();
+            match current_rest() {
+                Rest::Idle => {
+                    let main = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        // Checked again on the main thread, where every show runs.
+                        if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == scheduled_at {
+                            show_overlay_state_on_main(&main, "idle");
+                        }
+                    });
+                }
+                Rest::Meeting(_) => show_meeting_overlay(&handle),
+                Rest::Hidden => {
+                    let _ = window_clone.hide();
+                    SHOWN.store(Shown::Hidden as u8, Ordering::SeqCst);
+                }
+            }
         });
     }
+}
+
+/// What the overlay window shows, so the idle pill never replaces a live state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    Hidden = 0,
+    Idle = 1,
+    IdleHover = 2,
+    /// Recording, processing, a meeting or a notice.
+    Active = 3,
+}
+
+impl Shown {
+    fn of(state: &str) -> Self {
+        match state {
+            "idle" => Shown::Idle,
+            "idle_hover" => Shown::IdleHover,
+            _ => Shown::Active,
+        }
+    }
+
+    fn load() -> Self {
+        match SHOWN.load(Ordering::SeqCst) {
+            0 => Shown::Hidden,
+            1 => Shown::Idle,
+            2 => Shown::IdleHover,
+            _ => Shown::Active,
+        }
+    }
+}
+
+static SHOWN: AtomicU8 = AtomicU8::new(Shown::Hidden as u8);
+
+/// The setting, `overlay_style` and the platform allow the idle pill (`idle_wanted`). Cached like
+/// `OVERLAY_ENABLED`, and read by the full-screen poll every 2 s.
+static IDLE_VISIBLE: AtomicBool = AtomicBool::new(false);
+
+/// A full-screen app is in front (video, game, presentation): the idle pill hides.
+static FULLSCREEN: AtomicBool = AtomicBool::new(false);
+
+/// The idle pill ships on Windows only for now (Linux in phase 3, macOS is not a target).
+const IDLE_SUPPORTED: bool = cfg!(target_os = "windows");
+
+/// Whether the idle pill may show: the user turned it on, the pill itself is on, and the
+/// platform supports it.
+fn idle_wanted(setting: bool, style: OverlayStyle, supported: bool) -> bool {
+    setting && style != OverlayStyle::None && supported
+}
+
+/// Where the overlay window rests once the current state ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Rest {
+    /// A meeting records: its indicator stays (ADR-0005).
+    Meeting(&'static str),
+    Idle,
+    Hidden,
+}
+
+fn rest_after_hide(idle_wanted: bool, meeting: MeetingIndicator, fullscreen: bool) -> Rest {
+    if let Some(state) = overlay_for_meeting(meeting) {
+        return Rest::Meeting(state);
+    }
+    if idle_wanted && !fullscreen {
+        Rest::Idle
+    } else {
+        Rest::Hidden
+    }
+}
+
+fn current_rest() -> Rest {
+    rest_after_hide(
+        IDLE_VISIBLE.load(Ordering::SeqCst),
+        crate::meeting::indicator(),
+        FULLSCREEN.load(Ordering::SeqCst),
+    )
+}
+
+/// What a change of the setting or of the full-screen state does to the window: only a hidden or
+/// idle window changes; a live state decides when it ends.
+#[derive(Debug, PartialEq, Eq)]
+enum IdleRefresh {
+    ShowIdle,
+    Hide,
+    Keep,
+}
+
+fn idle_refresh(shown: Shown, rest: Rest) -> IdleRefresh {
+    match (shown, rest) {
+        (Shown::Hidden, Rest::Idle) => IdleRefresh::ShowIdle,
+        (Shown::Idle | Shown::IdleHover, Rest::Hidden) => IdleRefresh::Hide,
+        _ => IdleRefresh::Keep,
+    }
+}
+
+/// Shows or hides the idle pill after the setting or the full-screen state changed.
+fn refresh_idle(app_handle: &AppHandle) {
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || refresh_idle_on_main(&handle));
+}
+
+fn refresh_idle_on_main(app_handle: &AppHandle) {
+    match idle_refresh(Shown::load(), current_rest()) {
+        IdleRefresh::ShowIdle => show_overlay_state_on_main(app_handle, "idle"),
+        IdleRefresh::Hide => {
+            if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+                let _ = overlay_window.emit("hide-overlay", ());
+                let _ = overlay_window.hide();
+            }
+            SHOWN.store(Shown::Hidden as u8, Ordering::SeqCst);
+        }
+        IdleRefresh::Keep => {}
+    }
+}
+
+/// Applies `pill_idle_visible` and `overlay_style`: at startup and whenever either changes.
+pub fn apply_idle_setting(app_handle: &AppHandle, settings: &settings::AppSettings) {
+    let wanted = idle_wanted(
+        settings.pill_idle_visible,
+        settings.overlay_style,
+        IDLE_SUPPORTED,
+    );
+    IDLE_VISIBLE.store(wanted, Ordering::SeqCst);
+    #[cfg(target_os = "windows")]
+    if wanted {
+        FULLSCREEN.store(foreground_is_fullscreen(), Ordering::SeqCst);
+        start_fullscreen_poll(app_handle);
+    }
+    refresh_idle(app_handle);
+}
+
+/// The overlay page mounted (at startup, or after a reload): from here on it hears
+/// `show-overlay`, so an idle pill shown before it listened is shown again.
+#[tauri::command]
+#[specta::specta]
+pub fn pill_overlay_ready(app: AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if matches!(Shown::load(), Shown::Idle | Shown::IdleHover) {
+            SHOWN.store(Shown::Hidden as u8, Ordering::SeqCst);
+        }
+        refresh_idle_on_main(&handle);
+    });
+}
+
+/// The cursor entered or left the idle pill: the window grows for the shortcut card or shrinks
+/// back, without taking focus.
+#[tauri::command]
+#[specta::specta]
+pub fn set_idle_pill_hover(app: AppHandle, hover: bool) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if !matches!(Shown::load(), Shown::Idle | Shown::IdleHover) {
+            return;
+        }
+        let state = if hover { "idle_hover" } else { "idle" };
+        SHOWN.store(Shown::of(state) as u8, Ordering::SeqCst);
+        #[cfg(target_os = "windows")]
+        if let Some(overlay_window) = handle.get_webview_window("recording_overlay") {
+            let (width, height) = overlay_dimensions(state);
+            if let Err(error) = place_windows_overlay(&handle, &overlay_window, width, height) {
+                log::error!("Failed to resize the idle pill: {error}");
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = handle;
+    });
+}
+
+/// A click on the idle pill opens the main window on Início.
+#[tauri::command]
+#[specta::specta]
+pub fn open_home_from_pill(app: AppHandle) {
+    crate::show_main_window(&app);
+    let _ = app.emit_to("main", "open-home", ());
+}
+
+/// Polls the notification state every 2 s while the idle pill is on, so it hides while a
+/// full-screen app is in front.
+#[cfg(target_os = "windows")]
+const FULLSCREEN_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+#[cfg(target_os = "windows")]
+static FULLSCREEN_POLL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+fn start_fullscreen_poll(app_handle: &AppHandle) {
+    if FULLSCREEN_POLL_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let handle = app_handle.clone();
+    std::thread::spawn(move || loop {
+        if !IDLE_VISIBLE.load(Ordering::SeqCst) {
+            FULLSCREEN.store(false, Ordering::SeqCst);
+            FULLSCREEN_POLL_RUNNING.store(false, Ordering::SeqCst);
+            // Turned back on between the check and the store: keep this thread.
+            if !IDLE_VISIBLE.load(Ordering::SeqCst)
+                || FULLSCREEN_POLL_RUNNING.swap(true, Ordering::SeqCst)
+            {
+                return;
+            }
+        }
+        let fullscreen = foreground_is_fullscreen();
+        if FULLSCREEN.swap(fullscreen, Ordering::SeqCst) != fullscreen {
+            log::debug!("full-screen app in front: {fullscreen}");
+            refresh_idle(&handle);
+        }
+        std::thread::sleep(FULLSCREEN_POLL);
+    });
+}
+
+/// Whether a full-screen app (video, game, presentation) is in front, by the shell's own
+/// notification state. A failed query counts as no.
+#[cfg(target_os = "windows")]
+fn foreground_is_fullscreen() -> bool {
+    match unsafe { windows::Win32::UI::Shell::SHQueryUserNotificationState() } {
+        Ok(state) => is_fullscreen_state(state),
+        Err(error) => {
+            log::debug!("SHQueryUserNotificationState failed: {error}");
+            false
+        }
+    }
+}
+
+/// A full-screen app, a Direct3D full-screen game or presentation mode.
+#[cfg(target_os = "windows")]
+fn is_fullscreen_state(state: windows::Win32::UI::Shell::QUERY_USER_NOTIFICATION_STATE) -> bool {
+    use windows::Win32::UI::Shell::{
+        QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
+    };
+    state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE
 }
 
 // Cached "overlay is enabled" flag, kept in sync with overlay_style. Avoids
@@ -942,6 +1204,120 @@ mod tests {
             hide.find("overlay_for_meeting").unwrap() < hide.find("hide-overlay").unwrap(),
             "the meeting check must come before the hide"
         );
+    }
+
+    /// The body of a production function, so a structural assertion never matches the tests.
+    fn body_of(signature: &str) -> &'static str {
+        let source = include_str!("overlay.rs");
+        let source = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
+        let body = &source[source.find(signature).expect(signature)..];
+        &body[..body.find("\n}\n").unwrap()]
+    }
+
+    #[test]
+    fn rest_after_hide_table() {
+        use MeetingIndicator::{None as NoMeeting, Paused, Recording};
+        for (wanted, fullscreen) in [(false, false), (false, true), (true, false), (true, true)] {
+            // A meeting always keeps its indicator (ADR-0005).
+            let meeting = rest_after_hide(wanted, Recording, fullscreen);
+            assert_eq!(meeting, Rest::Meeting("meeting"));
+            let paused = rest_after_hide(wanted, Paused, fullscreen);
+            assert_eq!(paused, Rest::Meeting("meeting_paused"));
+            let expected = if wanted && !fullscreen {
+                Rest::Idle
+            } else {
+                Rest::Hidden
+            };
+            assert_eq!(rest_after_hide(wanted, NoMeeting, fullscreen), expected);
+        }
+        for setting in [false, true] {
+            for supported in [false, true] {
+                for style in [
+                    OverlayStyle::None,
+                    OverlayStyle::Minimal,
+                    OverlayStyle::Live,
+                ] {
+                    let expected = setting && supported && style != OverlayStyle::None;
+                    assert_eq!(idle_wanted(setting, style, supported), expected);
+                }
+            }
+        }
+        assert_eq!(IDLE_SUPPORTED, cfg!(target_os = "windows"));
+    }
+
+    #[test]
+    fn idle_dimensions() {
+        assert_eq!(overlay_dimensions("idle"), (64.0, 20.0));
+        assert_eq!(overlay_dimensions("idle_hover"), (300.0, 64.0));
+        assert_eq!(overlay_dimensions("recording"), (256.0, 50.0));
+        assert_eq!(overlay_dimensions("streaming"), (400.0, 120.0));
+        assert_eq!(Shown::of("idle"), Shown::Idle);
+        assert_eq!(Shown::of("idle_hover"), Shown::IdleHover);
+        for state in ["recording", "streaming", "processing", "meeting", "notice"] {
+            assert_eq!(Shown::of(state), Shown::Active, "{state}");
+        }
+    }
+
+    #[test]
+    fn idle_never_replaces_an_active_state() {
+        use IdleRefresh::{Hide, Keep, ShowIdle};
+        let meeting = Rest::Meeting("meeting");
+        for (shown, idle, hidden, in_meeting) in [
+            (Shown::Active, Keep, Keep, Keep),
+            (Shown::Hidden, ShowIdle, Keep, Keep),
+            (Shown::Idle, Keep, Hide, Keep),
+            (Shown::IdleHover, Keep, Hide, Keep),
+        ] {
+            assert_eq!(idle_refresh(shown, Rest::Idle), idle, "{shown:?}");
+            assert_eq!(idle_refresh(shown, Rest::Hidden), hidden, "{shown:?}");
+            assert_eq!(idle_refresh(shown, meeting), in_meeting, "{shown:?}");
+        }
+        // The end of a state decides by `current_rest` only after the generation check.
+        let hide = body_of("pub fn hide_recording_overlay");
+        let stale = hide.find("Skipping stale overlay hide").unwrap();
+        assert!(
+            stale < hide.rfind("match current_rest()").unwrap(),
+            "{hide}"
+        );
+        assert!(hide.contains("show_overlay_state_on_main(&main, \"idle\")"));
+        let refresh = body_of("fn refresh_idle_on_main");
+        assert!(refresh.contains("idle_refresh(Shown::load(), current_rest())"));
+        let show = body_of("fn show_overlay_state_on_main");
+        assert!(show.contains("SHOWN.store(Shown::of(state)"));
+    }
+
+    #[test]
+    fn fullscreen_poll_is_gated() {
+        let poll = body_of("fn start_fullscreen_poll");
+        assert!(poll.contains("if !IDLE_VISIBLE.load(Ordering::SeqCst)"));
+        assert!(poll.contains("std::thread::sleep(FULLSCREEN_POLL)"));
+        assert!(include_str!("overlay.rs").contains(
+            "const FULLSCREEN_POLL: std::time::Duration = std::time::Duration::from_secs(2);"
+        ));
+        // The poll starts only when the idle pill is wanted.
+        let apply = body_of("pub fn apply_idle_setting");
+        assert!(apply.find("if wanted {").unwrap() < apply.find("start_fullscreen_poll").unwrap());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn fullscreen_states() {
+        use windows::Win32::UI::Shell::*;
+        for state in [
+            QUNS_BUSY,
+            QUNS_RUNNING_D3D_FULL_SCREEN,
+            QUNS_PRESENTATION_MODE,
+        ] {
+            assert!(is_fullscreen_state(state), "{state:?}");
+        }
+        for state in [
+            QUNS_NOT_PRESENT,
+            QUNS_ACCEPTS_NOTIFICATIONS,
+            QUNS_QUIET_TIME,
+            QUNS_APP,
+        ] {
+            assert!(!is_fullscreen_state(state), "{state:?}");
+        }
     }
 
     #[test]

@@ -472,6 +472,10 @@
           }
         }
       },
+      "idlePill": {
+        "label": "Show the pill at rest",
+        "description": "Keeps a quiet pill on screen between dictations; hover it to see the shortcut and click it to open Fala. It hides while an app is full screen."
+      },
       "pasteMethod": {
         "title": "Paste Method",
         "description": "Choose how text is inserted. Direct: simulates typing via system input. None: skips paste, only updates history/clipboard.",
@@ -923,6 +927,11 @@
     }
   },
   "overlay": {
+    "idle": {
+      "dictate": "Dictate",
+      "doubleTap": "double-tap to lock",
+      "label": "Fala at rest: hover to see the shortcut"
+    },
     "recording": "Recording",
     "transcribing": "Transcribing...",
     "processing": "Processing...",

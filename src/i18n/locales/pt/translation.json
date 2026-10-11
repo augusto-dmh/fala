@@ -472,6 +472,10 @@
           }
         }
       },
+      "idlePill": {
+        "label": "Mostrar a pílula em repouso",
+        "description": "Deixa uma pílula discreta na tela entre os ditados; passe o mouse para ver o atalho e clique para abrir o Fala. Ela some enquanto um app está em tela cheia."
+      },
       "pasteMethod": {
         "title": "Método de Colar",
         "description": "Escolha como o texto é inserido. Direto: simula digitação via entrada do sistema. Nenhum: ignora colar, apenas atualiza histórico/área de transferência.",
@@ -920,6 +924,11 @@
     }
   },
   "overlay": {
+    "idle": {
+      "dictate": "Ditar",
+      "doubleTap": "toque duplo para travar",
+      "label": "Fala em repouso: passe o mouse para ver o atalho"
+    },
     "recording": "Gravando",
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",

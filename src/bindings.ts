@@ -117,6 +117,14 @@ async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changePillIdleVisibleSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pill_idle_visible_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeDebugModeSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_debug_mode_setting", { enabled }) };
@@ -781,6 +789,26 @@ async openMicrophoneTroubleshooting() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The overlay page mounted (at startup, or after a reload): from here on it hears
+ * `show-overlay`, so an idle pill shown before it listened is shown again.
+ */
+async pillOverlayReady() : Promise<void> {
+    await TAURI_INVOKE("pill_overlay_ready");
+},
+/**
+ * The cursor entered or left the idle pill: the window grows for the shortcut card or shrinks
+ * back, without taking focus.
+ */
+async setIdlePillHover(hover: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_idle_pill_hover", { hover });
+},
+/**
+ * A click on the idle pill opens the main window on Início.
+ */
+async openHomeFromPill() : Promise<void> {
+    await TAURI_INVOKE("open_home_from_pill");
+},
 async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };
@@ -952,6 +980,17 @@ async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
 }
 },
 /**
+ * "Como estou indo": the last `days` days of dictation metrics.
+ */
+async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
  * recentes primeiro, como linhas do histórico.
  */
@@ -969,17 +1008,6 @@ async historySearch(query: string) : Promise<Result<HistoryEntry[], string>> {
 async recoverHistoryEntry(id: number) : Promise<Result<HistoryEntry, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("recover_history_entry", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * "Como estou indo": the last `days` days of dictation metrics.
- */
-async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1272,6 +1300,11 @@ vad_backend?: VadBackend;
  * `overlay_position` (position `none` → style `None`).
  */
 overlay_style?: OverlayStyle; 
+/**
+ * Keep a quiet pill on screen between dictations, with the shortcut on hover. Windows only,
+ * and only while `overlay_style` shows a pill.
+ */
+pill_idle_visible?: boolean; 
 /**
  * The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
  */

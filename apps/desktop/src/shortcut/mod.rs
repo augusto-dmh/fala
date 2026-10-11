@@ -831,6 +831,19 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
     // Reposition in case the window needs to re-center for the new style.
     crate::utils::update_overlay_position(&app);
 
+    // The idle pill exists only while a pill style is on.
+    crate::overlay::apply_idle_setting(&app, &settings::get_settings(&app));
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_pill_idle_visible_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.pill_idle_visible = enabled;
+    settings::write_settings(&app, settings.clone());
+    crate::overlay::apply_idle_setting(&app, &settings);
     Ok(())
 }
 
