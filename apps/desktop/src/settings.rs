@@ -722,6 +722,17 @@ pub struct AppSettings {
     /// The output whose sound a meeting records ("Meeting sound"). `None`: the default output.
     #[serde(default)]
     pub meeting_output_device: Option<String>,
+    /// "Avisar quando uma chamada começar" (F8 `meeting-detection`): offer to record when a call
+    /// app opens the mic. Off, the mic holders are not read.
+    #[serde(default = "default_call_prompt_enabled")]
+    pub call_prompt_enabled: bool,
+    /// "Não avisar nestes apps": `fala_meeting::CallApp` ids.
+    #[serde(default)]
+    pub call_prompt_muted_apps: Vec<String>,
+}
+
+fn default_call_prompt_enabled() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -1248,6 +1259,8 @@ pub fn get_default_settings() -> AppSettings {
         cleanup_level: CleanupLevel::default(),
         meeting_consent_accepted_at: None,
         meeting_output_device: None,
+        call_prompt_enabled: default_call_prompt_enabled(),
+        call_prompt_muted_apps: Vec::new(),
     }
 }
 
