@@ -371,7 +371,8 @@ impl Store {
     }
 
     /// Substitui os trechos da sessão, numa transação: ordena por `t0_ms` (o mic antes do
-    /// sistema no empate), numera `seq` de 1 a n e grava `transcribed_at`.
+    /// sistema no empate), numera `seq` de 1 a n, grava `transcribed_at` e apaga os nomes de
+    /// "Pessoa N".
     pub fn replace_meeting_segments(
         &mut self,
         id: SessionId,
@@ -389,6 +390,11 @@ impl Store {
         }
         tx.execute(
             "DELETE FROM meeting_segments WHERE meeting_id = ?1",
+            [id.to_string()],
+        )?;
+        // Uma transcrição nova numera "Pessoa N" de novo: os nomes e sugestões não valem mais.
+        tx.execute(
+            "DELETE FROM meeting_speakers WHERE meeting_id = ?1",
             [id.to_string()],
         )?;
         for (index, segment) in segments.iter().enumerate() {

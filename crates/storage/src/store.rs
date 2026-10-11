@@ -7,6 +7,7 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::meeting_people;
 use crate::meetings::SCHEMA_2;
 use crate::metrics::{self, DictationMetrics, MetricsSummary};
 use crate::mirror::{self, DITADOS};
@@ -101,6 +102,7 @@ impl Store {
             }
         }
         conn.execute_batch(metrics::SCHEMA)?;
+        conn.execute_batch(meeting_people::SCHEMA)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),
