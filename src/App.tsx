@@ -233,6 +233,16 @@ function App() {
     };
   }, []);
 
+  // A click on the idle pill opens Início.
+  useEffect(() => {
+    const unlisten = listen("open-home", () => {
+      setDestination("home");
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const revealMainWindowForPermissions = async () => {
     try {
       await commands.showMainWindowCommand();

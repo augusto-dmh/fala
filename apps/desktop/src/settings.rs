@@ -641,6 +641,10 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Keep a quiet pill on screen between dictations, with the shortcut on hover. Windows only,
+    /// and only while `overlay_style` shows a pill.
+    #[serde(default = "default_pill_idle_visible")]
+    pub pill_idle_visible: bool,
     /// The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
     #[serde(default = "default_llm_enabled")]
     pub llm_enabled: bool,
@@ -785,6 +789,14 @@ fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
         .unwrap_or_else(|| "en".to_string())
+}
+
+/// The idle pill appears only for whoever turns it on: on by default it would show up, unasked,
+/// for everyone who already uses the app.
+pub const PILL_IDLE_VISIBLE_DEFAULT: bool = false;
+
+fn default_pill_idle_visible() -> bool {
+    PILL_IDLE_VISIBLE_DEFAULT
 }
 
 fn default_show_tray_icon() -> bool {
@@ -1123,6 +1135,7 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        pill_idle_visible: default_pill_idle_visible(),
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
         meeting_consent_accepted_at: None,
@@ -1722,6 +1735,20 @@ mod tests {
     fn default_overlay_style_is_live_when_overlay_defaults_on() {
         let settings = get_default_settings();
         assert_eq!(settings.overlay_style, OverlayStyle::Live);
+    }
+
+    #[test]
+    fn pill_idle_defaults_off() {
+        assert!(!get_default_settings().pill_idle_visible);
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!stored.pill_idle_visible);
+        let source = include_str!("settings.rs");
+        let production = &source[..source.find("#[cfg(test)]").unwrap()];
+        assert_eq!(
+            production.matches("PILL_IDLE_VISIBLE_DEFAULT").count(),
+            2,
+            "the default lives in one constant"
+        );
     }
 
     #[test]
