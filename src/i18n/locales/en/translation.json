@@ -872,6 +872,26 @@
       "me": "Me",
       "person": "Person {{n}}"
     },
+    "context": {
+      "title": "Notes context",
+      "description": "Sent to Anthropic with the transcript every time notes are generated.",
+      "profile": {
+        "title": "Your profile",
+        "description": "Who you are and what you work on, up to 300 characters.",
+        "placeholder": "E.g. PM on the payments team; meetings with customers and engineering."
+      },
+      "language": {
+        "title": "Notes language",
+        "description": "Notes come out in this language, even when the conversation mixes languages.",
+        "ptBR": "Portuguese (Brazil)",
+        "en": "English",
+        "app": "Same as the app"
+      },
+      "keyterms": {
+        "title": "Dictionary in the transcript",
+        "description": "Sends your dictionary terms to ElevenLabs to get their spelling right. Costs about US$ 0.05 more per hour."
+      }
+    },
     "key": {
       "label": "ElevenLabs key to transcribe:",
       "placeholder": "paste the key",

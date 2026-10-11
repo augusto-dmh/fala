@@ -7,6 +7,7 @@ import type {
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
+  NotesLanguage,
 } from "@/bindings";
 import { commands } from "@/bindings";
 
@@ -135,6 +136,11 @@ const settingUpdaters: {
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),
   custom_words: (value) => commands.updateCustomWords(value as string[]),
   llm_enabled: (value) => commands.changeLlmEnabledSetting(value as boolean),
+  notes_profile: (value) => commands.changeNotesProfileSetting(value as string),
+  notes_language: (value) =>
+    commands.changeNotesLanguageSetting(value as NotesLanguage),
+  meeting_keyterms: (value) =>
+    commands.changeMeetingKeytermsSetting(value as boolean),
   llm_disabled_apps: async (value) => {
     const result = await commands.changeLlmDisabledAppsSetting(
       value as string[],

@@ -872,6 +872,26 @@
       "me": "Eu",
       "person": "Pessoa {{n}}"
     },
+    "context": {
+      "title": "Contexto das notas",
+      "description": "Vai à Anthropic junto com a transcrição a cada geração de notas.",
+      "profile": {
+        "title": "Seu perfil",
+        "description": "Quem você é e no que trabalha, em até 300 caracteres.",
+        "placeholder": "Ex.: PM do time de pagamentos; reuniões com clientes e engenharia."
+      },
+      "language": {
+        "title": "Idioma das notas",
+        "description": "As notas saem neste idioma, mesmo numa conversa que mistura idiomas.",
+        "ptBR": "Português (Brasil)",
+        "en": "Inglês",
+        "app": "Igual ao app"
+      },
+      "keyterms": {
+        "title": "Dicionário na transcrição",
+        "description": "Manda os termos do seu dicionário à ElevenLabs para acertar a grafia. Custa cerca de US$ 0,05 a mais por hora."
+      }
+    },
     "key": {
       "label": "Chave da ElevenLabs para transcrever:",
       "placeholder": "cole a chave",
