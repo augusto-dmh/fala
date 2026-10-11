@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Guards what ADR-0008 decides about distribution: docs/RELEASE.md exists and says what it must,
-the NSIS installer is explicit and unsigned, and the updater stays off.
+the NSIS installer is explicit and unsigned, and the updater stays off. Also guards that the
+version has one source, `[workspace.package]` of the root Cargo.toml.
 
 Run from the repo root: python3 scripts/ci/test_release_config.py [-k <test name>]
 Standard library only, so the CI job needs no pip install.
@@ -9,10 +10,13 @@ Standard library only, so the CI job needs no pip install.
 import copy
 import json
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+ROOT_CARGO = ROOT / "Cargo.toml"
+PACKAGE_JSON = ROOT / "package.json"
 CONF = ROOT / "apps" / "desktop" / "tauri.conf.json"
 RELEASE_MD = ROOT / "docs" / "RELEASE.md"
 README = ROOT / "README.md"
@@ -66,6 +70,47 @@ def updater_problems(c: dict) -> list[str]:
         problems.append(f"plugins.updater.endpoints is {updater['endpoints']!r}, want []")
     if c["bundle"].get("createUpdaterArtifacts") is not False:
         problems.append(f"bundle.createUpdaterArtifacts is {c['bundle'].get('createUpdaterArtifacts')!r}, want False")
+    return problems
+
+
+def toml(path: Path) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def member_manifests() -> dict[str, dict]:
+    """Every Cargo.toml of the workspace, keyed by its path relative to the repo root."""
+    manifests = {}
+    for pattern in toml(ROOT_CARGO)["workspace"]["members"]:
+        for member in sorted(ROOT.glob(pattern)):
+            manifest = member / "Cargo.toml"
+            if manifest.is_file():
+                manifests[manifest.relative_to(ROOT).as_posix()] = toml(manifest)
+    return manifests
+
+
+def tauri_confs() -> dict[str, dict]:
+    return {p.name: json.loads(p.read_text(encoding="utf-8")) for p in sorted(CONF.parent.glob("tauri*.conf.json"))}
+
+
+def version_problems(root: dict, members: dict[str, dict], confs: dict[str, dict], package: dict) -> list[str]:
+    """Everything that would give the app a version other than `[workspace.package]` of the root Cargo.toml.
+
+    Tauri reads `version` from the Tauri config when it is there and falls back to the app's
+    Cargo.toml otherwise, for both the app (`package_info`) and the installer name.
+    """
+    version = root.get("workspace", {}).get("package", {}).get("version")
+    if not version:
+        return ["[workspace.package] of Cargo.toml has no version"]
+    problems = []
+    for path, manifest in members.items():
+        got = manifest.get("package", {}).get("version")
+        if got != {"workspace": True}:
+            problems.append(f"{path} has package.version {got!r}, want version.workspace = true")
+    for name, c in confs.items():
+        if "version" in c:
+            problems.append(f"apps/desktop/{name} sets version {c['version']!r}; the version comes from Cargo.toml")
+    if package.get("version") != version:
+        problems.append(f"package.json has version {package.get('version')!r}, want {version!r} from Cargo.toml")
     return problems
 
 
@@ -145,6 +190,46 @@ class BundleConfig(unittest.TestCase):
         self.assertEqual(c["productName"], "Fala")
         self.assertEqual(c["identifier"], "br.com.augusto.fala")
         self.assertIn("nsis", c["bundle"]["targets"])
+
+
+class VersionSource(unittest.TestCase):
+    def actual(self) -> tuple[dict, dict[str, dict], dict[str, dict], dict]:
+        return toml(ROOT_CARGO), member_manifests(), tauri_confs(), json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))
+
+    def test_one_version_source(self):
+        self.assertEqual(version_problems(*self.actual()), [])
+
+    def test_every_member_is_checked(self):
+        members = member_manifests()
+        for path in ("apps/desktop/Cargo.toml", "apps/cli/Cargo.toml", "crates/core/Cargo.toml"):
+            self.assertIn(path, members)
+
+    def test_guard_rejects_a_second_source(self):
+        root, members, confs, package = self.actual()
+        with_conf = copy.deepcopy(confs)
+        with_conf["tauri.conf.json"]["version"] = root["workspace"]["package"]["version"]
+        with_crate = copy.deepcopy(members)
+        with_crate["apps/desktop/Cargo.toml"]["package"]["version"] = root["workspace"]["package"]["version"]
+        with_package = copy.deepcopy(package)
+        with_package["version"] = "9.9.9"
+        without_package = copy.deepcopy(package)
+        del without_package["version"]
+        without_root = copy.deepcopy(root)
+        del without_root["workspace"]["package"]["version"]
+        cases = {
+            "tauri.conf.json version": (root, members, with_conf, package),
+            "literal crate version": (root, with_crate, confs, package),
+            "package.json diverges": (root, members, confs, with_package),
+            "package.json without version": (root, members, confs, without_package),
+            "no workspace version": (without_root, members, confs, package),
+        }
+        for name, args in cases.items():
+            self.assertTrue(version_problems(*args), f"guard accepted {name}")
+
+    def test_release_md_names_the_source(self):
+        body = release_sections()["Versão e changelog"]
+        for needle in ("[workspace.package]", "cargo update --workspace", "test_release_config.py"):
+            self.assertIn(needle, body, f"'Versão e changelog' lacks {needle!r}")
 
 
 class CiWiring(unittest.TestCase):

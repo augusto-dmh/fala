@@ -1,6 +1,6 @@
 [package]
 name = "fala"
-version = "0.1.0"
+version.workspace = true
 description = "Ditado por voz e notas de reunião, local-first"
 authors = ["cjpais", "Augusto Henriques"]
 edition = "2021"

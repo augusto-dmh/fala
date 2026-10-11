@@ -18,7 +18,7 @@ TODO(windows): este roteiro foi escrito sem acesso a uma máquina Windows. Nenhu
 
 Versão e `CHANGELOG.md` são do mantenedor; nenhum PR de feature os altera ([`CONTRIBUTING.md`](../CONTRIBUTING.md)).
 
-1. Escolha a versão pelo [SemVer](https://semver.org/lang/pt-BR/). O nome do instalador vem de `version` em `apps/desktop/tauri.conf.json`; mantenha `apps/desktop/Cargo.toml` e `package.json` na mesma versão.
+1. Escolha a versão pelo [SemVer](https://semver.org/lang/pt-BR/) e mude-a num lugar só: `version` em `[workspace.package]` do `Cargo.toml` raiz, que todos os crates herdam (`version.workspace = true`). Rode `cargo update --workspace` para o `Cargo.lock` acompanhar. O `tauri.conf.json` não tem `version`: sem ele, o Tauri usa a do `Cargo.toml` do app, tanto na versão que o app mostra quanto no nome do instalador. O `package.json` também tem a versão, mas nada no build a lê; mantenha-a igual. O `scripts/ci/test_release_config.py` falha no CI se o `tauri.conf.json` voltar a ter `version`, se algum crate não herdar a versão ou se o `package.json` divergir.
 2. Gere a entrada do changelog a partir dos commits de `main` com `git cliff` (configuração em `cliff.toml`) e revise o texto.
 3. Faça o commit `chore(release): vX.Y.Z` numa branch `chore/release-<x-y-z>` (kebab-case, por exemplo `chore/release-0-1-0`), abra o PR e espere o squash, como qualquer outro PR.
 4. Só construa o instalador depois que esse commit estiver em `main`.
