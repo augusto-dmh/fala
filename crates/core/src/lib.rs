@@ -1,7 +1,7 @@
 //! Tipos compartilhados do Fala.
 //!
 //! Define o contrato que os crates de `crates/` trocam: `Language`, `DictationAudio`,
-//! `Transcript`, `AppContext`, `Dictionary`, `Editor`, `Dictation` e `CoreError`.
+//! `Transcript`, `AppContext`, `Dictionary` (com `Replacement`), `Editor`, `Dictation` e `CoreError`.
 //! `Event`, `Settings`, `Utterance` e `Session` entram por adição quando um consumidor precisar.
 //! Sem dependência de plataforma nem de `tauri` (invariante de arquitetura).
 
@@ -12,7 +12,7 @@ mod language;
 
 pub use audio::DictationAudio;
 pub use dictation::{AppContext, Dictation, Editor, Transcript};
-pub use dictionary::Dictionary;
+pub use dictionary::{Dictionary, Replacement};
 pub use language::Language;
 
 /// Erros de `fala-core`.

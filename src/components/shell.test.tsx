@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RAIL_ITEMS, Rail } from "./Rail";
+import { RAIL_ITEMS, Rail, type RailDestination } from "./Rail";
 import {
   resolveSettingsView,
   visibleAdvancedPages,
@@ -37,18 +37,25 @@ const en = JSON.parse(read("../i18n/locales/en/translation.json"));
 const appTsx = read("../App.tsx");
 
 // i18next is not initialised here, so `t` returns the key: labels show as keys.
-const render = (active: "home" | "dictionary" | "meetings" | "settings") =>
+const DESTINATIONS = [
+  "home",
+  "dictionary",
+  "meetings",
+  "stats",
+  "settings",
+] as const;
+const render = (active: RailDestination) =>
   renderToStaticMarkup(
     <Rail active={active} onSelect={noop} onOpenModels={noop} />,
   );
 
-// C25: the rail has Início and Dicionário on top and Configurações in its
-// footer, 220 px wide collapsing to 48 px of icons below 840 px, with the
+// C25: the rail has Início, Dicionário, Reuniões and Desempenho on top and
+// Configurações in its footer, 220 px wide collapsing to 48 px of icons below 840 px, with the
 // wordmark in ink beside the pill in miniature.
 {
   assert.deepEqual(
     RAIL_ITEMS.map((item) => item.id),
-    ["home", "dictionary", "meetings"],
+    ["home", "dictionary", "meetings", "stats"],
   );
   const html = render("home");
   assert.match(html, /<nav[^>]*aria-label="rail.navigation"/);
@@ -58,13 +65,15 @@ const render = (active: "home" | "dictionary" | "meetings" | "settings") =>
   const home = html.indexOf('aria-label="rail.home"');
   const dict = html.indexOf('aria-label="rail.dictionary"');
   const meetings = html.indexOf('aria-label="rail.meetings"');
+  const stats = html.indexOf('aria-label="rail.stats"');
   const settings = html.indexOf('aria-label="rail.settings"');
   const footer = html.indexOf("mt-auto");
   assert.ok(
     home > 0 &&
       home < dict &&
       dict < meetings &&
-      meetings < footer &&
+      meetings < stats &&
+      stats < footer &&
       footer < settings,
   );
   // The classes are read on the element itself, not anywhere in the rail.
@@ -80,7 +89,7 @@ const render = (active: "home" | "dictionary" | "meetings" | "settings") =>
     assert.ok(wordmarkClasses.includes(cls), `wordmark ${cls}`);
   }
   assert.ok(has(html, "fill-black") && has(html, "fill-white"), "pill mark");
-  for (const id of ["home", "dictionary", "meetings", "settings"]) {
+  for (const id of DESTINATIONS) {
     const label = html.match(
       new RegExp(`<span class="([^"]*)">rail\\.${id}</span>`),
     );
@@ -100,9 +109,9 @@ ok("C25");
 
 // C26: exactly the active destination is marked: aria-current, subtle fill and
 // a 3 px ink bar; the others are not.
-for (const active of ["home", "dictionary", "meetings", "settings"] as const) {
+for (const active of DESTINATIONS) {
   const html = render(active);
-  for (const id of ["home", "dictionary", "meetings", "settings"]) {
+  for (const id of DESTINATIONS) {
     const tag = button(html, `rail.${id}`);
     const tagClasses = classes(tag);
     const isActive = id === active;
@@ -127,6 +136,7 @@ ok("C26");
 assert.match(appTsx, /useState<RailDestination>\("home"\)/);
 assert.match(appTsx, /destination === "home" && <HomePage \/>/);
 assert.match(appTsx, /destination === "dictionary" && <DictionaryPage \/>/);
+assert.match(appTsx, /destination === "stats" && <StatsPage \/>/);
 assert.doesNotMatch(appTsx, /Sidebar|Footer|SECTIONS_CONFIG/);
 assert.ok(
   !existsSync(new URL("./Sidebar.tsx", import.meta.url)),
@@ -194,8 +204,16 @@ ok("C27");
 }
 ok("C28");
 
-// C29: the dictionary is its own destination and CustomWords lives only there.
-assert.match(read("./DictionaryPage.tsx"), /<CustomWords grouped \/>/);
+// C29: the dictionary is its own destination and CustomWords lives only there,
+// next to the spoken -> written pairs, both filtered by the page search.
+assert.match(
+  read("./DictionaryPage.tsx"),
+  /<CustomWords grouped filter=\{query\} \/>/,
+);
+assert.match(
+  read("./DictionaryPage.tsx"),
+  /<DictionaryReplacements filter=\{query\} \/>/,
+);
 assert.doesNotMatch(
   read("./settings/advanced/AdvancedSettings.tsx"),
   /CustomWords/,
@@ -253,6 +271,7 @@ ok("C31");
     "rail.home": "Início",
     "rail.dictionary": "Dicionário",
     "rail.meetings": "Reuniões",
+    "rail.stats": "Desempenho",
     "rail.settings": "Configurações",
     "settingsPage.tabs.general": "Geral",
     "settingsPage.tabs.advanced": "Avançado",
@@ -266,6 +285,7 @@ ok("C31");
     "rail.home": "Home",
     "rail.dictionary": "Dictionary",
     "rail.meetings": "Meetings",
+    "rail.stats": "Performance",
     "rail.settings": "Settings",
     "settingsPage.tabs.advanced": "Advanced",
   };

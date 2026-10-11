@@ -4,14 +4,18 @@ import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
 import "./Pill.css";
 import "./Notice.css";
+import "./IdlePill.css";
 import { Notice } from "./Notice";
 import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
 import { MeetingPill } from "./MeetingPill";
+import { IdlePill } from "./IdlePill";
 import {
   SLOW_LOAD_MS,
+  idleKeys,
   isHoldToTalk,
   nextModelLoadStart,
+  showsDoubleTapHint,
   showsModelLoading,
   toPillMode,
 } from "./pillModel";
@@ -32,7 +36,8 @@ type OverlayState =
   | "transcribing"
   | "processing"
   | "meeting"
-  | "meeting_paused";
+  | "meeting_paused"
+  | "idle";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -71,6 +76,10 @@ const RecordingOverlay: React.FC = () => {
   // The meeting indicator: recorded time and the silent-channel warning, from `MeetingStatus`.
   const [meetingMs, setMeetingMs] = useState(0);
   const [meetingMuted, setMeetingMuted] = useState(false);
+  // The pill at rest: the cursor is over it, and the shortcut it shows on hover.
+  const [idleHover, setIdleHover] = useState(false);
+  const [idleKeyList, setIdleKeyList] = useState<string[]>([]);
+  const [idleDoubleTap, setIdleDoubleTap] = useState(false);
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
   const [session, setSession] = useState(0);
@@ -108,9 +117,38 @@ const RecordingOverlay: React.FC = () => {
         }
       };
 
+      // The pill at rest, between sessions: reads the shortcut it shows on hover.
+      const showIdle = async () => {
+        setNotice(null);
+        setIdleHover(false);
+        setState("idle");
+        setIsVisible(true);
+        await syncLanguageFromSettings();
+        try {
+          const settings = await commands.getAppSettings();
+          if (settings.status === "ok") {
+            setPosition(
+              settings.data.overlay_position === "top" ? "top" : "bottom",
+            );
+            setIdleKeyList(
+              idleKeys(settings.data.bindings?.transcribe?.current_binding),
+            );
+            setIdleDoubleTap(
+              showsDoubleTapHint(settings.data.shortcut_activation),
+            );
+          }
+        } catch {
+          // Keep the previous shortcut and placement if settings can't be read.
+        }
+      };
+
       const unlistenShow = await listen("show-overlay", async (event) => {
         if (event.payload === "notice") {
           void showForNotice();
+          return;
+        }
+        if (event.payload === "idle") {
+          void showIdle();
           return;
         }
         const overlayState = event.payload as OverlayState;
@@ -152,6 +190,7 @@ const RecordingOverlay: React.FC = () => {
 
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
+        setIdleHover(false);
         setCaptureReady(false);
         setLimitWarning(false);
         setNotice(null);
@@ -210,6 +249,9 @@ const RecordingOverlay: React.FC = () => {
           );
         },
       );
+
+      // Listening now: an idle pill shown before this point is shown again.
+      void commands.pillOverlayReady();
 
       return () => {
         unlistenModel();
@@ -298,6 +340,30 @@ const RecordingOverlay: React.FC = () => {
     return (
       <div dir={direction} className={`ov-stage ${position}`}>
         {noticeCard}
+      </div>
+    );
+  }
+
+  if (state === "idle") {
+    const hover = (on: boolean) => {
+      setIdleHover(on);
+      void commands.setIdlePillHover(on);
+    };
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position}`}
+        onMouseEnter={() => hover(true)}
+        onMouseLeave={() => hover(false)}
+      >
+        <IdlePill
+          hover={idleHover}
+          keys={idleKeyList}
+          dictateLabel={t("overlay.idle.dictate")}
+          doubleTapLabel={idleDoubleTap ? t("overlay.idle.doubleTap") : null}
+          label={t("overlay.idle.label")}
+          onOpen={() => void commands.openHomeFromPill()}
+        />
       </div>
     );
   }

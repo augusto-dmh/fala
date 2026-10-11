@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { MeetingDetail, MeetingTemplate } from "@/bindings";
+import type {
+  MeetingDetail,
+  MeetingError,
+  MeetingLine,
+  MeetingTemplate,
+} from "@/bindings";
 import { Button } from "../ui/Button";
 import { AnnotationsField } from "./AnnotationsField";
+import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
-import { lineText, titleOf } from "./meetingModel";
+import { errorKey, titleOf } from "./meetingModel";
+import { NotesView } from "./NotesView";
+import { parseNotes } from "./notesModel";
+import { segmentAnchor, TranscriptView } from "./TranscriptView";
 
 export interface MeetingViewProps {
   detail: MeetingDetail;
@@ -30,6 +39,40 @@ export function MeetingView(props: MeetingViewProps) {
     detail.notes_template ?? props.templates[0]?.id ?? "geral",
   );
   const draft = detail.summary.started_at === null;
+  const [playing, setPlaying] = useState<number | null>(null);
+  const [clipError, setClipError] = useState<MeetingError | null>(null);
+  const [highlighted, setHighlighted] = useState<number | null>(null);
+  const player = useMemo(() => new ClipPlayer(setPlaying), []);
+  // One clip at a time, and none left playing after leaving the session.
+  useEffect(() => () => player.stop(), [player, detail.summary.id]);
+  const segments = useMemo(
+    () => new Map(detail.lines.map((line) => [line.seq, line])),
+    [detail.lines],
+  );
+  const notes = useMemo(
+    () =>
+      detail.notes_md === null
+        ? null
+        : parseNotes(detail.notes_md, detail.lines),
+    [detail.notes_md, detail.lines],
+  );
+
+  const play = (line: MeetingLine) => {
+    setClipError(null);
+    if (playing === line.seq) {
+      player.stop();
+      return;
+    }
+    player
+      .play(detail.summary.id, line.seq, line.t0_ms, line.t1_ms)
+      .catch((error: MeetingError) => setClipError(error));
+  };
+  const reveal = (seq: number) => {
+    setHighlighted(seq);
+    document
+      .getElementById(segmentAnchor(seq))
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   return (
     <div className="space-y-4 p-4">
@@ -104,21 +147,42 @@ export function MeetingView(props: MeetingViewProps) {
             {detail.lines.length === 0 ? (
               <p className="text-sm">{t("meeting.view.noTranscript")}</p>
             ) : (
-              detail.lines.map((line) => (
-                <p key={line.seq} className="text-sm">
-                  {lineText(line, t)}
-                </p>
-              ))
+              <>
+                {!detail.audio_available && (
+                  <p className="text-caption text-text-2">
+                    {t("meeting.source.noAudio")}
+                  </p>
+                )}
+                {clipError !== null && (
+                  <p role="alert" className="text-caption text-danger">
+                    {t(errorKey(clipError))}
+                  </p>
+                )}
+                <TranscriptView
+                  lines={detail.lines}
+                  audioAvailable={detail.audio_available}
+                  playing={playing}
+                  highlighted={highlighted}
+                  onPlay={play}
+                  t={t}
+                />
+              </>
             )}
           </section>
-          {detail.notes_md !== null && (
+          {notes !== null && (
             <section className="space-y-1">
               <h4 className="text-sm font-semibold">
                 {t("meeting.view.notes")}
               </h4>
-              <pre className="whitespace-pre-wrap text-sm">
-                {detail.notes_md}
-              </pre>
+              <NotesView
+                notes={notes}
+                segments={segments}
+                audioAvailable={detail.audio_available}
+                playing={playing}
+                onPlay={play}
+                onReveal={reveal}
+                t={t}
+              />
             </section>
           )}
         </>

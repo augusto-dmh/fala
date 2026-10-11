@@ -11,6 +11,7 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
+import { PauseMediaOnMeeting, PauseMediaWhileRecording } from "../PauseMedia";
 import { ModelSettingsCard } from "./ModelSettingsCard";
 import { LlmSettings } from "../LlmSettings";
 
@@ -25,6 +26,8 @@ export const GeneralSettings: React.FC = () => {
         <ShortcutActivationSetting descriptionMode="tooltip" grouped={true} />
         {/* Cancel shortcut remains hidden on Linux because of dynamic shortcut instability. */}
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
+        <ShortcutInput shortcutId="paste_last" grouped={true} />
+        <ShortcutInput shortcutId="copy_last" grouped={true} />
       </SettingsGroup>
       <ModelSettingsCard />
       <SettingsGroup title={t("settings.llm.title")}>
@@ -34,6 +37,8 @@ export const GeneralSettings: React.FC = () => {
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <ChannelSelector descriptionMode="tooltip" grouped={true} />
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
+        <PauseMediaWhileRecording descriptionMode="tooltip" grouped={true} />
+        <PauseMediaOnMeeting descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
         <OutputDeviceSelector
           descriptionMode="tooltip"

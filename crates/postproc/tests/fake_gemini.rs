@@ -133,6 +133,65 @@ fn serve(stream: TcpStream, sink: &Mutex<Vec<Captured>>, reply: Reply) {
     }
 }
 
+/// 16 palavras depois das regras, com o falado de um par duas vezes.
+const SIXTEEN_SPOKEN: &str =
+    "eu acho que o fala sql abriu ontem e o Fala-SQL fechou hoje cedo no time todo";
+const SIXTEEN_WRITTEN: &str =
+    "Eu acho que o Fala.sqlite abriu ontem e o Fala.sqlite fechou hoje cedo no time todo";
+
+fn replacement_dictionary() -> Dictionary {
+    Dictionary::new(["Itaú"]).with_replacements([("fala sql", "Fala.sqlite")])
+}
+
+#[test]
+fn replacement_applies_without_llm() {
+    let server = FakeServer::start(ok_after(0, "não devia ser chamado"));
+    let processor = Postprocessor::new(LlmConfig {
+        enabled: false,
+        ..server.llm()
+    });
+    let out = processor.process(
+        transcript(SIXTEEN_SPOKEN),
+        app("Slack"),
+        &replacement_dictionary(),
+    );
+    assert_eq!(out.dictation.final_text, SIXTEEN_WRITTEN);
+    assert_eq!(out.dictation.editor, Editor::Rules);
+    assert_eq!(out.replaced, [0, 0]);
+    assert_eq!(server.requests().len(), 0);
+}
+
+#[test]
+fn replacement_reaches_llm_as_written() {
+    let server = FakeServer::start(ok_after(0, "Texto formatado."));
+    let processor = Postprocessor::new(server.llm());
+    let out = processor.process(
+        transcript(SIXTEEN_SPOKEN),
+        app("Slack"),
+        &replacement_dictionary(),
+    );
+    assert_eq!(out.dictation.editor, Editor::Llm);
+    assert_eq!(out.replaced, [0, 0]);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_str(&requests[0].body).unwrap();
+    assert_eq!(
+        body["systemInstruction"]["parts"][0]["text"],
+        format!(
+            "{SYSTEM_PROMPT}\n\n{}\n\nPersonal dictionary:\n- Itaú\n- Fala.sqlite",
+            CleanupLevel::Light.instruction()
+        )
+    );
+    assert_eq!(
+        body["contents"][0]["parts"][0]["text"],
+        format!(
+            "<app>Slack</app>\n<destination>chat</destination>\n<transcription>{SIXTEEN_WRITTEN}</transcription>"
+        )
+    );
+    let raw = requests[0].body.to_lowercase();
+    assert!(!raw.contains("fala sql") && !raw.contains("fala-sql"));
+}
+
 fn answer(text: &str) -> String {
     serde_json::json!({"candidates":[{"content":{"parts":[{"text": text}],"role":"model"}}]})
         .to_string()

@@ -293,6 +293,14 @@ impl SoundTheme {
     pub fn to_stop_path(self) -> String {
         format!("resources/{}_stop.wav", self.as_str())
     }
+
+    pub fn to_meeting_pause_path(self) -> String {
+        format!("resources/{}_meeting_pause.wav", self.as_str())
+    }
+
+    pub fn to_meeting_resume_path(self) -> String {
+        format!("resources/{}_meeting_resume.wav", self.as_str())
+    }
 }
 
 /// UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
@@ -344,6 +352,29 @@ pub enum VadBackend {
     #[default]
     Silero,
     Earshot,
+}
+
+/// How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
+/// The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CleanupLevel {
+    Verbatim,
+    #[default]
+    Light,
+    Medium,
+    Heavy,
+}
+
+impl From<CleanupLevel> for fala_postproc::CleanupLevel {
+    fn from(level: CleanupLevel) -> Self {
+        match level {
+            CleanupLevel::Verbatim => Self::Verbatim,
+            CleanupLevel::Light => Self::Light,
+            CleanupLevel::Medium => Self::Medium,
+            CleanupLevel::Heavy => Self::Heavy,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Type)]
@@ -567,6 +598,9 @@ pub struct AppSettings {
     pub log_level: LogLevel,
     #[serde(default)]
     pub custom_words: Vec<String>,
+    /// Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
+    #[serde(default)]
+    pub dictionary_replacements: Vec<crate::dictionary::DictionaryReplacement>,
     /// What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
     #[serde(default)]
     pub notes_profile: String,
@@ -607,6 +641,12 @@ pub struct AppSettings {
     pub post_process_selected_prompt_id: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
+    /// Pause the media playing on the PC while dictating; off by default.
+    #[serde(default)]
+    pub pause_media_while_recording: bool,
+    /// Pause the media playing on the PC while a meeting records; on by default.
+    #[serde(default = "default_pause_media_on_meeting")]
+    pub pause_media_on_meeting: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
@@ -662,12 +702,19 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Keep a quiet pill on screen between dictations, with the shortcut on hover. Windows only,
+    /// and only while `overlay_style` shows a pill.
+    #[serde(default = "default_pill_idle_visible")]
+    pub pill_idle_visible: bool,
     /// The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
     #[serde(default = "default_llm_enabled")]
     pub llm_enabled: bool,
     /// Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
     #[serde(default = "default_llm_disabled_apps")]
     pub llm_disabled_apps: Vec<String>,
+    /// How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
+    #[serde(default)]
+    pub cleanup_level: CleanupLevel,
     /// When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
@@ -802,6 +849,11 @@ fn default_post_process_enabled() -> bool {
     false
 }
 
+/// Music playing during a meeting leaks into the system channel of the recording.
+fn default_pause_media_on_meeting() -> bool {
+    true
+}
+
 fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
@@ -810,6 +862,14 @@ fn default_app_language() -> String {
 
 fn default_meeting_keyterms() -> bool {
     true
+}
+
+/// The idle pill appears only for whoever turns it on: on by default it would show up, unasked,
+/// for everyone who already uses the app.
+pub const PILL_IDLE_VISIBLE_DEFAULT: bool = false;
+
+fn default_pill_idle_visible() -> bool {
+    PILL_IDLE_VISIBLE_DEFAULT
 }
 
 fn default_show_tray_icon() -> bool {
@@ -1084,6 +1144,31 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    // Paste and copy the last dictation: no key until the user picks one, so they never
+    // collide with another app's shortcut.
+    for (id, name, description) in [
+        (
+            "paste_last",
+            "Paste Last Dictation",
+            "Pastes the last dictation again into the active app.",
+        ),
+        (
+            "copy_last",
+            "Copy Last Dictation",
+            "Copies the last dictation to the clipboard.",
+        ),
+    ] {
+        bindings.insert(
+            id.to_string(),
+            ShortcutBinding {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: description.to_string(),
+                default_binding: String::new(),
+                current_binding: String::new(),
+            },
+        );
+    }
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1111,6 +1196,7 @@ pub fn get_default_settings() -> AppSettings {
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),
+        dictionary_replacements: Vec::new(),
         notes_profile: String::new(),
         notes_language: NotesLanguage::default(),
         meeting_keyterms: default_meeting_keyterms(),
@@ -1130,6 +1216,8 @@ pub fn get_default_settings() -> AppSettings {
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
         mute_while_recording: false,
+        pause_media_while_recording: false,
+        pause_media_on_meeting: default_pause_media_on_meeting(),
         append_trailing_space: false,
         app_language: default_app_language(),
         theme: default_theme(),
@@ -1151,8 +1239,10 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        pill_idle_visible: default_pill_idle_visible(),
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
+        cleanup_level: CleanupLevel::default(),
         meeting_consent_accepted_at: None,
     }
 }
@@ -1226,13 +1316,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
             updated = true;
         }
 
-        // Merge in any bindings added since this store was written.
-        for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
-                debug!("Adding missing binding: {}", entry.key());
-                entry.insert(value);
-                updated = true;
-            }
+        if add_missing_bindings(&mut settings) {
+            updated = true;
         }
 
         if updated {
@@ -1390,6 +1475,19 @@ fn apply_settings_migrations(
     updated
 }
 
+/// Merges in any bindings added since this store was written; the user's own are kept.
+fn add_missing_bindings(settings: &mut AppSettings) -> bool {
+    let mut added = false;
+    for (key, value) in get_default_settings().bindings {
+        if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+            debug!("Adding missing binding: {}", entry.key());
+            entry.insert(value);
+            added = true;
+        }
+    }
+    added
+}
+
 /// Schema 3 (D6): the legacy post-processing binding loses its default key. A key the user
 /// chose is kept; `transcribe` is never touched.
 fn unbind_legacy_post_process_shortcut(settings: &mut AppSettings) {
@@ -1503,6 +1601,16 @@ mod tests {
         assert!(settings.filler_word_removal_enabled);
         // Bindings default to empty; the load path merges the real defaults in.
         assert!(settings.bindings.is_empty());
+    }
+
+    #[test]
+    fn media_pause_is_off_for_dictation_and_on_for_meetings() {
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        let fresh = get_default_settings();
+        for settings in [stored, fresh] {
+            assert!(!settings.pause_media_while_recording);
+            assert!(settings.pause_media_on_meeting);
+        }
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to
@@ -1621,6 +1729,9 @@ mod tests {
         assert_eq!(settings.sound_theme, SoundTheme::Pop);
         assert!(settings.filler_word_removal_enabled);
         assert_eq!(settings.vad_backend, VadBackend::Silero);
+        // The dictionary pairs are a new field: the terms load as stored, with no pairs.
+        assert_eq!(settings.custom_words, ["Fala", "cjpais"]);
+        assert!(settings.dictionary_replacements.is_empty());
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
         // Without an exact device, the retired generic GPU choice becomes Auto.
@@ -1750,6 +1861,20 @@ mod tests {
     fn default_overlay_style_is_live_when_overlay_defaults_on() {
         let settings = get_default_settings();
         assert_eq!(settings.overlay_style, OverlayStyle::Live);
+    }
+
+    #[test]
+    fn pill_idle_defaults_off() {
+        assert!(!get_default_settings().pill_idle_visible);
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!stored.pill_idle_visible);
+        let source = include_str!("settings.rs");
+        let production = &source[..source.find("#[cfg(test)]").unwrap()];
+        assert_eq!(
+            production.matches("PILL_IDLE_VISIBLE_DEFAULT").count(),
+            2,
+            "the default lives in one constant"
+        );
     }
 
     #[test]
@@ -2047,6 +2172,38 @@ mod tests {
     }
 
     #[test]
+    fn old_store_gets_last_dictation_bindings_without_a_key() {
+        let mut settings = migrated(schema_2_store("alt+p"));
+        assert!(!settings.bindings.contains_key("paste_last"));
+        assert!(add_missing_bindings(&mut settings));
+        for id in ["paste_last", "copy_last"] {
+            let binding = &settings.bindings[id];
+            assert_eq!(binding.id, id);
+            assert_eq!(binding.current_binding, "", "{id}");
+            assert_eq!(binding.default_binding, "", "{id}");
+        }
+        assert_eq!(
+            settings.bindings["transcribe"].current_binding,
+            "ctrl_left+space"
+        );
+        assert_eq!(
+            settings.bindings["transcribe_with_post_process"].current_binding,
+            "alt+p"
+        );
+        // A key the user chose survives the next load.
+        settings
+            .bindings
+            .get_mut("paste_last")
+            .unwrap()
+            .current_binding = "alt+shift+z".into();
+        assert!(!add_missing_bindings(&mut settings));
+        assert_eq!(
+            settings.bindings["paste_last"].current_binding,
+            "alt+shift+z"
+        );
+    }
+
+    #[test]
     fn chosen_post_process_binding_is_kept() {
         let settings = migrated(schema_2_store("alt+p"));
         let post_process = &settings.bindings["transcribe_with_post_process"];
@@ -2145,6 +2302,59 @@ mod tests {
                 .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
             apply_settings_migrations(&mut settings, &raw);
             assert_eq!(settings.selected_language, stored, "stored '{stored}'");
+        }
+    }
+
+    #[test]
+    fn cleanup_level_defaults_to_light() {
+        assert_eq!(get_default_settings().cleanup_level, CleanupLevel::Light);
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(from_empty.cleanup_level, CleanupLevel::Light);
+        let old_store = migrated(schema_2_store("ctrl+space"));
+        assert_eq!(old_store.cleanup_level, CleanupLevel::Light);
+    }
+
+    #[test]
+    fn invalid_cleanup_level_is_salvaged_to_light() {
+        for invalid in [serde_json::json!("extreme"), serde_json::json!(42)] {
+            let mut stored = default_settings_json();
+            let map = stored.as_object_mut().unwrap();
+            map.insert(
+                "selected_model".into(),
+                serde_json::json!("parakeet-tdt-0.6b-v3"),
+            );
+            map.insert("onboarding_completed".into(), serde_json::json!(true));
+            map.insert("cleanup_level".into(), invalid.clone());
+            assert!(
+                serde_json::from_value::<AppSettings>(stored.clone()).is_err(),
+                "{invalid} must fail the strict parse"
+            );
+
+            let salvaged = salvage_settings(&stored);
+            assert_eq!(salvaged.cleanup_level, CleanupLevel::Light, "{invalid}");
+            assert_eq!(salvaged.selected_model, "parakeet-tdt-0.6b-v3");
+            assert!(salvaged.onboarding_completed);
+        }
+    }
+
+    #[test]
+    fn stored_cleanup_levels_round_trip() {
+        for (literal, level) in [
+            ("verbatim", CleanupLevel::Verbatim),
+            ("light", CleanupLevel::Light),
+            ("medium", CleanupLevel::Medium),
+            ("heavy", CleanupLevel::Heavy),
+        ] {
+            let mut raw = schema_2_store("ctrl+space");
+            raw["cleanup_level"] = serde_json::json!(literal);
+            let settings = migrated(raw);
+            assert_eq!(settings.cleanup_level, level, "stored '{literal}'");
+            assert_eq!(
+                serde_json::to_value(&settings).unwrap()["cleanup_level"],
+                literal
+            );
+            assert_eq!(fala_postproc::CleanupLevel::from(level).as_str(), literal);
         }
     }
 

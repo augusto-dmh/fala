@@ -1,7 +1,9 @@
 use crate::audio_toolkit::list_input_devices;
 use crate::dictation_capture::{DictationRecorder, MicSignal, VadPolicy};
 use crate::helpers::clamshell;
+use crate::long_dictation::{BlockQueue, Transcribe};
 use crate::managers::transcription::StreamRouter;
+use crate::media_pause::{self, Owner, PauseGate};
 use crate::settings::{get_settings, write_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
@@ -273,6 +275,7 @@ fn create_audio_recorder(
     app_handle: &tauri::AppHandle,
     selected_channel: Option<u16>,
     stream_router: Arc<StreamRouter>,
+    blocks: Arc<BlockQueue>,
 ) -> Result<DictationRecorder, anyhow::Error> {
     // The dictation VAD is always the bundled Silero v4 (ADR-0009); a stored
     // `vad_backend = "earshot"` is ignored.
@@ -302,7 +305,8 @@ fn create_audio_recorder(
             move |frame| {
                 router.feed(frame);
             }
-        });
+        })
+        .with_block_callback(move |block| blocks.submit(block));
 
     Ok(recorder)
 }
@@ -338,9 +342,13 @@ pub struct AudioRecordingManager {
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
     mute_state: Arc<Mutex<MuteState>>,
+    /// A media pause asked by the current dictation and not resumed yet.
+    media_pause: Arc<PauseGate>,
     close_generation: Arc<AtomicU64>,
     cancel_generation: Arc<AtomicU64>,
     stream_router: Arc<StreamRouter>,
+    /// The long-dictation blocks of the recording in flight, armed by `TranscribeAction::start`.
+    blocks: Arc<BlockQueue>,
     /// Lock-free mirror of "is the state in {Recording, Stopping}",
     /// maintained by `set_state()`. The hot-path `is_recording()` reads THIS
     /// instead of the std `state` mutex, so a UI poll can no longer deadlock
@@ -383,9 +391,11 @@ impl AudioRecordingManager {
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
             mute_state: Arc::new(Mutex::new(MuteState::default())),
+            media_pause: Arc::new(PauseGate::default()),
             close_generation: Arc::new(AtomicU64::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
             stream_router,
+            blocks: Arc::new(BlockQueue::default()),
             recording_active: Arc::new(AtomicBool::new(false)),
             capture_generation: Arc::new(AtomicU64::new(0)),
             cached_device: Arc::new(Mutex::new(None)),
@@ -576,6 +586,25 @@ impl AudioRecordingManager {
         }
     }
 
+    /// Pauses the media playing on the PC when `pause_media_while_recording` is on and the
+    /// recording of `generation` is still the current one. A stop invalidates the generation
+    /// before it resumes, so a late pause never strands the media paused.
+    pub fn pause_media(&self, generation: u64) {
+        if !get_settings(&self.app_handle).pause_media_while_recording {
+            return;
+        }
+        self.media_pause.pause_if(
+            || self.is_recording_readiness_current(generation),
+            || media_pause::pause(Owner::Dictation),
+        );
+    }
+
+    /// Plays again what [`Self::pause_media`] paused; nothing when it paused nothing.
+    pub fn resume_media(&self) {
+        self.media_pause
+            .resume(|| media_pause::resume(Owner::Dictation));
+    }
+
     pub fn preload_vad(&self) -> Result<(), anyhow::Error> {
         let mut recorder_opt = self.recorder.lock().unwrap();
         if recorder_opt.is_none() {
@@ -584,9 +613,15 @@ impl AudioRecordingManager {
                 &self.app_handle,
                 settings.selected_channel,
                 Arc::clone(&self.stream_router),
+                Arc::clone(&self.blocks),
             )?);
         }
         Ok(())
+    }
+
+    /// The block queue of the recording in flight.
+    pub fn block_queue(&self) -> &BlockQueue {
+        &self.blocks
     }
 
     pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
@@ -722,6 +757,7 @@ impl AudioRecordingManager {
             }
             mute_guard.did_mute = false;
         }
+        self.resume_media();
 
         if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             // If still recording, stop first.
@@ -808,6 +844,7 @@ impl AudioRecordingManager {
         &self,
         binding_id: &str,
         vad_policy: VadPolicy,
+        blocks: Option<Transcribe>,
     ) -> Result<RecordingReadiness, String> {
         let mut state = self.state.lock().unwrap();
 
@@ -827,6 +864,8 @@ impl AudioRecordingManager {
             }
 
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                // Armed before the capture starts, so no block of this recording is missed.
+                self.blocks.arm(blocks);
                 match rec.start(vad_policy) {
                     Ok(receiver) => {
                         let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
@@ -982,6 +1021,7 @@ impl AudioRecordingManager {
 
                 if self.was_cancelled_since(cancel_generation) {
                     debug!("Recording stop cancelled; discarding captured samples");
+                    self.blocks.cancel();
                     return None;
                 }
 
@@ -1020,7 +1060,9 @@ impl AudioRecordingManager {
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
         self.invalidate_recording_readiness();
+        self.resume_media();
         self.cancel_generation.fetch_add(1, Ordering::AcqRel);
+        self.blocks.cancel();
         let mut state = self.state.lock().unwrap();
 
         match *state {

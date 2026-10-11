@@ -101,7 +101,7 @@ impl Store {
                 }
             }
         }
-        conn.execute_batch(metrics::SCHEMA)?;
+        metrics::apply_schema(&conn)?;
         conn.execute_batch(meeting_people::SCHEMA)?;
         Ok(Store {
             conn,

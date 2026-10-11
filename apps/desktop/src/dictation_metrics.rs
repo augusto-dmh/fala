@@ -91,6 +91,8 @@ pub(crate) struct Measured {
     pub paste_start: Instant,
     /// Samples at 16 kHz handed to the ASR.
     pub speech_samples: usize,
+    /// ASR runs: 1 for the whole recording, more for a long dictation's blocks.
+    pub blocks: usize,
     pub words: usize,
     pub lang: Language,
     pub llm_attempted: bool,
@@ -148,6 +150,7 @@ impl Measured {
             fallback: self.fallback.map(|f| fallback_str(f).to_string()),
             model: self.model.clone(),
             app: self.app.clone(),
+            blocks: u32::try_from(self.blocks).unwrap_or(u32::MAX),
         }
     }
 
@@ -157,7 +160,7 @@ impl Measured {
         format!(
             "event=dictation dictation={n} key_to_pill_ms={} release_to_asr_ms={} \
              release_to_llm_ms={} release_to_text_ms={} asr_ms={} llm_ms={} paste_ms={} \
-             speech_ms={} words={} lang={} llm_used={} fallback={}",
+             speech_ms={} words={} lang={} llm_used={} fallback={} blocks={}",
             or_dash(self.key_to_pill.map(ms)),
             since_release(self.asr_done),
             since_release(self.format_done),
@@ -170,6 +173,7 @@ impl Measured {
             m.lang.tag(),
             u8::from(m.llm_used),
             self.fallback.map_or("none", fallback_str),
+            m.blocks,
         )
     }
 }
@@ -189,6 +193,7 @@ mod tests {
             format_done: at(if attempted { 1100 } else { 201 }),
             paste_start: at(if attempted { 1100 } else { 201 }),
             speech_samples: 32_000,
+            blocks: 1,
             words: 17,
             lang: Language::PtBr,
             llm_attempted: attempted,
@@ -248,7 +253,7 @@ mod tests {
             m.trace_line(3, pasted, &metrics),
             "event=dictation dictation=3 key_to_pill_ms=30 release_to_asr_ms=200 \
              release_to_llm_ms=1100 release_to_text_ms=1140 asr_ms=190 llm_ms=900 paste_ms=40 \
-             speech_ms=2000 words=17 lang=pt-BR llm_used=1 fallback=none"
+             speech_ms=2000 words=17 lang=pt-BR llm_used=1 fallback=none blocks=1"
         );
 
         let timeout = measured(release, Some(Fallback::Timeout), true);
@@ -257,7 +262,13 @@ mod tests {
         assert!(!metrics.llm_used);
         assert!(timeout
             .trace_line(4, pasted, &metrics)
-            .ends_with("llm_used=0 fallback=timeout"));
+            .ends_with("llm_used=0 fallback=timeout blocks=1"));
+
+        let mut long = measured(release, None, true);
+        long.blocks = 21;
+        let metrics = long.metrics(pasted, None, created_at());
+        assert_eq!(metrics.blocks, 21);
+        assert!(long.trace_line(6, pasted, &metrics).ends_with(" blocks=21"));
 
         let pasted = release + Duration::from_millis(241);
         let rules = measured(release, None, false);

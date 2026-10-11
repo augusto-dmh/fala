@@ -2,9 +2,10 @@
 //!
 //! No modo mic, cada linha do stdin alterna começar/terminar um ditado (simula o push-to-talk) e
 //! o EOF encerra. Com `--wav`, o arquivo entra no ritmo do relógio e o fim dele é o soltar.
-//! As utterances que o VAD fecha durante a gravação vão para a thread de ASR na hora, de modo que
-//! ao soltar só falte a última (design doc §3.3). O stdout é só o texto; com `FALA_TRACE=1`, o
-//! stderr ganha o trace das doors 3 e 4 do plano `pipeline-headless`, nunca com texto ditado.
+//! Os blocos de 25-40 s que o `DictationCapture` fecha no silêncio durante a gravação (os mesmos do
+//! desktop) vão para a thread de ASR na hora, de modo que ao soltar só falte o último (design doc
+//! §3.3). O stdout é só o texto; com `FALA_TRACE=1`, o stderr ganha o trace das doors 3 e 4 do
+//! plano `pipeline-headless`, nunca com texto ditado; cada `event=utterance` é um bloco.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
@@ -102,13 +103,16 @@ pub fn run(args: DictateArgs) -> Result<(), Failure> {
     };
     match wav {
         Some((rate, samples)) => {
-            let capture = DictationCapture::new(rate, Box::new(vad)).map_err(audio_failure)?;
+            let capture = DictationCapture::new(rate, Box::new(vad))
+                .map_err(audio_failure)?
+                .with_blocks();
             run_wav(&mut session, capture, rate, &samples)
         }
         None => {
             let mic = Mic::open(args.mic.as_deref()).map_err(audio_failure)?;
-            let capture =
-                DictationCapture::new(mic.sample_rate(), Box::new(vad)).map_err(audio_failure)?;
+            let capture = DictationCapture::new(mic.sample_rate(), Box::new(vad))
+                .map_err(audio_failure)?
+                .with_blocks();
             run_mic(&mut session, capture, mic)
         }
     }
@@ -227,7 +231,7 @@ fn next_action(recording: bool, event: StdinEvent) -> Action {
     }
 }
 
-/// Um ditado em curso: numera as utterances, manda cada uma ao ASR e fecha a linha no soltar.
+/// Um ditado em curso: numera os blocos, manda cada um ao ASR e fecha a linha no soltar.
 struct Session {
     asr: AsrWorker,
     trace: Trace,
@@ -241,14 +245,14 @@ impl Session {
         self.dictation += 1;
         self.utterances = 0;
         self.audio_samples = 0;
-        let ready = capture.start().map_err(audio_failure)?;
-        self.dispatch(ready, true);
+        capture.start().map_err(audio_failure)?;
+        self.dispatch(capture.take_blocks(), true);
         Ok(())
     }
 
     fn feed(&mut self, capture: &mut DictationCapture, samples: &[f32]) -> Result<(), Failure> {
-        let ready = capture.feed(samples).map_err(audio_failure)?;
-        self.dispatch(ready, true);
+        capture.feed(samples).map_err(audio_failure)?;
+        self.dispatch(capture.take_blocks(), true);
         Ok(())
     }
 
@@ -268,9 +272,9 @@ impl Session {
     /// O soltar: esvazia a captura, espera a fila de ASR e imprime a linha.
     fn release(&mut self, capture: &mut DictationCapture) -> Result<(), Failure> {
         let released = Instant::now();
-        let tail = capture.stop().map_err(audio_failure)?;
+        capture.stop().map_err(audio_failure)?;
         let flushed = Instant::now();
-        self.dispatch(tail, false);
+        self.dispatch(capture.take_blocks(), false);
         let mut texts = Texts::default();
         for _ in 0..self.utterances {
             let done = self.asr.recv()?;
@@ -307,7 +311,7 @@ fn samples_ms(samples: usize) -> u128 {
     samples as u128 * 1000 / u128::from(DictationAudio::SAMPLE_RATE_HZ)
 }
 
-/// Os textos de um ditado, juntados na ordem das utterances seja qual for a ordem de chegada.
+/// Os textos de um ditado, juntados na ordem dos blocos seja qual for a ordem de chegada.
 #[derive(Default)]
 struct Texts {
     parts: BTreeMap<usize, Result<String, AsrError>>,
@@ -351,7 +355,7 @@ struct Done {
     before_release: bool,
 }
 
-/// A thread de ASR: transcreve as utterances na ordem em que chegam, enquanto a gravação segue.
+/// A thread de ASR: transcreve os blocos na ordem em que chegam, enquanto a gravação segue.
 struct AsrWorker {
     jobs: Sender<Job>,
     done: Receiver<Done>,
@@ -470,12 +474,51 @@ mod tests {
             utterances: 0,
             audio_samples: 0,
         };
-        let mut capture = DictationCapture::new(16_000, Box::new(AlwaysVoice)).unwrap();
+        let mut capture = DictationCapture::new(16_000, Box::new(AlwaysVoice))
+            .unwrap()
+            .with_blocks();
         assert!(session.begin(&mut capture).is_ok());
         assert!(session.feed(&mut capture, &vec![0.1; 8_000]).is_ok());
         let failure = session.release(&mut capture).expect_err("devia falhar");
         assert_eq!(failure.code, 1);
         assert!(format!("{:#}", failure.error).contains("stub"));
+    }
+
+    struct EmptyAsr;
+
+    impl Transcriber for EmptyAsr {
+        fn transcribe(&mut self, _: &DictationAudio, l: Language) -> Result<Transcript, AsrError> {
+            Ok(Transcript {
+                text: String::new(),
+                language: l,
+            })
+        }
+    }
+
+    #[test]
+    fn blocks_reach_the_asr_while_recording() {
+        let mut session = Session {
+            asr: AsrWorker::spawn(Box::new(EmptyAsr), Language::PtBr),
+            trace: Trace { on: false },
+            dictation: 0,
+            utterances: 0,
+            audio_samples: 0,
+        };
+        let mut capture = DictationCapture::new(16_000, Box::new(AlwaysVoice))
+            .unwrap()
+            .with_blocks();
+        assert!(session.begin(&mut capture).is_ok());
+        for piece in vec![0.1; 1_600_000].chunks(160) {
+            assert!(session.feed(&mut capture, piece).is_ok());
+        }
+        assert_eq!(session.utterances, 2, "two 40 s blocks before the release");
+        capture.stop().unwrap();
+        session.dispatch(capture.take_blocks(), false);
+        let done: Vec<(u128, bool)> = (0..session.utterances)
+            .map(|_| session.asr.recv().ok().unwrap())
+            .map(|d| (d.audio_ms, d.before_release))
+            .collect();
+        assert_eq!(done, [(40_000, true), (40_000, true), (20_000, false)]);
     }
 
     #[test]
