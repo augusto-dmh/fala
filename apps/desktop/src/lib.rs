@@ -13,6 +13,7 @@ mod dictation_metrics;
 mod dictionary;
 mod helpers;
 mod input;
+mod last_dictation;
 mod llm_auto;
 mod llm_client;
 mod long_dictation;
@@ -306,6 +307,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 ) {
                     tray::refresh_microphones(tray.app_handle());
                 }
+                // Still the user's app: the menu has not taken the focus yet. "Colar o último
+                // ditado" gives it back before pasting.
+                if matches!(event, TrayIconEvent::Enter { .. }) {
+                    last_dictation::remember_foreground();
+                }
             });
     }
     #[cfg(not(target_os = "windows"))]
@@ -330,7 +336,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 }
             }
             "copy_last_transcript" => {
-                tray::copy_last_transcript(app);
+                last_dictation::copy_last(app);
+            }
+            "paste_last_transcript" => {
+                last_dictation::paste_last(app, true);
             }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();

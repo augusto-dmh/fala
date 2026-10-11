@@ -775,10 +775,14 @@ impl HistoryManager {
         Ok(entry)
     }
 
-    /// Get the latest entry with non-empty transcription text.
+    /// Get the latest entry with non-empty transcription text, with its dictation.
     pub fn get_latest_completed_entry(&self) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
-        Self::get_latest_completed_entry_with_conn(&conn)
+        let mut entry = Self::get_latest_completed_entry_with_conn(&conn)?;
+        if let Some(entry) = entry.as_mut() {
+            Self::attach_dictation(entry, self.lock_store().as_deref());
+        }
+        Ok(entry)
     }
 
     fn get_latest_completed_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {

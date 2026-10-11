@@ -2,7 +2,8 @@
   "tray": {
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
-    "copyLastTranscript": "Copy Last Transcript",
+    "copyLastTranscript": "Copy Last Dictation",
+    "pasteLastTranscript": "Paste Last Dictation",
     "unloadModel": "Unload Model",
     "model": "Model",
     "dictationLanguage": "Dictation language",
@@ -283,6 +284,7 @@
         "none": "No shortcuts configured",
         "notFound": "Shortcut not found",
         "pressKeys": "Press keys...",
+        "unset": "No shortcut",
         "bindings": {
           "transcribe": {
             "name": "Transcribe Shortcut",
@@ -295,6 +297,14 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "paste_last": {
+            "name": "Paste last dictation",
+            "description": "Pastes the last dictation again into the focused field. Does nothing during a dictation."
+          },
+          "copy_last": {
+            "name": "Copy last dictation",
+            "description": "Puts the last dictation on the clipboard."
           }
         },
         "errors": {
@@ -1038,6 +1048,16 @@
       "noTranscript": "No transcript yet.",
       "notes": "Notes",
       "notesAbove": "Recording now: this meeting's notes are in the field above."
+    },
+    "source": {
+      "open": "See where this line came from",
+      "title": "Source",
+      "none": "This line has no source in the transcript.",
+      "typed": "Your notes",
+      "goTo": "Go to {{time}} in the transcript",
+      "play": "Play this moment",
+      "stop": "Stop",
+      "noAudio": "This meeting's audio is no longer on disk."
     },
     "speaker": {
       "me": "Me",

@@ -2,7 +2,8 @@
   "tray": {
     "settings": "Configurações...",
     "checkUpdates": "Verificar Atualizações...",
-    "copyLastTranscript": "Copiar última transcrição",
+    "copyLastTranscript": "Copiar o último ditado",
+    "pasteLastTranscript": "Colar o último ditado",
     "unloadModel": "Descarregar modelo",
     "model": "Modelo",
     "dictationLanguage": "Idioma do ditado",
@@ -283,6 +284,7 @@
         "none": "Nenhum atalho configurado",
         "notFound": "Atalho não encontrado",
         "pressKeys": "Pressione as teclas...",
+        "unset": "Sem atalho",
         "bindings": {
           "transcribe": {
             "name": "Atalho de Transcrição",
@@ -295,6 +297,14 @@
           "transcribe_with_post_process": {
             "name": "Tecla de Pós-Processamento",
             "description": "Opcional: Uma tecla de atalho dedicada que sempre aplica pós-processamento com IA à sua transcrição."
+          },
+          "paste_last": {
+            "name": "Colar o último ditado",
+            "description": "Cola de novo o último ditado no campo em foco. Não faz nada durante um ditado."
+          },
+          "copy_last": {
+            "name": "Copiar o último ditado",
+            "description": "Põe o último ditado na área de transferência."
           }
         },
         "errors": {
@@ -1038,6 +1048,16 @@
       "noTranscript": "Ainda sem transcrição.",
       "notes": "Notas",
       "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
+    },
+    "source": {
+      "open": "Ver de onde veio esta linha",
+      "title": "Fonte",
+      "none": "Esta linha não tem trecho de origem.",
+      "typed": "Suas anotações",
+      "goTo": "Ir para {{time}} na transcrição",
+      "play": "Tocar o trecho",
+      "stop": "Parar",
+      "noAudio": "O áudio desta reunião não está mais no disco."
     },
     "speaker": {
       "me": "Eu",

@@ -1119,6 +1119,31 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    // Paste and copy the last dictation: no key until the user picks one, so they never
+    // collide with another app's shortcut.
+    for (id, name, description) in [
+        (
+            "paste_last",
+            "Paste Last Dictation",
+            "Pastes the last dictation again into the active app.",
+        ),
+        (
+            "copy_last",
+            "Copy Last Dictation",
+            "Copies the last dictation to the clipboard.",
+        ),
+    ] {
+        bindings.insert(
+            id.to_string(),
+            ShortcutBinding {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: description.to_string(),
+                default_binding: String::new(),
+                current_binding: String::new(),
+            },
+        );
+    }
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1263,13 +1288,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
             updated = true;
         }
 
-        // Merge in any bindings added since this store was written.
-        for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
-                debug!("Adding missing binding: {}", entry.key());
-                entry.insert(value);
-                updated = true;
-            }
+        if add_missing_bindings(&mut settings) {
+            updated = true;
         }
 
         if updated {
@@ -1425,6 +1445,19 @@ fn apply_settings_migrations(
     }
 
     updated
+}
+
+/// Merges in any bindings added since this store was written; the user's own are kept.
+fn add_missing_bindings(settings: &mut AppSettings) -> bool {
+    let mut added = false;
+    for (key, value) in get_default_settings().bindings {
+        if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+            debug!("Adding missing binding: {}", entry.key());
+            entry.insert(value);
+            added = true;
+        }
+    }
+    added
 }
 
 /// Schema 3 (D6): the legacy post-processing binding loses its default key. A key the user
@@ -2107,6 +2140,38 @@ mod tests {
         assert_eq!(
             again.bindings["transcribe_with_post_process"].current_binding,
             ""
+        );
+    }
+
+    #[test]
+    fn old_store_gets_last_dictation_bindings_without_a_key() {
+        let mut settings = migrated(schema_2_store("alt+p"));
+        assert!(!settings.bindings.contains_key("paste_last"));
+        assert!(add_missing_bindings(&mut settings));
+        for id in ["paste_last", "copy_last"] {
+            let binding = &settings.bindings[id];
+            assert_eq!(binding.id, id);
+            assert_eq!(binding.current_binding, "", "{id}");
+            assert_eq!(binding.default_binding, "", "{id}");
+        }
+        assert_eq!(
+            settings.bindings["transcribe"].current_binding,
+            "ctrl_left+space"
+        );
+        assert_eq!(
+            settings.bindings["transcribe_with_post_process"].current_binding,
+            "alt+p"
+        );
+        // A key the user chose survives the next load.
+        settings
+            .bindings
+            .get_mut("paste_last")
+            .unwrap()
+            .current_binding = "alt+shift+z".into();
+        assert!(!add_missing_bindings(&mut settings));
+        assert_eq!(
+            settings.bindings["paste_last"].current_binding,
+            "alt+shift+z"
         );
     }
 
