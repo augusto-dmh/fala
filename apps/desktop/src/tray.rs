@@ -20,7 +20,6 @@
 //! a hidden tray relies on tray-icon recreating it from the last applied
 //! icon/menu/tooltip, so those must only ever be set through the applier.
 
-use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::meeting::MeetingIndicator;
@@ -35,7 +34,6 @@ use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
-use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayIconState {
@@ -657,13 +655,16 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         inputs.update_checks_enabled,
         None::<&str>,
     )?;
-    let copy_last_transcript_i = MenuItem::with_id(
-        app,
-        "copy_last_transcript",
-        &strings.copy_last_transcript,
-        true,
-        None::<&str>,
-    )?;
+    let last_dictation_items = last_dictation_menu_ids(inputs.busy)
+        .iter()
+        .map(|id| {
+            let label = match *id {
+                "paste_last_transcript" => &strings.paste_last_transcript,
+                _ => &strings.copy_last_transcript,
+            };
+            MenuItem::with_id(app, *id, label, true, None::<&str>)
+        })
+        .collect::<tauri::Result<Vec<_>>>()?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
     let separator = || PredefinedMenuItem::separator(app);
     let meeting_items = meeting_menu_ids(inputs.meeting)
@@ -688,7 +689,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &separator()?,
                 &cancel_i,
                 &separator()?,
-                &copy_last_transcript_i,
+                // The last-dictation items go here.
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -771,7 +772,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             &[
                 &version_i,
                 &separator()?,
-                &copy_last_transcript_i,
+                // The last-dictation items go here.
                 &separator()?,
                 &model_submenu,
                 &language_submenu,
@@ -785,6 +786,12 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             ],
         )?
     };
+
+    // Between the two separators left for them in each layout.
+    let last_dictation_at = if inputs.busy { 4 } else { 2 };
+    for (offset, item) in last_dictation_items.iter().enumerate() {
+        menu.insert(item, last_dictation_at + offset)?;
+    }
 
     // The meeting items open both layouts, right below the version line: recording a meeting is
     // the gesture, and while one records, pause and stop must be one click away.
@@ -816,11 +823,13 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     Ok((menu, tooltip))
 }
 
-fn last_transcript_text(entry: &HistoryEntry) -> &str {
-    entry
-        .post_processed_text
-        .as_deref()
-        .unwrap_or(&entry.transcription_text)
+/// The last-dictation items: paste only while idle, since a dictation in flight ignores it.
+fn last_dictation_menu_ids(busy: bool) -> &'static [&'static str] {
+    if busy {
+        &["copy_last_transcript"]
+    } else {
+        &["paste_last_transcript", "copy_last_transcript"]
+    }
 }
 
 pub fn set_tray_visibility(app: &AppHandle, visible: bool) {
@@ -857,69 +866,18 @@ pub fn recreate_tray_icon(app: &AppHandle) {
     }
 }
 
-pub fn copy_last_transcript(app: &AppHandle) {
-    let history_manager = app.state::<Arc<HistoryManager>>();
-    let entry = match history_manager.get_latest_completed_entry() {
-        Ok(Some(entry)) => entry,
-        Ok(None) => {
-            warn!("No completed transcription history entries available for tray copy.");
-            return;
-        }
-        Err(err) => {
-            error!(
-                "Failed to fetch last completed transcription entry: {}",
-                err
-            );
-            return;
-        }
-    };
-
-    let text = last_transcript_text(&entry);
-    if text.trim().is_empty() {
-        warn!("Last completed transcription is empty; skipping tray copy.");
-        return;
-    }
-
-    if let Err(err) = app.clipboard().write_text(text) {
-        error!("Failed to copy last transcript to clipboard: {}", err);
-        return;
-    }
-
-    info!("Copied last transcript to clipboard via tray.");
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        check_updates_item_visible, language_item_id, last_transcript_text, load_tray_icon,
+        check_updates_item_visible, language_item_id, last_dictation_menu_ids, load_tray_icon,
         microphone_auto_label, microphone_item_id, parse_language_item, parse_microphone_item,
         tray_language_choice, MenuInputs, Microphones, TrayDesired, TrayIconState,
         MICROPHONE_AUTO_ID,
     };
     use super::{effective_icon_state, meeting_menu_ids};
-    use crate::managers::history::HistoryEntry;
     use crate::meeting::MeetingIndicator;
     use crate::settings;
     use crate::tray_i18n::get_tray_translations;
-
-    fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
-        HistoryEntry {
-            id: 1,
-            file_name: "fala-1.wav".to_string(),
-            timestamp: 0,
-            saved: false,
-            title: "Recording".to_string(),
-            transcription_text: transcription.to_string(),
-            post_processed_text: post_processed.map(|text| text.to_string()),
-            post_process_prompt: None,
-            post_process_requested: false,
-            dictation_id: None,
-            dictation: None,
-            paste_failed: false,
-            discarded: false,
-            llm_partial: false,
-        }
-    }
 
     fn inputs(busy: bool) -> MenuInputs {
         MenuInputs {
@@ -970,15 +928,12 @@ mod tests {
     }
 
     #[test]
-    fn uses_post_processed_text_when_available() {
-        let entry = build_entry("raw", Some("processed"));
-        assert_eq!(last_transcript_text(&entry), "processed");
-    }
-
-    #[test]
-    fn falls_back_to_raw_transcription() {
-        let entry = build_entry("raw", None);
-        assert_eq!(last_transcript_text(&entry), "raw");
+    fn paste_last_is_offered_only_while_idle() {
+        assert_eq!(
+            last_dictation_menu_ids(false),
+            ["paste_last_transcript", "copy_last_transcript"]
+        );
+        assert_eq!(last_dictation_menu_ids(true), ["copy_last_transcript"]);
     }
 
     #[test]

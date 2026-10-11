@@ -1322,6 +1322,28 @@ impl ShortcutAction for CancelAction {
     }
 }
 
+// Paste the last dictation again: on release, once the shortcut's keys are up.
+struct PasteLastAction;
+
+impl ShortcutAction for PasteLastAction {
+    fn start(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+
+    fn stop(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::last_dictation::paste_last(app, false);
+    }
+}
+
+// Copy the last dictation to the clipboard.
+struct CopyLastAction;
+
+impl ShortcutAction for CopyLastAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::last_dictation::copy_last(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Test Action
 struct TestAction;
 
@@ -1361,6 +1383,14 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "paste_last".to_string(),
+        Arc::new(PasteLastAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "copy_last".to_string(),
+        Arc::new(CopyLastAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
