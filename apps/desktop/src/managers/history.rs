@@ -41,11 +41,14 @@ pub(crate) static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN dictation_id TEXT;"),
     // The paste of this dictation failed: the text never reached the app.
     M::up("ALTER TABLE transcription_history ADD COLUMN paste_failed BOOLEAN NOT NULL DEFAULT 0;"),
+    // A long dictation pasted with the LLM text in some blocks and the rules in others.
+    M::up("ALTER TABLE transcription_history ADD COLUMN llm_partial BOOLEAN NOT NULL DEFAULT 0;"),
 ];
 
 /// The columns `map_history_entry` reads, in every query that returns entries.
 const ENTRY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, \
-     post_processed_text, post_process_prompt, post_process_requested, dictation_id, paste_failed";
+     post_processed_text, post_process_prompt, post_process_requested, dictation_id, paste_failed, \
+     llm_partial";
 
 /// The most entries a history search returns.
 const SEARCH_LIMIT: usize = 100;
@@ -88,6 +91,8 @@ pub struct HistoryEntry {
     pub paste_failed: bool,
     /// The dictation was not delivered and has text to recover (see `is_discarded`).
     pub discarded: bool,
+    /// A long dictation where some blocks have the LLM text and others the rules ("IA parcial").
+    pub llm_partial: bool,
 }
 
 /// The texts of one dictation, as the pipeline produced them.
@@ -112,6 +117,8 @@ pub struct NewEntry {
     pub sensitive: bool,
     /// `utils::paste` failed for this dictation.
     pub paste_failed: bool,
+    /// See `HistoryEntry::llm_partial`.
+    pub llm_partial: bool,
 }
 
 pub struct HistoryManager {
@@ -296,6 +303,7 @@ impl HistoryManager {
             dictation: None,
             paste_failed: row.get("paste_failed")?,
             discarded: false,
+            llm_partial: row.get("llm_partial")?,
         })
     }
 
@@ -351,6 +359,7 @@ impl HistoryManager {
             app,
             sensitive,
             paste_failed,
+            llm_partial,
         } = entry;
         let title = Self::format_timestamp_title(timestamp);
         let dictation_id = store.and_then(|store| {
@@ -375,8 +384,9 @@ impl HistoryManager {
                 post_process_prompt,
                 post_process_requested,
                 dictation_id,
-                paste_failed
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                paste_failed,
+                llm_partial
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 &file_name,
                 timestamp,
@@ -388,6 +398,7 @@ impl HistoryManager {
                 post_process_requested,
                 &dictation_id,
                 paste_failed,
+                llm_partial,
             ],
         )?;
 
@@ -405,6 +416,7 @@ impl HistoryManager {
             dictation: None,
             paste_failed,
             discarded: false,
+            llm_partial,
         };
         Self::attach_dictation(&mut entry, store);
         Ok(entry)
@@ -944,6 +956,35 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// The late LLM answers of a long dictation's blocks: the whole LLM text becomes the late
+    /// edit, and the entry stays "IA parcial" while some block still has the rules.
+    pub fn apply_blocks_late_edit(
+        &self,
+        id: i64,
+        text: &str,
+        partial: bool,
+    ) -> Result<HistoryEntry> {
+        let conn = self.get_connection()?;
+        let store = self.lock_store();
+        Self::apply_blocks_late_edit_with(&conn, store.as_deref(), id, text, partial)
+    }
+
+    pub(crate) fn apply_blocks_late_edit_with(
+        conn: &Connection,
+        store: Option<&Store>,
+        id: i64,
+        text: &str,
+        partial: bool,
+    ) -> Result<HistoryEntry> {
+        let mut entry = Self::apply_late_edit_with(conn, store, id, text)?;
+        conn.execute(
+            "UPDATE transcription_history SET llm_partial = ?1 WHERE id = ?2",
+            params![partial, id],
+        )?;
+        entry.llm_partial = partial;
+        Ok(entry)
+    }
+
     /// Tells the front an entry changed (`history-update-payload` `updated`).
     pub fn announce_updated(&self, entry: HistoryEntry) {
         if let Err(e) = (HistoryUpdatePayload::Updated { entry }).emit(&self.app_handle) {
@@ -1136,7 +1177,8 @@ mod tests {
                 post_process_prompt TEXT,
                 post_process_requested BOOLEAN NOT NULL DEFAULT 0,
                 dictation_id TEXT,
-                paste_failed BOOLEAN NOT NULL DEFAULT 0
+                paste_failed BOOLEAN NOT NULL DEFAULT 0,
+                llm_partial BOOLEAN NOT NULL DEFAULT 0
             );",
         )
         .expect("create transcription_history table");
@@ -1215,9 +1257,9 @@ mod tests {
             .expect("migrate to version 5");
         insert_entry(&conn, 100, "antes", None);
 
-        Migrations::new(MIGRATIONS.to_vec())
+        Migrations::new(MIGRATIONS[..6].to_vec())
             .to_latest(&mut conn)
-            .expect("migrate to latest");
+            .expect("migrate to version 6");
 
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -1231,11 +1273,44 @@ mod tests {
             )
             .expect("paste_failed column exists");
         assert_eq!((notnull, default.as_str()), (1, "0"));
+        Migrations::new(MIGRATIONS.to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to latest");
         let entry = HistoryManager::get_latest_entry_with_conn(&conn)
             .unwrap()
             .expect("the old row survives");
         assert_eq!(entry.transcription_text, "antes");
         assert!(!entry.paste_failed);
+    }
+
+    #[test]
+    fn migration_seven_adds_llm_partial() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        Migrations::new(MIGRATIONS[..6].to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to version 6");
+        insert_entry(&conn, 100, "antes", None);
+
+        Migrations::new(MIGRATIONS.to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to latest");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 7);
+        let (notnull, default): (i64, String) = conn
+            .query_row(
+                "SELECT \"notnull\", dflt_value FROM pragma_table_info('transcription_history') WHERE name = 'llm_partial'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("llm_partial column exists");
+        assert_eq!((notnull, default.as_str()), (1, "0"));
+        let entry = HistoryManager::get_latest_entry_with_conn(&conn)
+            .unwrap()
+            .expect("the old row survives");
+        assert!(!entry.llm_partial);
     }
 
     #[test]

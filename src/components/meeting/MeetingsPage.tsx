@@ -283,6 +283,7 @@ export function MeetingsPage() {
               void generate(selected.summary.id, templateId)
             }
             onCopy={() => void copy(selected.summary.id)}
+            onNamesChanged={() => void open(selected.summary.id)}
           />
         </SettingsGroup>
       )}

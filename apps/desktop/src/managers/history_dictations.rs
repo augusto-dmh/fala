@@ -347,6 +347,7 @@ mod tests {
             },
             sensitive: false,
             paste_failed: false,
+            llm_partial: false,
         }
     }
 

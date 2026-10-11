@@ -14,6 +14,7 @@ pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
 pub(crate) mod output;
+pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
 

@@ -653,6 +653,7 @@
       "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente.",
       "undoAiEdit": "Desfazer edição da IA",
       "applyAiEdit": "Aplicar edição da IA",
+      "partialAi": "IA parcial",
       "originalCopied": "Texto original copiado",
       "editedCopied": "Texto editado copiado",
       "editToggleError": "Não foi possível trocar o texto",
@@ -1069,6 +1070,14 @@
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
+    },
+    "people": {
+      "participants": "Quem estava",
+      "placeholder": "Ana Souza, Bruno Lima",
+      "hint": "Só nomes, separados por vírgula, sem e-mail. Vão à Anthropic com a transcrição para as notas sugerirem quem é cada Pessoa N.",
+      "suggestions": "Sugestões de nome",
+      "suggestion": "Sugestão: {{person}} é {{name}}",
+      "apply": "Aplicar"
     },
     "context": {
       "title": "Contexto das notas",

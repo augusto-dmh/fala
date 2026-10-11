@@ -809,6 +809,7 @@ Personal dictionary:
                     app: app("notepad"),
                     sensitive: false,
                     paste_failed: false,
+                    llm_partial: false,
                 },
                 Language::PtBr,
                 1,
@@ -932,6 +933,166 @@ Personal dictionary:
                 "{case}: {log:?}"
             );
         }
+    }
+
+    // ---- long dictation formatted block by block -------------------------------------------
+
+    /// One block formatted as the queue formats it (`process_transcription_output` in Auto).
+    fn block(formatter: &AutoFormatter) -> crate::actions::ProcessedTranscription {
+        let (auto, late_edit) =
+            format_with_late_edit(formatter, SIXTEEN, Language::PtBr, app("notepad"));
+        crate::actions::ProcessedTranscription {
+            late_edit,
+            ..auto_processed(SIXTEEN, auto)
+        }
+    }
+
+    impl History {
+        /// Saves a long dictation as the stop path does.
+        fn deliver_long(
+            &self,
+            raw: &str,
+            composed: &crate::long_dictation::Composed,
+        ) -> HistoryEntry {
+            crate::managers::history::HistoryManager::save_entry_with(
+                &self.conn,
+                Some(&self.store),
+                crate::managers::history::NewEntry {
+                    file_name: "fala-1.wav".to_string(),
+                    post_process_requested: false,
+                    texts: crate::managers::history::EntryTexts {
+                        transcription_text: raw.to_string(),
+                        post_processed_text: composed.processed.post_processed_text.clone(),
+                        post_process_prompt: None,
+                        pasted_text: composed.processed.final_text.clone(),
+                        llm_produced: composed.processed.llm_produced,
+                    },
+                    app: app("notepad"),
+                    sensitive: false,
+                    paste_failed: false,
+                    llm_partial: composed.partial,
+                },
+                Language::PtBr,
+                1,
+            )
+            .unwrap()
+        }
+
+        fn llm_partial(&self, id: i64) -> bool {
+            self.conn
+                .query_row(
+                    "SELECT llm_partial FROM transcription_history WHERE id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        }
+    }
+
+    #[test]
+    fn every_block_answering_pastes_the_llm_text() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        let formatter = formatter_at(&settings_with_key(), true, &server.base_url);
+        let raw = [SIXTEEN; 3].join(" ");
+        let blocks = vec![block(&formatter), block(&formatter), block(&formatter)];
+        assert_eq!(server.requests(), 3, "one request per block");
+        let composed = crate::long_dictation::compose(&raw, blocks);
+        assert_eq!(composed.processed.final_text, [LLM_TEXT; 3].join(" "));
+        assert!(composed.processed.llm_produced);
+        assert!(!composed.partial);
+        assert!(composed.late.is_none());
+
+        let history = history();
+        let saved = history.deliver_long(&raw, &composed);
+        assert!(!saved.llm_partial);
+        let dictation = saved.dictation.unwrap();
+        assert_eq!(dictation.raw_text, raw);
+        assert_eq!(
+            dictation.editor,
+            crate::managers::history_dictations::HistoryEditor::Llm
+        );
+    }
+
+    #[test]
+    fn a_slow_block_keeps_its_rules_until_the_late_answer() {
+        let fast = FakeGemini::ok(Duration::ZERO);
+        let slow = FakeGemini::ok(Duration::from_secs(3));
+        let settings = settings_with_key();
+        let raw = [SIXTEEN; 3].join(" ");
+        let started = Instant::now();
+        let blocks = vec![
+            block(&formatter_at(&settings, true, &fast.base_url)),
+            block(&formatter_at(&settings, true, &slow.base_url)),
+            block(&formatter_at(&settings, true, &fast.base_url)),
+        ];
+        assert!(
+            started.elapsed() < Duration::from_millis(2900),
+            "the slow block waits only the 2 s"
+        );
+        let composed = crate::long_dictation::compose(&raw, blocks);
+        assert_eq!(
+            composed.processed.final_text,
+            format!("{LLM_TEXT} {SIXTEEN_RULES} {LLM_TEXT}"),
+            "rules in the slow block, the LLM in the others"
+        );
+        assert!(composed.processed.llm_produced);
+        assert_eq!(composed.processed.fallback, Some(Fallback::Timeout));
+        assert!(composed.partial);
+
+        let history = history();
+        let saved = history.deliver_long(&raw, &composed);
+        assert!(saved.llm_partial);
+        assert!(history.llm_partial(saved.id));
+
+        let (text, partial) = composed
+            .late
+            .expect("the slow block can still answer")
+            .wait()
+            .expect("it answers after 3 s");
+        assert_eq!(text, [LLM_TEXT; 3].join(" "));
+        assert!(!partial, "every block has the LLM text now");
+        let entry = crate::managers::history::HistoryManager::apply_blocks_late_edit_with(
+            &history.conn,
+            Some(&history.store),
+            saved.id,
+            &text,
+            partial,
+        )
+        .unwrap();
+        assert!(!entry.llm_partial);
+        assert!(!history.llm_partial(saved.id));
+        let dictation = entry.dictation.unwrap();
+        assert_eq!(dictation.final_text, text);
+        assert_eq!(
+            dictation.showing,
+            crate::managers::history_dictations::HistoryShowing::Raw,
+            "the whole LLM text waits behind \"Aplicar edição da IA\""
+        );
+    }
+
+    #[test]
+    fn a_block_past_the_late_deadline_stays_partial() {
+        let fast = FakeGemini::ok(Duration::ZERO);
+        let too_late = FakeGemini::ok(Duration::from_secs(4));
+        let settings = settings_with_key();
+        let mut late_formatter = formatter_at(&settings, true, &too_late.base_url);
+        late_formatter.postprocessor = late_formatter
+            .postprocessor
+            .with_late_deadline(Duration::from_secs(3));
+        let raw = [SIXTEEN; 2].join(" ");
+        let composed = crate::long_dictation::compose(
+            &raw,
+            vec![
+                block(&formatter_at(&settings, true, &fast.base_url)),
+                block(&late_formatter),
+            ],
+        );
+        assert!(composed.partial);
+        assert_eq!(
+            composed.late.expect("pending").wait(),
+            None,
+            "no answer arrived, so nothing to apply"
+        );
     }
 
     #[test]

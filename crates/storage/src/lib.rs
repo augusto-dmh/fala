@@ -5,12 +5,15 @@
 //! Escrita no SQLite primeiro, espelho depois.
 //!
 //! O banco é `fala.sqlite`, separado do `history.db` do desktop: cada um tem o seu `user_version`.
-//! O schema 2 acrescenta as reuniões (`meetings`, `meeting_segments`), sem mexer nos ditados.
+//! O schema 2 acrescenta as reuniões (`meetings`, `meeting_segments`), sem mexer nos ditados;
+//! `meeting_participants` e `meeting_speakers` (quem estava, nomes aplicados e sugestões) entram
+//! sem subir a versão, como as métricas.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
 //! `Store::metrics_summary`.
 
+mod meeting_people;
 mod meetings;
 mod metrics;
 mod mirror;
@@ -22,6 +25,7 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::Dictation;
 use serde::{Deserialize, Serialize};
 
+pub use meeting_people::{MeetingSpeaker, NameSuggestion};
 pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};
 pub use metrics::{DayCount, DictationMetrics, MetricsSummary, Percentiles};
 pub use store::Store;
