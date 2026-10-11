@@ -165,19 +165,16 @@ export const StatsView: React.FC<StatsViewProps> = ({
           <Card title={t("stats.latency.title")}>
             <table className="w-full text-body text-text">
               <thead>
-                <tr className="text-start text-caption text-text-2">
-                  <th scope="col" className="pb-2 pe-3 text-start font-normal">
-                    {t("stats.latency.stage")}
-                  </th>
-                  <th scope="col" className="pb-2 pe-3 text-start font-normal">
-                    {t("stats.latency.p50")}
-                  </th>
-                  <th scope="col" className="pb-2 pe-3 text-start font-normal">
-                    {t("stats.latency.p90")}
-                  </th>
-                  <th scope="col" className="pb-2 text-start font-normal">
-                    {t("stats.latency.budget")}
-                  </th>
+                <tr className="text-caption text-text-2">
+                  {(["stage", "p50", "p90", "budget"] as const).map((col) => (
+                    <th
+                      key={col}
+                      scope="col"
+                      className="pb-2 pe-3 text-start font-normal"
+                    >
+                      {t(`stats.latency.${col}`)}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

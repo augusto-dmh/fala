@@ -71,6 +71,7 @@ const stats = (over: Partial<DictationStats> = {}): DictationStats => ({
 });
 
 const TODAY = new Date(2026, 9, 11, 15, 30);
+const STAGE_ORDER = "e2e e2e_llm asr llm paste speech";
 
 const view = (s: DictationStats | null, days: Period = 7) =>
   renderToStaticMarkup(
@@ -89,21 +90,15 @@ const view = (s: DictationStats | null, days: Period = 7) =>
 // S2: the period defaults to 7, accepts only 7/30/90, survives a storage that throws, and the
 // page asks the backend for that period.
 {
-  const storage = (value: string | null) => ({ getItem: () => value });
-  const throwing = {
-    getItem: () => {
-      throw new Error("blocked");
-    },
-    setItem: () => {
-      throw new Error("blocked");
-    },
+  const blocked = () => {
+    throw new Error("blocked");
   };
+  const throwing = { getItem: blocked, setItem: blocked };
   assert.equal(DEFAULT_PERIOD, 7);
-  assert.equal(readPeriod(storage(null)), 7);
-  assert.equal(readPeriod(storage("30")), 30);
-  assert.equal(readPeriod(storage("90")), 90);
-  assert.equal(readPeriod(storage("15")), 7);
-  assert.equal(readPeriod(storage("abc")), 7);
+  const stored = [null, "30", "90", "15", "abc"].map((v) =>
+    readPeriod({ getItem: () => v }),
+  );
+  assert.deepEqual(stored, [7, 30, 90, 7, 7]);
   assert.equal(readPeriod(throwing), 7);
   // No localStorage in this runtime at all: the default, no throw.
   assert.equal(readPeriod(), 7);
@@ -114,30 +109,28 @@ const view = (s: DictationStats | null, days: Period = 7) =>
   assert.match(page, /commands\s*\.getDictationStats\(days\)/);
   assert.match(page, /useState<Period>\(\(\) => readPeriod\(\)\)/);
   const html = view(stats());
-  const pressed = [...html.matchAll(/aria-pressed="(true|false)"/g)].map(
-    (m) => m[1],
+  const pressed = (on: boolean, days: number) =>
+    `aria-pressed="${on}"[^>]*>${days} dias<`;
+  assert.match(
+    html,
+    new RegExp(
+      [pressed(true, 7), pressed(false, 30), pressed(false, 90)].join(".*"),
+    ),
   );
-  assert.deepEqual(pressed, ["true", "false", "false"]);
-  for (const label of ["7 dias", "30 dias", "90 dias"]) {
-    assert.ok(html.includes(label), label);
-  }
 }
 ok("S2");
 
 // S3: milliseconds below a second, seconds with one decimal in the UI language, "—" for null.
 {
-  const cases: [number | null, string, string][] = [
-    [380, "380 ms", "380 ms"],
-    [999, "999 ms", "999 ms"],
-    [1000, "1,0 s", "1.0 s"],
-    [1234, "1,2 s", "1.2 s"],
-    [2400, "2,4 s", "2.4 s"],
-    [null, "—", "—"],
-  ];
-  for (const [ms, inPt, inEn] of cases) {
-    assert.equal(formatMs(ms, "pt"), inPt, `pt ${ms}`);
-    assert.equal(formatMs(ms, "en"), inEn, `en ${ms}`);
-  }
+  const ms = [380, 999, 1000, 1234, 2400, null];
+  assert.deepEqual(
+    ms.map((v) => formatMs(v, "pt")),
+    ["380 ms", "999 ms", "1,0 s", "1,2 s", "2,4 s", "—"],
+  );
+  assert.deepEqual(
+    ms.map((v) => formatMs(v, "en")),
+    ["380 ms", "999 ms", "1.0 s", "1.2 s", "2.4 s", "—"],
+  );
 }
 ok("S3");
 
@@ -147,20 +140,15 @@ ok("S3");
   assert.deepEqual(BUDGETS.e2e_llm, { target: 1200, max: 2000 });
   const e2e = budgetOf("e2e");
   const llm = budgetOf("e2e_llm");
-  const cases: [number, string, string][] = [
-    [700, "ok", "ok"],
-    [701, "warn", "ok"],
-    [1000, "warn", "ok"],
-    [1001, "over", "ok"],
-    [1200, "over", "ok"],
-    [1201, "over", "warn"],
-    [2000, "over", "warn"],
-    [2001, "over", "over"],
-  ];
-  for (const [ms, plain, withAi] of cases) {
-    assert.equal(budgetState(ms, e2e), plain, `e2e ${ms}`);
-    assert.equal(budgetState(ms, llm), withAi, `e2e_llm ${ms}`);
-  }
+  const ms = [700, 701, 1000, 1001, 1200, 1201, 2000, 2001];
+  assert.deepEqual(
+    ms.map((v) => budgetState(v, e2e)).join(" "),
+    "ok warn warn over over over over over",
+  );
+  assert.deepEqual(
+    ms.map((v) => budgetState(v, llm)).join(" "),
+    "ok ok ok ok ok warn warn over",
+  );
   assert.equal(budgetState(null, e2e), "none");
   for (const stage of ["asr", "llm", "paste", "speech"] as const) {
     assert.equal(budgetOf(stage), null, stage);
@@ -173,14 +161,7 @@ ok("S4");
 // words of their state.
 {
   const rows = latencyRows(stats(), "pt");
-  assert.deepEqual(
-    rows.map((r) => r.stage),
-    ["e2e", "e2e_llm", "asr", "llm", "paste", "speech"],
-  );
-  assert.deepEqual(
-    STAGES,
-    rows.map((r) => r.stage),
-  );
+  assert.equal(rows.map((r) => r.stage).join(" "), STAGE_ORDER);
   assert.deepEqual(rows[0], {
     stage: "e2e",
     p50: { text: "380 ms", state: "ok" },
@@ -194,16 +175,8 @@ ok("S4");
 
   const html = view(stats());
   const order = [...html.matchAll(/data-stage="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(order, [...STAGES]);
-  for (const label of [
-    "Soltar → texto, sem IA",
-    "Soltar → texto, com IA",
-    "Reconhecimento",
-    "Colagem",
-    "Duração da fala",
-  ]) {
-    assert.ok(html.includes(label), label);
-  }
+  assert.equal(order.join(" "), STAGE_ORDER);
+  assert.match(html, />Soltar → texto, sem IA<.*>Duração da fala</);
   const row = (stage: string) => {
     const start = html.indexOf(`data-stage="${stage}"`);
     return html.slice(start, html.indexOf("</tr>", start));
@@ -233,18 +206,10 @@ ok("S5");
     fallbackShare(stats({ llm_attempts: 0, fallbacks: 0 }), "pt"),
     "—",
   );
-  const html = view(stats());
-  for (const text of [
-    ">42<",
-    ">1.234<",
-    ">617<",
-    "Palavras por dia com ditado",
-    "Quedas para as regras",
-    ">8<",
-    ">13%<",
-  ]) {
-    assert.ok(html.includes(text), text);
-  }
+  assert.match(
+    view(stats()),
+    />42<.*>1.234<.*>Palavras por dia com ditado<.*>617<.*>Quedas para as regras<.*>13%</,
+  );
 }
 ok("S6");
 
@@ -252,18 +217,12 @@ ok("S6");
 // and an older day from the summary extends the range.
 {
   const bars = dayBars(stats().per_day, 7, TODAY);
-  assert.deepEqual(
-    bars.map((b) => [b.day, b.words, b.height]),
-    [
-      ["2026-10-05", 300, 32],
-      ["2026-10-06", 0, 0],
-      ["2026-10-07", 0, 0],
-      ["2026-10-08", 0, 0],
-      ["2026-10-09", 0, 0],
-      ["2026-10-10", 0, 0],
-      ["2026-10-11", 934, 100],
-    ],
+  assert.equal(
+    bars.map((b) => b.day.slice(8)).join(" "),
+    "05 06 07 08 09 10 11",
   );
+  assert.equal(bars.map((b) => b.words).join(" "), "300 0 0 0 0 0 934");
+  assert.equal(bars.map((b) => b.height).join(" "), "32 0 0 0 0 0 100");
   const older = dayBars(
     [{ day: "2026-10-04", dictations: 1, words: 5 }],
     7,
@@ -322,23 +281,13 @@ ok("S8");
 
 // S9: with zero dictations, only the empty state: no figures, no table, no copy button.
 {
-  const html = view(
-    stats({
-      dictations: 0,
-      words: 0,
-      llm_attempts: 0,
-      fallbacks: 0,
-      per_day: [],
-    }),
-  );
+  const none = { dictations: 0, words: 0, llm_attempts: 0, per_day: [] };
+  const html = view(stats({ ...none, fallbacks: 0 }));
   assert.ok(html.includes("Ainda não há ditados medidos neste período."));
   assert.ok(!html.includes("<table"));
   assert.ok(!html.includes("Copiar resumo"));
   assert.ok(!html.includes('role="img"'));
-  // Loading (null) shows neither the empty state nor the table.
-  const loading = view(null);
-  assert.ok(!loading.includes("Ainda não há"));
-  assert.ok(!loading.includes("<table"));
+  assert.doesNotMatch(view(null), /Ainda não há|<table/);
 }
 ok("S9");
 

@@ -28,17 +28,16 @@ export const BUDGETS = {
   e2e_llm: { target: 1200, max: 2000 },
 } as const satisfies Record<string, Budget>;
 
-export type Stage = "e2e" | "e2e_llm" | "asr" | "llm" | "paste" | "speech";
-
 /** Table order, top to bottom. */
-export const STAGES: readonly Stage[] = [
+export const STAGES = [
   "e2e",
   "e2e_llm",
   "asr",
   "llm",
   "paste",
   "speech",
-];
+] as const;
+export type Stage = (typeof STAGES)[number];
 
 /** `ok` up to the target, `warn` above it, `over` past the maximum; `none` without a budget or a value. */
 export type BudgetState = "ok" | "warn" | "over" | "none";

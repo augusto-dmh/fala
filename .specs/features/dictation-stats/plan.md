@@ -22,18 +22,8 @@ Só frontend. O backend não muda.
 4. `stats/statsModel.ts` (new) — orçamentos, `formatMs`, `budgetState`, `latencyRows`, `averageWordsPerDay`, `fallbackShare`, `dayBars`, `summaryMarkdown`, `readPeriod`/`writePeriod`
 5. locales `pt`/`en` — `rail.stats` e bloco `stats.*`
 
-## Impact
-
-| Front | What changes |
-| --- | --- |
-| ui | destino novo no rail; página nova; strings novas em `rail.stats` e `stats.*` |
-| stored data | `localStorage["fala.stats.days"]` (7, 30 ou 90), só conveniência |
-
-## Landing
-
-| One-way door | Literal shape | Alternative rejected |
-| --- | --- | --- |
-| nenhuma | tudo é frontend e reversível | — |
+Novo em `localStorage`: `fala.stats.days` (7, 30 ou 90), só conveniência. Nenhuma one-way door:
+tudo é frontend e reversível.
 
 ## Criteria
 
@@ -63,7 +53,3 @@ mudança no comando; palavras por minuto; métricas de reunião.
 | Média por dia | palavras ÷ dias com ditado, arredondada | é o que a definição pede ("por dia com ditado") | y — definição |
 
 **Open questions:** none.
-
-## Sources
-
-- `fala-research/plans/features/dictation-stats-page.md`; `ARCHITECTURE.md` § Orçamento; ADR-0017
