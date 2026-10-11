@@ -23,6 +23,7 @@
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
+use crate::meeting::MeetingIndicator;
 use crate::settings;
 use crate::tray_i18n::{get_tray_translations, TrayStrings};
 use log::{debug, error, info, trace, warn};
@@ -69,6 +70,27 @@ struct MenuInputs {
     microphones: Microphones,
     /// `selected_microphone` from settings; `None` is "Automático".
     selected_microphone: Option<String>,
+    /// The meeting items follow the meeting indicator.
+    meeting: MeetingIndicator,
+}
+
+/// The meeting items of the menu for each indicator state.
+fn meeting_menu_ids(meeting: MeetingIndicator) -> &'static [&'static str] {
+    match meeting {
+        MeetingIndicator::None => &["meeting_start"],
+        MeetingIndicator::Recording => &["meeting_pause", "meeting_stop"],
+        MeetingIndicator::Paused => &["meeting_resume", "meeting_stop"],
+    }
+}
+
+/// The icon state the tray shows: a recording meeting shows the recording icon even with no
+/// dictation in flight (ADR-0005).
+fn effective_icon_state(icon_state: TrayIconState, meeting: MeetingIndicator) -> TrayIconState {
+    if icon_state == TrayIconState::Idle && meeting != MeetingIndicator::None {
+        TrayIconState::Recording
+    } else {
+        icon_state
+    }
 }
 
 /// The input devices the tray offers, as cpal lists them.
@@ -443,8 +465,9 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
         .collect();
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
 
+    let meeting = crate::meeting::indicator();
     TrayDesired {
-        icon_path: get_icon_path(theme, icon_state, warning),
+        icon_path: get_icon_path(theme, effective_icon_state(icon_state, meeting), warning),
         menu: MenuInputs {
             busy: icon_state.is_busy(),
             warning,
@@ -459,6 +482,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
                 .map(|state| state.lock().microphones.clone())
                 .unwrap_or_default(),
             selected_microphone: settings.selected_microphone,
+            meeting,
         },
     }
 }
@@ -642,6 +666,18 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     )?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
     let separator = || PredefinedMenuItem::separator(app);
+    let meeting_items = meeting_menu_ids(inputs.meeting)
+        .iter()
+        .map(|id| {
+            let label = match *id {
+                "meeting_start" => &strings.record_meeting,
+                "meeting_pause" => &strings.pause_meeting,
+                "meeting_resume" => &strings.resume_meeting,
+                _ => &strings.stop_meeting,
+            };
+            MenuItem::with_id(app, *id, label, true, None::<&str>)
+        })
+        .collect::<tauri::Result<Vec<_>>>()?;
 
     let menu = if inputs.busy {
         let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
@@ -750,6 +786,14 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
+    // The meeting items open both layouts, right below the version line: recording a meeting is
+    // the gesture, and while one records, pause and stop must be one click away.
+    let meeting_separator = separator()?;
+    menu.insert(&meeting_separator, 2)?;
+    for (offset, item) in meeting_items.iter().enumerate() {
+        menu.insert(item, 2 + offset)?;
+    }
+
     // While the updater is off, or update checks are forced off (e.g.
     // FALA_DISABLE_UPDATER, set by the Nix package), the item is dropped from
     // the menu rather than shown disabled — it can never do anything in that
@@ -852,7 +896,9 @@ mod tests {
         tray_language_choice, MenuInputs, Microphones, TrayDesired, TrayIconState,
         MICROPHONE_AUTO_ID,
     };
+    use super::{effective_icon_state, meeting_menu_ids};
     use crate::managers::history::HistoryEntry;
+    use crate::meeting::MeetingIndicator;
     use crate::settings;
     use crate::tray_i18n::get_tray_translations;
 
@@ -889,7 +935,37 @@ mod tests {
                 default: Some("Realtek".to_string()),
             },
             selected_microphone: None,
+            meeting: MeetingIndicator::None,
         }
+    }
+
+    #[test]
+    fn meeting_items_follow_state() {
+        assert_eq!(meeting_menu_ids(MeetingIndicator::None), ["meeting_start"]);
+        assert_eq!(
+            meeting_menu_ids(MeetingIndicator::Recording),
+            ["meeting_pause", "meeting_stop"]
+        );
+        assert_eq!(
+            meeting_menu_ids(MeetingIndicator::Paused),
+            ["meeting_resume", "meeting_stop"]
+        );
+        assert_eq!(
+            effective_icon_state(TrayIconState::Idle, MeetingIndicator::Recording),
+            TrayIconState::Recording
+        );
+        assert_eq!(
+            effective_icon_state(TrayIconState::Idle, MeetingIndicator::Paused),
+            TrayIconState::Recording
+        );
+        assert_eq!(
+            effective_icon_state(TrayIconState::Idle, MeetingIndicator::None),
+            TrayIconState::Idle
+        );
+        // A different meeting state rebuilds the menu.
+        let mut recording = inputs(false);
+        recording.meeting = MeetingIndicator::Recording;
+        assert_ne!(inputs(false), recording);
     }
 
     #[test]

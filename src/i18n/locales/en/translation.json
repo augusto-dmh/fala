@@ -13,13 +13,18 @@
     "microphoneAutoWithDevice": "Automatic ({{device}})",
     "quit": "Quit",
     "cancel": "Cancel",
-    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
+    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input",
+    "recordMeeting": "Record meeting",
+    "pauseMeeting": "Pause meeting",
+    "resumeMeeting": "Resume meeting",
+    "stopMeeting": "Stop meeting"
   },
   "rail": {
     "navigation": "Main navigation",
     "home": "Home",
     "dictionary": "Dictionary",
-    "settings": "Settings"
+    "settings": "Settings",
+    "meetings": "Meetings"
   },
   "dictionary": {
     "description": "Words, names and terms Fala should recognise when you dictate."
@@ -761,7 +766,8 @@
     "modelNotDownloaded": "The model has not been downloaded yet. Download it in Settings > Models.",
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
-    "transcriptionFailedTitle": "Transcription Failed"
+    "transcriptionFailedTitle": "Transcription Failed",
+    "meetingActive": "Dictation is unavailable while a meeting is being recorded, even paused. Stop the meeting to dictate."
   },
   "appLanguage": {
     "title": "Application Language",
@@ -791,7 +797,9 @@
       "modelMissing": "No speech model downloaded",
       "chooseMic": "Choose microphone",
       "resolve": "Fix it"
-    }
+    },
+    "meeting": "Recording meeting",
+    "meetingPaused": "Meeting paused"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
@@ -803,5 +811,91 @@
     "learnMore": "How to fix",
     "recorderBlocked": "Can't record shortcuts right now — macOS Secure Input is blocking key events. Resolve the Secure Input warning first.",
     "dismiss": "Dismiss"
+  },
+  "meeting": {
+    "title": "Meeting",
+    "untitled": "Meeting on {{date}}",
+    "consent": {
+      "title": "Before recording your first meeting",
+      "body": "Recording a meeting keeps the audio of your microphone and of the system on your computer, including other people's voices. Transcribing sends that audio to ElevenLabs; generating notes sends the transcript and your notes to Anthropic. Transcripts and notes contain third parties' personal data: tell the participants and follow your workplace rules and data protection law.",
+      "accept": "Got it, record",
+      "cancel": "Cancel"
+    },
+    "recorder": {
+      "mode": "Meeting type",
+      "online": "Online (headphones)",
+      "inPerson": "In person",
+      "titlePlaceholder": "Title (optional)",
+      "start": "Record meeting",
+      "newDraft": "New meeting without recording",
+      "processing": "Saving the audio of the last meeting…",
+      "paused": "Paused",
+      "live": "Recording",
+      "pause": "Pause",
+      "resume": "Resume",
+      "stop": "Stop",
+      "mic": "Me",
+      "system": "System",
+      "mutedMic": "No audio from your microphone for 2 minutes.",
+      "mutedSystem": "No system audio for 2 minutes.",
+      "capWarning": "Recording stops in {{time}} (session limit).",
+      "extend": "1 more hour",
+      "lowDisk": "Low disk space: {{mb}} MB free."
+    },
+    "annotations": {
+      "placeholder": "Type your notes. They save themselves."
+    },
+    "list": {
+      "title": "Meetings",
+      "empty": "No meetings yet. Record one, or create one without recording to write the agenda.",
+      "draft": "draft",
+      "transcribed": "transcribed",
+      "notes": "with notes"
+    },
+    "view": {
+      "agenda": "Agenda and notes (before recording)",
+      "annotations": "Notes",
+      "recordDraft": "Record this meeting",
+      "transcribe": "Transcribe",
+      "transcribing": "Transcribing…",
+      "cancel": "Cancel",
+      "template": "Notes template",
+      "generate": "Generate notes",
+      "generating": "Generating notes…",
+      "copy": "Copy Markdown",
+      "transcript": "Transcript",
+      "noTranscript": "No transcript yet.",
+      "notes": "Notes",
+      "notesAbove": "Recording now: this meeting's notes are in the field above."
+    },
+    "speaker": {
+      "me": "Me",
+      "person": "Person {{n}}"
+    },
+    "key": {
+      "label": "ElevenLabs key to transcribe:",
+      "placeholder": "paste the key",
+      "save": "Save to the system keyring"
+    },
+    "errors": {
+      "consent_required": "Accept the notice before recording.",
+      "already_active": "A meeting is already recording.",
+      "already_started": "This meeting was already recorded.",
+      "dictation_active": "Finish the dictation before recording the meeting.",
+      "insufficient_disk": "Not enough disk space to record (less than 500 MB free).",
+      "audio_device": "Could not open the microphone or the system audio.",
+      "not_found": "Meeting not found.",
+      "still_recording": "Stop the recording before transcribing.",
+      "no_audio": "This meeting has no saved audio.",
+      "missing_key": "The provider key is missing from the system keyring.",
+      "invalid_key": "Empty or invalid key.",
+      "keyring": "The system keyring did not answer.",
+      "transcription": "Transcription failed. The audio is still saved; try again.",
+      "cancelled": "Transcription cancelled.",
+      "busy": "A transcription or notes generation is already running.",
+      "unknown_template": "Unknown template.",
+      "notes": "Notes generation failed. Try again.",
+      "generic": "Something went wrong. See the log."
+    }
   }
 }

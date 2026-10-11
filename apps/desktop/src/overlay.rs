@@ -1,4 +1,5 @@
 use crate::input;
+use crate::meeting::MeetingIndicator;
 use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -697,6 +698,31 @@ pub fn show_notice(app_handle: &AppHandle, kind: NoticeKind, device: Option<Stri
     });
 }
 
+/// The overlay state of the meeting indicator: `meeting` (red dot and time) or
+/// `meeting_paused`; `None` when no meeting records.
+pub(crate) fn overlay_for_meeting(indicator: MeetingIndicator) -> Option<&'static str> {
+    match indicator {
+        MeetingIndicator::Recording => Some("meeting"),
+        MeetingIndicator::Paused => Some("meeting_paused"),
+        MeetingIndicator::None => None,
+    }
+}
+
+/// Shows the meeting indicator in the pill. Unlike dictation, it ignores `overlay_style`: the
+/// indicator is mandatory for as long as a meeting records (ADR-0005).
+pub fn show_meeting_overlay(app_handle: &AppHandle) {
+    let Some(state) = overlay_for_meeting(crate::meeting::indicator()) else {
+        return;
+    };
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || show_overlay_state_on_main(&handle, state));
+}
+
+/// Hides the pill once the meeting indicator is gone.
+pub fn hide_meeting_overlay(app_handle: &AppHandle) {
+    hide_recording_overlay(app_handle);
+}
+
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "recording");
@@ -774,6 +800,12 @@ static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    // A meeting indicator stays up for the whole recording (ADR-0005): a hide from another path
+    // puts the meeting state back instead.
+    if overlay_for_meeting(crate::meeting::indicator()).is_some() {
+        show_meeting_overlay(app_handle);
+        return;
+    }
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -877,6 +909,39 @@ mod tests {
         }
         assert_eq!(overlay_dimensions("notice"), (340.0, 110.0));
         assert_eq!(overlay_dimensions("recording"), (256.0, 50.0));
+    }
+
+    #[test]
+    fn meeting_overlay_states() {
+        assert_eq!(
+            overlay_for_meeting(MeetingIndicator::Recording),
+            Some("meeting")
+        );
+        assert_eq!(
+            overlay_for_meeting(MeetingIndicator::Paused),
+            Some("meeting_paused")
+        );
+        assert_eq!(overlay_for_meeting(MeetingIndicator::None), None);
+        // The meeting states use the compact pill, never the streaming card.
+        assert_eq!(
+            overlay_dimensions("meeting"),
+            (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        );
+        assert_eq!(
+            overlay_dimensions("meeting_paused"),
+            (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        );
+        // ADR-0005: the meeting pill does not consult `overlay_style`, and a hide from another
+        // path re-shows it while a meeting records.
+        let source = include_str!("overlay.rs");
+        let show = &source[source.find("pub fn show_meeting_overlay").unwrap()..];
+        let show = &show[..show.find("\n}\n").unwrap()];
+        assert!(!show.contains("overlay_style"), "{show}");
+        let hide = &source[source.find("pub fn hide_recording_overlay").unwrap()..];
+        assert!(
+            hide.find("overlay_for_meeting").unwrap() < hide.find("hide-overlay").unwrap(),
+            "the meeting check must come before the hide"
+        );
     }
 
     #[test]

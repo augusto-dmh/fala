@@ -96,3 +96,87 @@
     display: none;
   }
 }
+/* The meeting indicator: a dot and the recorded time, for as long as the meeting records. */
+.fpill.meeting {
+  gap: 6px;
+  width: 96px;
+  color: #fff;
+  font:
+    600 12px/1 ui-monospace,
+    monospace;
+}
+.fpill.meeting .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: #e5322d;
+}
+.fpill.meeting.paused .dot {
+  background: #9ca3af;
+}
+.fpill.meeting.muted .dot {
+  background: #d97706;
+}
+/* The meeting indicator: a dot and the recorded time, for as long as the meeting records. */
+.fpill.meeting {
+  gap: 6px;
+  width: 96px;
+  color: #fff;
+  font:
+    600 12px/1 ui-monospace,
+    monospace;
+}
+.fpill.meeting .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: #e5322d;
+}
+.fpill.meeting.paused .dot {
+  background: #9ca3af;
+}
+.fpill.meeting.muted .dot {
+  background: #d97706;
+}
+/* The meeting indicator: a dot and the recorded time, for as long as the meeting records. */
+.fpill.meeting {
+  gap: 6px;
+  width: 96px;
+  color: #fff;
+  font:
+    600 12px/1 ui-monospace,
+    monospace;
+}
+.fpill.meeting .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: #e5322d;
+}
+.fpill.meeting.paused .dot {
+  background: #9ca3af;
+}
+.fpill.meeting.muted .dot {
+  background: #d97706;
+}
+/* The meeting indicator: a dot and the recorded time, for as long as the meeting records. */
+.fpill.meeting {
+  gap: 6px;
+  width: 96px;
+  color: #fff;
+  font:
+    600 12px/1 ui-monospace,
+    monospace;
+}
+.fpill.meeting .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: #e5322d;
+}
+.fpill.meeting.paused .dot {
+  background: #9ca3af;
+}
+.fpill.meeting.muted .dot {
+  background: #d97706;
+}

@@ -37,7 +37,7 @@ const en = JSON.parse(read("../i18n/locales/en/translation.json"));
 const appTsx = read("../App.tsx");
 
 // i18next is not initialised here, so `t` returns the key: labels show as keys.
-const render = (active: "home" | "dictionary" | "settings") =>
+const render = (active: "home" | "dictionary" | "meetings" | "settings") =>
   renderToStaticMarkup(
     <Rail active={active} onSelect={noop} onOpenModels={noop} />,
   );
@@ -48,7 +48,7 @@ const render = (active: "home" | "dictionary" | "settings") =>
 {
   assert.deepEqual(
     RAIL_ITEMS.map((item) => item.id),
-    ["home", "dictionary"],
+    ["home", "dictionary", "meetings"],
   );
   const html = render("home");
   assert.match(html, /<nav[^>]*aria-label="rail.navigation"/);
@@ -57,9 +57,16 @@ const render = (active: "home" | "dictionary" | "settings") =>
   }
   const home = html.indexOf('aria-label="rail.home"');
   const dict = html.indexOf('aria-label="rail.dictionary"');
+  const meetings = html.indexOf('aria-label="rail.meetings"');
   const settings = html.indexOf('aria-label="rail.settings"');
   const footer = html.indexOf("mt-auto");
-  assert.ok(home > 0 && home < dict && dict < footer && footer < settings);
+  assert.ok(
+    home > 0 &&
+      home < dict &&
+      dict < meetings &&
+      meetings < footer &&
+      footer < settings,
+  );
   // The classes are read on the element itself, not anywhere in the rail.
   const wordmark = html.match(/<span class="([^"]*)">Fala<\/span>/);
   assert.ok(wordmark, "wordmark span");
@@ -73,7 +80,7 @@ const render = (active: "home" | "dictionary" | "settings") =>
     assert.ok(wordmarkClasses.includes(cls), `wordmark ${cls}`);
   }
   assert.ok(has(html, "fill-black") && has(html, "fill-white"), "pill mark");
-  for (const id of ["home", "dictionary", "settings"]) {
+  for (const id of ["home", "dictionary", "meetings", "settings"]) {
     const label = html.match(
       new RegExp(`<span class="([^"]*)">rail\\.${id}</span>`),
     );
@@ -93,9 +100,9 @@ ok("C25");
 
 // C26: exactly the active destination is marked: aria-current, subtle fill and
 // a 3 px ink bar; the others are not.
-for (const active of ["home", "dictionary", "settings"] as const) {
+for (const active of ["home", "dictionary", "meetings", "settings"] as const) {
   const html = render(active);
-  for (const id of ["home", "dictionary", "settings"]) {
+  for (const id of ["home", "dictionary", "meetings", "settings"]) {
     const tag = button(html, `rail.${id}`);
     const tagClasses = classes(tag);
     const isActive = id === active;
@@ -245,6 +252,7 @@ ok("C31");
     "rail.navigation": "Navegação principal",
     "rail.home": "Início",
     "rail.dictionary": "Dicionário",
+    "rail.meetings": "Reuniões",
     "rail.settings": "Configurações",
     "settingsPage.tabs.general": "Geral",
     "settingsPage.tabs.advanced": "Avançado",
@@ -257,6 +265,7 @@ ok("C31");
   const expectEn = {
     "rail.home": "Home",
     "rail.dictionary": "Dictionary",
+    "rail.meetings": "Meetings",
     "rail.settings": "Settings",
     "settingsPage.tabs.advanced": "Advanced",
   };
