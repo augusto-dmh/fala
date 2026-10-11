@@ -799,7 +799,9 @@
       "resolve": "Fix it"
     },
     "meeting": "Recording meeting",
-    "meetingPaused": "Meeting paused"
+    "meetingPaused": "Meeting paused",
+    "callElsewhere": "The call's sound is playing on {{device}}",
+    "recordFrom": "Record from this device"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
@@ -840,7 +842,12 @@
       "mutedSystem": "No system audio for 2 minutes.",
       "capWarning": "Recording stops in {{time}} (session limit).",
       "extend": "1 more hour",
-      "lowDisk": "Low disk space: {{mb}} MB free."
+      "lowDisk": "Low disk space: {{mb}} MB free.",
+      "output": "Meeting sound",
+      "outputDefault": "Default output ({{name}})",
+      "outputFrom": "Sound from {{device}}",
+      "callElsewhere": "The call's sound is playing on {{device}}.",
+      "recordFrom": "Record from this device"
     },
     "annotations": {
       "placeholder": "Type your notes. They save themselves."

@@ -58,11 +58,18 @@ const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 const OVERLAY_NOTICE_WIDTH: f64 = 340.0;
 const OVERLAY_NOTICE_HEIGHT: f64 = 110.0;
 
+/// The "the call plays on another output" card sits over the meeting pill: the window takes a
+/// notice's size while it shows.
+static MEETING_CARD: AtomicBool = AtomicBool::new(false);
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
     match state {
         "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
         "notice" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
+        "meeting" | "meeting_paused" if MEETING_CARD.load(Ordering::Relaxed) => {
+            (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT)
+        }
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -718,8 +725,17 @@ pub fn show_meeting_overlay(app_handle: &AppHandle) {
     let _ = app_handle.run_on_main_thread(move || show_overlay_state_on_main(&handle, state));
 }
 
+/// Makes room for the meeting card over the pill, or gives it back; the card's text comes with
+/// `MeetingStatus.call_output`.
+pub fn set_meeting_card(app_handle: &AppHandle, on: bool) {
+    if MEETING_CARD.swap(on, Ordering::SeqCst) != on {
+        show_meeting_overlay(app_handle);
+    }
+}
+
 /// Hides the pill once the meeting indicator is gone.
 pub fn hide_meeting_overlay(app_handle: &AppHandle) {
+    MEETING_CARD.store(false, Ordering::SeqCst);
     hide_recording_overlay(app_handle);
 }
 

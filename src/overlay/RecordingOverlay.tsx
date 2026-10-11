@@ -7,7 +7,7 @@ import "./Notice.css";
 import { Notice } from "./Notice";
 import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
-import { MeetingPill } from "./MeetingPill";
+import { CallOutputCard, MeetingPill } from "./MeetingPill";
 import {
   SLOW_LOAD_MS,
   isHoldToTalk,
@@ -71,6 +71,8 @@ const RecordingOverlay: React.FC = () => {
   // The meeting indicator: recorded time and the silent-channel warning, from `MeetingStatus`.
   const [meetingMs, setMeetingMs] = useState(0);
   const [meetingMuted, setMeetingMuted] = useState(false);
+  // The output the call plays on while the system channel records zeros, if any.
+  const [callOutput, setCallOutput] = useState<string | null>(null);
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
   const [session, setSession] = useState(0);
@@ -187,7 +189,11 @@ const RecordingOverlay: React.FC = () => {
 
       const unlistenMeeting = await events.meetingStatus.listen((event) => {
         setMeetingMs(event.payload.recorded_ms);
-        setMeetingMuted(event.payload.muted_mic || event.payload.muted_system);
+        // Amber after 2 min of silence or ~3 s of digital zero in a channel.
+        const muted = event.payload.muted_mic || event.payload.muted_system;
+        const zero = event.payload.zero_mic || event.payload.zero_system;
+        setMeetingMuted(muted || zero);
+        setCallOutput(event.payload.call_output);
       });
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
@@ -424,21 +430,35 @@ const RecordingOverlay: React.FC = () => {
   // the mic (red while the key is held); transcribing and processing share one
   // still, pulsing state. No icon and no text; cancelling stays on Esc.
   if (state === "meeting" || state === "meeting_paused") {
+    const meetingPill = (
+      <MeetingPill
+        paused={state === "meeting_paused"}
+        recordedMs={meetingMs}
+        muted={meetingMuted}
+        label={
+          state === "meeting"
+            ? t("overlay.meeting")
+            : t("overlay.meetingPaused")
+        }
+      />
+    );
     return (
       <div
         dir={direction}
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
       >
-        <MeetingPill
-          paused={state === "meeting_paused"}
-          recordedMs={meetingMs}
-          muted={meetingMuted}
-          label={
-            state === "meeting"
-              ? t("overlay.meeting")
-              : t("overlay.meetingPaused")
-          }
-        />
+        {callOutput ? (
+          <div className="ov-stack">
+            <CallOutputCard
+              text={t("overlay.callElsewhere", { device: callOutput })}
+              switchLabel={t("overlay.recordFrom")}
+              onSwitch={() => void commands.switchMeetingOutput(callOutput)}
+            />
+            {meetingPill}
+          </div>
+        ) : (
+          meetingPill
+        )}
       </div>
     );
   }

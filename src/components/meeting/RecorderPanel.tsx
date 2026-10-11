@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import type { MeetingMode, MeetingStatus } from "@/bindings";
+import type { MeetingMode, MeetingOutputs, MeetingStatus } from "@/bindings";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { clock } from "./meetingModel";
@@ -8,14 +8,54 @@ export interface RecorderPanelProps {
   status: MeetingStatus;
   mode: MeetingMode;
   title: string;
+  /** The outputs for "Meeting sound"; `null` until listed. */
+  outputs: MeetingOutputs | null;
   onModeChange: (mode: MeetingMode) => void;
   onTitleChange: (title: string) => void;
+  /** `null`: follow the default output. */
+  onOutputChange: (name: string | null) => void;
+  /** "Record from this device", while recording. */
+  onSwitchOutput: (name: string) => void;
   onStart: () => void;
   onNewDraft: () => void;
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
   onExtend: () => void;
+}
+
+/** "Meeting sound": the default output (named) or one of the outputs, remembered. */
+function OutputSelect({
+  outputs,
+  onChange,
+}: {
+  outputs: MeetingOutputs;
+  onChange: (name: string | null) => void;
+}) {
+  const { t } = useTranslation();
+  const fallback = outputs.devices.find((d) => d.is_default)?.name ?? "";
+  return (
+    <select
+      aria-label={t("meeting.recorder.output")}
+      title={t("meeting.recorder.output")}
+      className="max-w-56 rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
+      value={outputs.selected ?? ""}
+      onChange={(event) => onChange(event.target.value || null)}
+    >
+      <option value="">
+        {t("meeting.recorder.outputDefault", { name: fallback })}
+      </option>
+      {outputs.devices.map((d) => (
+        <option key={d.name} value={d.name}>
+          {d.name}
+        </option>
+      ))}
+      {outputs.selected !== null &&
+        !outputs.devices.some((d) => d.name === outputs.selected) && (
+          <option value={outputs.selected}>{outputs.selected}</option>
+        )}
+    </select>
+  );
 }
 
 function Level({ label, value }: { label: string; value: number }) {
@@ -53,6 +93,12 @@ export function RecorderPanel(props: RecorderPanelProps) {
           <option value="meeting">{t("meeting.recorder.online")}</option>
           <option value="in_person">{t("meeting.recorder.inPerson")}</option>
         </select>
+        {props.outputs && (
+          <OutputSelect
+            outputs={props.outputs}
+            onChange={props.onOutputChange}
+          />
+        )}
         <Input
           variant="compact"
           value={props.title}
@@ -95,6 +141,26 @@ export function RecorderPanel(props: RecorderPanelProps) {
       </div>
       <Level label={t("meeting.recorder.mic")} value={status.mic_level} />
       <Level label={t("meeting.recorder.system")} value={status.system_level} />
+      {status.system_output !== null && (
+        <p className="text-xs text-mid-gray">
+          {t("meeting.recorder.outputFrom", { device: status.system_output })}
+        </p>
+      )}
+      {status.call_output !== null && (
+        <p
+          role="alert"
+          className="flex items-center gap-2 text-xs text-warning"
+        >
+          {t("meeting.recorder.callElsewhere", { device: status.call_output })}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => props.onSwitchOutput(status.call_output ?? "")}
+          >
+            {t("meeting.recorder.recordFrom")}
+          </Button>
+        </p>
+      )}
       {status.muted_mic && (
         <p role="alert" className="text-xs text-warning">
           {t("meeting.recorder.mutedMic")}

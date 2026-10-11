@@ -1,5 +1,6 @@
-//! The meeting capture thread: the default mic and the default system output pushed into
-//! `fala_audio::MeetingRecorder`, the same loop `fala-cli meeting` runs, plus pause.
+//! The meeting capture thread: the default mic and the chosen system output pushed into
+//! `fala_audio::MeetingRecorder`, the same loop `fala-cli meeting` runs, plus pause and the
+//! switch of the system output while recording.
 //!
 //! The streams are opened on the thread that owns them (a cpal stream is not `Send` on every
 //! host). Paused time is neither written nor counted: the recorder's clock is an [`ActiveClock`]
@@ -10,7 +11,9 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use fala_audio::{MeetingRecorder, MeetingWav, Mic, SystemAudio, MEETING_RATE};
+use fala_audio::{
+    MeetingRecorder, MeetingWav, Mic, OutputMeter, OutputPeak, SystemAudio, MEETING_RATE,
+};
 
 const TICK: Duration = Duration::from_millis(100);
 /// How often levels and the recorded duration go back to the manager (UI at 4 Hz).
@@ -19,17 +22,26 @@ pub(crate) const REPORT_EVERY: Duration = Duration::from_millis(250);
 pub(crate) enum Control {
     Pause,
     Resume,
+    /// Record the system channel from this output from now on; the WAV keeps zeros for the
+    /// moment without a source.
+    SwitchSystem(String),
     /// Close the WAV (header and file) and end the thread.
     Finalize,
 }
 
 pub(crate) enum Report {
-    /// Recorded duration so far and the RMS of each channel since the last report.
+    /// Recorded duration so far, the RMS and the absolute peak of each channel and the peak of
+    /// every output since the last report (empty without an output meter).
     Levels {
         recorded: Duration,
         mic: f32,
         system: f32,
+        mic_peak: f32,
+        system_peak: f32,
+        outputs: Vec<OutputPeak>,
     },
+    /// The system channel now records `name`, or still records the previous output (`error`).
+    SystemSwitched { name: String, error: Option<String> },
     /// The WAV is closed (or the capture failed); the thread is gone.
     Finalized {
         recorded: Duration,
@@ -114,6 +126,9 @@ struct Capture {
     mic: Mic,
     system: SystemAudio,
     recorder: MeetingRecorder,
+    /// Peaks of every output, to tell "nothing plays" from "it plays elsewhere"; `None` where
+    /// the OS has no meter (Linux until phase 3).
+    meter: Option<OutputMeter>,
 }
 
 fn open(system_name: &str, wav: &Path) -> Result<Capture, String> {
@@ -129,18 +144,49 @@ fn open(system_name: &str, wav: &Path) -> Result<Capture, String> {
         "meeting capture open: mic {}, system {system_name}",
         mic.name()
     );
+    let meter = OutputMeter::start()
+        .map_err(|e| log::info!("output peaks unavailable: {e}"))
+        .ok();
     Ok(Capture {
         mic,
         system,
         recorder,
+        meter,
     })
 }
 
-/// RMS accumulated between two reports.
+/// Opens `name` and, only once it is open, drops the old system stream: a failed switch keeps
+/// recording what it recorded. What the old stream still held is written unless paused.
+fn switch_system(
+    capture: &mut Capture,
+    name: &str,
+    paused: bool,
+    buffer: &mut Vec<f32>,
+) -> Result<(), String> {
+    let next = SystemAudio::open(name).map_err(|e| e.to_string())?;
+    buffer.clear();
+    capture.system.drain_into(buffer);
+    if !paused {
+        capture
+            .recorder
+            .push_system(buffer)
+            .map_err(|e| e.to_string())?;
+    }
+    capture
+        .recorder
+        .set_system_rate(next.sample_rate())
+        .map_err(|e| e.to_string())?;
+    capture.system = next;
+    log::info!("meeting system output switched to {name}");
+    Ok(())
+}
+
+/// RMS and absolute peak accumulated between two reports.
 #[derive(Default)]
 struct Level {
     sum: f64,
     count: u64,
+    peak: f32,
 }
 
 impl Level {
@@ -150,16 +196,19 @@ impl Level {
             .map(|s| f64::from(*s) * f64::from(*s))
             .sum::<f64>();
         self.count += samples.len() as u64;
+        self.peak = samples.iter().fold(self.peak, |m, s| m.max(s.abs()));
     }
 
-    fn take(&mut self) -> f32 {
+    /// (RMS, peak); no samples at all is digital zero.
+    fn take(&mut self) -> (f32, f32) {
         let rms = if self.count == 0 {
             0.0
         } else {
             (self.sum / self.count as f64).sqrt() as f32
         };
+        let peak = self.peak;
         *self = Level::default();
-        rms
+        (rms, peak)
     }
 }
 
@@ -177,6 +226,15 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
             }
             Ok(Control::Resume) => {
                 clock.resume(Instant::now());
+                false
+            }
+            Ok(Control::SwitchSystem(name)) => {
+                let paused = clock.is_paused();
+                let error = switch_system(&mut capture, &name, paused, &mut buffer).err();
+                if let Some(e) = &error {
+                    log::warn!("meeting system output not switched to {name}: {e}");
+                }
+                on_report(Report::SystemSwitched { name, error });
                 false
             }
             Ok(Control::Finalize) | Err(RecvTimeoutError::Disconnected) => true,
@@ -214,10 +272,15 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
         }
         if now.duration_since(last_report) >= REPORT_EVERY {
             last_report = now;
+            let (mic, mic_peak) = mic_level.take();
+            let (system, system_peak) = system_level.take();
             on_report(Report::Levels {
                 recorded: Duration::from_millis(recorded_ms(capture.recorder.written())),
-                mic: mic_level.take(),
-                system: system_level.take(),
+                mic,
+                system,
+                mic_peak,
+                system_peak,
+                outputs: capture.meter.as_ref().map(|m| m.take()).unwrap_or_default(),
             });
         }
     }

@@ -866,6 +866,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_templates,
             commands::meeting::meeting_keys,
             commands::meeting::set_meeting_transcription_key,
+            commands::meeting_output::meeting_outputs,
+            commands::meeting_output::set_meeting_output,
+            commands::meeting_output::switch_meeting_output,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

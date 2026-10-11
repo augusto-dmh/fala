@@ -1175,6 +1175,39 @@ async setMeetingTranscriptionKey(key: string) : Promise<Result<MeetingKeys, Meet
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * The outputs and the remembered choice. Enumerating can stall, so it runs off the main loop.
+ */
+async meetingOutputs() : Promise<Result<MeetingOutputs, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_outputs") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remembers the output the next meetings record; `None` follows the default output.
+ */
+async setMeetingOutput(name: string | null) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_output", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Record from this device" while a meeting records.
+ */
+async switchMeetingOutput(name: string) : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("switch_meeting_output", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1276,7 +1309,11 @@ llm_disabled_apps?: string[];
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
  */
-meeting_consent_accepted_at?: string | null }
+meeting_consent_accepted_at?: string | null; 
+/**
+ * The output whose sound a meeting records ("Meeting sound"). `None`: the default output.
+ */
+meeting_output_device?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1403,6 +1440,14 @@ export type MeetingMode =
  * Everyone in the room: the mic is diarized too.
  */
 "in_person"
+/**
+ * An output the "Meeting sound" selector offers.
+ */
+export type MeetingOutput = { name: string; is_default: boolean }
+/**
+ * The outputs and the remembered choice (`None`: follow the default output).
+ */
+export type MeetingOutputs = { devices: MeetingOutput[]; selected: string | null }
 export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" | 
 /**
  * The last session is being turned into retained audio (and, later, a transcript).
@@ -1428,7 +1473,19 @@ cap_remaining_ms: number | null;
 /**
  * Free bytes when recording started with less than 2 GiB free.
  */
-low_disk_bytes: number | null }
+low_disk_bytes: number | null; 
+/**
+ * The output whose sound is the system channel.
+ */
+system_output: string | null; 
+/**
+ * Another output that plays while the system channel records zeros: the call is there.
+ */
+call_output: string | null; 
+/**
+ * A channel in digital zero for ~3 s (the pill's dot turns amber).
+ */
+zero_mic: boolean; zero_system: boolean }
 /**
  * A session in the list.
  */

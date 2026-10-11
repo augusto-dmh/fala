@@ -796,7 +796,9 @@
       "resolve": "Resolver"
     },
     "meeting": "Gravando reunião",
-    "meetingPaused": "Reunião pausada"
+    "meetingPaused": "Reunião pausada",
+    "callElsewhere": "O som da call está saindo por {{device}}",
+    "recordFrom": "Gravar deste dispositivo"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
@@ -840,7 +842,12 @@
       "mutedSystem": "Sem áudio do sistema há 2 minutos.",
       "capWarning": "A gravação para em {{time}} (limite da sessão).",
       "extend": "Mais 1 h",
-      "lowDisk": "Pouco espaço em disco: {{mb}} MB livres."
+      "lowDisk": "Pouco espaço em disco: {{mb}} MB livres.",
+      "output": "Som da reunião",
+      "outputDefault": "Saída padrão ({{name}})",
+      "outputFrom": "Som de {{device}}",
+      "callElsewhere": "O som da call está saindo por {{device}}.",
+      "recordFrom": "Gravar deste dispositivo"
     },
     "annotations": {
       "placeholder": "Digite suas anotações. Elas são salvas sozinhas."

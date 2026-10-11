@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod history;
 pub mod meeting;
+pub mod meeting_output;
 pub mod models;
 pub mod transcription;
 

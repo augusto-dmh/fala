@@ -651,6 +651,9 @@ pub struct AppSettings {
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
     pub meeting_consent_accepted_at: Option<String>,
+    /// The output whose sound a meeting records ("Meeting sound"). `None`: the default output.
+    #[serde(default)]
+    pub meeting_output_device: Option<String>,
 }
 
 fn default_model() -> String {
@@ -1126,6 +1129,7 @@ pub fn get_default_settings() -> AppSettings {
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
         meeting_consent_accepted_at: None,
+        meeting_output_device: None,
     }
 }
 
