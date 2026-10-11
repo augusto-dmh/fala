@@ -1,5 +1,5 @@
-//! The personal dictionary as the app stores it: `custom_words` holds the terms (unchanged since
-//! the Handy days) and `dictionary_replacements` the spoken -> written pairs, each with how many
+//! The personal dictionary as the app stores it: `custom_words` holds the terms (the inherited
+//! field, unchanged) and `dictionary_replacements` the spoken -> written pairs, each with how many
 //! times the rules applied it. `dictionary` joins both into the `fala_core::Dictionary` every
 //! dictation uses; the written form of a pair reaches the LLM as a term, the spoken form never.
 
