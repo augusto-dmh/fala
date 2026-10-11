@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  CleanupLevel,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -149,6 +150,8 @@ const settingUpdaters: {
         : null,
     }));
   },
+  cleanup_level: (value) =>
+    commands.changeCleanupLevelSetting(value as CleanupLevel),
   word_correction_threshold: (value) =>
     commands.changeWordCorrectionThresholdSetting(value as number),
   paste_delay_ms: (value) =>

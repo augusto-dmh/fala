@@ -291,6 +291,37 @@
         "label": "Formatar ditados com IA",
         "description": "Acima de 15 palavras, o Gemini formata o texto ditado. Só o texto e o nome do app saem da máquina; o áudio nunca sai."
       },
+      "cleanup": {
+        "title": "Quanto a IA mexe no texto",
+        "description": "O mesmo ditado em cada nível. Vale para o próximo ditado.",
+        "rawLabel": "Você disse",
+        "raw": "é... então, tipo, a reunião vai ser na terça, não, na quarta às três, e eu queria que vocês trouxessem os números né",
+        "default": "Padrão",
+        "inactive": "Vale quando a IA formata o ditado: ligue a IA e cole a chave do Gemini.",
+        "footer": "O original nunca se perde: Desfazer edição da IA, no Início.",
+        "levels": {
+          "verbatim": {
+            "label": "Literal",
+            "description": "Mantém cada palavra, até as hesitações; só pontua e corrige erros de transcrição.",
+            "example": "É... então, tipo, a reunião vai ser na terça, não, na quarta às três, e eu queria que vocês trouxessem os números, né?"
+          },
+          "light": {
+            "label": "Leve",
+            "description": "Tira hesitações e falsos começos e aplica as autocorreções; o resto fica com as suas palavras.",
+            "example": "A reunião vai ser na quarta às três, e eu queria que vocês trouxessem os números."
+          },
+          "medium": {
+            "label": "Média",
+            "description": "Também corrige a gramática e divide frases longas, sem mudar o tom.",
+            "example": "A reunião será na quarta, às três. Queria que vocês trouxessem os números."
+          },
+          "heavy": {
+            "label": "Forte",
+            "description": "Reescreve para ficar claro e curto, sem acrescentar nada nem mudar o sentido.",
+            "example": "Reunião na quarta às 15h; tragam os números."
+          }
+        }
+      },
       "apiKey": {
         "title": "Chave do Gemini",
         "description": "Fica no cofre de senhas do sistema. Sem chave, só as regras locais formatam o texto.",

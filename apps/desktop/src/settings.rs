@@ -333,6 +333,29 @@ pub enum VadBackend {
     Earshot,
 }
 
+/// How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
+/// The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CleanupLevel {
+    Verbatim,
+    #[default]
+    Light,
+    Medium,
+    Heavy,
+}
+
+impl From<CleanupLevel> for fala_postproc::CleanupLevel {
+    fn from(level: CleanupLevel) -> Self {
+        match level {
+            CleanupLevel::Verbatim => Self::Verbatim,
+            CleanupLevel::Light => Self::Light,
+            CleanupLevel::Medium => Self::Medium,
+            CleanupLevel::Heavy => Self::Heavy,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub(crate) struct SecretMap(HashMap<String, String>);
@@ -647,6 +670,9 @@ pub struct AppSettings {
     /// Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
     #[serde(default = "default_llm_disabled_apps")]
     pub llm_disabled_apps: Vec<String>,
+    /// How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
+    #[serde(default)]
+    pub cleanup_level: CleanupLevel,
     /// When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
@@ -1125,6 +1151,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
+        cleanup_level: CleanupLevel::default(),
         meeting_consent_accepted_at: None,
     }
 }
@@ -2117,6 +2144,59 @@ mod tests {
                 .unwrap_or_else(|e| panic!("'{stored}' must parse strictly: {e}"));
             apply_settings_migrations(&mut settings, &raw);
             assert_eq!(settings.selected_language, stored, "stored '{stored}'");
+        }
+    }
+
+    #[test]
+    fn cleanup_level_defaults_to_light() {
+        assert_eq!(get_default_settings().cleanup_level, CleanupLevel::Light);
+        let from_empty: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("all AppSettings fields need serde defaults");
+        assert_eq!(from_empty.cleanup_level, CleanupLevel::Light);
+        let old_store = migrated(schema_2_store("ctrl+space"));
+        assert_eq!(old_store.cleanup_level, CleanupLevel::Light);
+    }
+
+    #[test]
+    fn invalid_cleanup_level_is_salvaged_to_light() {
+        for invalid in [serde_json::json!("extreme"), serde_json::json!(42)] {
+            let mut stored = default_settings_json();
+            let map = stored.as_object_mut().unwrap();
+            map.insert(
+                "selected_model".into(),
+                serde_json::json!("parakeet-tdt-0.6b-v3"),
+            );
+            map.insert("onboarding_completed".into(), serde_json::json!(true));
+            map.insert("cleanup_level".into(), invalid.clone());
+            assert!(
+                serde_json::from_value::<AppSettings>(stored.clone()).is_err(),
+                "{invalid} must fail the strict parse"
+            );
+
+            let salvaged = salvage_settings(&stored);
+            assert_eq!(salvaged.cleanup_level, CleanupLevel::Light, "{invalid}");
+            assert_eq!(salvaged.selected_model, "parakeet-tdt-0.6b-v3");
+            assert!(salvaged.onboarding_completed);
+        }
+    }
+
+    #[test]
+    fn stored_cleanup_levels_round_trip() {
+        for (literal, level) in [
+            ("verbatim", CleanupLevel::Verbatim),
+            ("light", CleanupLevel::Light),
+            ("medium", CleanupLevel::Medium),
+            ("heavy", CleanupLevel::Heavy),
+        ] {
+            let mut raw = schema_2_store("ctrl+space");
+            raw["cleanup_level"] = serde_json::json!(literal);
+            let settings = migrated(raw);
+            assert_eq!(settings.cleanup_level, level, "stored '{literal}'");
+            assert_eq!(
+                serde_json::to_value(&settings).unwrap()["cleanup_level"],
+                literal
+            );
+            assert_eq!(fala_postproc::CleanupLevel::from(level).as_str(), literal);
         }
     }
 
