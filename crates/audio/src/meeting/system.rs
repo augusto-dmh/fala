@@ -26,7 +26,7 @@ pub struct SystemAudio {
     dropped: Arc<AtomicU64>,
 }
 
-fn is_alsa(host: &cpal::Host) -> bool {
+pub(super) fn is_alsa(host: &cpal::Host) -> bool {
     host.id().name() == "ALSA"
 }
 
@@ -182,18 +182,23 @@ fn find_output(host: &cpal::Host, name: &str) -> Result<cpal::Device, AudioError
         .iter()
         .map(|d| d.name().unwrap_or_default())
         .collect();
-    let index =
-        names
-            .iter()
-            .position(|n| n.contains(name))
-            .ok_or_else(|| AudioError::NoSystem {
-                name: name.to_owned(),
-                available: names.clone(),
-            })?;
+    let index = pick_output(&names, name).ok_or_else(|| AudioError::NoSystem {
+        name: name.to_owned(),
+        available: names.clone(),
+    })?;
     devices
         .into_iter()
         .nth(index)
         .ok_or_else(|| AudioError::Device("dispositivo sumiu da lista".to_owned()))
+}
+
+/// O nome exato primeiro: o seletor manda o nome inteiro, e "Fone" contido em "Fone USB" não
+/// pode abrir o outro. Sem igual, o primeiro que contém `name` (o `--system` da CLI).
+fn pick_output(names: &[String], name: &str) -> Option<usize> {
+    names
+        .iter()
+        .position(|n| n == name)
+        .or_else(|| names.iter().position(|n| n.contains(name)))
 }
 
 fn f32_config(
@@ -254,6 +259,14 @@ mod tests {
         );
         assert_eq!(parse_default_sink("Found \"default\" metadata 40\n"), None);
         assert_eq!(parse_default_sink(""), None);
+    }
+
+    #[test]
+    fn exact_output_name_wins_over_a_containing_one() {
+        let names = ["Fone USB (2- USB Audio)", "Fone USB"].map(String::from);
+        assert_eq!(pick_output(&names, "Fone USB"), Some(1));
+        assert_eq!(pick_output(&names, "USB Audio"), Some(0));
+        assert_eq!(pick_output(&names, "HDMI"), None);
     }
 
     #[test]

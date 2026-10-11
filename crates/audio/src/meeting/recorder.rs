@@ -120,6 +120,14 @@ impl MeetingRecorder {
         self.system.push(samples)
     }
 
+    /// O áudio do sistema passa a vir noutra taxa (troca a quente da saída): o que o resampler
+    /// antigo segurava entra na fila, e o relógio cobre com zeros o intervalo sem fonte.
+    pub fn set_system_rate(&mut self, rate: u32) -> Result<(), AudioError> {
+        self.system.drain_resampler()?;
+        self.system.resampler = Resampler::to(rate, MEETING_RATE)?;
+        Ok(())
+    }
+
     /// `now` é o tempo de parede desde o começo da gravação.
     pub fn tick(&mut self, now: Duration) -> Result<(), AudioError> {
         self.write_to(frames_at(now).saturating_sub(LAG_FRAMES))?;
@@ -333,6 +341,44 @@ mod tests {
         // Sinal de verdade nos dois canais, não só zeros.
         assert!(left.iter().filter(|&&l| l != 0).count() > 200_000);
         assert!(right.iter().filter(|&&r| r != 0).count() > 200_000);
+    }
+
+    #[test]
+    fn switching_the_system_rate_keeps_the_clock_and_fills_the_gap() {
+        let path = tmp("switch.wav");
+        let wav = MeetingWav::create(&path).unwrap();
+        let mut rec = MeetingRecorder::new(48_000, 48_000, wav).unwrap();
+        // 1 s a 48 kHz, 1 s sem fonte (a troca), 1 s a 44,1 kHz.
+        for step in 1..=100u64 {
+            rec.push_system(&vec![0.25; 480]).unwrap();
+            rec.tick(Duration::from_millis(step * 10)).unwrap();
+        }
+        rec.set_system_rate(44_100).unwrap();
+        for step in 101..=200u64 {
+            rec.tick(Duration::from_millis(step * 10)).unwrap();
+        }
+        for step in 201..=300u64 {
+            rec.push_system(&vec![0.5; 441]).unwrap();
+            rec.tick(Duration::from_millis(step * 10)).unwrap();
+        }
+        let (_, system) = rec.finish(Duration::from_secs(3)).unwrap();
+        let (_, right) = read(&path);
+        assert_eq!(right.len(), 144_000, "o relógio manda, troca ou não");
+        assert!(right[..48_000].iter().all(|&r| r == to_i16(0.25)));
+        // A folga de 250 ms adianta tudo o que chega depois do buraco: os zeros vão de 1 s até
+        // perto de 1,75 s.
+        let gap = &right[50_000..80_000];
+        assert!(gap.iter().all(|&r| r == 0), "zeros no intervalo da troca");
+        let after = &right[100_000..125_000];
+        let want = i32::from(to_i16(0.5));
+        assert!(
+            after.iter().all(|&r| (i32::from(r) - want).abs() <= 2),
+            "a fonte nova, reamostrada para 48 kHz"
+        );
+        assert!(
+            (system.delivered as i64 - 96_000).abs() <= 480,
+            "{system:?}"
+        );
     }
 
     #[test]

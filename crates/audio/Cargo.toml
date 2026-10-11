@@ -19,5 +19,18 @@ thiserror.workspace = true
 # O WAV de reunião (door 3 do plano `meeting-recorder`).
 hound = "3.5.1"
 
+[target.'cfg(windows)'.dependencies]
+# O pico de cada saída (`OutputMeter`): a mesma versão que o `apps/desktop` usa.
+windows = { version = "0.61.3", features = [
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_UI_Shell_PropertiesSystem",
+] }
+
 [lints]
 workspace = true
