@@ -280,6 +280,14 @@ impl SoundTheme {
     pub fn to_stop_path(self) -> String {
         format!("resources/{}_stop.wav", self.as_str())
     }
+
+    pub fn to_meeting_pause_path(self) -> String {
+        format!("resources/{}_meeting_pause.wav", self.as_str())
+    }
+
+    pub fn to_meeting_resume_path(self) -> String {
+        format!("resources/{}_meeting_resume.wav", self.as_str())
+    }
 }
 
 /// UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
@@ -609,6 +617,12 @@ pub struct AppSettings {
     pub post_process_selected_prompt_id: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
+    /// Pause the media playing on the PC while dictating; off by default.
+    #[serde(default)]
+    pub pause_media_while_recording: bool,
+    /// Pause the media playing on the PC while a meeting records; on by default.
+    #[serde(default = "default_pause_media_on_meeting")]
+    pub pause_media_on_meeting: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
@@ -809,6 +823,11 @@ fn default_theme() -> Theme {
 
 fn default_post_process_enabled() -> bool {
     false
+}
+
+/// Music playing during a meeting leaks into the system channel of the recording.
+fn default_pause_media_on_meeting() -> bool {
+    true
 }
 
 fn default_app_language() -> String {
@@ -1140,6 +1159,8 @@ pub fn get_default_settings() -> AppSettings {
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
         mute_while_recording: false,
+        pause_media_while_recording: false,
+        pause_media_on_meeting: default_pause_media_on_meeting(),
         append_trailing_space: false,
         app_language: default_app_language(),
         theme: default_theme(),
@@ -1515,6 +1536,16 @@ mod tests {
         assert!(settings.filler_word_removal_enabled);
         // Bindings default to empty; the load path merges the real defaults in.
         assert!(settings.bindings.is_empty());
+    }
+
+    #[test]
+    fn media_pause_is_off_for_dictation_and_on_for_meetings() {
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        let fresh = get_default_settings();
+        for settings in [stored, fresh] {
+            assert!(!settings.pause_media_while_recording);
+            assert!(settings.pause_media_on_meeting);
+        }
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to

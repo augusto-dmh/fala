@@ -401,6 +401,14 @@
         "label": "Feedback de Áudio",
         "description": "Reproduzir som quando a gravação iniciar e parar"
       },
+      "pauseMediaWhileRecording": {
+        "label": "Pausar a mídia ao ditar",
+        "description": "Pausa a música e os vídeos que estão tocando enquanto você dita e retoma só o que o Fala pausou"
+      },
+      "pauseMediaOnMeeting": {
+        "label": "Pausar a mídia ao gravar reunião",
+        "description": "Pausa a música e os vídeos que estão tocando enquanto a reunião grava, para que não entrem na gravação, e retoma só o que o Fala pausou"
+      },
       "outputDevice": {
         "title": "Dispositivo de Saída",
         "description": "Selecione seu dispositivo de saída de áudio preferido para sons de feedback",
