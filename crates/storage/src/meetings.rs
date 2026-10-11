@@ -283,6 +283,20 @@ impl Store {
         )
     }
 
+    /// O título gerado pelas notas, só se a sessão ainda está sem título; devolve se trocou.
+    pub fn set_generated_meeting_title(
+        &self,
+        id: SessionId,
+        title: &str,
+    ) -> Result<bool, StorageError> {
+        self.meeting(id)?;
+        let changed = self.conn.execute(
+            "UPDATE meetings SET title = ?2 WHERE id = ?1 AND trim(title) = ''",
+            params![id.to_string(), title],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// A sessão `id`.
     pub fn meeting(&self, id: SessionId) -> Result<MeetingRecord, StorageError> {
         self.conn

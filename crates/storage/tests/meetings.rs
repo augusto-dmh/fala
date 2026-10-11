@@ -283,6 +283,31 @@ fn notes_saved() {
 }
 
 #[test]
+fn generated_title_never_replaces_a_typed_one() {
+    let e = env("meetings_generated_title");
+    let store = e.open();
+    let typed = new_meeting(1, 14);
+    store.create_meeting(&typed).unwrap();
+    assert!(!store
+        .set_generated_meeting_title(typed.id, "Outro")
+        .unwrap());
+    assert_eq!(store.meeting(typed.id).unwrap().title, "Reunião 1");
+
+    let blank = NewMeeting {
+        title: "  ".to_string(),
+        ..new_meeting(2, 15)
+    };
+    store.create_meeting(&blank).unwrap();
+    assert!(store
+        .set_generated_meeting_title(blank.id, "Data do lançamento")
+        .unwrap());
+    assert_eq!(store.meeting(blank.id).unwrap().title, "Data do lançamento");
+    assert!(!store
+        .set_generated_meeting_title(blank.id, "De novo")
+        .unwrap());
+}
+
+#[test]
 fn list_newest_first() {
     let e = env("meetings_list");
     let store = e.open();
