@@ -7,15 +7,22 @@
 //! ADR-0005: a sessão só sai de `Idle` por [`UserAction::StartRecording`], só volta a gravar
 //! por [`UserAction::ResumeRecording`], e os estados que capturam ou aguardam carregam um
 //! [`Indicator`], que só este crate constrói. Todo fim manda processar; nada é descartado.
+//! Detecção de call ([`CallDetector`]): quem captura o mic vira, no máximo, uma pergunta à
+//! pessoa ([`CallPrompt`]); nunca uma [`UserAction`].
 //! Sem dependência de plataforma nem de `tauri` (ADR-0002, ADR-0007).
 
 mod cap;
+mod detect;
 mod id;
 mod mute;
 mod route;
 mod session;
 
 pub use cap::RecordingCap;
+pub use detect::{
+    identify, CallApp, CallDetector, CallPrompt, DetectContext, ASK_STOP_AFTER, CALL_APPS,
+    OFFER_DELAY, OFFER_MIN_GAP, RELEASE_DELAY,
+};
 pub use id::{SessionId, SessionMode};
 pub use mute::{MuteWatch, Muted, MUTE_WARN_AFTER};
 pub use route::{

@@ -1,7 +1,8 @@
 //! Métricas por ditado: uma linha sem texto por ditado do desktop e o resumo p50/p90.
 //!
-//! A tabela é aditiva e fica fora do `user_version`: `open` a cria com `IF NOT EXISTS`. Ela não
-//! tem FK para `dictations`; a linha sobrevive ao item (retenção, apagar) porque não tem texto.
+//! A tabela é aditiva e fica fora do `user_version`: `open` a cria com `IF NOT EXISTS` e acrescenta
+//! as colunas que vieram depois (`blocks`). Ela não tem FK para `dictations`; a linha sobrevive ao
+//! item (retenção, apagar) porque não tem texto.
 
 use chrono::{DateTime, FixedOffset};
 use fala_core::Language;
@@ -26,10 +27,27 @@ CREATE TABLE IF NOT EXISTS dictation_metrics (
     llm_used INTEGER NOT NULL CHECK (llm_used IN (0, 1)),
     fallback TEXT,
     model TEXT NOT NULL,
-    app TEXT
+    app TEXT,
+    blocks INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS dictation_metrics_by_time ON dictation_metrics (created_ms);
 ";
+
+/// Cria a tabela e acrescenta `blocks` a uma tabela de antes dela (as linhas antigas valem 1).
+pub(crate) fn apply_schema(conn: &Connection) -> Result<(), StorageError> {
+    conn.execute_batch(SCHEMA)?;
+    let has_blocks: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('dictation_metrics') WHERE name = 'blocks'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_blocks {
+        conn.execute_batch(
+            "ALTER TABLE dictation_metrics ADD COLUMN blocks INTEGER NOT NULL DEFAULT 1;",
+        )?;
+    }
+    Ok(())
+}
 
 /// Os números de um ditado. Nunca o texto.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +71,8 @@ pub struct DictationMetrics {
     pub fallback: Option<String>,
     pub model: String,
     pub app: Option<String>,
+    /// Quantas vezes o ASR rodou: 1 no ditado inteiro, mais nos blocos do ditado longo.
+    pub blocks: u32,
 }
 
 /// Percentis por posto mais próximo; `None` sem amostras.
@@ -94,8 +114,8 @@ pub struct MetricsSummary {
 pub(crate) fn insert(conn: &Connection, m: &DictationMetrics) -> Result<(), StorageError> {
     conn.execute(
         "INSERT INTO dictation_metrics (dictation_id, created_at, created_ms, e2e_ms, asr_ms,
-             llm_ms, paste_ms, speech_ms, words, lang, llm_used, fallback, model, app)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             llm_ms, paste_ms, speech_ms, words, lang, llm_used, fallback, model, app, blocks)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             m.dictation_id,
             m.created_at
@@ -112,6 +132,7 @@ pub(crate) fn insert(conn: &Connection, m: &DictationMetrics) -> Result<(), Stor
             m.fallback,
             m.model,
             m.app,
+            m.blocks,
         ],
     )?;
     Ok(())

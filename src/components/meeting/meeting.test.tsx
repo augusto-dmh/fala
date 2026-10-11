@@ -1,5 +1,5 @@
 // Prova dos checks da página Reuniões (`.specs/features/meeting-panel/checks.md`: C12, C25, C27,
-// C33, C36). Rode com `bun src/components/meeting/meeting.test.tsx`: imprime `<check> ok` e sai
+// C33, C36; `.specs/features/meeting-source-playback/checks.md`: SP*). Rode com `bun src/components/meeting/meeting.test.tsx`: imprime `<check> ok` e sai
 // com erro na primeira falha. Sem instância do i18next, `t` devolve a chave: o que aparece na
 // tela é a chave, e a prova confere que toda string visível passa por ela.
 import assert from "node:assert/strict";
@@ -16,7 +16,12 @@ import { ConsentNotice } from "./ConsentNotice";
 import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
+import { NotesView } from "./NotesView";
+import { parseNotes } from "./notesModel";
 import { RecorderPanel } from "./RecorderPanel";
+import { SourcePopover } from "./SourcePopover";
+import { TranscriptView } from "./TranscriptView";
+import { ClipPlayer, type ClipDeps } from "./clipPlayer";
 import {
   clock,
   errorKey,
@@ -135,6 +140,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   ],
   notes_md: "## Notas · Reunião geral",
   notes_template: "geral",
+  audio_available: true,
   ...over,
 });
 
@@ -370,6 +376,266 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     "a montagem consome o pedido",
   );
   ok("C42");
+}
+
+// meeting-source-playback: a nota como documento, a lupa, a conversa e o ▶.
+{
+  // O formato que `crates/notes/src/render.rs` grava.
+  const md = [
+    "## Anotações",
+    "",
+    "decidir data ^a1",
+    "",
+    "Ana: contrato ^a2",
+    "",
+    "## Notas · Reunião geral",
+    "",
+    "### Resumo",
+    "",
+    "- Lançamento em 15/11. [[#^s1|01:05]] [[#^s999|09:59]] <!-- fala:ia -->",
+    "- Ana cuida do contrato. [[#^s2|01:10]] [[#^a2|a2]] <!-- fala:ia -->",
+    "- Clima bom na reunião. <!-- fala:ia -->",
+    "",
+  ].join("\n");
+  const lines = [
+    detail().lines[0],
+    {
+      seq: 2,
+      channel: "mic",
+      person: null,
+      t0_ms: 70_000,
+      t1_ms: 72_000,
+      text: "Eu fecho com a Ana.",
+    },
+    {
+      seq: 3,
+      channel: "mic",
+      person: null,
+      t0_ms: 73_000,
+      t1_ms: 74_000,
+      text: "Até sexta.",
+    },
+  ];
+  const parsed = parseNotes(md, lines);
+  const rows = parsed.blocks.flatMap((b) => (b.kind === "line" ? [b] : []));
+  assert.deepEqual(
+    rows.map((b) => [b.text, b.generated, b.bullet]),
+    [
+      ["decidir data", false, false],
+      ["Ana: contrato", false, false],
+      ["Lançamento em 15/11.", true, true],
+      ["Ana cuida do contrato.", true, true],
+      ["Clima bom na reunião.", true, true],
+    ],
+  );
+  assert.deepEqual(
+    rows.map((b) => b.sources),
+    [
+      [],
+      [],
+      [{ kind: "segment", seq: 1 }],
+      [
+        { kind: "segment", seq: 2 },
+        { kind: "annotation", n: 2 },
+      ],
+      [],
+    ],
+    "s999 não está na transcrição e sai",
+  );
+  assert.deepEqual(
+    parsed.blocks.flatMap((b) =>
+      b.kind === "heading" ? [[b.level, b.text]] : [],
+    ),
+    [
+      [2, "Anotações"],
+      [2, "Notas · Reunião geral"],
+      [3, "Resumo"],
+    ],
+  );
+  assert.equal(parsed.annotations.get(2), "Ana: contrato");
+  ok("SP-parse");
+
+  const segments = new Map(lines.map((l) => [l.seq, l]));
+  const notesHtml = renderToStaticMarkup(
+    <NotesView
+      notes={parsed}
+      segments={segments}
+      audioAvailable={true}
+      playing={null}
+      onPlay={noop}
+      onReveal={noop}
+      t={tr}
+    />,
+  );
+  for (const raw of ["[[#^", "fala:ia", "^a1", "^a2"]) {
+    assert.ok(!notesHtml.includes(raw), `${raw} visível: ${notesHtml}`);
+  }
+  const paragraphs = [
+    ...notesHtml.matchAll(/<p data-generated="(true|false)" class="([^"]*)"/g),
+  ];
+  assert.equal(paragraphs.length, 5);
+  for (const [, generated, cls] of paragraphs) {
+    const color = cls.split(" ").find((c) => c.startsWith("text-text"));
+    assert.equal(color, generated === "true" ? "text-text-2" : "text-text");
+  }
+  assert.equal(
+    notesHtml.split(`aria-label="${pt.meeting.source.open}"`).length - 1,
+    3,
+    "uma lupa por linha gerada",
+  );
+  assert.ok(notesHtml.includes("group-hover:opacity-100"));
+  assert.ok(notesHtml.includes("focus-visible:opacity-100"));
+  ok("SP-render");
+
+  const popover = (row: number, audioAvailable = true) =>
+    renderToStaticMarkup(
+      <SourcePopover
+        sources={rows[row].sources}
+        segments={segments}
+        annotations={parsed.annotations}
+        audioAvailable={audioAvailable}
+        playing={null}
+        onPlay={noop}
+        onReveal={noop}
+        onClose={noop}
+        t={tr}
+      />,
+    );
+  const sourced = popover(3);
+  for (const text of [
+    "Eu",
+    ">01:10<",
+    "Eu fecho com a Ana.",
+    pt.meeting.source.typed,
+    "Ana: contrato",
+    `aria-label="${pt.meeting.source.play}"`,
+    'aria-label="Ir para 01:10 na transcrição"',
+  ]) {
+    assert.ok(sourced.includes(text), `${text}: ${sourced}`);
+  }
+  assert.ok(popover(2).includes("Pessoa 1") && popover(2).includes(">01:05<"));
+  assert.ok(popover(2).includes("Proponho 15 de novembro."));
+  assert.equal(pt.meeting.source.none, "Esta linha não tem trecho de origem.");
+  assert.ok(popover(4).includes(pt.meeting.source.none));
+  assert.ok(!popover(3).includes('disabled=""'));
+  assert.ok(popover(3, false).includes('disabled=""'));
+  ok("SP-popover");
+
+  const chat = (audioAvailable: boolean, playing: number | null = null) =>
+    renderToStaticMarkup(
+      <TranscriptView
+        lines={lines}
+        audioAvailable={audioAvailable}
+        playing={playing}
+        highlighted={2}
+        onPlay={noop}
+        t={tr}
+      />,
+    );
+  const convo = chat(true);
+  assert.deepEqual(
+    [
+      ...convo.matchAll(
+        /data-speaker="(\w+)" class="flex flex-col (items-\w+)/g,
+      ),
+    ].map((m) => [m[1], m[2]]),
+    [
+      ["them", "items-start"],
+      ["me", "items-end"],
+      ["me", "items-end"],
+    ],
+  );
+  assert.equal((convo.match(/Pessoa 1 · 01:05/g) ?? []).length, 1);
+  assert.equal(
+    (convo.match(/Eu · /g) ?? []).length,
+    1,
+    "rótulo só na troca de falante",
+  );
+  assert.ok(convo.includes("Eu · 01:10"));
+  assert.ok(convo.includes("bg-me/15") && convo.includes("bg-them/15"));
+  assert.equal((convo.match(/ring-accent/g) ?? []).length, 1);
+  assert.ok(convo.includes('id="segment-2"'));
+  assert.equal(
+    convo.split(`aria-label="${pt.meeting.source.play}"`).length - 1,
+    3,
+  );
+  assert.ok(!convo.includes('disabled=""'));
+  const gone = chat(false);
+  assert.equal((gone.match(/disabled=""/g) ?? []).length, 3);
+  assert.ok(gone.includes(`title="${pt.meeting.source.noAudio}"`));
+  assert.ok(chat(true, 3).includes(`aria-label="${pt.meeting.source.stop}"`));
+  assert.ok(
+    view(detail({ audio_available: false })).includes("meeting.source.noAudio"),
+  );
+  assert.ok(!view(detail()).includes("meeting.source.noAudio"));
+  const withNotes = view(detail({ notes_md: md, lines }));
+  assert.ok(!withNotes.includes("<pre"), "a nota não sai crua");
+  assert.ok(!withNotes.includes("[[#^") && !withNotes.includes("fala:ia"));
+  ok("SP-transcript");
+}
+
+// O player: um trecho por vez, por Blob URL; o pedido ultrapassado não toca.
+{
+  const log: string[] = [];
+  const pending: ((bytes: ArrayBuffer) => void)[] = [];
+  let urls = 0;
+  const deps: ClipDeps = {
+    fetch: (id, t0, t1) => {
+      log.push(`fetch ${id} ${t0}-${t1}`);
+      return new Promise((resolve) => pending.push(resolve));
+    },
+    objectUrl: (blob) => {
+      assert.equal(blob.type, "audio/wav");
+      return `blob:${++urls}`;
+    },
+    revoke: (url) => log.push(`revoke ${url}`),
+    audio: (url) => ({
+      play: async () => void log.push(`play ${url}`),
+      pause: () => log.push(`pause ${url}`),
+      onEnded: noop,
+    }),
+  };
+  const states: (number | null)[] = [];
+  const player = new ClipPlayer((p) => states.push(p), deps);
+  const first = player.play("S", 1, 65_000, 70_000);
+  const second = player.play("S", 2, 70_000, 72_000);
+  pending[1](new ArrayBuffer(44));
+  await second;
+  pending[0](new ArrayBuffer(44));
+  await first;
+  assert.deepEqual(log, [
+    "fetch S 65000-70000",
+    "fetch S 70000-72000",
+    "play blob:1",
+  ]);
+  assert.equal(states[states.length - 1], 2);
+  void player.play("S", 3, 73_000, 74_000);
+  assert.deepEqual(log.slice(3), [
+    "pause blob:1",
+    "revoke blob:1",
+    "fetch S 73000-74000",
+  ]);
+  player.stop();
+  assert.equal(states[states.length - 1], null);
+  const failing = new ClipPlayer((p) => states.push(p), {
+    ...deps,
+    fetch: () => Promise.reject({ kind: "no_audio" }),
+  });
+  await assert.rejects(failing.play("S", 1, 0, 1), { kind: "no_audio" });
+  assert.equal(states[states.length - 1], null);
+  assert.equal(errorKey({ kind: "no_audio" }), "meeting.errors.no_audio");
+  const clip = read("./clipPlayer.ts");
+  assert.ok(
+    clip.includes('invoke<ArrayBuffer>("meeting_clip", { id, t0Ms, t1Ms })'),
+  );
+  const conf = read("../../../apps/desktop/tauri.conf.json");
+  assert.ok(
+    conf.includes('"allow": ["$APPDATA/recordings/**"]'),
+    "o assetProtocol não muda",
+  );
+  const lib = read("../../../apps/desktop/src/lib.rs");
+  assert.ok(lib.includes('invoke.message.command() == "meeting_clip"'));
+  ok("SP-player");
 }
 
 console.log("meeting: all assertions passed");

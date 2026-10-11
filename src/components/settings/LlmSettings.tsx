@@ -6,10 +6,13 @@ import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
+import { CleanupLevelCards } from "./CleanupLevelCards";
+import { DEFAULT_CLEANUP_LEVEL } from "./cleanupLevelModel";
 
 const GEMINI_PROVIDER_ID = "gemini";
 
-/** The automatic dictation LLM: on/off, the Gemini key and the apps where it stays off. */
+/** The automatic dictation LLM: on/off, how much it rewrites, the Gemini key and the apps
+ *  where it stays off. */
 export const LlmSettings: React.FC = React.memo(() => {
   const { t } = useTranslation();
   const {
@@ -21,6 +24,7 @@ export const LlmSettings: React.FC = React.memo(() => {
   } = useSettings();
   const [newApp, setNewApp] = useState("");
   const enabled = getSetting("llm_enabled") ?? true;
+  const cleanupLevel = getSetting("cleanup_level") ?? DEFAULT_CLEANUP_LEVEL;
   const disabledApps = getSetting("llm_disabled_apps") ?? [];
   const apiKey = settings?.post_process_api_keys?.[GEMINI_PROVIDER_ID] ?? "";
   const appsUpdating = isUpdating("llm_disabled_apps");
@@ -43,6 +47,11 @@ export const LlmSettings: React.FC = React.memo(() => {
         description={t("settings.llm.enabled.description")}
         descriptionMode="tooltip"
         grouped={true}
+      />
+      <CleanupLevelCards
+        value={cleanupLevel}
+        onChange={(level) => updateSetting("cleanup_level", level)}
+        dimmed={!enabled || !apiKey}
       />
       <SettingContainer
         title={t("settings.llm.apiKey.title")}

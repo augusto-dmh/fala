@@ -117,6 +117,14 @@ async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changePillIdleVisibleSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pill_idle_visible_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeDebugModeSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_debug_mode_setting", { enabled }) };
@@ -312,6 +320,17 @@ async updateCustomWords(words: string[]) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Stores the pairs and returns them as stored.
+ */
+async updateDictionaryReplacements(replacements: DictionaryReplacement[]) : Promise<Result<DictionaryReplacement[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_dictionary_replacements", { replacements }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeLlmEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_llm_enabled_setting", { enabled }) };
@@ -326,6 +345,14 @@ async changeLlmEnabledSetting(enabled: boolean) : Promise<Result<null, string>> 
 async changeLlmDisabledAppsSetting(apps: string[]) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_llm_disabled_apps_setting", { apps }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cleanup_level_setting", { level }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -357,6 +384,22 @@ async resumeAllBindings() : Promise<Result<null, string>> {
 async changeMuteWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_mute_while_recording_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changePauseMediaWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pause_media_while_recording_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changePauseMediaOnMeetingSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_pause_media_on_meeting_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -773,6 +816,26 @@ async openMicrophoneTroubleshooting() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The overlay page mounted (at startup, or after a reload): from here on it hears
+ * `show-overlay`, so an idle pill shown before it listened is shown again.
+ */
+async pillOverlayReady() : Promise<void> {
+    await TAURI_INVOKE("pill_overlay_ready");
+},
+/**
+ * The cursor entered or left the idle pill: the window grows for the shortcut card or shrinks
+ * back, without taking focus.
+ */
+async setIdlePillHover(hover: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_idle_pill_hover", { hover });
+},
+/**
+ * A click on the idle pill opens the main window on Início.
+ */
+async openHomeFromPill() : Promise<void> {
+    await TAURI_INVOKE("open_home_from_pill");
+},
 async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };
@@ -944,6 +1007,17 @@ async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
 }
 },
 /**
+ * "Como estou indo": the last `days` days of dictation metrics.
+ */
+async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
  * recentes primeiro, como linhas do histórico.
  */
@@ -961,17 +1035,6 @@ async historySearch(query: string) : Promise<Result<HistoryEntry[], string>> {
 async recoverHistoryEntry(id: number) : Promise<Result<HistoryEntry, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("recover_history_entry", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * "Como estou indo": the last `days` days of dictation metrics.
- */
-async getDictationStats(days: number) : Promise<Result<DictationStats, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_dictation_stats", { days }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1274,7 +1337,19 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; 
+/**
+ * Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
+ */
+dictionary_replacements?: DictionaryReplacement[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+/**
+ * Pause the media playing on the PC while dictating; off by default.
+ */
+pause_media_while_recording?: boolean; 
+/**
+ * Pause the media playing on the PC while a meeting records; on by default.
+ */
+pause_media_on_meeting?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1298,6 +1373,11 @@ vad_backend?: VadBackend;
  */
 overlay_style?: OverlayStyle; 
 /**
+ * Keep a quiet pill on screen between dictations, with the shortcut on hover. Windows only,
+ * and only while `overlay_style` shows a pill.
+ */
+pill_idle_visible?: boolean; 
+/**
  * The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
  */
 llm_enabled?: boolean; 
@@ -1305,6 +1385,10 @@ llm_enabled?: boolean;
  * Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
  */
 llm_disabled_apps?: string[]; 
+/**
+ * How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
+ */
+cleanup_level?: CleanupLevel; 
 /**
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
@@ -1318,6 +1402,11 @@ export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+/**
+ * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
+ * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
+ */
+export type CleanupLevel = "verbatim" | "light" | "medium" | "heavy"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 /**
@@ -1329,6 +1418,10 @@ export type DictationDay = { day: string; dictations: number; words: number }
  * `e2e_llm` with it asked.
  */
 export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
+/**
+ * A spoken -> written pair as stored. `uses` counts every occurrence the rules replaced.
+ */
+export type DictionaryReplacement = { spoken: string; written: string; uses?: number }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1394,7 +1487,11 @@ export type MeetingDetail = { summary: MeetingSummary;
 /**
  * Notes typed before (agenda) and during the call.
  */
-annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null }
+annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null; 
+/**
+ * Both retained Opus files are on disk, so a transcript line can be played.
+ */
+audio_available: boolean }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.

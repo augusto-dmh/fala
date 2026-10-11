@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  DictionaryReplacement,
+  CleanupLevel,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -134,6 +136,20 @@ const settingUpdaters: {
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),
   custom_words: (value) => commands.updateCustomWords(value as string[]),
+  dictionary_replacements: async (value) => {
+    const result = await commands.updateDictionaryReplacements(
+      value as DictionaryReplacement[],
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    // Show the pairs as stored: normalized, with the stored use counts.
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, dictionary_replacements: result.data }
+        : null,
+    }));
+  },
   llm_enabled: (value) => commands.changeLlmEnabledSetting(value as boolean),
   llm_disabled_apps: async (value) => {
     const result = await commands.changeLlmDisabledAppsSetting(
@@ -149,6 +165,8 @@ const settingUpdaters: {
         : null,
     }));
   },
+  cleanup_level: (value) =>
+    commands.changeCleanupLevelSetting(value as CleanupLevel),
   word_correction_threshold: (value) =>
     commands.changeWordCorrectionThresholdSetting(value as number),
   paste_delay_ms: (value) =>
@@ -173,6 +191,10 @@ const settingUpdaters: {
     commands.setPostProcessSelectedPrompt(value as string),
   mute_while_recording: (value) =>
     commands.changeMuteWhileRecordingSetting(value as boolean),
+  pause_media_while_recording: (value) =>
+    commands.changePauseMediaWhileRecordingSetting(value as boolean),
+  pause_media_on_meeting: (value) =>
+    commands.changePauseMediaOnMeetingSetting(value as boolean),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),
@@ -183,6 +205,8 @@ const settingUpdaters: {
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
+  pill_idle_visible: (value) =>
+    commands.changePillIdleVisibleSetting(value as boolean),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),

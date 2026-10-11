@@ -1,7 +1,7 @@
 //! O `Formatter` local e determinístico: fillers, gaguejo, pontuação falada, dicionário, espaços
 //! e maiúscula inicial. Sempre roda, sem rede, e é o texto que fica quando o LLM não responde.
 
-use fala_core::Language;
+use fala_core::{Language, Replacement};
 
 use crate::{FormatContext, Formatter, PostprocError};
 
@@ -38,12 +38,34 @@ impl Default for Rules {
 
 impl Formatter for Rules {
     fn format(&self, text: &str, ctx: &FormatContext<'_>) -> Result<String, PostprocError> {
-        Ok(self.apply(text, *ctx.language, ctx.dictionary.terms()))
+        Ok(self.format_with_hits(text, ctx).0)
     }
 }
 
 impl Rules {
+    /// O texto das regras e os pares "falado → escrito" que entraram nele: índices em
+    /// `ctx.dictionary.replacements()`, um por ocorrência, na ordem do texto.
+    pub fn format_with_hits(&self, text: &str, ctx: &FormatContext<'_>) -> (String, Vec<usize>) {
+        self.apply_counted(
+            text,
+            *ctx.language,
+            ctx.dictionary.terms(),
+            ctx.dictionary.replacements(),
+        )
+    }
+
+    #[cfg(test)]
     fn apply(&self, text: &str, language: Language, terms: &[String]) -> String {
+        self.apply_counted(text, language, terms, &[]).0
+    }
+
+    fn apply_counted(
+        &self,
+        text: &str,
+        language: Language,
+        terms: &[String],
+        replacements: &[Replacement],
+    ) -> (String, Vec<usize>) {
         let tokens = tokenize(text);
         let tokens = remove_fillers(tokens, language);
         let tokens = collapse_repeats(tokens);
@@ -52,8 +74,8 @@ impl Rules {
         } else {
             tokens
         };
-        let tokens = apply_dictionary(tokens, terms);
-        capitalize_first(&join(&tokens))
+        let (tokens, hits) = apply_dictionary(tokens, terms, replacements);
+        (capitalize_first(&join(&tokens)), hits)
     }
 }
 
@@ -177,48 +199,114 @@ fn collapse_repeats(tokens: Vec<Token>) -> Vec<Token> {
     out
 }
 
-/// Troca de 1 a 3 palavras pela grafia do termo quando as chaves batem (sem caixa, acento,
-/// hífen ou pontuação interna). Nunca junta palavras separadas por pontuação.
-fn apply_dictionary(tokens: Vec<Token>, terms: &[String]) -> Vec<Token> {
-    let keyed: Vec<(String, &String)> = terms
+/// Os pares "falado → escrito" e depois os termos, num passe só do motor de frases. Um termo
+/// casa com 1 a 3 palavras ditas (`charge bee` → `ChargeBee`); um par, com até tantas palavras
+/// quantas tem o falado. Devolve os índices dos pares aplicados.
+fn apply_dictionary(
+    tokens: Vec<Token>,
+    terms: &[String],
+    replacements: &[Replacement],
+) -> (Vec<Token>, Vec<usize>) {
+    let pairs: Vec<Phrase<'_>> = replacements
         .iter()
-        .map(|term| (match_key(term), term))
-        .filter(|(key, _)| !key.is_empty())
+        .enumerate()
+        .map(|(index, pair)| Phrase {
+            key: match_key(pair.spoken()),
+            max_words: pair.spoken().split_whitespace().count(),
+            text: pair.written(),
+            id: Some(index),
+        })
         .collect();
-    if keyed.is_empty() {
-        return tokens;
+    let spellings: Vec<Phrase<'_>> = terms
+        .iter()
+        .map(|term| Phrase {
+            key: match_key(term),
+            max_words: MAX_TERM_WORDS,
+            text: term,
+            id: None,
+        })
+        .collect();
+    replace_phrases(tokens, &[&pairs, &spellings])
+}
+
+/// Uma frase que o motor procura e o que entra no lugar dela.
+#[derive(Debug, Clone)]
+struct Phrase<'a> {
+    /// A `match_key` da frase inteira, com as palavras juntas.
+    key: String,
+    /// Quantos tokens do texto a frase pode ocupar.
+    max_words: usize,
+    /// O texto que substitui a sequência; o lugar onde um snippet põe o seu marcador opaco.
+    text: &'a str,
+    /// Devolvido em `hits` a cada aplicação; `None` para o que não se conta.
+    id: Option<usize>,
+}
+
+/// O motor de regras do dicionário: troca uma sequência de palavras inteiras cuja chave (sem
+/// caixa, acento, hífen ou pontuação interna) bate com a de uma frase. Nunca junta palavras
+/// separadas por pontuação e nunca casa com parte de uma palavra. Em cada posição, os grupos
+/// são tentados em ordem e, dentro do grupo, a sequência mais longa primeiro; o texto que entrou
+/// não é relido. Devolve os tokens e os `id` das frases aplicadas, um por ocorrência.
+fn replace_phrases(tokens: Vec<Token>, groups: &[&[Phrase<'_>]]) -> (Vec<Token>, Vec<usize>) {
+    let max = groups
+        .iter()
+        .flat_map(|group| group.iter())
+        .filter(|phrase| !phrase.key.is_empty())
+        .map(|phrase| phrase.max_words)
+        .max()
+        .unwrap_or(0);
+    if max == 0 {
+        return (tokens, Vec::new());
     }
     let mut out = Vec::with_capacity(tokens.len());
+    let mut hits = Vec::new();
     let mut i = 0;
-    'outer: while i < tokens.len() {
-        for n in (1..=MAX_TERM_WORDS.min(tokens.len() - i)).rev() {
-            let window = &tokens[i..i + n];
-            let joinable = window
-                .iter()
-                .enumerate()
-                .all(|(k, t)| (k == 0 || t.lead.is_empty()) && (k == n - 1 || t.trail.is_empty()));
-            // Um sinal sem palavra (travessão, parêntese solto) nunca entra num termo.
-            if !joinable || window.iter().any(|t| t.core.is_empty()) {
-                continue;
-            }
-            let key: String = window.iter().map(|t| match_key(&t.core)).collect();
-            if key.is_empty() {
-                continue;
-            }
-            if let Some((_, term)) = keyed.iter().find(|(k, _)| *k == key) {
+    while i < tokens.len() {
+        // `keys[n - 1]`: a chave das `n` palavras que começam em `i`, se elas podem se juntar.
+        let keys: Vec<Option<String>> = (1..=max.min(tokens.len() - i))
+            .map(|n| window_key(&tokens[i..i + n]))
+            .collect();
+        let found = groups.iter().find_map(|group| {
+            (1..=keys.len()).rev().find_map(|n| {
+                let key = keys[n - 1].as_ref()?;
+                group
+                    .iter()
+                    .find(|phrase| n <= phrase.max_words && phrase.key == *key)
+                    .map(|phrase| (n, phrase))
+            })
+        });
+        match found {
+            Some((n, phrase)) => {
                 out.push(Token {
-                    lead: window[0].lead.clone(),
-                    core: (*term).clone(),
-                    trail: window[n - 1].trail.clone(),
+                    lead: tokens[i].lead.clone(),
+                    core: phrase.text.to_string(),
+                    trail: tokens[i + n - 1].trail.clone(),
                 });
+                hits.extend(phrase.id);
                 i += n;
-                continue 'outer;
+            }
+            None => {
+                out.push(tokens[i].clone());
+                i += 1;
             }
         }
-        out.push(tokens[i].clone());
-        i += 1;
     }
-    out
+    (out, hits)
+}
+
+/// A chave das palavras juntas, ou `None` se há pontuação entre elas, um sinal sem palavra
+/// (travessão, parêntese solto) ou nada que sobre na chave.
+fn window_key(window: &[Token]) -> Option<String> {
+    let n = window.len();
+    let joinable = window
+        .iter()
+        .enumerate()
+        .all(|(k, t)| (k == 0 || t.lead.is_empty()) && (k == n - 1 || t.trail.is_empty()));
+    if !joinable || window.iter().any(|t| t.core.is_empty()) {
+        return None;
+    }
+    let key: String = window.iter().map(|t| match_key(&t.core)).collect();
+    (!key.is_empty()).then_some(key)
 }
 
 /// O sinal que um gatilho falado vira.
@@ -614,6 +702,73 @@ mod tests {
     fn dictionary_ignores_partial_words() {
         assert_eq!(with_dict("chargebeex"), "Chargebeex");
         assert_eq!(with_dict("xchargebee"), "Xchargebee");
+    }
+
+    /// Os termos de `with_dict` mais três pares; devolve o texto e os índices aplicados.
+    fn with_pairs(text: &str) -> (String, Vec<usize>) {
+        let terms = ["ChargeBee", "Itaú", "Fala Cloud Sync"].map(String::from);
+        let pairs = [
+            ("fala sql", "Fala.sqlite"),
+            ("btw", "by the way"),
+            ("itau bba", "Itaú BBA"),
+        ]
+        .map(|(spoken, written)| Replacement::new(spoken, written).unwrap());
+        Rules::default().apply_counted(text, Language::PtBr, &terms, &pairs)
+    }
+
+    #[test]
+    fn replacement_matches_spelling_variants() {
+        for (input, want) in [
+            ("abre o fala sql agora", "Abre o Fala.sqlite agora"),
+            ("abre o Fala SQL.", "Abre o Fala.sqlite."),
+            ("abre o FALA-SQL, depois", "Abre o Fala.sqlite, depois"),
+            ("(fala sql)", "(Fala.sqlite)"),
+            ("ok btw", "Ok by the way"),
+            ("BTW, é isso", "By the way, é isso"),
+            ("conta no ítaú bbá", "Conta no Itaú BBA"),
+        ] {
+            assert_eq!(with_pairs(input).0, want, "{input}");
+        }
+    }
+
+    #[test]
+    fn replacement_only_whole_words() {
+        for (input, want) in [
+            ("o falasqlx abriu", "O falasqlx abriu"),
+            ("xbtw e btwx", "Xbtw e btwx"),
+            ("fala, sql", "Fala, sql"),
+            ("fala. sql", "Fala. sql"),
+            // Um falado de uma palavra nunca junta duas.
+            ("b tw", "B tw"),
+        ] {
+            assert_eq!(with_pairs(input), (want.to_string(), vec![]), "{input}");
+        }
+    }
+
+    #[test]
+    fn replacement_wins_and_is_not_reread() {
+        // "itau bba" é par; "itau" sozinho é termo: o par vence e ninguém relê o escrito.
+        assert_eq!(
+            with_pairs("itau bba e itau"),
+            ("Itaú BBA e Itaú".to_string(), vec![2])
+        );
+        let terms = ["Way".to_string()];
+        let pairs = [Replacement::new("btw", "by the way").unwrap()];
+        assert_eq!(
+            Rules::default().apply_counted("ok btw", Language::En, &terms, &pairs),
+            ("Ok by the way".to_string(), vec![0])
+        );
+    }
+
+    #[test]
+    fn replacement_hits_once_per_occurrence() {
+        assert_eq!(
+            with_pairs("btw fala sql vírgula btw"),
+            (
+                "By the way Fala.sqlite, by the way".to_string(),
+                vec![1, 0, 1]
+            )
+        );
     }
 
     #[test]
