@@ -513,13 +513,15 @@ impl MeetingManager {
             }
         };
         // The generated title only fills an empty one, never a title the user typed.
-        self.with_store(|store| {
-            store.save_meeting_notes(id, template_id, &notes.markdown)?;
-            if let Some(title) = &notes.title {
-                store.set_generated_meeting_title(id, title)?;
+        self.with_store(|store| Ok(store.save_meeting_notes(id, template_id, &notes.markdown)?))?;
+        if let Some(title) = &notes.title {
+            // The notes are saved; a title that fails to land only leaves the default one.
+            if let Err(e) =
+                self.with_store(|store| Ok(store.set_generated_meeting_title(id, title)?))
+            {
+                log::warn!("meeting {id}: generated title not stored: {e}");
             }
-            Ok(())
-        })?;
+        }
         self.progress(id, ProgressStage::Done);
         Ok(notes.markdown)
     }
