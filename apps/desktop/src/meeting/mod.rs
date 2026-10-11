@@ -12,6 +12,7 @@
 
 pub(crate) mod context;
 mod disk;
+pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
 

@@ -869,6 +869,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::change_notes_profile_setting,
             commands::meeting::change_notes_language_setting,
             commands::meeting::change_meeting_keyterms_setting,
+            commands::meeting::meeting_people,
+            commands::meeting::set_meeting_participants,
+            commands::meeting::apply_speaker_suggestion,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

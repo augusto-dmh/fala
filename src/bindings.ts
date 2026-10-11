@@ -1205,6 +1205,39 @@ async changeMeetingKeytermsSetting(enabled: boolean) : Promise<Result<null, stri
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * "Who was there" of a session and the name suggestions waiting for "apply".
+ */
+async meetingPeople(id: string) : Promise<Result<MeetingPeople, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_people", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
+ */
+async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_participants", { id, names }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The click that applies a suggested name to "Person N"; never called by the app itself.
+ */
+async applySpeakerSuggestion(id: string, person: number) : Promise<Result<MeetingPeople, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_speaker_suggestion", { id, person }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1428,7 +1461,11 @@ export type MeetingLine = { seq: number;
 /**
  * `mic` or `system`.
  */
-channel: string; person: number | null; t0_ms: number; t1_ms: number; text: string }
+channel: string; person: number | null; 
+/**
+ * The name applied to "Person N" from a suggestion; absent when there is none.
+ */
+name?: string | null; t0_ms: number; t1_ms: number; text: string }
 /**
  * The two capture modes the panel offers (part 1 of F2).
  */
@@ -1441,6 +1478,10 @@ export type MeetingMode =
  * Everyone in the room: the mic is diarized too.
  */
 "in_person"
+/**
+ * "Who was there" of a session and the name suggestions waiting for a click.
+ */
+export type MeetingPeople = { participants: string[]; suggestions: SpeakerSuggestion[] }
 export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" | 
 /**
  * The last session is being turned into retained audio (and, later, a transcript).
@@ -1598,6 +1639,10 @@ export type ShortcutActivation =
 "push_to_talk_double_tap"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * "Person `person`" may be `name`, because `reason`.
+ */
+export type SpeakerSuggestion = { person: number; name: string; reason: string }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
