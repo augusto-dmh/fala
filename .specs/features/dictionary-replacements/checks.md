@@ -35,7 +35,7 @@ Proof: `cargo test -p fala-core -p fala-postproc -p fala-cli`
 ### S2 - store, contagem e página
 
 **C8** - store v0.9.0 sem o campo: `custom_words == ["Fala", "cjpais"]` e pares vazios (AC 7)
-Proof: `cargo test -p fala --lib settings::tests::legacy_v090_settings_parse_strictly_and_migrate_once -- --exact`
+Proof: `cargo test -p fala --lib settings::tests::frozen_v0_9_store_parses_strictly_then_migrates_device_index -- --exact`
 
 **C9** - normalização do comando: trim, vazio fora, falado repetido fora, `uses` do store mantido pelo falado sem caixa, novo com 0 (AC 8, door 3)
 Proof: `cargo test -p fala --lib dictionary::tests::normalize_keeps_stored_uses -- --exact`
