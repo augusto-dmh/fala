@@ -2015,6 +2015,7 @@ dependencies = [
  "rubato",
  "thiserror 2.0.18",
  "vad-rs",
+ "windows 0.61.3",
 ]
 
 [[package]]

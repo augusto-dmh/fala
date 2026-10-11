@@ -65,6 +65,8 @@ pub struct MeetingDetail {
     pub lines: Vec<MeetingLine>,
     pub notes_md: Option<String>,
     pub notes_template: Option<String>,
+    /// Both retained Opus files are on disk, so a transcript line can be played.
+    pub audio_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -354,6 +356,7 @@ impl MeetingManager {
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
+        let audio_available = super::clip::audio_available(&self.session_dir(id));
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let lines = store.meeting_segments(id)?.iter().map(line).collect();
@@ -363,8 +366,15 @@ impl MeetingManager {
                 lines,
                 notes_md: record.notes_md,
                 notes_template: record.notes_template,
+                audio_available,
             })
         })
+    }
+
+    /// The WAV the ▶ of a transcript line plays: `[t0, t1]` with margins (`clip::window`).
+    pub fn clip(&self, id: &str, t0_ms: u64, t1_ms: u64) -> Result<Vec<u8>, MeetingError> {
+        let id = parse_id(id)?;
+        super::clip::clip_wav(&self.session_dir(id), t0_ms, t1_ms)
     }
 
     /// "Copy Markdown": the note document with its transcript anchors.

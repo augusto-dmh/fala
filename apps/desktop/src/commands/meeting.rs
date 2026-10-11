@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use tauri::ipc::Response;
 use tauri::State;
 
 use crate::meeting::pipeline::{
@@ -137,6 +138,23 @@ pub async fn generate_meeting_notes(
     tauri::async_runtime::spawn_blocking(move || manager.generate_notes(&id, &template_id))
         .await
         .map_err(|e| MeetingError::Notes(e.to_string()))?
+}
+
+/// The retained audio around a transcript line, as WAV bytes in a binary IPC response (no
+/// temporary file, no asset protocol). Registered outside tauri-specta, which has no TypeScript
+/// type for `Response`: see `lib.rs` and `src/components/meeting/clipPlayer.ts`.
+#[tauri::command]
+pub async fn meeting_clip(
+    meetings: Meetings<'_>,
+    id: String,
+    t0_ms: u64,
+    t1_ms: u64,
+) -> Result<Response, MeetingError> {
+    let manager = meetings.inner().clone();
+    let wav = tauri::async_runtime::spawn_blocking(move || manager.clip(&id, t0_ms, t1_ms))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))??;
+    Ok(Response::new(wav))
 }
 
 /// The note document "Copy Markdown" puts on the clipboard.

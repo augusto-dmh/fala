@@ -1435,7 +1435,11 @@ export type MeetingDetail = { summary: MeetingSummary;
 /**
  * Notes typed before (agenda) and during the call.
  */
-annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null }
+annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null; 
+/**
+ * Both retained Opus files are on disk, so a transcript line can be played.
+ */
+audio_available: boolean }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.
