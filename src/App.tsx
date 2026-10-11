@@ -19,9 +19,11 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Rail, type RailDestination } from "./components/Rail";
 import { HomePage } from "./components/HomePage";
 import { DictionaryPage } from "./components/DictionaryPage";
+import { MeetingsPage } from "./components/meeting/MeetingsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { type SettingsView } from "./components/settingsNav";
 import { WhatsNewGate } from "./components/whats-new";
+import { requestConsent } from "./components/meeting/meetingModel";
 import { UPDATER_ENABLED } from "./lib/updater";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -70,6 +72,24 @@ function App() {
   useLayoutEffect(() => {
     settingsScrollRef.current?.scrollTo({ top: 0 });
   }, [destination, settingsView]);
+
+  // The tray asked to record before the third-party notice was accepted: open the Meetings
+  // page, which shows the notice (ADR-0005).
+  // An open page shows the notice from its own listener; only a page about to mount needs
+  // the request, so the two listeners never race over it.
+  const sectionRef = useRef(destination);
+  sectionRef.current = destination;
+  useEffect(() => {
+    const unlisten = listen("meeting-consent-required", () => {
+      if (sectionRef.current !== "meetings") {
+        requestConsent();
+        setDestination("meetings");
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     checkOnboardingStatus();
@@ -132,6 +152,8 @@ function App() {
           defaultValue: t("errors.micPermissionDenied.generic"),
         });
         toast.error(t("errors.micPermissionDeniedTitle"), { description });
+      } else if (error_type === "meeting_active") {
+        toast.error(t("errors.meetingActive"));
       } else if (error_type === "no_input_device") {
         toast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),
@@ -340,6 +362,7 @@ function App() {
               <SecureInputWarning />
               {destination === "home" && <HomePage />}
               {destination === "dictionary" && <DictionaryPage />}
+              {destination === "meetings" && <MeetingsPage />}
               {destination === "settings" && (
                 <SettingsPage
                   view={settingsView}

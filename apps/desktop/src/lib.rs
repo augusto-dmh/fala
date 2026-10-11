@@ -15,6 +15,7 @@ mod input;
 mod llm_auto;
 mod llm_client;
 mod managers;
+mod meeting;
 mod memory;
 mod overlay;
 mod paste_tx;
@@ -217,6 +218,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     });
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    // After the history manager: its `fala.sqlite` open applies the schema migrations first.
+    let meeting_manager = Arc::new(
+        meeting::MeetingManager::new(app_handle).expect("Failed to initialize meeting manager"),
+    );
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
@@ -230,6 +235,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(meeting_manager.clone());
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -342,6 +348,32 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "quit" => {
                 app.exit(0);
+            }
+            // Explicit clicks only: the tray items are one of the two ways a meeting records
+            // (ADR-0005).
+            "meeting_start" => {
+                // Opening the devices takes a moment; keep the event loop free meanwhile.
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    app.state::<Arc<meeting::MeetingManager>>()
+                        .start_from_tray();
+                });
+            }
+            "meeting_pause" | "meeting_resume" | "meeting_stop" => {
+                // Off the event loop: the manager may be busy opening devices for a start.
+                let app = app.clone();
+                let id = event.id.as_ref().to_string();
+                std::thread::spawn(move || {
+                    let meetings = app.state::<Arc<meeting::MeetingManager>>();
+                    let result = match id.as_str() {
+                        "meeting_pause" => meetings.pause(),
+                        "meeting_resume" => meetings.resume(),
+                        _ => meetings.stop(),
+                    };
+                    if let Err(e) = result {
+                        log::warn!("Meeting tray action {} failed: {}", id, e);
+                    }
+                });
             }
             id if id.starts_with(tray::LANGUAGE_ITEM_PREFIX) => {
                 if let Some(tag) = tray::parse_language_item(id) {
@@ -458,6 +490,24 @@ where
             eprintln!("error: headless transcription panicked: {message}");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod bindings_export {
+    use super::*;
+
+    /// Regenerates `src/bindings.ts` without opening the app, the same export `run` does in a
+    /// debug build: `cargo test -p fala --lib bindings_export -- --ignored`.
+    #[test]
+    #[ignore = "writes src/bindings.ts; run on demand after changing commands or events"]
+    fn export_bindings() {
+        specta_builder()
+            .export(
+                Typescript::default().bigint(BigIntExportBehavior::Number),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/bindings.ts"),
+            )
+            .unwrap();
     }
 }
 
@@ -669,33 +719,9 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Avoid ggml-metal residency-set teardown assertions when a native engine
-    // outlives the Tauri shutdown sequence (#1902). This must happen before
-    // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with FALA_METAL_RESIDENCY=1.
-    #[cfg(target_os = "macos")]
-    if std::env::var("FALA_METAL_RESIDENCY").as_deref() == Ok("1") {
-        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
-        // inherited value as well when explicitly opting back in.
-        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
-    } else {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
-    }
-
-    // Pin glibc's dynamic mmap threshold before the first large allocation,
-    // so per-dictation transient buffers are returned to the OS on free
-    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
-    memory::init_allocator();
-
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
+/// The commands and events the frontend sees; `src/bindings.ts` is generated from it.
+fn specta_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
@@ -819,12 +845,62 @@ pub fn run(cli_args: CliArgs) {
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,
+            commands::meeting::meeting_status,
+            commands::meeting::accept_meeting_consent,
+            commands::meeting::create_meeting_draft,
+            commands::meeting::set_meeting_title,
+            commands::meeting::save_meeting_annotations,
+            commands::meeting::start_meeting,
+            commands::meeting::pause_meeting,
+            commands::meeting::resume_meeting,
+            commands::meeting::stop_meeting,
+            commands::meeting::extend_meeting_cap,
+            commands::meeting::list_meetings,
+            commands::meeting::get_meeting,
+            commands::meeting::transcribe_meeting,
+            commands::meeting::cancel_meeting_transcription,
+            commands::meeting::generate_meeting_notes,
+            commands::meeting::meeting_markdown,
+            commands::meeting::meeting_templates,
+            commands::meeting::meeting_keys,
+            commands::meeting::set_meeting_transcription_key,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
-        ]);
+            meeting::MeetingStatus,
+            meeting::pipeline::MeetingProgress,
+        ])
+}
+
+pub fn run(cli_args: CliArgs) {
+    // Avoid ggml-metal residency-set teardown assertions when a native engine
+    // outlives the Tauri shutdown sequence (#1902). This must happen before
+    // transcribe-cpp initializes its Metal device. Advanced users can restore
+    // upstream residency behavior with FALA_METAL_RESIDENCY=1.
+    #[cfg(target_os = "macos")]
+    if std::env::var("FALA_METAL_RESIDENCY").as_deref() == Ok("1") {
+        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
+        // inherited value as well when explicitly opting back in.
+        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
+    } else {
+        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
+    }
+
+    // Pin glibc's dynamic mmap threshold before the first large allocation,
+    // so per-dictation transient buffers are returned to the OS on free
+    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
+    memory::init_allocator();
+
+    // Detect portable mode before anything else
+    portable::init();
+
+    // Parse console logging directives from RUST_LOG, falling back to info-level logging
+    // when the variable is unset
+    let console_filter = build_console_filter();
+
+    let specta_builder = specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     specta_builder

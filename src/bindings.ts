@@ -975,14 +975,183 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("is_laptop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingStatus() : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The third-party notice was accepted; returns the stored date.
+ */
+async acceptMeetingConsent() : Promise<Result<string, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_meeting_consent") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createMeetingDraft(title: string) : Promise<Result<string, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_meeting_draft", { title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setMeetingTitle(id: string, title: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_title", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveMeetingAnnotations(id: string, text: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_meeting_annotations", { id, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Record meeting": an explicit click, never called by the app itself (ADR-0005).
+ */
+async startMeeting(mode: MeetingMode, title: string, draftId: string | null) : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_meeting", { mode, title, draftId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async pauseMeeting() : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pause_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resumeMeeting() : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resume_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopMeeting() : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async extendMeetingCap() : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extend_meeting_cap") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listMeetings() : Promise<Result<MeetingSummary[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_meetings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeeting(id: string) : Promise<Result<MeetingDetail, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sends the retained audio of a stopped session to ElevenLabs Scribe (ADR-0005); progress
+ * comes as `MeetingProgress` events.
+ */
+async transcribeMeeting(id: string) : Promise<Result<MeetingLine[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("transcribe_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelMeetingTranscription() : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_meeting_transcription") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown.
+ */
+async generateMeetingNotes(id: string, templateId: string) : Promise<Result<string, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("generate_meeting_notes", { id, templateId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The note document "Copy Markdown" puts on the clipboard.
+ */
+async meetingMarkdown(id: string) : Promise<Result<string, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_markdown", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingTemplates() : Promise<Result<MeetingTemplate[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_templates") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingKeys() : Promise<Result<MeetingKeys, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_keys") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the ElevenLabs key in the OS keyring (ADR-0008); it never comes back to the UI.
+ */
+async setMeetingTranscriptionKey(key: string) : Promise<Result<MeetingKeys, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_transcription_key", { key }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -995,10 +1164,14 @@ async isLaptop() : Promise<Result<boolean, string>> {
 
 export const events = __makeEvents__<{
 historyUpdatePayload: HistoryUpdatePayload,
+meetingProgress: MeetingProgress,
+meetingStatus: MeetingStatus,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent
 }>({
 historyUpdatePayload: "history-update-payload",
+meetingProgress: "meeting-progress",
+meetingStatus: "meeting-status",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event"
 })
@@ -1079,7 +1252,12 @@ llm_enabled?: boolean;
 /**
  * Apps where the LLM stays off, as `fala_inject::app_name_from_exe_path` names them.
  */
-llm_disabled_apps?: string[] }
+llm_disabled_apps?: string[]; 
+/**
+ * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
+ * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
+ */
+meeting_consent_accepted_at?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1153,6 +1331,102 @@ export type LLMPrompt = { id: string; name: string; prompt: string }
  */
 export type LatencyPercentiles = { p50: number | null; p90: number | null }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * An opened session.
+ */
+export type MeetingDetail = { summary: MeetingSummary; 
+/**
+ * Notes typed before (agenda) and during the call.
+ */
+annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null }
+/**
+ * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
+ * can tell them apart without matching text.
+ */
+export type MeetingError = { kind: "consent_required" } | { kind: "already_active" } | { kind: "already_started" } | { kind: "dictation_active" } | { kind: "insufficient_disk" } | { kind: "audio_device"; detail: string } | { kind: "not_active" } | { kind: "not_found" } | { kind: "invalid_transition" } | { kind: "cap_at_maximum" } | { kind: "storage"; detail: string } | 
+/**
+ * The session is still recording; stop it first.
+ */
+{ kind: "still_recording" } | 
+/**
+ * No retained audio (and no working WAV) for the session.
+ */
+{ kind: "no_audio" } | 
+/**
+ * The provider key is not in the keyring.
+ */
+{ kind: "missing_key" } | { kind: "invalid_key" } | { kind: "keyring" } | { kind: "transcription"; detail: string } | { kind: "cancelled" } | 
+/**
+ * A transcription or a notes generation is already running.
+ */
+{ kind: "busy" } | { kind: "unknown_template" } | { kind: "notes"; detail: string }
+/**
+ * Which keys exist in the keyring; never the keys themselves.
+ */
+export type MeetingKeys = { elevenlabs: boolean; anthropic: boolean }
+/**
+ * One transcript line: `person` is `None` for "me" (the mic outside in-person mode).
+ */
+export type MeetingLine = { seq: number; 
+/**
+ * `mic` or `system`.
+ */
+channel: string; person: number | null; t0_ms: number; t1_ms: number; text: string }
+/**
+ * The two capture modes the panel offers (part 1 of F2).
+ */
+export type MeetingMode = 
+/**
+ * A call with headphones: the mic is "me", the system is "them".
+ */
+"meeting" | 
+/**
+ * Everyone in the room: the mic is diarized too.
+ */
+"in_person"
+export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" | 
+/**
+ * The last session is being turned into retained audio (and, later, a transcript).
+ */
+"processing"
+/**
+ * Where the processing of a session is, at least once a second while the transcript runs.
+ */
+export type MeetingProgress = { id: string; stage: ProgressStage }
+/**
+ * What the UI shows about the current recording; emitted on every change and at 4 Hz while
+ * recording.
+ */
+export type MeetingStatus = { state: MeetingPhase; id: string | null; mode: MeetingMode | null; 
+/**
+ * Recorded time without pauses, from the frames written to the WAV.
+ */
+recorded_ms: number; mic_level: number; system_level: number; muted_mic: boolean; muted_system: boolean; 
+/**
+ * Set once the session warns that the cap is near; "one more hour" clears it.
+ */
+cap_remaining_ms: number | null; 
+/**
+ * Free bytes when recording started with less than 2 GiB free.
+ */
+low_disk_bytes: number | null }
+/**
+ * A session in the list.
+ */
+export type MeetingSummary = { id: string; title: string; 
+/**
+ * `meeting`, `in_person`, `system_only` or `import`.
+ */
+mode: string; 
+/**
+ * RFC 3339 with the local offset at the time.
+ */
+created_at: string; 
+/**
+ * `None` while the session is a draft that never recorded.
+ */
+started_at: string | null; ended_at: string | null; recorded_ms: number; audio_retained: boolean; transcribed: boolean; has_notes: boolean }
+export type MeetingTemplate = { id: string; name: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -1193,6 +1467,15 @@ export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+export type ProgressStage = 
+/**
+ * The working WAV becomes the two Opus files.
+ */
+{ stage: "retaining" } | 
+/**
+ * `phase` is `uploading` (bytes `done` of `total`) or `waiting` for the provider.
+ */
+{ stage: "transcribing"; channel: string; phase: string; done: number; total: number } | { stage: "notes" } | { stage: "done" } | { stage: "failed"; error: MeetingError }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 

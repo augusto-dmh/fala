@@ -1,9 +1,9 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { BookA, House, Settings, type LucideIcon } from "lucide-react";
+import { BookA, House, Settings, Users, type LucideIcon } from "lucide-react";
 import ModelSelector from "./model-selector";
 
-export type RailDestination = "home" | "dictionary" | "settings";
+export type RailDestination = "home" | "dictionary" | "meetings" | "settings";
 
 interface RailItemConfig {
   id: RailDestination;
@@ -15,6 +15,7 @@ interface RailItemConfig {
 export const RAIL_ITEMS: readonly RailItemConfig[] = [
   { id: "home", labelKey: "rail.home", icon: House },
   { id: "dictionary", labelKey: "rail.dictionary", icon: BookA },
+  { id: "meetings", labelKey: "rail.meetings", icon: Users },
 ];
 
 const SETTINGS_ITEM: RailItemConfig = {
