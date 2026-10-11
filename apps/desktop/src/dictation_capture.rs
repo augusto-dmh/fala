@@ -1,7 +1,8 @@
 //! Captura do ditado pelo `fala-audio`: `Mic` abre a entrada dos settings, `DictationCapture`
 //! reamostra para 16 kHz, guarda os últimos 300 ms enquanto o stream está aberto e segmenta com o
-//! Silero v4 (ADR-0009). O `AudioRecordingManager` fala com o `DictationRecorder`; o `Processor`
-//! não abre mic e é o que os testes exercitam.
+//! Silero v4 (ADR-0009). Com um callback de blocos, entrega também os blocos de 25-40 s do ditado
+//! longo durante a gravação (`long_dictation`). O `AudioRecordingManager` fala com o
+//! `DictationRecorder`; o `Processor` não abre mic e é o que os testes exercitam.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -34,6 +35,7 @@ pub enum VadPolicy {
 
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
+pub type BlockCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 type SharedDetector = Arc<Mutex<Box<dyn VoiceDetector>>>;
 
 /// Canais da configuração que o `Mic` abre neste dispositivo.
@@ -139,6 +141,7 @@ struct Processor {
     meter: SignalMeter,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
+    block_cb: Option<BlockCallback>,
     recording: bool,
     samples: Vec<f32>,
     ready: Option<(mpsc::Sender<()>, Instant)>,
@@ -150,6 +153,7 @@ impl Processor {
         detector: SharedDetector,
         level_cb: Option<LevelCallback>,
         audio_cb: Option<AudioFrameCallback>,
+        block_cb: Option<BlockCallback>,
     ) -> Result<Self, AudioError> {
         let bypass = Arc::new(AtomicBool::new(false));
         let vad = DictationVad {
@@ -163,13 +167,19 @@ impl Processor {
             .into_iter()
             .min_by_key(|w| w.abs_diff(target))
             .unwrap_or(1024);
+        let capture = DictationCapture::new(rate, Box::new(vad))?;
         Ok(Self {
-            capture: DictationCapture::new(rate, Box::new(vad))?,
+            capture: if block_cb.is_some() {
+                capture.with_blocks()
+            } else {
+                capture
+            },
             bypass,
             visualizer: AudioVisualiser::new(rate, window, LEVEL_BUCKETS, 400.0, 4000.0),
             meter: SignalMeter::new(rate),
             level_cb,
             audio_cb,
+            block_cb,
             recording: false,
             samples: Vec::new(),
             ready: None,
@@ -195,6 +205,7 @@ impl Processor {
         }
         let done = self.capture.feed(raw);
         self.keep(done);
+        self.pass_blocks();
     }
 
     fn start(&mut self, policy: VadPolicy, ready: mpsc::Sender<()>) {
@@ -207,14 +218,25 @@ impl Processor {
         self.ready = Some((ready, Instant::now()));
         let done = self.capture.start();
         self.keep(done);
+        self.pass_blocks();
     }
 
+    /// O resto que não fechou bloco fica na gravação: quem soltou o transcreve.
     fn stop(&mut self) -> Vec<f32> {
         self.recording = false;
         self.ready = None;
         let done = self.capture.stop();
         self.keep(done);
+        self.capture.take_blocks();
         std::mem::take(&mut self.samples)
+    }
+
+    fn pass_blocks(&mut self) {
+        if let Some(cb) = &self.block_cb {
+            for block in self.capture.take_blocks() {
+                cb(block.into_samples());
+            }
+        }
     }
 
     /// O veredito do sinal da última gravação, até o próximo `start`.
@@ -249,6 +271,7 @@ pub struct DictationRecorder {
     detector: SharedDetector,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
+    block_cb: Option<BlockCallback>,
     channel: Option<usize>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker: Option<JoinHandle<()>>,
@@ -263,6 +286,7 @@ impl DictationRecorder {
             detector: Arc::new(Mutex::new(detector)),
             level_cb: None,
             audio_cb: None,
+            block_cb: None,
             channel: None,
             cmd_tx: None,
             worker: None,
@@ -279,6 +303,12 @@ impl DictationRecorder {
     /// Recebe cada utterance que o VAD fecha, na ordem, na thread do worker.
     pub fn with_audio_callback(mut self, cb: impl Fn(&[f32]) + Send + Sync + 'static) -> Self {
         self.audio_cb = Some(Arc::new(cb));
+        self
+    }
+
+    /// Recebe cada bloco do ditado longo que fecha durante a gravação, na thread do worker.
+    pub fn with_block_callback(mut self, cb: impl Fn(Vec<f32>) + Send + Sync + 'static) -> Self {
+        self.block_cb = Some(Arc::new(cb));
         self
     }
 
@@ -315,6 +345,7 @@ impl DictationRecorder {
         let detector = Arc::clone(&self.detector);
         let level_cb = self.level_cb.clone();
         let audio_cb = self.audio_cb.clone();
+        let block_cb = self.block_cb.clone();
         let channel = self.channel;
         let failed = Arc::clone(&self.failed);
         let worker = std::thread::spawn(move || {
@@ -329,7 +360,7 @@ impl DictationRecorder {
             let opened = started.elapsed();
             // The mic is already capturing into its 2 s ring while the resampler and the
             // level FFT are built (~1-2 ms): that audio lands in the pre-buffer.
-            match Processor::new(mic.sample_rate(), detector, level_cb, audio_cb) {
+            match Processor::new(mic.sample_rate(), detector, level_cb, audio_cb, block_cb) {
                 Ok(processor) => {
                     let _ = init_tx.send(Ok(()));
                     log::debug!(
@@ -475,7 +506,14 @@ mod tests {
     }
 
     fn processor(vad: impl VoiceDetector + 'static) -> Processor {
-        Processor::new(16_000, Arc::new(Mutex::new(Box::new(vad))), None, None).unwrap()
+        Processor::new(
+            16_000,
+            Arc::new(Mutex::new(Box::new(vad))),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
     }
 
     fn ramp(range: std::ops::Range<usize>) -> Vec<f32> {
@@ -531,6 +569,7 @@ mod tests {
             Some(Arc::new(move |u: &[f32]| {
                 sink.lock().unwrap().push(u.to_vec())
             })),
+            None,
         )
         .unwrap();
         p.start(VadPolicy::Offline, mpsc::channel().0);
@@ -545,6 +584,88 @@ mod tests {
         assert_eq!(lens, [25 * FRAME_SAMPLES, 25 * FRAME_SAMPLES]);
         assert_eq!(recording, routed.concat());
         assert!(recording.len() < codes.len() * FRAME_SAMPLES);
+    }
+
+    fn with_blocks(vad: impl VoiceDetector + 'static) -> (Processor, Arc<Mutex<Vec<Vec<f32>>>>) {
+        let blocks = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&blocks);
+        let p = Processor::new(
+            16_000,
+            Arc::new(Mutex::new(Box::new(vad))),
+            None,
+            None,
+            Some(Arc::new(move |b: Vec<f32>| sink.lock().unwrap().push(b))),
+        )
+        .unwrap();
+        (p, blocks)
+    }
+
+    /// Falas de `speech` quadros com pausas de `pause` quadros, sorteadas de um LCG fixo, até
+    /// `total` quadros (30 ms cada).
+    fn talk(total: usize, speech: std::ops::Range<u32>, pause: std::ops::Range<u32>) -> Vec<f32> {
+        let mut seed = 7u32;
+        let mut next = |r: &std::ops::Range<u32>| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (r.start + (seed >> 8) % (r.end - r.start)) as usize
+        };
+        let mut codes = Vec::new();
+        while codes.len() < total {
+            codes.extend(std::iter::repeat_n(1_000.0, next(&speech)));
+            codes.extend(std::iter::repeat_n(0.0, next(&pause)));
+        }
+        codes.truncate(total);
+        frames(&codes)
+    }
+
+    #[test]
+    fn three_minutes_with_pauses_close_blocks_in_silence() {
+        use fala_audio::{BLOCK_MAX_SAMPLES, BLOCK_MIN_SAMPLES, HANGOVER_FRAMES};
+        let (mut p, blocks) = with_blocks(CodeVad);
+        p.start(VadPolicy::Offline, mpsc::channel().0);
+        // 3 min: falas de 3 a 14 s, pausas de 0,6 a 2 s.
+        feed_in_blocks(&mut p, &talk(6_000, 100..467, 20..67));
+        let recording = p.stop();
+        let blocks = blocks.lock().unwrap();
+        assert!(blocks.len() >= 3, "{} blocks", blocks.len());
+        let silence = HANGOVER_FRAMES * FRAME_SAMPLES;
+        for block in blocks.iter() {
+            assert!(
+                (BLOCK_MIN_SAMPLES..=BLOCK_MAX_SAMPLES).contains(&block.len()),
+                "{} samples",
+                block.len()
+            );
+            assert!(
+                block[block.len() - silence..].iter().all(|s| *s < 1_000.0),
+                "a block ends in the 450 ms of silence that closed it"
+            );
+        }
+        let closed = blocks.concat();
+        assert!(
+            recording.len() > closed.len(),
+            "the rest is left to the release"
+        );
+        assert_eq!(recording[..closed.len()], closed[..]);
+    }
+
+    #[test]
+    fn speech_without_pause_cuts_at_40_s() {
+        use fala_audio::BLOCK_MAX_SAMPLES;
+        let (mut p, blocks) = with_blocks(Always(true));
+        p.start(VadPolicy::Offline, mpsc::channel().0);
+        feed_in_blocks(&mut p, &vec![0.1; 1_600_000]);
+        let recording = p.stop();
+        let lens: Vec<usize> = blocks.lock().unwrap().iter().map(Vec::len).collect();
+        assert_eq!(lens, [BLOCK_MAX_SAMPLES, BLOCK_MAX_SAMPLES]);
+        assert_eq!(recording.len(), 1_600_000);
+    }
+
+    #[test]
+    fn a_20_s_dictation_closes_no_block() {
+        let (mut p, blocks) = with_blocks(CodeVad);
+        p.start(VadPolicy::Offline, mpsc::channel().0);
+        feed_in_blocks(&mut p, &talk(667, 100..200, 20..40));
+        assert!(!p.stop().is_empty());
+        assert!(blocks.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -579,6 +700,7 @@ mod tests {
             16_000,
             Arc::new(Mutex::new(Box::new(Always(false)))),
             Some(Arc::new(move |_: Vec<f32>| *seen.lock().unwrap() += 1)),
+            None,
             None,
         )
         .unwrap();

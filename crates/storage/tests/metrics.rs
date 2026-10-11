@@ -29,6 +29,7 @@ fn metrics(created_at: DateTime<FixedOffset>, e2e_ms: u32) -> DictationMetrics {
         fallback: None,
         model: "parakeet-tdt-0.6b-v3".to_string(),
         app: Some("notepad".to_string()),
+        blocks: 1,
     }
 }
 
@@ -79,6 +80,48 @@ fn metrics_table_is_additive() {
 }
 
 #[test]
+fn blocks_column_reaches_an_old_table() {
+    let env = env("blocks_column_reaches_an_old_table");
+    env.open();
+    // A tabela de antes da coluna `blocks`, com uma linha.
+    let conn = Connection::open(&env.db).unwrap();
+    conn.execute_batch(
+        "DROP TABLE dictation_metrics;
+         CREATE TABLE dictation_metrics (
+             rowid INTEGER PRIMARY KEY, dictation_id TEXT, created_at TEXT NOT NULL,
+             created_ms INTEGER NOT NULL, e2e_ms INTEGER NOT NULL, asr_ms INTEGER NOT NULL,
+             llm_ms INTEGER, paste_ms INTEGER NOT NULL, speech_ms INTEGER NOT NULL,
+             words INTEGER NOT NULL, lang TEXT NOT NULL,
+             llm_used INTEGER NOT NULL CHECK (llm_used IN (0, 1)), fallback TEXT,
+             model TEXT NOT NULL, app TEXT);
+         INSERT INTO dictation_metrics (created_at, created_ms, e2e_ms, asr_ms, paste_ms,
+             speech_ms, words, lang, llm_used, model)
+         VALUES ('2026-10-01T09:00:00.000-03:00', 0, 900, 400, 20, 1500, 5, 'pt-BR', 0, 'm');",
+    )
+    .unwrap();
+    drop(conn);
+
+    let store = env.open();
+    let mut long = metrics(ago(Duration::minutes(1)), 1200);
+    long.blocks = 21;
+    store.add_metrics(&long).unwrap();
+    drop(store);
+    // A segunda abertura não tenta acrescentar a coluna de novo.
+    env.open();
+
+    let conn = Connection::open(&env.db).unwrap();
+    let mut stmt = conn
+        .prepare("SELECT blocks FROM dictation_metrics ORDER BY rowid")
+        .unwrap();
+    let blocks: Vec<u32> = stmt
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(blocks, [1, 21]);
+}
+
+#[test]
 fn metrics_have_no_text_and_outlive_the_item() {
     let env = env("metrics_have_no_text_and_outlive_the_item");
     let store = env.open();
@@ -97,7 +140,7 @@ fn metrics_have_no_text_and_outlive_the_item() {
     let conn = Connection::open(&env.db).unwrap();
     let stmt = conn.prepare("SELECT * FROM dictation_metrics").unwrap();
     let columns = "rowid dictation_id created_at created_ms e2e_ms asr_ms llm_ms paste_ms \
-                   speech_ms words lang llm_used fallback model app";
+                   speech_ms words lang llm_used fallback model app blocks";
     assert_eq!(stmt.column_names().join(" "), columns);
     let (linked, lang): (String, String) = conn
         .query_row(
