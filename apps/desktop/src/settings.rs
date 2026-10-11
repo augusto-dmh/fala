@@ -1532,10 +1532,9 @@ fn unbind_legacy_post_process_shortcut(settings: &mut AppSettings) {
     }
 }
 
-/// The updater is off: `plugins.updater` is empty in `tauri.conf.json` until the
-/// signed release flow exists (ADR-0008, docs/RELEASE.md). Mirrors
-/// `UPDATER_ENABLED` in `src/lib/updater.ts`; flip both together.
-pub const UPDATER_ENABLED: bool = false;
+/// The updater is on (ADR-0018): `app_update` checks the feed in `plugins.updater`.
+/// Mirrors `UPDATER_ENABLED` in `src/lib/updater.ts`; flip both together.
+pub const UPDATER_ENABLED: bool = true;
 
 /// Release notes kept across the update's relaunch.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]

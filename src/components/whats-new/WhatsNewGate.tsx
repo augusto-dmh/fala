@@ -28,6 +28,7 @@ export const WhatsNewGate: React.FC = () => {
         const releaseNote = findReleaseNoteToShow({
           currentVersion,
           lastSeenVersion: settings.whats_new_last_seen_version ?? "",
+          storedNote: settings.update_release_notes ?? null,
         });
 
         if (
