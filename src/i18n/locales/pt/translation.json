@@ -407,6 +407,19 @@
         "remove": "Remover {{app}}"
       }
     },
+    "meetings": {
+      "title": "Reuniões",
+      "callPrompt": {
+        "label": "Avisar quando uma chamada começar",
+        "description": "Quando o Teams, o Zoom, o WhatsApp ou um navegador abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique, e pergunta se deve parar quando o app larga o microfone."
+      },
+      "mutedApps": {
+        "title": "Não avisar nestes apps",
+        "description": "Chamadas nesses apps não mostram o aviso.",
+        "add": "Adicionar app",
+        "remove": "Voltar a avisar no {{app}}"
+      }
+    },
     "sound": {
       "title": "Som",
       "microphone": {
@@ -979,6 +992,21 @@
     },
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada"
+  },
+  "callPrompt": {
+    "offer": {
+      "title": "Parece uma chamada no {{app}}",
+      "body": "Gravar reunião?"
+    },
+    "askStop": {
+      "title": "{{app}} largou o microfone",
+      "body": "Parar a gravação?"
+    },
+    "record": "Gravar",
+    "notNow": "Agora não",
+    "muteApp": "Não avisar no {{app}}",
+    "stop": "Parar",
+    "keepRecording": "Continuar"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"

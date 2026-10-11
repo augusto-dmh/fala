@@ -1301,6 +1301,49 @@ async applySpeakerSuggestion(id: string, person: number) : Promise<Result<Meetin
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * The card the prompt window should show now, for a window that just loaded.
+ */
+async callPromptCurrent() : Promise<CallPromptPayload | null> {
+    return await TAURI_INVOKE("call_prompt_current");
+},
+/**
+ * The person answered the card, or its countdown ran out. Async so that starting a recording
+ * stays off the main thread, like `start_meeting`.
+ */
+async answerCallPrompt(answer: CallPromptAnswer) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("answer_call_prompt", { answer }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async callPromptApps() : Promise<CallAppInfo[]> {
+    return await TAURI_INVOKE("call_prompt_apps");
+},
+/**
+ * "Avisar quando uma chamada começar"; off, the mic holders are not read at all.
+ */
+async changeCallPromptEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_call_prompt_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Não avisar nestes apps"; returns what was stored (known ids, once each).
+ */
+async changeCallPromptMutedAppsSetting(apps: string[]) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_call_prompt_muted_apps_setting", { apps }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1431,11 +1474,41 @@ cleanup_level?: CleanupLevel;
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
  */
-meeting_consent_accepted_at?: string | null }
+meeting_consent_accepted_at?: string | null; 
+/**
+ * "Avisar quando uma chamada começar" (F8 `meeting-detection`): offer to record when a call
+ * app opens the mic. Off, the mic holders are not read.
+ */
+call_prompt_enabled?: boolean; 
+/**
+ * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
+ */
+call_prompt_muted_apps?: string[] }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+/**
+ * A call app the detector knows, for the settings list.
+ */
+export type CallAppInfo = { id: string; name: string }
+/**
+ * The person's answer, or the countdown running out.
+ */
+export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "expired"
+export type CallPromptKind = 
+/**
+ * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
+ */
+"offer" | 
+/**
+ * "Parar a gravação?" with [Parar] [Continuar].
+ */
+"ask_stop"
+/**
+ * What the card shows.
+ */
+export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; countdown_ms: number }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.

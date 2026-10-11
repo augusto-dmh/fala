@@ -4,6 +4,7 @@ mod apple_intelligence;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
+mod call_prompt;
 mod catalog;
 pub mod cli;
 mod clipboard;
@@ -464,6 +465,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Rest in the idle pill when it is on; the overlay page shows it once it listens
     // (`pill_overlay_ready`).
     overlay::apply_idle_setting(app_handle, &settings);
+
+    // Offer to record when a call app opens the mic (F8); only asks, never records.
+    call_prompt::watch::spawn(app_handle);
 }
 
 #[tauri::command]
@@ -895,6 +899,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_people,
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
+            call_prompt::call_prompt_current,
+            call_prompt::answer_call_prompt,
+            call_prompt::call_prompt_apps,
+            call_prompt::change_call_prompt_enabled_setting,
+            call_prompt::change_call_prompt_muted_apps_setting,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

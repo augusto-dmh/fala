@@ -14,6 +14,7 @@ import { MuteWhileRecording } from "../MuteWhileRecording";
 import { PauseMediaOnMeeting, PauseMediaWhileRecording } from "../PauseMedia";
 import { ModelSettingsCard } from "./ModelSettingsCard";
 import { LlmSettings } from "../LlmSettings";
+import { CallPromptSettings } from "../CallPromptSettings";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -46,6 +47,9 @@ export const GeneralSettings: React.FC = () => {
           disabled={!audioFeedbackEnabled}
         />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.meetings.title")}>
+        <CallPromptSettings />
       </SettingsGroup>
     </div>
   );
