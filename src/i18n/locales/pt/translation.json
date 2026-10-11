@@ -793,6 +793,67 @@
       "whatsNewUpdates": {
         "label": "Mostrar novidades",
         "description": "Mostrar notas de versão após atualizações do Fala"
+      },
+      "privacy": {
+        "title": "Privacidade",
+        "description": "O que sai deste computador, para onde e se está ligado agora. Esta seção só mostra; cada ajuste fica na sua própria tela.",
+        "columns": {
+          "sends": "Sai",
+          "destination": "Para"
+        },
+        "channels": {
+          "dictation": {
+            "name": "Ditado",
+            "sends": "Nunca o áudio. Só o texto ditado, o nome do app e o seu dicionário, com a IA ligada e a chave salva, acima de 15 palavras e fora dos apps sem IA.",
+            "destination": "Google (Gemini), pela sua chave"
+          },
+          "experimentalPostProcess": {
+            "name": "Pós-processamento (experimental)",
+            "sends": "Nunca o áudio. O texto ditado com o atalho de pós-processamento e o prompt escolhido.",
+            "destination": "{{provider}}, pela sua chave"
+          },
+          "meetingTranscription": {
+            "name": "Reunião: transcrição",
+            "sends": "O áudio dos dois canais da reunião (o seu microfone e o som do computador), só quando você pede a transcrição.",
+            "destination": "ElevenLabs, pela sua chave"
+          },
+          "meetingNotes": {
+            "name": "Reunião: notas",
+            "sends": "Nunca o áudio. A transcrição, as suas anotações, o título, a data e a hora, o modelo de nota, o idioma e o dicionário, só quando você pede as notas.",
+            "destination": "Anthropic (Claude), pela sua chave"
+          },
+          "mcp": {
+            "name": "Histórico para assistentes (MCP)",
+            "sends": "Ditados que não são dos apps sem IA, só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
+            "destination": "O assistente local que você configurou, que pode mandá-los ao provedor dele"
+          },
+          "telemetry": {
+            "name": "Telemetria, conta e servidor do Fala",
+            "sends": "Nada. O Fala não tem servidor, conta nem telemetria. Fora os canais acima, ele só baixa os modelos de transcrição, sem enviar dado seu.",
+            "destination": "Ninguém"
+          }
+        },
+        "status": {
+          "on": "Ligado",
+          "off": "Desligado",
+          "keySet": "Chave salva",
+          "keyMissing": "Sem chave",
+          "unknown": "Não verificado",
+          "doesNotExist": "Não existe"
+        },
+        "keys": {
+          "title": "Onde ficam as chaves",
+          "description": "No cofre de senhas do sistema (Gerenciador de Credenciais, no Windows). O Fala nunca mostra o valor de uma chave."
+        },
+        "audio": {
+          "title": "Onde fica o áudio das reuniões",
+          "description": "Nesta pasta, neste computador. Só sai para a transcrição, quando você pede."
+        },
+        "decisions": {
+          "title": "Decisões de privacidade",
+          "description": "Cada canal acima segue uma decisão registrada no repositório público.",
+          "button": "Ver no GitHub"
+        }
       }
     }
   },
