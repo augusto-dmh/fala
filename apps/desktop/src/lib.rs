@@ -11,8 +11,10 @@ mod clipboard;
 mod commands;
 mod dictation_capture;
 mod dictation_metrics;
+mod dictionary;
 mod helpers;
 mod input;
+mod last_dictation;
 mod llm_auto;
 mod llm_client;
 mod long_dictation;
@@ -306,6 +308,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 ) {
                     tray::refresh_microphones(tray.app_handle());
                 }
+                // Still the user's app: the menu has not taken the focus yet. "Colar o último
+                // ditado" gives it back before pasting.
+                if matches!(event, TrayIconEvent::Enter { .. }) {
+                    last_dictation::remember_foreground();
+                }
             });
     }
     #[cfg(not(target_os = "windows"))]
@@ -330,7 +337,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 }
             }
             "copy_last_transcript" => {
-                tray::copy_last_transcript(app);
+                last_dictation::copy_last(app);
+            }
+            "paste_last_transcript" => {
+                last_dictation::paste_last(app, true);
             }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
@@ -772,6 +782,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::delete_post_process_prompt,
             shortcut::set_post_process_selected_prompt,
             shortcut::update_custom_words,
+            dictionary::update_dictionary_replacements,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
             shortcut::change_cleanup_level_setting,
@@ -882,6 +893,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_templates,
             commands::meeting::meeting_keys,
             commands::meeting::set_meeting_transcription_key,
+            commands::meeting::change_notes_profile_setting,
+            commands::meeting::change_notes_language_setting,
+            commands::meeting::change_meeting_keyterms_setting,
             call_prompt::call_prompt_current,
             call_prompt::answer_call_prompt,
             call_prompt::call_prompt_apps,

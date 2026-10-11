@@ -5,15 +5,18 @@ use serde::Serialize;
 
 use crate::{NotesError, NotesInput, Speaker};
 
-/// O que vai ao LLM de notas, e nada além: título, início, idioma, dicionário, template,
-/// anotações com id por linha e transcrição com id, timestamps e rótulo de falante. Os campos
-/// são privados; [`NotesPayload::build`] é a única forma de criar um.
+/// O que vai ao LLM de notas, e nada além: título, início, idioma das notas, perfil do usuário,
+/// dicionário, nomes dos participantes, template, anotações com id por linha e transcrição com
+/// id, timestamps e rótulo de falante. Os campos são privados; [`NotesPayload::build`] é a única
+/// forma de criar um.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NotesPayload {
     title: String,
     started_at: String,
     language: Language,
+    profile: String,
     dictionary: Vec<String>,
+    participants: Vec<String>,
     template: TemplatePayload,
     annotations: Vec<AnnotationPayload>,
     transcript: Vec<SegmentPayload>,
@@ -49,8 +52,8 @@ struct SegmentPayload {
 }
 
 impl NotesPayload {
-    /// Valida a entrada e monta o payload. O `channel` dos segmentos e a marca "só local" não
-    /// entram.
+    /// Valida a entrada e monta o payload. O `channel` dos segmentos, a marca "só local" e os
+    /// participantes com `@` não entram.
     pub fn build(input: &NotesInput) -> Result<Self, NotesError> {
         input.validate()?;
         let template = &input.template;
@@ -58,7 +61,9 @@ impl NotesPayload {
             title: input.title.clone(),
             started_at: format!("{}T{}", input.date, input.start_time),
             language: input.language,
+            profile: input.profile_text(),
             dictionary: input.dictionary.terms().to_vec(),
+            participants: input.participant_names(),
             template: TemplatePayload {
                 name: template.name.clone(),
                 purpose: template.purpose.clone(),
@@ -129,6 +134,7 @@ mod tests {
 
     use super::*;
     use crate::fixture::{input, segment};
+    use crate::PROFILE_MAX_CHARS;
 
     fn payload_json(input: &NotesInput) -> Value {
         serde_json::from_str(&NotesPayload::build(input).unwrap().to_json().unwrap()).unwrap()
@@ -171,7 +177,9 @@ mod tests {
                 "title",
                 "started_at",
                 "language",
+                "profile",
                 "dictionary",
+                "participants",
                 "template",
                 "annotations",
                 "transcript"
@@ -204,6 +212,11 @@ mod tests {
         assert_eq!(json["started_at"], "2026-10-02T14:02");
         assert_eq!(json["language"], "pt-BR");
         assert_eq!(json["dictionary"], serde_json::json!(["Fala", "Parakeet"]));
+        assert_eq!(json["profile"], "PM do Fala; reuniões de produto");
+        assert_eq!(
+            json["participants"],
+            serde_json::json!(["Ana", "Bruno Lima"])
+        );
         assert_eq!(
             transcript[1],
             serde_json::json!({"id":"s12","t0_ms":65000,"t1_ms":69000,"speaker":"Pessoa 1","text":"Proponho 15 de novembro."})
@@ -222,6 +235,52 @@ mod tests {
                 "{forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn participants_are_names_never_emails() {
+        let mut input = input();
+        input.participants = [
+            "  Ana   Souza ",
+            "bruno@empresa.com",
+            "  ",
+            "ana souza",
+            "Carla <carla@x.com>",
+            "Dani",
+        ]
+        .map(String::from)
+        .to_vec();
+        let json = payload_json(&input);
+        assert_eq!(
+            json["participants"],
+            serde_json::json!(["Ana Souza", "Dani"])
+        );
+        let (mut all_keys, mut strings) = (Vec::new(), Vec::new());
+        walk(&json, &mut all_keys, &mut strings);
+        for value in strings {
+            assert!(
+                !value.contains('@') && !value.contains("empresa.com"),
+                "{value}"
+            );
+        }
+
+        input.participants.clear();
+        assert_eq!(payload_json(&input)["participants"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn profile_is_trimmed_and_capped() {
+        let mut input = input();
+        input.profile = format!("  {}  ", "é".repeat(PROFILE_MAX_CHARS + 50));
+        let profile = payload_json(&input)["profile"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(profile.chars().count(), PROFILE_MAX_CHARS);
+        assert!(profile.chars().all(|c| c == 'é'));
+
+        input.profile = "   ".to_string();
+        assert_eq!(payload_json(&input)["profile"], "");
     }
 
     #[test]

@@ -204,8 +204,16 @@ ok("C27");
 }
 ok("C28");
 
-// C29: the dictionary is its own destination and CustomWords lives only there.
-assert.match(read("./DictionaryPage.tsx"), /<CustomWords grouped \/>/);
+// C29: the dictionary is its own destination and CustomWords lives only there,
+// next to the spoken -> written pairs, both filtered by the page search.
+assert.match(
+  read("./DictionaryPage.tsx"),
+  /<CustomWords grouped filter=\{query\} \/>/,
+);
+assert.match(
+  read("./DictionaryPage.tsx"),
+  /<DictionaryReplacements filter=\{query\} \/>/,
+);
 assert.doesNotMatch(
   read("./settings/advanced/AdvancedSettings.tsx"),
   /CustomWords/,

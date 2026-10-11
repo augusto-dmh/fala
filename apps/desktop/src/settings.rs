@@ -160,6 +160,19 @@ pub enum PasteMethod {
     ExternalScript,
 }
 
+/// The language meeting notes are written in (ADR-0016): pt-BR unless chosen, even when the
+/// call mixes languages; `App` follows the interface language.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+pub enum NotesLanguage {
+    #[default]
+    #[serde(rename = "pt-BR")]
+    PtBr,
+    #[serde(rename = "en")]
+    En,
+    #[serde(rename = "app")]
+    App,
+}
+
 /// How the transcribe shortcut's key events drive a recording.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -585,6 +598,17 @@ pub struct AppSettings {
     pub log_level: LogLevel,
     #[serde(default)]
     pub custom_words: Vec<String>,
+    /// Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
+    #[serde(default)]
+    pub dictionary_replacements: Vec<crate::dictionary::DictionaryReplacement>,
+    /// What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
+    #[serde(default)]
+    pub notes_profile: String,
+    #[serde(default)]
+    pub notes_language: NotesLanguage,
+    /// Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
+    #[serde(default = "default_meeting_keyterms")]
+    pub meeting_keyterms: bool,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -845,6 +869,10 @@ fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
         .unwrap_or_else(|| "en".to_string())
+}
+
+fn default_meeting_keyterms() -> bool {
+    true
 }
 
 /// The idle pill appears only for whoever turns it on: on by default it would show up, unasked,
@@ -1127,6 +1155,31 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    // Paste and copy the last dictation: no key until the user picks one, so they never
+    // collide with another app's shortcut.
+    for (id, name, description) in [
+        (
+            "paste_last",
+            "Paste Last Dictation",
+            "Pastes the last dictation again into the active app.",
+        ),
+        (
+            "copy_last",
+            "Copy Last Dictation",
+            "Copies the last dictation to the clipboard.",
+        ),
+    ] {
+        bindings.insert(
+            id.to_string(),
+            ShortcutBinding {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: description.to_string(),
+                default_binding: String::new(),
+                current_binding: String::new(),
+            },
+        );
+    }
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1154,6 +1207,10 @@ pub fn get_default_settings() -> AppSettings {
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),
+        dictionary_replacements: Vec::new(),
+        notes_profile: String::new(),
+        notes_language: NotesLanguage::default(),
+        meeting_keyterms: default_meeting_keyterms(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
@@ -1272,13 +1329,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
             updated = true;
         }
 
-        // Merge in any bindings added since this store was written.
-        for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
-                debug!("Adding missing binding: {}", entry.key());
-                entry.insert(value);
-                updated = true;
-            }
+        if add_missing_bindings(&mut settings) {
+            updated = true;
         }
 
         if updated {
@@ -1434,6 +1486,19 @@ fn apply_settings_migrations(
     }
 
     updated
+}
+
+/// Merges in any bindings added since this store was written; the user's own are kept.
+fn add_missing_bindings(settings: &mut AppSettings) -> bool {
+    let mut added = false;
+    for (key, value) in get_default_settings().bindings {
+        if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+            debug!("Adding missing binding: {}", entry.key());
+            entry.insert(value);
+            added = true;
+        }
+    }
+    added
 }
 
 /// Schema 3 (D6): the legacy post-processing binding loses its default key. A key the user
@@ -1677,6 +1742,9 @@ mod tests {
         assert_eq!(settings.sound_theme, SoundTheme::Pop);
         assert!(settings.filler_word_removal_enabled);
         assert_eq!(settings.vad_backend, VadBackend::Silero);
+        // The dictionary pairs are a new field: the terms load as stored, with no pairs.
+        assert_eq!(settings.custom_words, ["Fala", "cjpais"]);
+        assert!(settings.dictionary_replacements.is_empty());
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
         // Without an exact device, the retired generic GPU choice becomes Auto.
@@ -2113,6 +2181,38 @@ mod tests {
         assert_eq!(
             again.bindings["transcribe_with_post_process"].current_binding,
             ""
+        );
+    }
+
+    #[test]
+    fn old_store_gets_last_dictation_bindings_without_a_key() {
+        let mut settings = migrated(schema_2_store("alt+p"));
+        assert!(!settings.bindings.contains_key("paste_last"));
+        assert!(add_missing_bindings(&mut settings));
+        for id in ["paste_last", "copy_last"] {
+            let binding = &settings.bindings[id];
+            assert_eq!(binding.id, id);
+            assert_eq!(binding.current_binding, "", "{id}");
+            assert_eq!(binding.default_binding, "", "{id}");
+        }
+        assert_eq!(
+            settings.bindings["transcribe"].current_binding,
+            "ctrl_left+space"
+        );
+        assert_eq!(
+            settings.bindings["transcribe_with_post_process"].current_binding,
+            "alt+p"
+        );
+        // A key the user chose survives the next load.
+        settings
+            .bindings
+            .get_mut("paste_last")
+            .unwrap()
+            .current_binding = "alt+shift+z".into();
+        assert!(!add_missing_bindings(&mut settings));
+        assert_eq!(
+            settings.bindings["paste_last"].current_binding,
+            "alt+shift+z"
         );
     }
 

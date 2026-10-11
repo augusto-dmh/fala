@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
+use super::context::{notes_settings, NotesSettings};
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
 
 /// Keyring account of the ElevenLabs key (`fala-cli key set elevenlabs` stores the same one).
@@ -246,12 +247,11 @@ pub(crate) fn templates() -> Vec<MeetingTemplate> {
 }
 
 /// What the notes LLM receives, from the stored session (ADR-0016 list: title, local date and
-/// start time, language, dictionary, template, the typed notes, the transcript).
+/// start time, notes language, profile, dictionary, template, the typed notes, the transcript).
 pub(crate) fn notes_input(
     record: &MeetingRecord,
     segments: &[MeetingSegment],
-    language: Language,
-    dictionary: Dictionary,
+    settings: &NotesSettings,
     template: Template,
 ) -> NotesInput {
     let start = record.started_at.unwrap_or(record.created_at);
@@ -259,8 +259,10 @@ pub(crate) fn notes_input(
         title: record.title.clone(),
         date: start.format("%Y-%m-%d").to_string(),
         start_time: start.format("%H:%M").to_string(),
-        language,
-        dictionary,
+        language: settings.language,
+        profile: settings.profile.clone(),
+        dictionary: settings.dictionary.clone(),
+        participants: Vec::new(),
         template,
         annotations: record.annotations.clone(),
         transcript: notes_segments(segments),
@@ -312,12 +314,16 @@ impl Drop for WorkGuard<'_> {
     }
 }
 
-fn settings_language(app: &tauri::AppHandle) -> (Language, Dictionary) {
-    let settings = crate::settings::get_settings(app);
-    (
-        crate::managers::history_dictations::language_from_setting(&settings.selected_language),
-        Dictionary::new(settings.custom_words),
-    )
+/// What the Scribe request takes from the settings: the dictation language, and the dictionary
+/// as `keyterms` only while that setting is on (ADR-0005).
+pub(crate) fn scribe_options(settings: &crate::settings::AppSettings) -> ScribeOptions {
+    ScribeOptions {
+        language: Some(crate::managers::history_dictations::language_from_setting(
+            &settings.selected_language,
+        )),
+        keyterms: settings.meeting_keyterms,
+        dictionary: Dictionary::new(settings.custom_words.clone()),
+    }
 }
 
 fn progress_stage(progress: Progress) -> ProgressStage {
@@ -380,13 +386,13 @@ impl MeetingManager {
     /// "Copy Markdown": the note document with its transcript anchors.
     pub fn markdown(&self, id: &str) -> Result<String, MeetingError> {
         let id = parse_id(id)?;
-        let (language, dictionary) = settings_language(&self.app);
+        let settings = notes_settings(&crate::settings::get_settings(&self.app));
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let segments = store.meeting_segments(id)?;
             let template = find_template(record.notes_template.as_deref().unwrap_or("geral"))
                 .or_else(|_| find_template("geral"))?;
-            let input = notes_input(&record, &segments, language, dictionary, template);
+            let input = notes_input(&record, &segments, &settings, template);
             Ok(fala_notes::note_document(
                 &input,
                 record.notes_md.as_deref(),
@@ -461,15 +467,8 @@ impl MeetingManager {
         }
         let recording = MeetingRecording::from_session_dir(&dir, record.mode)?;
         let key = scribe_key(self.keys.as_ref())?;
-        let (language, dictionary) = settings_language(&self.app);
-        let mut scribe = ElevenLabsScribe::new(
-            key,
-            ScribeOptions {
-                language: Some(language),
-                keyterms: true,
-                dictionary,
-            },
-        );
+        let options = scribe_options(&crate::settings::get_settings(&self.app));
+        let mut scribe = ElevenLabsScribe::new(key, options);
         let segments = scribe.transcribe_session(&recording, cancel, &mut |progress| {
             self.progress(id, progress_stage(progress));
         })?;
@@ -506,8 +505,8 @@ impl MeetingManager {
         };
         let (record, segments) =
             self.with_store(|store| Ok((store.meeting(id)?, store.meeting_segments(id)?)))?;
-        let (language, dictionary) = settings_language(&self.app);
-        let input = notes_input(&record, &segments, language, dictionary, template);
+        let settings = notes_settings(&crate::settings::get_settings(&self.app));
+        let input = notes_input(&record, &segments, &settings, template);
         self.progress(id, ProgressStage::Notes);
         let claude = Claude::new(Arc::new(KeyringKeys(Arc::clone(&self.keys))));
         let notes = match generate_notes(&input, &claude) {
@@ -523,7 +522,16 @@ impl MeetingManager {
                 return Err(error);
             }
         };
+        // The generated title only fills an empty one, never a title the user typed.
         self.with_store(|store| Ok(store.save_meeting_notes(id, template_id, &notes.markdown)?))?;
+        if let Some(title) = &notes.title {
+            // The notes are saved; a title that fails to land only leaves the default one.
+            if let Err(e) =
+                self.with_store(|store| Ok(store.set_generated_meeting_title(id, title)?))
+            {
+                log::warn!("meeting {id}: generated title not stored: {e}");
+            }
+        }
         self.progress(id, ProgressStage::Done);
         Ok(notes.markdown)
     }
@@ -580,6 +588,17 @@ mod tests {
         assert_eq!(line(&numbered[0]).person, None);
         assert_eq!(line(&numbered[1]).person, Some(2));
         assert_eq!(line(&numbered[1]).channel, "system");
+    }
+
+    #[test]
+    fn keyterms_follow_the_setting() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.custom_words = vec!["Fala".into(), "ADR".into()];
+        let options = scribe_options(&settings);
+        assert!(options.keyterms);
+        assert_eq!(options.dictionary, Dictionary::new(["Fala", "ADR"]));
+        settings.meeting_keyterms = false;
+        assert!(!scribe_options(&settings).keyterms);
     }
 
     #[test]
@@ -661,17 +680,18 @@ mod tests {
             text: "oi".into(),
         }];
         let template = find_template("geral").unwrap();
-        let input = notes_input(
-            &record,
-            &segments,
-            Language::PtBr,
-            Dictionary::new(["Fala"]),
-            template.clone(),
-        );
+        let settings = NotesSettings {
+            language: Language::PtBr,
+            profile: "PM do Fala".into(),
+            dictionary: Dictionary::new(["Fala"]),
+        };
+        let input = notes_input(&record, &segments, &settings, template.clone());
         assert_eq!(input.title, "Planejamento");
         assert_eq!(input.date, "2026-10-02");
         assert_eq!(input.start_time, "14:02");
         assert_eq!(input.language, Language::PtBr);
+        assert_eq!(input.profile, "PM do Fala");
+        assert!(input.participants.is_empty());
         assert_eq!(input.dictionary, Dictionary::new(["Fala"]));
         assert_eq!(input.template, template);
         assert_eq!(input.annotations, "pauta: contrato");
@@ -683,8 +703,13 @@ mod tests {
             started_at: None,
             ..record
         };
+        let english = NotesSettings {
+            language: Language::En,
+            profile: String::new(),
+            dictionary: Dictionary::default(),
+        };
         assert_eq!(
-            notes_input(&draft, &[], Language::En, Dictionary::default(), template).start_time,
+            notes_input(&draft, &[], &english, template).start_time,
             "13:50"
         );
         assert_eq!(

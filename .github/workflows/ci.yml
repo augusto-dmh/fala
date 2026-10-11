@@ -6,9 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push cancels the older run of the same PR. Runs on main always finish: they are the
+# only ones that save the Rust cache below.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,7 +35,12 @@ jobs:
           toolchain: "1.98.1" # keep in sync with rust-toolchain.toml
           components: rustfmt, clippy
 
+      # Only main saves. A PR's cache is scoped to its merge ref, so no other PR can restore it,
+      # and at ~1 GB each those caches filled the 10 GB quota and evicted main's: every new PR
+      # then compiled from scratch (13-20 min instead of ~5). PRs restore main's cache instead.
       - uses: swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: fmt
         run: cargo fmt --all -- --check
@@ -144,6 +151,8 @@ jobs:
           components: clippy
 
       - uses: swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

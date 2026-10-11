@@ -96,6 +96,10 @@ pub struct Formatted {
     pub fallback: Option<Fallback>,
     /// A resposta que ainda pode chegar; só existe quando `fallback` é `Timeout`.
     pub late_edit: Option<LateEdit>,
+    /// Os pares "falado → escrito" que as regras aplicaram, como índices em
+    /// `Dictionary::replacements()`, um por ocorrência. Valem com ou sem o LLM, que recebe o
+    /// texto já trocado.
+    pub replaced: Vec<usize>,
 }
 
 type LlmResult = Result<String, Fallback>;
@@ -184,10 +188,7 @@ impl Postprocessor {
             language: &raw.language,
             cleanup: self.cleanup,
         };
-        let rules_text = match self.rules.format(&raw.text, &ctx) {
-            Ok(text) => text,
-            Err(_) => raw.text.trim().to_string(),
-        };
+        let (rules_text, replaced) = self.rules.format_with_hits(&raw.text, &ctx);
         let mut formatted = Formatted {
             dictation: Dictation {
                 final_text: rules_text,
@@ -197,6 +198,7 @@ impl Postprocessor {
             },
             fallback: None,
             late_edit: None,
+            replaced,
         };
         let Some(gemini) = self.llm_for(&formatted.dictation) else {
             return formatted;
