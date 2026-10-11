@@ -96,7 +96,8 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Troca as sugestões da sessão pelas de uma geração nova. Nenhum nome aplicado muda.
+    /// Troca as sugestões da sessão pelas de uma geração nova. Nenhum nome aplicado muda, e uma
+    /// pessoa que já tem nome não recebe sugestão (uma geração que começou antes do clique).
     pub fn save_speaker_suggestions(
         &mut self,
         id: SessionId,
@@ -115,7 +116,8 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (meeting_id, person) DO UPDATE
                  SET suggested_name = excluded.suggested_name,
-                     suggested_reason = excluded.suggested_reason",
+                     suggested_reason = excluded.suggested_reason
+                 WHERE meeting_speakers.name IS NULL",
                 params![id.to_string(), person, suggestion.name, suggestion.reason],
             )?;
         }

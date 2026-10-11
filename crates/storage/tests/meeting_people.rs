@@ -133,9 +133,16 @@ fn suggestion_becomes_a_name_only_when_applied() {
         Err(StorageError::NotFound(_))
     ));
 
-    // Uma geração nova troca as sugestões e não mexe no nome aplicado.
+    // Uma geração nova troca as sugestões e não mexe no nome aplicado; uma sugestão para quem
+    // já tem nome (geração que começou antes do clique) não entra.
     store
-        .save_speaker_suggestions(id, &[(2, suggestion("Bruno", "Fala do jurídico."))])
+        .save_speaker_suggestions(
+            id,
+            &[
+                (1, suggestion("Outra", "chegou depois do clique")),
+                (2, suggestion("Bruno", "Fala do jurídico.")),
+            ],
+        )
         .unwrap();
     assert_eq!(
         store.meeting_speakers(id).unwrap(),
@@ -172,6 +179,11 @@ fn transcribing_again_forgets_names() {
         .save_speaker_suggestions(id, &[(1, suggestion("Ana", "x"))])
         .unwrap();
     store.apply_speaker_suggestion(id, 1).unwrap();
+    // Uma sugestão ainda pendente também não sobrevive à transcrição nova.
+    store
+        .save_speaker_suggestions(id, &[(2, suggestion("Bruno", "y"))])
+        .unwrap();
+    assert_eq!(store.meeting_speakers(id).unwrap().len(), 2);
     store
         .replace_meeting_segments(
             id,
