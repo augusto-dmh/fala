@@ -17,6 +17,9 @@ use crate::audio_toolkit::audio::AudioVisualiser;
 /// Intervalo entre duas drenagens do mic.
 const TICK: Duration = Duration::from_millis(10);
 const LEVEL_BUCKETS: usize = 16;
+/// RMS de bloco abaixo do qual o mic conta como mudo (−60 dBFS): o mudo do Windows e o acesso
+/// negado entregam zeros, e fala a qualquer distância razoável passa de −40 dBFS.
+const SILENT_RMS: f32 = 0.001;
 
 /// Como os quadros de uma sessão passam pelo VAD.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,11 +78,65 @@ impl VoiceDetector for DictationVad {
     }
 }
 
+/// O que o mic entregou durante uma gravação, para avisar quando ele está mudo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MicSignal {
+    /// Algum bloco chegou a `SILENT_RMS`.
+    Heard,
+    /// Ao menos 0,5 s de áudio e nenhum bloco chegou a `SILENT_RMS`.
+    Silent,
+    /// Menos de 0,5 s de áudio: curto demais para dizer.
+    Unknown,
+}
+
+/// Mede os blocos crus de uma gravação, na taxa do mic.
+struct SignalMeter {
+    rate: u32,
+    samples: usize,
+    loudest: f32,
+}
+
+impl SignalMeter {
+    fn new(rate: u32) -> Self {
+        Self {
+            rate,
+            samples: 0,
+            loudest: 0.0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.samples = 0;
+        self.loudest = 0.0;
+    }
+
+    fn feed(&mut self, block: &[f32]) {
+        if block.is_empty() {
+            return;
+        }
+        let energy: f32 = block.iter().map(|s| s * s).sum();
+        let rms = (energy / block.len() as f32).sqrt();
+        self.loudest = self.loudest.max(rms);
+        self.samples += block.len();
+    }
+
+    fn verdict(&self) -> MicSignal {
+        if self.samples < self.rate as usize / 2 {
+            MicSignal::Unknown
+        } else if self.loudest < SILENT_RMS {
+            MicSignal::Silent
+        } else {
+            MicSignal::Heard
+        }
+    }
+}
+
 /// Uma abertura do stream: amostras na taxa do mic entram, a gravação a 16 kHz sai no `stop`.
 struct Processor {
     capture: DictationCapture,
     bypass: Arc<AtomicBool>,
     visualizer: AudioVisualiser,
+    meter: SignalMeter,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
     recording: bool,
@@ -110,6 +167,7 @@ impl Processor {
             capture: DictationCapture::new(rate, Box::new(vad))?,
             bypass,
             visualizer: AudioVisualiser::new(rate, window, LEVEL_BUCKETS, 400.0, 4000.0),
+            meter: SignalMeter::new(rate),
             level_cb,
             audio_cb,
             recording: false,
@@ -123,6 +181,7 @@ impl Processor {
             return;
         }
         if self.recording {
+            self.meter.feed(raw);
             if let (Some(levels), Some(cb)) = (self.visualizer.feed(raw), &self.level_cb) {
                 cb(levels);
             }
@@ -142,6 +201,7 @@ impl Processor {
         self.bypass
             .store(policy == VadPolicy::Disabled, Ordering::Relaxed);
         self.visualizer.reset();
+        self.meter.reset();
         self.samples.clear();
         self.recording = true;
         self.ready = Some((ready, Instant::now()));
@@ -155,6 +215,11 @@ impl Processor {
         let done = self.capture.stop();
         self.keep(done);
         std::mem::take(&mut self.samples)
+    }
+
+    /// O veredito do sinal da última gravação, até o próximo `start`.
+    fn signal(&self) -> MicSignal {
+        self.meter.verdict()
     }
 
     fn keep(&mut self, done: Result<Vec<DictationAudio>, AudioError>) {
@@ -174,7 +239,7 @@ impl Processor {
 
 enum Cmd {
     Start(VadPolicy, mpsc::Sender<()>),
-    Stop(mpsc::Sender<Vec<f32>>),
+    Stop(mpsc::Sender<(Vec<f32>, MicSignal)>),
     Shutdown,
 }
 
@@ -188,6 +253,7 @@ pub struct DictationRecorder {
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker: Option<JoinHandle<()>>,
     failed: Arc<AtomicBool>,
+    device_name: Option<String>,
 }
 
 impl DictationRecorder {
@@ -201,6 +267,7 @@ impl DictationRecorder {
             cmd_tx: None,
             worker: None,
             failed: Arc::new(AtomicBool::new(false)),
+            device_name: None,
         }
     }
 
@@ -241,6 +308,7 @@ impl DictationRecorder {
                 .ok_or_else(|| "No input device found".to_owned())?,
         };
         self.failed.store(false, Ordering::Relaxed);
+        let device_name = device.name().ok();
 
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (init_tx, init_rx) = mpsc::sync_channel(1);
@@ -280,6 +348,7 @@ impl DictationRecorder {
             Ok(Ok(())) => {
                 self.cmd_tx = Some(cmd_tx);
                 self.worker = Some(worker);
+                self.device_name = device_name;
                 Ok(())
             }
             Ok(Err(e)) => {
@@ -300,8 +369,13 @@ impl DictationRecorder {
         Ok(ready_rx)
     }
 
-    /// Termina a sessão e devolve a gravação a 16 kHz mono.
-    pub fn stop(&self) -> Result<Vec<f32>, String> {
+    /// O nome do dispositivo aberto, quando o `cpal` o informa.
+    pub fn device_name(&self) -> Option<String> {
+        self.device_name.clone()
+    }
+
+    /// Termina a sessão e devolve a gravação a 16 kHz mono, com o veredito do sinal.
+    pub fn stop(&self) -> Result<(Vec<f32>, MicSignal), String> {
         let (reply_tx, reply_rx) = mpsc::channel();
         self.send(Cmd::Stop(reply_tx))?;
         reply_rx.recv().map_err(|e| e.to_string())
@@ -358,7 +432,8 @@ fn run_worker(
         match command {
             Ok(Cmd::Start(policy, ready)) => processor.start(policy, ready),
             Ok(Cmd::Stop(reply)) => {
-                let _ = reply.send(processor.stop());
+                let samples = processor.stop();
+                let _ = reply.send((samples, processor.signal()));
             }
             Ok(Cmd::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -512,5 +587,58 @@ mod tests {
         p.start(VadPolicy::Offline, mpsc::channel().0);
         feed_in_blocks(&mut p, &vec![0.1; 16_000]);
         assert!(*count.lock().unwrap() > 0);
+    }
+
+    #[test]
+    fn signal_meter_verdicts() {
+        let half_second = 8_000;
+        let verdict = |blocks: &[&[f32]]| {
+            let mut meter = SignalMeter::new(16_000);
+            for block in blocks {
+                meter.feed(block);
+            }
+            meter.verdict()
+        };
+        let zeros = vec![0.0; half_second];
+
+        assert_eq!(verdict(&[]), MicSignal::Unknown);
+        assert_eq!(verdict(&[&zeros]), MicSignal::Silent);
+        assert_eq!(
+            verdict(&[&vec![0.0; half_second - 1]]),
+            MicSignal::Unknown,
+            "half a second minus one sample is too short"
+        );
+        // A constant block's RMS is its value (two samples keep the f32 sum exact): one block at
+        // the edge is enough to count as heard.
+        assert_eq!(verdict(&[&zeros, &[0.001; 2]]), MicSignal::Heard);
+        assert_eq!(verdict(&[&zeros, &[0.000_999; 2]]), MicSignal::Silent);
+        assert_eq!(
+            verdict(&[&vec![0.001; half_second - 1]]),
+            MicSignal::Unknown,
+            "a short recording is unknown even when loud"
+        );
+    }
+
+    #[test]
+    fn processor_reports_the_signal_of_the_recording_only() {
+        let mut p = processor(Always(true));
+        // Loud pre-buffer before the key-down, then a muted recording.
+        feed_in_blocks(&mut p, &vec![0.5; 8_000]);
+        p.start(VadPolicy::Offline, mpsc::channel().0);
+        feed_in_blocks(&mut p, &vec![0.0; 8_000]);
+        p.stop();
+        assert_eq!(p.signal(), MicSignal::Silent);
+
+        p.start(VadPolicy::Offline, mpsc::channel().0);
+        feed_in_blocks(&mut p, &vec![0.0; 4_000]);
+        feed_in_blocks(&mut p, &vec![0.1; 4_000]);
+        p.stop();
+        assert_eq!(p.signal(), MicSignal::Heard);
+
+        // A new recording starts from a clean meter.
+        p.start(VadPolicy::Offline, mpsc::channel().0);
+        feed_in_blocks(&mut p, &vec![0.0; 8_000]);
+        p.stop();
+        assert_eq!(p.signal(), MicSignal::Silent);
     }
 }
