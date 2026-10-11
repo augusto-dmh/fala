@@ -105,17 +105,50 @@ class ReleaseRunbook(unittest.TestCase):
             [
                 "bun run tauri build --bundles nsis",
                 r"target\release\bundle\nsis\Fala_<versão>_x64-setup.exe",
+                "$env:TAURI_SIGNING_PRIVATE_KEY =",
+                "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD =",
+                "Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY, Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+                "Fala_<versão>_x64-setup.exe.sig",
+            ],
+        )
+
+    def test_release_md_publish_attaches_the_manifest(self):
+        self.assert_contains_all(
+            "Publicar",
+            [
+                "scripts/release/gen-latest-json.py",
+                "--draft",
+                "Fala_X.Y.Z_x64-setup.exe.sig latest.json",
+                "--draft=false --prerelease",
+                "--prerelease=false --latest",
             ],
         )
 
     def test_release_md_marks_windows_only_steps(self):
         self.assertIn("TODO(windows)", release_sections()["Validar no Windows"])
 
+    def test_release_md_validates_the_update(self):
+        self.assert_contains_all(
+            "Validar no Windows",
+            ["atualizar a partir da versão anterior", "FALA_UPDATE_MANIFEST_URL", "Reiniciar para atualizar"],
+        )
+
     def test_release_md_updater_section(self):
         self.assert_contains_all(
             "Updater",
-            ["desligado", "plugins.updater", "createUpdaterArtifacts", "ADR-0008", "nunca no repositório"],
+            [
+                "**ligado**",
+                "ADR-0018",
+                FEED,
+                "createUpdaterArtifacts",
+                "scripts/release/new-updater-key.ps1",
+                "nunca no repositório",
+                "UPDATER_PUBKEY_NEXT",
+            ],
         )
+
+    def test_release_md_retract_with_updater(self):
+        self.assert_contains_all("Retirar uma versão", ["gh release edit vX.Y.Z --draft", "X.Y.Z+1", "imutáveis"])
 
     def test_release_md_version_section(self):
         self.assert_contains_all(
@@ -190,14 +223,16 @@ class BundleConfig(unittest.TestCase):
 
 
 class CiWiring(unittest.TestCase):
-    def test_ci_runs_release_config_test(self):
+    def test_ci_runs_release_tests(self):
         text = CI_YML.read_text()
         job = re.search(r"^  rust:\n(.*?)(?=^  [a-z][a-z-]*:\n)", text, re.DOTALL | re.MULTILINE)
         self.assertIsNotNone(job, "no rust job in ci.yml")
         steps = [s for s in re.split(r"^      - ", job.group(1), flags=re.MULTILINE) if s.strip()]
-        hits = [s for s in steps if re.search(r"^\s*run: python3 scripts/ci/test_release_config\.py\s*$", s, re.MULTILINE)]
-        self.assertEqual(len(hits), 1, "the rust job needs exactly one step running this test")
-        self.assertNotIn("continue-on-error", hits[0])
+        for script in ("test_release_config", "test_gen_latest_json"):
+            pattern = rf"^\s*run: python3 scripts/ci/{script}\.py\s*$"
+            hits = [s for s in steps if re.search(pattern, s, re.MULTILINE)]
+            self.assertEqual(len(hits), 1, f"the rust job needs exactly one step running {script}.py")
+            self.assertNotIn("continue-on-error", hits[0])
 
 
 if __name__ == "__main__":

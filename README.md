@@ -26,7 +26,7 @@ Apetite e critério de fechamento de cada fase: [`ROADMAP.md`](ROADMAP.md).
 3. Na primeira execução, escolha o microfone e deixe o app baixar o modelo de voz (algumas centenas de MB, uma vez só).
 4. Aperte `Ctrl+Shift+Space`, fale e solte.
 
-Não há atualização automática por enquanto. Para atualizar, instale a versão nova por cima.
+O Fala se atualiza sozinho ([ADR-0018](docs/decisions/0018-updater-ligado-feed-no-github-release-chave-fora-do-ci.md)): ele procura uma versão nova no GitHub ao abrir e a cada 6 horas, baixa em segundo plano e instala quando você clica em "Reiniciar para atualizar" (na bandeja ou em Configurações › Sobre) ou sai do app, nunca no meio de um ditado ou de uma gravação. Uma versão anterior à primeira com atualização automática se atualiza instalando a nova por cima.
 
 ## Uso
 
