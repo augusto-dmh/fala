@@ -3,12 +3,13 @@
 use std::sync::Arc;
 
 use tauri::ipc::Response;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::meeting::pipeline::{
     MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary, MeetingTemplate,
 };
 use crate::meeting::{MeetingError, MeetingManager, MeetingMode, MeetingStatus};
+use crate::settings::{self, NotesLanguage};
 
 type Meetings<'a> = State<'a, Arc<MeetingManager>>;
 
@@ -184,4 +185,41 @@ pub async fn set_meeting_transcription_key(
     key: String,
 ) -> Result<MeetingKeys, MeetingError> {
     meetings.set_transcription_key(&key)
+}
+
+/// The profile the notes LLM receives (ADR-0016), cut to `fala_notes::PROFILE_MAX_CHARS`.
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_profile_setting(app: AppHandle, profile: String) -> Result<String, String> {
+    let profile: String = profile
+        .trim()
+        .chars()
+        .take(fala_notes::PROFILE_MAX_CHARS)
+        .collect();
+    let mut settings = settings::get_settings(&app);
+    settings.notes_profile = profile.clone();
+    settings::write_settings(&app, settings);
+    Ok(profile)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_language_setting(
+    app: AppHandle,
+    language: NotesLanguage,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.notes_language = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// The dictionary as Scribe `keyterms` (ADR-0005).
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_keyterms_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_keyterms = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
 }

@@ -10,6 +10,7 @@ mod clipboard;
 mod commands;
 mod dictation_capture;
 mod dictation_metrics;
+mod dictionary;
 mod helpers;
 mod input;
 mod last_dictation;
@@ -777,6 +778,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::delete_post_process_prompt,
             shortcut::set_post_process_selected_prompt,
             shortcut::update_custom_words,
+            dictionary::update_dictionary_replacements,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
             shortcut::change_cleanup_level_setting,
@@ -887,6 +889,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_templates,
             commands::meeting::meeting_keys,
             commands::meeting::set_meeting_transcription_key,
+            commands::meeting::change_notes_profile_setting,
+            commands::meeting::change_notes_language_setting,
+            commands::meeting::change_meeting_keyterms_setting,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

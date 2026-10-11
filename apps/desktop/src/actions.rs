@@ -615,10 +615,13 @@ pub(crate) async fn process_transcription_output(
     })
     .await
     {
-        Ok((auto, late_edit)) => ProcessedTranscription {
-            late_edit,
-            ..auto_processed(transcription, auto)
-        },
+        Ok((auto, late_edit)) => {
+            crate::dictionary::record_uses(app, &auto.replaced);
+            ProcessedTranscription {
+                late_edit,
+                ..auto_processed(transcription, auto)
+            }
+        }
         Err(e) => {
             error!("Post-processing task failed: {}", e);
             auto_processed(
@@ -627,6 +630,7 @@ pub(crate) async fn process_transcription_output(
                     final_text,
                     llm_produced: false,
                     fallback: None,
+                    replaced: Vec::new(),
                 },
             )
         }

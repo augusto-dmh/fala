@@ -76,7 +76,21 @@
     }
   },
   "dictionary": {
-    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita."
+    "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita.",
+    "search": "Buscar no dicionário",
+    "replacements": {
+      "title": "Falado → escrito",
+      "description": "Quando você disser a forma falada, o Fala escreve a outra. Vale para a palavra inteira, sem diferenciar maiúsculas nem acentos, antes da IA de formatação e também com ela desligada. Só a forma escrita vai para a IA.",
+      "spokenPlaceholder": "fala sql",
+      "writtenPlaceholder": "Fala.sqlite",
+      "spokenLabel": "Forma falada",
+      "writtenLabel": "Forma escrita",
+      "add": "Adicionar",
+      "remove": "Remover {{spoken}} → {{written}}",
+      "duplicate": "\"{{spoken}}\" já tem uma forma escrita",
+      "uses_one": "1 uso",
+      "uses_other": "{{count}} usos"
+    }
   },
   "settingsPage": {
     "tabs": {
@@ -1049,6 +1063,26 @@
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
+    },
+    "context": {
+      "title": "Contexto das notas",
+      "description": "Vai à Anthropic junto com a transcrição a cada geração de notas.",
+      "profile": {
+        "title": "Seu perfil",
+        "description": "Quem você é e no que trabalha, em até 300 caracteres.",
+        "placeholder": "Ex.: PM do time de pagamentos; reuniões com clientes e engenharia."
+      },
+      "language": {
+        "title": "Idioma das notas",
+        "description": "As notas saem neste idioma, mesmo numa conversa que mistura idiomas.",
+        "ptBR": "Português (Brasil)",
+        "en": "Inglês",
+        "app": "Igual ao app"
+      },
+      "keyterms": {
+        "title": "Dicionário na transcrição",
+        "description": "Manda os termos do seu dicionário à ElevenLabs para acertar a grafia. Custa cerca de US$ 0,05 a mais por hora."
+      }
     },
     "key": {
       "label": "Chave da ElevenLabs para transcrever:",
