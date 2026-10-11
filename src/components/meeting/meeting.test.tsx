@@ -128,6 +128,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   ],
   notes_md: "## Notas · Reunião geral",
   notes_template: "geral",
+  audio_available: true,
   ...over,
 });
 

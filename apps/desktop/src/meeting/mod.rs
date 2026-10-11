@@ -10,6 +10,7 @@
 //! the tray items call. ADR-0015: without the microphone fan-out, dictation is refused while a
 //! meeting records, and the dictation stream is closed so the mic has a single stream.
 
+pub(crate) mod clip;
 mod disk;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;

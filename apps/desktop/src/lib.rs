@@ -912,7 +912,18 @@ pub fn run(cli_args: CliArgs) {
         )
         .expect("Failed to export typescript bindings");
 
-    let invoke_handler = specta_builder.invoke_handler();
+    let specta_handler = specta_builder.invoke_handler();
+    // `meeting_clip` answers with raw WAV bytes, which tauri-specta cannot type; it goes to its
+    // own handler and every other command to the typed one.
+    let clip_handler: fn(tauri::ipc::Invoke) -> bool =
+        tauri::generate_handler![commands::meeting::meeting_clip];
+    let invoke_handler = move |invoke: tauri::ipc::Invoke| {
+        if invoke.message.command() == "meeting_clip" {
+            clip_handler(invoke)
+        } else {
+            specta_handler(invoke)
+        }
+    };
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.
