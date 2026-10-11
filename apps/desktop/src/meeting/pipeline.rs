@@ -529,15 +529,17 @@ impl MeetingManager {
             notes: true,
         };
         let settings = notes_settings(&crate::settings::get_settings(&self.app));
-        let input = self.with_store(|store| {
-            Ok(notes_input(
-                &store.meeting(id)?,
+        let (input, transcribed_at) = self.with_store(|store| {
+            let record = store.meeting(id)?;
+            let input = notes_input(
+                &record,
                 &store.meeting_segments(id)?,
                 &settings,
                 store.meeting_participants(id)?,
                 &speaker_names(store, id)?,
                 template,
-            ))
+            );
+            Ok((input, record.transcribed_at))
         })?;
         self.progress(id, ProgressStage::Notes);
         let claude = Claude::new(Arc::new(KeyringKeys(Arc::clone(&self.keys))));
@@ -566,10 +568,19 @@ impl MeetingManager {
                 (s.person, suggestion)
             })
             .collect();
-        self.with_store(|store| {
-            store.save_meeting_notes(id, template_id, &notes.markdown)?;
+        self.with_store(|store| Ok(store.save_meeting_notes(id, template_id, &notes.markdown)?))?;
+        // A transcription that finished meanwhile renumbered "Person N": these suggestions point
+        // at the old numbers. The notes are saved either way.
+        let saved = self.with_store(|store| {
+            if store.meeting(id)?.transcribed_at != transcribed_at {
+                log::info!("meeting {id}: transcribed again during the notes; suggestions dropped");
+                return Ok(());
+            }
             Ok(store.save_speaker_suggestions(id, &suggestions)?)
-        })?;
+        });
+        if let Err(e) = saved {
+            log::warn!("meeting {id}: speaker suggestions not stored: {e}");
+        }
         // The generated title only fills an empty one, never a title the user typed.
         if let Some(title) = &notes.title {
             // The notes are saved; a title that fails to land only leaves the default one.
