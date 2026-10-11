@@ -128,6 +128,15 @@ ok("C7");
   for (const [current, key, expected] of table) {
     assert.equal(levelForKey(current, key), expected, `${current} ${key}`);
   }
+  // Each radio routes clicks and keys to the choice, and a key moves the focus with it.
+  const cards = read("./CleanupLevelCards.tsx");
+  assert.match(cards, /onClick=\{\(\) => onChange\(level\)\}/, "click");
+  assert.match(cards, /onKeyDown=\{handleKeyDown\}/, "keys");
+  assert.match(
+    cards,
+    /levelForKey\(value, event\.key\);[\s\S]*?onChange\(next\);\s*cards\.current\[next\]\?\.focus\(\);/,
+    "a key chooses the next level and focuses it",
+  );
 }
 ok("C8");
 
@@ -161,7 +170,7 @@ ok("C9");
   const settings = read("./LlmSettings.tsx");
   assert.match(
     settings,
-    /<ToggleSwitch[\s\S]*?\/>\s*<CleanupLevelCards\b[\s\S]*?dimmed=\{!enabled \|\| !apiKey\}[\s\S]*?\/>\s*<SettingContainer/,
+    /<ToggleSwitch\b[^<]*?\/>\s*<CleanupLevelCards\b[\s\S]*?dimmed=\{!enabled \|\| !apiKey\}[\s\S]*?\/>\s*<SettingContainer/,
   );
   assert.match(
     settings,
