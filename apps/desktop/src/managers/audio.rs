@@ -1,7 +1,7 @@
 use crate::audio_toolkit::list_input_devices;
 use crate::dictation_capture::{DictationRecorder, MicSignal, VadPolicy};
 use crate::helpers::clamshell;
-use crate::long_dictation::{BlockQueue, Transcribe};
+use crate::long_dictation::{BlockQueue, Blocks};
 use crate::managers::transcription::StreamRouter;
 use crate::settings::{get_settings, write_settings, AppSettings};
 use crate::utils;
@@ -820,7 +820,7 @@ impl AudioRecordingManager {
         &self,
         binding_id: &str,
         vad_policy: VadPolicy,
-        blocks: Option<Transcribe>,
+        blocks: Option<Blocks>,
     ) -> Result<RecordingReadiness, String> {
         let mut state = self.state.lock().unwrap();
 

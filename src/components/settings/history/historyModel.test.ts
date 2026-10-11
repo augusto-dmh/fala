@@ -10,6 +10,7 @@ import {
   appName,
   editAction,
   groupByDay,
+  partialAi,
   recoverEntry,
   rowKind,
   SEARCH_DEBOUNCE_MS,
@@ -57,6 +58,7 @@ function entry(
     dictation: d,
     paste_failed: false,
     discarded: false,
+    llm_partial: false,
     ...over,
   };
 }
@@ -484,5 +486,13 @@ await (async () => {
   assert.equal(editAction(outU.entry!), "redo");
   ok("C9 undo after apply offers apply again");
 })();
+
+// Ditado longo: "IA parcial" quando algum bloco ficou com as regras.
+assert.equal(partialAi(entry(dictation())), false);
+assert.equal(partialAi(entry(dictation(), 7, { llm_partial: true })), true);
+assert.ok(screen.includes('t("settings.history.partialAi")'));
+assert.equal(pt.settings.history.partialAi, "IA parcial");
+assert.equal(en.settings.history.partialAi, "Partial AI");
+ok("long dictation partial AI label");
 
 console.log("history: all assertions passed");

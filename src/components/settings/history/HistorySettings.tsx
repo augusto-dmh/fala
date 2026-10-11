@@ -30,6 +30,7 @@ import {
   appName,
   editAction,
   groupByDay,
+  partialAi,
   recoverEntry,
   rowKind,
   SEARCH_DEBOUNCE_MS,
@@ -443,6 +444,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const hasTranscription = shownText(entry).trim().length > 0;
   const action = editAction(entry);
   const app = appName(entry);
+  const partial = partialAi(entry);
 
   const handleLoadAudio = useCallback(
     () => getAudioUrl(entry.file_name),
@@ -555,6 +557,11 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
         {app && (
           <span className="text-xs text-text/50">
             {t("settings.history.inApp", { app })}
+          </span>
+        )}
+        {partial && (
+          <span className="text-xs text-text/50">
+            {t("settings.history.partialAi")}
           </span>
         )}
         {expanded && (

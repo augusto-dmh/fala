@@ -6,7 +6,7 @@ use crate::audio_feedback::{
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error};
 use crate::dictation_capture::{MicSignal, VadPolicy};
 use crate::llm_auto::{self, AutoFormatted};
-use crate::long_dictation::Transcribe;
+use crate::long_dictation::{self, Blocks, Format, LateBlocks, Part, Transcribe};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{EntryTexts, HistoryManager, NewEntry};
 use crate::managers::model::ModelManager;
@@ -79,6 +79,58 @@ enum StopOutcome {
 /// silence (a streaming model has its own path) and the model stays loaded between blocks.
 fn transcribes_in_blocks(policy: VadPolicy, unload: ModelUnloadTimeout) -> bool {
     policy == VadPolicy::Offline && unload != ModelUnloadTimeout::Immediately
+}
+
+/// Formats a long dictation's blocks: the ones closed while recording were formatted then, and
+/// the rest is formatted now for `destination`, while the last block may still be finishing.
+/// Returns the composed text, whether it is "IA parcial", and the late LLM answers still to come.
+async fn format_blocks(
+    app: &AppHandle,
+    raw: &str,
+    parts: Vec<Part>,
+    destination: &AppContext,
+) -> (ProcessedTranscription, bool, Option<LateBlocks>) {
+    let mut running = Vec::with_capacity(parts.len());
+    for part in parts {
+        let raw_part = part.raw.clone();
+        let task = match part.formatting {
+            Some(handle) => tauri::async_runtime::spawn_blocking(move || handle.join().ok()),
+            None if part.raw.trim().is_empty() => continue,
+            None => {
+                let (app, destination) = (app.clone(), destination.clone());
+                tauri::async_runtime::spawn(async move {
+                    let mode = OutputMode::Auto(destination);
+                    Some(process_transcription_output(&app, &part.raw, mode).await)
+                })
+            }
+        };
+        running.push((raw_part, task));
+    }
+    let mut blocks = Vec::with_capacity(running.len());
+    for (raw_part, task) in running {
+        let formatted = match task.await {
+            Ok(Some(formatted)) => formatted,
+            _ => {
+                error!("A block's formatting failed; its rules text is used");
+                process_transcription_output(app, &raw_part, OutputMode::RulesOnly).await
+            }
+        };
+        blocks.push(formatted);
+    }
+    let composed = long_dictation::compose(raw, blocks);
+    (composed.processed, composed.partial, composed.late)
+}
+
+/// Waits for the late LLM answers of a long dictation's blocks and applies the whole LLM text to
+/// the saved entry, like the late edit of a short one.
+fn finish_blocks_late_edit(late: LateBlocks, hm: &HistoryManager, id: i64) {
+    let Some((text, partial)) = late.wait() else {
+        return;
+    };
+    match hm.apply_blocks_late_edit(id, &text, partial) {
+        Ok(entry) => hm.announce_updated(entry),
+        Err(e) => debug!("late LLM answer of the blocks not applied: {e}"),
+    }
 }
 
 fn stop_outcome(signal: MicSignal, has_samples: bool) -> StopOutcome {
@@ -697,7 +749,23 @@ impl ShortcutAction for TranscribeAction {
         }
         let blocks = transcribes_in_blocks(vad_policy, settings.model_unload_timeout).then(|| {
             let tm = Arc::clone(&tm);
-            Arc::new(move |block: Vec<f32>| tm.transcribe(block)) as Transcribe
+            // The automatic LLM formats each block while the user still speaks; the legacy
+            // binding and rules-only dictation format the joined text after the release.
+            let format = (!self.post_process && llm_auto::llm_configured(&settings)).then(|| {
+                let app = app.clone();
+                Arc::new(move |raw: String| {
+                    let destination = OutputMode::Auto(fala_inject::foreground_app());
+                    tauri::async_runtime::block_on(process_transcription_output(
+                        &app,
+                        &raw,
+                        destination,
+                    ))
+                }) as Format
+            });
+            Blocks {
+                transcribe: Arc::new(move |block: Vec<f32>| tm.transcribe(block)) as Transcribe,
+                format,
+            }
         });
         let plan_elapsed = plan_started.elapsed();
 
@@ -924,6 +992,7 @@ impl ShortcutAction for TranscribeAction {
                     // or, for a long dictation, only what the blocks left.
                     let transcription_time = Instant::now();
                     let mut asr_blocks = 1;
+                    let mut long_parts = None;
                     let transcription_result = match tm.finalize_stream() {
                         // A finalized stream with usable text wins. An empty result
                         // (no active stream, produced nothing, or a finalize error
@@ -935,7 +1004,9 @@ impl ShortcutAction for TranscribeAction {
                         Ok(_) => match rm.block_queue().finish(&samples) {
                             Some(done) => {
                                 asr_blocks = done.blocks;
-                                done.text
+                                let raw = done.raw();
+                                long_parts = done.parts.ok();
+                                raw
                             }
                             None if rm.was_cancelled_since(cancel_generation) => Ok(String::new()),
                             None => tm.transcribe(samples),
@@ -1005,12 +1076,33 @@ impl ShortcutAction for TranscribeAction {
                             } else {
                                 OutputMode::Auto(app_context.clone())
                             };
+                            // A long dictation formatted block by block, unless the text goes to
+                            // an app where the LLM stays off: then the joined text gets the rules.
+                            let blocks = long_parts.filter(|parts| {
+                                !post_process
+                                    && !sensitive
+                                    && parts.iter().any(|p| p.formatting.is_some())
+                            });
                             let format_start = Instant::now();
-                            let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, mode),
-                                || rm.was_cancelled_since(cancel_generation),
-                            )
-                            .await
+                            let output = async {
+                                match blocks {
+                                    Some(parts) => {
+                                        format_blocks(&ah, &transcription, parts, &app_context)
+                                            .await
+                                    }
+                                    None => (
+                                        process_transcription_output(&ah, &transcription, mode)
+                                            .await,
+                                        false,
+                                        None,
+                                    ),
+                                }
+                            };
+                            let Some((processed, llm_partial, late_blocks)) =
+                                complete_unless_cancelled(output, || {
+                                    rm.was_cancelled_since(cancel_generation)
+                                })
+                                .await
                             else {
                                 debug!("Transcription operation cancelled during output handling");
                                 utils::hide_recording_overlay(&ah);
@@ -1083,9 +1175,20 @@ impl ShortcutAction for TranscribeAction {
                                         app: app_context,
                                         sensitive,
                                         paste_failed: paste_failed_for_save.load(Ordering::Acquire),
+                                        llm_partial,
                                     }) {
                                         Ok(saved) => {
                                             dictation_id = saved.dictation_id;
+                                            if let Some(late_blocks) = late_blocks {
+                                                let hm_late = Arc::clone(&hm);
+                                                tauri::async_runtime::spawn_blocking(move || {
+                                                    finish_blocks_late_edit(
+                                                        late_blocks,
+                                                        &hm_late,
+                                                        saved.id,
+                                                    );
+                                                });
+                                            }
                                             if let Some(late_edit) = late_edit {
                                                 let hm_late = Arc::clone(&hm);
                                                 tauri::async_runtime::spawn_blocking(move || {
@@ -1178,6 +1281,7 @@ impl ShortcutAction for TranscribeAction {
                                     app: Default::default(),
                                     sensitive: false,
                                     paste_failed: false,
+                                    llm_partial: false,
                                 }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }

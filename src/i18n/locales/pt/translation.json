@@ -538,6 +538,7 @@
       "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente.",
       "undoAiEdit": "Desfazer edição da IA",
       "applyAiEdit": "Aplicar edição da IA",
+      "partialAi": "IA parcial",
       "originalCopied": "Texto original copiado",
       "editedCopied": "Texto editado copiado",
       "editToggleError": "Não foi possível trocar o texto",
