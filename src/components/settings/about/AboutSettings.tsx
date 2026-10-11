@@ -9,6 +9,8 @@ import { AppDataDirectory } from "../AppDataDirectory";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ShowWhatsNewOnUpdate } from "../ShowWhatsNewOnUpdate";
 import { UPDATER_ENABLED } from "../../../lib/updater";
+import UpdateChecker from "../../update-checker";
+import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { ThemeSelector } from "../ThemeSelector";
 import { LogDirectory } from "../debug";
 import { PrivacySection } from "./PrivacySection";
@@ -45,10 +47,6 @@ export const AboutSettings: React.FC = () => {
           <span className="text-sm font-mono">v{version}</span>
         </SettingContainer>
 
-        {UPDATER_ENABLED && (
-          <ShowWhatsNewOnUpdate descriptionMode="tooltip" grouped={true} />
-        )}
-
         <SettingContainer
           title={t("settings.about.sourceCode.title")}
           description={t("settings.about.sourceCode.description")}
@@ -57,8 +55,7 @@ export const AboutSettings: React.FC = () => {
           <Button
             variant="secondary"
             size="md"
-            // TODO(repo): trocar OWNER quando o repositório for hospedado.
-            onClick={() => openUrl("https://github.com/OWNER/fala")}
+            onClick={() => openUrl("https://github.com/augusto-dmh/fala")}
           >
             {t("settings.about.sourceCode.button")}
           </Button>
@@ -67,6 +64,14 @@ export const AboutSettings: React.FC = () => {
         <AppDataDirectory descriptionMode="tooltip" grouped={true} />
         <LogDirectory grouped={true} />
       </SettingsGroup>
+
+      {UPDATER_ENABLED && (
+        <SettingsGroup title={t("settings.about.updates.group")}>
+          <UpdateChecker />
+          <UpdateChecksToggle descriptionMode="inline" grouped={true} />
+          <ShowWhatsNewOnUpdate descriptionMode="tooltip" grouped={true} />
+        </SettingsGroup>
+      )}
 
       <PrivacySection />
 

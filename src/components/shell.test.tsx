@@ -247,20 +247,26 @@ ok("C29");
 }
 ok("C30");
 
-// C31: release notes and the update checker stay hidden while the updater is off.
+// C31: the updater is on (ADR-0018): release notes, and the Updates group in About with the
+// status row and the toggle that says the check asks GitHub; the toggle left Debug.
 {
-  assert.equal(UPDATER_ENABLED, false);
+  assert.equal(UPDATER_ENABLED, true);
   assert.match(
     appTsx,
     /\{UPDATER_ENABLED && \(\s*<ErrorBoundary context="What's New">/,
   );
+  const about = read("./settings/about/AboutSettings.tsx");
   assert.match(
-    read("./settings/about/AboutSettings.tsx"),
-    /\{UPDATER_ENABLED && \(\s*<ShowWhatsNewOnUpdate/,
+    about,
+    /\{UPDATER_ENABLED && \(\s*<SettingsGroup title=\{t\("settings\.about\.updates\.group"\)\}>\s*<UpdateChecker \/>\s*<UpdateChecksToggle descriptionMode="inline"/,
   );
   const debug = read("./settings/debug/DebugSettings.tsx");
   assert.match(debug, /\{UPDATER_ENABLED && \(\s*<WhatsNewPreview/);
-  assert.match(debug, /\{UPDATER_ENABLED && \(\s*<UpdateChecksToggle/);
+  assert.doesNotMatch(debug, /UpdateChecksToggle/);
+  assert.match(
+    pt.settings.about.updates.toggle.description,
+    /consulta o GitHub/,
+  );
 }
 ok("C31");
 

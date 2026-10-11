@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Guards what ADR-0008 decides about distribution: docs/RELEASE.md exists and says what it must,
-the NSIS installer is explicit and unsigned, and the updater stays off.
+"""Guards what ADR-0008 decides about distribution (docs/RELEASE.md exists and says what it must,
+the NSIS installer is explicit and unsigned) and what ADR-0018 decides about the updater (on, with
+a minisign key and the GitHub Release feed).
 
 Run from the repo root: python3 scripts/ci/test_release_config.py [-k <test name>]
 Standard library only, so the CI job needs no pip install.
 """
 
+import base64
 import copy
 import json
 import re
@@ -17,6 +19,12 @@ CONF = ROOT / "apps" / "desktop" / "tauri.conf.json"
 RELEASE_MD = ROOT / "docs" / "RELEASE.md"
 README = ROOT / "README.md"
 CI_YML = ROOT / ".github" / "workflows" / "ci.yml"
+KEY_SCRIPT = ROOT / "scripts" / "release" / "new-updater-key.ps1"
+FEED = "https://github.com/augusto-dmh/fala/releases/latest/download/latest.json"
+# A well-formed minisign public key that verifies nothing: "Ed" and 40 zero bytes (key id + key).
+FAKE_PUBKEY = base64.b64encode(
+    b"untrusted comment: minisign public key\n" + base64.b64encode(b"Ed" + bytes(40)) + b"\n"
+).decode()
 
 SECTIONS = [
     "Antes de começar",
@@ -56,16 +64,29 @@ def release_sections() -> dict[str, str]:
     return {title: "\n".join(body) for title, body in sections.items()}
 
 
+def is_minisign_pubkey(value: str) -> bool:
+    """The base64 of a minisign .pub file, as `tauri signer generate` writes it."""
+    try:
+        lines = base64.b64decode(value, validate=True).decode("utf-8").splitlines()
+        raw = base64.b64decode(lines[1], validate=True)
+    except (ValueError, IndexError):
+        return False
+    return lines[0].startswith("untrusted comment:") and len(raw) == 42 and raw[:2] == b"Ed"
+
+
 def updater_problems(c: dict) -> list[str]:
-    """Everything in a Tauri config that would switch the updater on."""
+    """Everything in a Tauri config that keeps the updater from working as ADR-0018 decides."""
     problems = []
     updater = c.get("plugins", {}).get("updater", {})
-    if updater.get("pubkey", "") != "":
-        problems.append(f"plugins.updater.pubkey is {updater['pubkey']!r}, want ''")
-    if updater.get("endpoints", []) != []:
-        problems.append(f"plugins.updater.endpoints is {updater['endpoints']!r}, want []")
-    if c["bundle"].get("createUpdaterArtifacts") is not False:
-        problems.append(f"bundle.createUpdaterArtifacts is {c['bundle'].get('createUpdaterArtifacts')!r}, want False")
+    if not is_minisign_pubkey(updater.get("pubkey", "")):
+        problems.append(
+            f"plugins.updater.pubkey is {updater.get('pubkey')!r}, not a minisign public key; "
+            "the maintainer runs scripts/release/new-updater-key.ps1"
+        )
+    if updater.get("endpoints") != [FEED]:
+        problems.append(f"plugins.updater.endpoints is {updater.get('endpoints')!r}, want [{FEED!r}]")
+    if c["bundle"].get("createUpdaterArtifacts") is not True:
+        problems.append(f"bundle.createUpdaterArtifacts is {c['bundle'].get('createUpdaterArtifacts')!r}, want True")
     return problems
 
 
@@ -126,19 +147,40 @@ class BundleConfig(unittest.TestCase):
         for field in ("certificateThumbprint", "signCommand", "tsp"):
             self.assertNotIn(field, windows, f"bundle.windows.{field} would sign the installer")
 
-    def test_updater_stays_off(self):
+    def test_updater_on(self):
         self.assertEqual(updater_problems(conf()), [])
 
-    def test_guard_rejects_enabled_updater(self):
-        base = conf()
-        with_key = copy.deepcopy(base)
-        with_key["plugins"]["updater"]["pubkey"] = "dW50cnVzdGVkIGNvbW1lbnQ6IG5vdCBhIHJlYWwga2V5"
-        with_endpoint = copy.deepcopy(base)
-        with_endpoint["plugins"]["updater"]["endpoints"] = ["https://example.invalid/latest.json"]
-        with_artifacts = copy.deepcopy(base)
-        with_artifacts["bundle"]["createUpdaterArtifacts"] = True
-        for name, mutated in (("pubkey", with_key), ("endpoint", with_endpoint), ("artifacts", with_artifacts)):
-            self.assertTrue(updater_problems(mutated), f"guard accepted an enabled updater ({name})")
+    def test_guard_accepts_a_real_key_and_rejects_the_rest(self):
+        good = copy.deepcopy(conf())
+        good["plugins"]["updater"]["pubkey"] = FAKE_PUBKEY
+        self.assertEqual(updater_problems(good), [])
+        mutations = {
+            "placeholder": ("pubkey", "PLACEHOLDER: run scripts/release/new-updater-key.ps1"),
+            "empty key": ("pubkey", ""),
+            "no endpoint": ("endpoints", []),
+            "other endpoint": ("endpoints", ["https://example.invalid/latest.json"]),
+            "two endpoints": ("endpoints", [FEED, "https://example.invalid/latest.json"]),
+        }
+        for name, (field, value) in mutations.items():
+            mutated = copy.deepcopy(good)
+            mutated["plugins"]["updater"][field] = value
+            self.assertTrue(updater_problems(mutated), f"guard accepted {name}")
+        no_artifacts = copy.deepcopy(good)
+        no_artifacts["bundle"]["createUpdaterArtifacts"] = False
+        self.assertTrue(updater_problems(no_artifacts), "guard accepted createUpdaterArtifacts false")
+
+    def test_updater_switches_agree(self):
+        rust = (ROOT / "apps" / "desktop" / "src" / "settings.rs").read_text(encoding="utf-8")
+        ts = (ROOT / "src" / "lib" / "updater.ts").read_text(encoding="utf-8")
+        self.assertIn("pub const UPDATER_ENABLED: bool = true;", rust)
+        self.assertIn("export const UPDATER_ENABLED = true;", ts)
+
+    def test_key_script_writes_only_the_public_key(self):
+        script = KEY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("tauri signer generate -w $keyPath", script)
+        self.assertIn("Get-Content $pubPath", script)
+        self.assertNotIn("Get-Content $keyPath", script, "the script must never read the private key")
+        self.assertIn("already exists", script, "the script must refuse to overwrite a key")
 
     def test_identity_unchanged(self):
         c = conf()

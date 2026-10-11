@@ -704,11 +704,6 @@
         "lineCount": "{{count}} lines",
         "empty": "Waiting for logs… Entries appear here as the app emits them."
       },
-      "updateChecks": {
-        "label": "Check for Updates",
-        "description": "Automatically check for new versions of Fala",
-        "lockedDescription": "Disabled by system configuration (FALA_DISABLE_UPDATER)"
-      },
       "whatsNewPreview": {
         "title": "Preview What's New",
         "description": "Open the latest bundled release note without marking it as seen",
@@ -824,6 +819,39 @@
         "title": "Version",
         "description": "Current version of Fala"
       },
+      "updates": {
+        "group": "Updates",
+        "title": "Fala updates",
+        "idle": "Fala looks for a new version when it opens and every 6 hours.",
+        "checking": "Looking for a new version…",
+        "upToDate": "You are on the latest version.",
+        "downloading": "Downloading version {{version}}: {{percent}}%",
+        "ready": "Version {{version}} is ready. It installs when you restart or quit Fala.",
+        "available": "Version {{version}} is available. This copy cannot update itself: download the installer.",
+        "installing": "Installing the update…",
+        "failed": "Could not look for updates right now. Fala will try again later.",
+        "disabled": "Automatic checks are off.",
+        "checkNow": "Check now",
+        "restart": "Restart to update",
+        "later": "Later",
+        "notes": "Release notes",
+        "download": "Download installer",
+        "refusal": {
+          "dictation": "Finish the dictation to update.",
+          "meeting_recording": "Stop the meeting recording to update.",
+          "post_processing": "Wait for the processing to finish to update."
+        },
+        "toggle": {
+          "label": "Check for updates",
+          "description": "When it opens and every 6 hours, Fala asks GitHub, which sees your IP address. None of your data goes with it.",
+          "lockedDescription": "Turned off by system configuration (FALA_DISABLE_UPDATER)."
+        },
+        "portable": {
+          "title": "Manual update",
+          "message": "A portable copy cannot update itself. Download the installer, run it and pick the same folder: the Data/ folder (settings, models, recordings) is kept.",
+          "button": "Download installer"
+        }
+      },
       "whatsNewUpdates": {
         "label": "Show What's New",
         "description": "Show release notes after Fala updates"
@@ -907,21 +935,6 @@
         }
       }
     }
-  },
-  "footer": {
-    "checkingUpdates": "Checking for updates...",
-    "updateAvailableShort": "Update available",
-    "upToDate": "Up to date",
-    "updateCheckingDisabled": "Update Checking Disabled",
-    "downloading": "Downloading... {{progress}}%",
-    "installing": "Installing...",
-    "preparing": "Preparing...",
-    "checkForUpdates": "Check for updates",
-    "portableUpdateTitle": "Manual update required",
-    "portableUpdateMessage": "Portable installs cannot be updated automatically. Download the installer for your system below, run it, and install to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
-    "portableUpdateButton": "Download installer",
-    "portableUpdateBrowseMessage": "Portable installs cannot be updated automatically. Download the latest version for your system from GitHub Releases and install it to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
-    "portableUpdateBrowseButton": "Open GitHub Releases"
   },
   "whatsNew": {
     "title": "New in Fala v{{version}}"

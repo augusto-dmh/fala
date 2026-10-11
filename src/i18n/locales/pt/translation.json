@@ -704,11 +704,6 @@
         "lineCount": "{{count}} linhas",
         "empty": "Aguardando logs… As entradas aparecem aqui à medida que o app as emite."
       },
-      "updateChecks": {
-        "label": "Verificar Atualizações",
-        "description": "Verificar automaticamente novas versões do Fala",
-        "lockedDescription": "Desativado pela configuração do sistema (FALA_DISABLE_UPDATER)"
-      },
       "soundTheme": {
         "label": "Tema de Som",
         "description": "Escolha um tema de som para feedback de início e parada de gravação"
@@ -824,6 +819,39 @@
         "title": "Versão",
         "description": "Versão atual do Fala"
       },
+      "updates": {
+        "group": "Atualizações",
+        "title": "Atualizações do Fala",
+        "idle": "O Fala procura uma versão nova ao abrir e a cada 6 horas.",
+        "checking": "Procurando uma versão nova…",
+        "upToDate": "Você está na versão mais recente.",
+        "downloading": "Baixando a versão {{version}}: {{percent}}%",
+        "ready": "A versão {{version}} está pronta. Ela instala quando você reiniciar ou sair do Fala.",
+        "available": "A versão {{version}} está disponível. Esta cópia não se atualiza sozinha: baixe o instalador.",
+        "installing": "Instalando a atualização…",
+        "failed": "Não deu para procurar atualizações agora. O Fala tenta de novo mais tarde.",
+        "disabled": "A procura automática está desligada.",
+        "checkNow": "Verificar agora",
+        "restart": "Reiniciar para atualizar",
+        "later": "Depois",
+        "notes": "Notas da versão",
+        "download": "Baixar instalador",
+        "refusal": {
+          "dictation": "Termine o ditado para atualizar.",
+          "meeting_recording": "Pare a gravação da reunião para atualizar.",
+          "post_processing": "Espere o processamento terminar para atualizar."
+        },
+        "toggle": {
+          "label": "Procurar atualizações",
+          "description": "Ao abrir e a cada 6 horas, o Fala consulta o GitHub, que vê o seu endereço IP. Nenhum dado seu vai junto.",
+          "lockedDescription": "Desligado pela configuração do sistema (FALA_DISABLE_UPDATER)."
+        },
+        "portable": {
+          "title": "Atualização manual",
+          "message": "Uma cópia portátil não se atualiza sozinha. Baixe o instalador, execute-o e escolha a mesma pasta: a pasta Data/ (configurações, modelos, gravações) é mantida.",
+          "button": "Baixar instalador"
+        }
+      },
       "appDataDirectory": {
         "title": "Diretório de Dados do App",
         "description": "Local onde o Fala armazena seus dados"
@@ -907,21 +935,6 @@
         }
       }
     }
-  },
-  "footer": {
-    "checkingUpdates": "Verificando atualizações...",
-    "updateAvailableShort": "Atualização disponível",
-    "upToDate": "Atualizado",
-    "updateCheckingDisabled": "Verificação de Atualização Desabilitada",
-    "downloading": "Baixando... {{progress}}%",
-    "installing": "Instalando...",
-    "preparing": "Preparando...",
-    "checkForUpdates": "Verificar atualizações",
-    "portableUpdateTitle": "Atualização manual necessária",
-    "portableUpdateMessage": "Instalações portáteis não podem ser atualizadas automaticamente. Baixe abaixo o instalador para o seu sistema, execute-o e instale na mesma pasta — a sua pasta Data/ (configurações, modelos, gravações) é mantida.",
-    "portableUpdateButton": "Baixar instalador",
-    "portableUpdateBrowseMessage": "Instalações portáteis não podem ser atualizadas automaticamente. Baixe a versão mais recente para o seu sistema no GitHub Releases e instale-a na mesma pasta — a sua pasta Data/ (configurações, modelos, gravações) é mantida.",
-    "portableUpdateBrowseButton": "Abrir GitHub Releases"
   },
   "common": {
     "loading": "Carregando...",

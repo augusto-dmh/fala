@@ -28,7 +28,7 @@ import { requestConsent } from "./components/meeting/meetingModel";
 import { UPDATER_ENABLED } from "./lib/updater";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
-import { commands } from "@/bindings";
+import { commands, events } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 // "microphone" is the returning user whose microphone Windows now denies:
@@ -167,6 +167,18 @@ function App() {
     });
     return () => {
       unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
+  // An update install was refused (tray or About): say what is running (ADR-0018).
+  useEffect(() => {
+    const unlisten = events.updateStatus.listen(({ payload }) => {
+      if (payload.refusal) {
+        toast.warning(t(`settings.about.updates.refusal.${payload.refusal}`));
+      }
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
     };
   }, [t]);
 
@@ -360,7 +372,7 @@ function App() {
         dir={direction}
         className="h-screen flex flex-col select-none cursor-default"
       >
-        {/* Release notes only make sense with the updater on (ADR-0008). */}
+        {/* Release notes only make sense with the updater on (ADR-0018). */}
         {UPDATER_ENABLED && (
           <ErrorBoundary context="What's New">
             <WhatsNewGate />

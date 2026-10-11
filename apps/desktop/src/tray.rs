@@ -985,11 +985,11 @@ mod tests {
     }
 
     #[test]
-    fn check_updates_item_hidden_while_updater_off() {
-        // The updater is off (ADR-0008), so the item would do nothing.
+    fn check_updates_item_shown_while_updater_on() {
+        // The updater is on (ADR-0018); FALA_DISABLE_UPDATER is not set in tests.
         let updater_enabled = settings::UPDATER_ENABLED;
-        assert!(!updater_enabled);
-        assert!(!check_updates_item_visible());
+        assert!(updater_enabled);
+        assert!(check_updates_item_visible());
     }
 
     #[test]
