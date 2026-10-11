@@ -14,6 +14,7 @@ mod helpers;
 mod input;
 mod llm_auto;
 mod llm_client;
+mod long_dictation;
 mod managers;
 mod meeting;
 mod memory;

@@ -346,6 +346,7 @@ fn metrics(
         fallback: None,
         model: "parakeet-tdt-0.6b-v3".to_string(),
         app: None,
+        blocks: 1,
     }
 }
 

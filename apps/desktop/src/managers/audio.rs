@@ -1,6 +1,7 @@
 use crate::audio_toolkit::list_input_devices;
 use crate::dictation_capture::{DictationRecorder, MicSignal, VadPolicy};
 use crate::helpers::clamshell;
+use crate::long_dictation::{BlockQueue, Transcribe};
 use crate::managers::transcription::StreamRouter;
 use crate::settings::{get_settings, write_settings, AppSettings};
 use crate::utils;
@@ -273,6 +274,7 @@ fn create_audio_recorder(
     app_handle: &tauri::AppHandle,
     selected_channel: Option<u16>,
     stream_router: Arc<StreamRouter>,
+    blocks: Arc<BlockQueue>,
 ) -> Result<DictationRecorder, anyhow::Error> {
     // The dictation VAD is always the bundled Silero v4 (ADR-0009); a stored
     // `vad_backend = "earshot"` is ignored.
@@ -302,7 +304,8 @@ fn create_audio_recorder(
             move |frame| {
                 router.feed(frame);
             }
-        });
+        })
+        .with_block_callback(move |block| blocks.submit(block));
 
     Ok(recorder)
 }
@@ -341,6 +344,8 @@ pub struct AudioRecordingManager {
     close_generation: Arc<AtomicU64>,
     cancel_generation: Arc<AtomicU64>,
     stream_router: Arc<StreamRouter>,
+    /// The long-dictation blocks of the recording in flight, armed by `TranscribeAction::start`.
+    blocks: Arc<BlockQueue>,
     /// Lock-free mirror of "is the state in {Recording, Stopping}",
     /// maintained by `set_state()`. The hot-path `is_recording()` reads THIS
     /// instead of the std `state` mutex, so a UI poll can no longer deadlock
@@ -386,6 +391,7 @@ impl AudioRecordingManager {
             close_generation: Arc::new(AtomicU64::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
             stream_router,
+            blocks: Arc::new(BlockQueue::default()),
             recording_active: Arc::new(AtomicBool::new(false)),
             capture_generation: Arc::new(AtomicU64::new(0)),
             cached_device: Arc::new(Mutex::new(None)),
@@ -584,9 +590,15 @@ impl AudioRecordingManager {
                 &self.app_handle,
                 settings.selected_channel,
                 Arc::clone(&self.stream_router),
+                Arc::clone(&self.blocks),
             )?);
         }
         Ok(())
+    }
+
+    /// The block queue of the recording in flight.
+    pub fn block_queue(&self) -> &BlockQueue {
+        &self.blocks
     }
 
     pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
@@ -808,6 +820,7 @@ impl AudioRecordingManager {
         &self,
         binding_id: &str,
         vad_policy: VadPolicy,
+        blocks: Option<Transcribe>,
     ) -> Result<RecordingReadiness, String> {
         let mut state = self.state.lock().unwrap();
 
@@ -827,6 +840,8 @@ impl AudioRecordingManager {
             }
 
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                // Armed before the capture starts, so no block of this recording is missed.
+                self.blocks.arm(blocks);
                 match rec.start(vad_policy) {
                     Ok(receiver) => {
                         let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
@@ -982,6 +997,7 @@ impl AudioRecordingManager {
 
                 if self.was_cancelled_since(cancel_generation) {
                     debug!("Recording stop cancelled; discarding captured samples");
+                    self.blocks.cancel();
                     return None;
                 }
 
@@ -1021,6 +1037,7 @@ impl AudioRecordingManager {
     pub fn cancel_recording(&self) {
         self.invalidate_recording_readiness();
         self.cancel_generation.fetch_add(1, Ordering::AcqRel);
+        self.blocks.cancel();
         let mut state = self.state.lock().unwrap();
 
         match *state {
