@@ -36,6 +36,9 @@ pub struct Segment {
     pub text: String,
 }
 
+/// Teto do perfil no payload, em caracteres.
+pub const PROFILE_MAX_CHARS: usize = 300;
+
 /// Tudo o que a geração de notas de uma sessão recebe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotesInput {
@@ -46,7 +49,12 @@ pub struct NotesInput {
     pub start_time: String,
     /// Idioma das notas.
     pub language: Language,
+    /// O perfil que o usuário escreveu nas configurações das reuniões.
+    pub profile: String,
     pub dictionary: Dictionary,
+    /// Os nomes digitados em "Quem estava", como estão; o payload só leva os que passam por
+    /// [`NotesInput::participant_names`].
+    pub participants: Vec<String>,
     pub template: Template,
     /// O texto que o usuário digitou durante a sessão; cada linha não vazia vira uma anotação.
     pub annotations: String,
@@ -97,6 +105,37 @@ impl NotesInput {
             .map(|line| line.replace(GENERATED_MARKER, " ").trim().to_string())
             .filter(|line| !line.is_empty())
             .collect()
+    }
+
+    /// O perfil aparado e cortado em [`PROFILE_MAX_CHARS`] caracteres.
+    pub(crate) fn profile_text(&self) -> String {
+        let profile: String = self
+            .profile
+            .trim()
+            .chars()
+            .take(PROFILE_MAX_CHARS)
+            .collect();
+        profile.trim_end().to_string()
+    }
+
+    /// Os participantes que podem sair (ADR-0016): aparados, sem vazios, sem repetidos (sem
+    /// diferenciar maiúsculas) e sem nenhuma entrada que contenha `@`, para nunca mandar um
+    /// e-mail nem a parte local de um.
+    pub fn participant_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for name in &self.participants {
+            let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+            if name.is_empty() || name.contains('@') {
+                continue;
+            }
+            if !names
+                .iter()
+                .any(|n| n.to_lowercase() == name.to_lowercase())
+            {
+                names.push(name);
+            }
+        }
+        names
     }
 }
 

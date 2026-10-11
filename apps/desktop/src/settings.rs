@@ -160,6 +160,19 @@ pub enum PasteMethod {
     ExternalScript,
 }
 
+/// The language meeting notes are written in (ADR-0016): pt-BR unless chosen, even when the
+/// call mixes languages; `App` follows the interface language.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+pub enum NotesLanguage {
+    #[default]
+    #[serde(rename = "pt-BR")]
+    PtBr,
+    #[serde(rename = "en")]
+    En,
+    #[serde(rename = "app")]
+    App,
+}
+
 /// How the transcribe shortcut's key events drive a recording.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -588,6 +601,14 @@ pub struct AppSettings {
     /// Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
     #[serde(default)]
     pub dictionary_replacements: Vec<crate::dictionary::DictionaryReplacement>,
+    /// What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
+    #[serde(default)]
+    pub notes_profile: String,
+    #[serde(default)]
+    pub notes_language: NotesLanguage,
+    /// Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
+    #[serde(default = "default_meeting_keyterms")]
+    pub meeting_keyterms: bool,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -837,6 +858,10 @@ fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
         .unwrap_or_else(|| "en".to_string())
+}
+
+fn default_meeting_keyterms() -> bool {
+    true
 }
 
 /// The idle pill appears only for whoever turns it on: on by default it would show up, unasked,
@@ -1172,6 +1197,9 @@ pub fn get_default_settings() -> AppSettings {
         log_level: default_log_level(),
         custom_words: Vec::new(),
         dictionary_replacements: Vec::new(),
+        notes_profile: String::new(),
+        notes_language: NotesLanguage::default(),
+        meeting_keyterms: default_meeting_keyterms(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),

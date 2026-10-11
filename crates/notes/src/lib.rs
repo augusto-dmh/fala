@@ -1,10 +1,11 @@
 //! Notas de reunião geradas por LLM (fase 2, F6).
 //!
 //! Recebe a transcrição com id por segmento, as anotações do usuário, título, data, idioma,
-//! dicionário e um template, e devolve Markdown em que as anotações são o bloco humano e cada
-//! linha gerada leva um marcador e um ponteiro por fonte (segmento ou linha de anotação).
-//! O que sai para o LLM é só o `NotesPayload`, a lista enumerada da ADR-0016 (proposta), e
-//! nada sai numa sessão "só local".
+//! perfil, dicionário, participantes e um template, e devolve Markdown em que as anotações são o
+//! bloco humano e cada linha gerada leva um marcador e um ponteiro por fonte (segmento ou linha
+//! de anotação), mais um título (só para sessão sem título) e sugestões de nome por "Pessoa N",
+//! que nunca se aplicam sozinhas. O que sai para o LLM é só o `NotesPayload`, a lista enumerada
+//! da ADR-0016, e nada sai numa sessão "só local".
 
 mod claude;
 mod document;
@@ -19,10 +20,10 @@ pub use claude::{
     DEFAULT_TIMEOUT, KEY_PROVIDER, SYSTEM_PROMPT,
 };
 pub use document::note_document;
-pub use input::{Channel, NotesInput, Segment, Speaker};
+pub use input::{Channel, NotesInput, Segment, Speaker, PROFILE_MAX_CHARS};
 pub use key::{ApiKey, KeySource};
 pub use payload::NotesPayload;
-pub use render::{render_transcript, Notes, GENERATED_MARKER};
+pub use render::{render_transcript, Notes, SpeakerSuggestion, GENERATED_MARKER};
 pub use template::{builtin_templates, Section, Template, TEMPLATE_SCHEMA};
 
 /// Erros de `fala-notes`. Nenhuma variante carrega a transcrição, as anotações, o corpo de uma
@@ -72,9 +73,10 @@ pub fn generate_notes(input: &NotesInput, llm: &dyn NotesLlm) -> Result<Notes, N
     let response = render::parse_response(&raw)?;
     let notes = render::notes(input, &response);
     log::info!(
-        "notas geradas: {} fontes descartadas, {} linhas sem fonte",
+        "notas geradas: {} fontes descartadas, {} linhas sem fonte, {} sugestões de nome",
         notes.dropped_sources,
-        notes.unsourced_lines
+        notes.unsourced_lines,
+        notes.speaker_suggestions.len()
     );
     Ok(notes)
 }
@@ -111,7 +113,9 @@ pub(crate) mod fixture {
             date: "2026-10-02".to_string(),
             start_time: "14:02".to_string(),
             language: Language::PtBr,
+            profile: "PM do Fala; reuniões de produto".to_string(),
             dictionary: Dictionary::new(["Fala", "Parakeet"]),
+            participants: vec!["Ana".to_string(), "Bruno Lima".to_string()],
             template,
             annotations: "decidir data\n\n  \nAna: contrato".to_string(),
             transcript: vec![

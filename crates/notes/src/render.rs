@@ -1,13 +1,13 @@
 //! O Markdown das notas: as anotações como bloco humano, cada linha gerada com o marcador e um
 //! ponteiro por fonte, no formato de link de bloco do Obsidian (`[[#^s12|01:05]]`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use fala_core::Language;
 use serde::Deserialize;
 
 use crate::payload::{annotation_id, segment_id, speaker_label};
-use crate::{NotesError, NotesInput, Segment};
+use crate::{NotesError, NotesInput, Segment, Speaker};
 
 /// Fim de toda linha gerada pelo LLM. Comentário HTML: o Obsidian e os renderizadores CommonMark
 /// não o mostram, e a UI o usa para pintar a linha.
@@ -23,12 +23,46 @@ pub struct Notes {
     pub dropped_sources: usize,
     /// Linhas geradas que ficaram sem nenhuma fonte válida.
     pub unsourced_lines: usize,
+    /// O título que o LLM propôs, só quando a sessão não tem título; nunca troca um título do
+    /// usuário.
+    pub title: Option<String>,
+    /// Um nome por "Pessoa N", para a pessoa aplicar com um clique; nada aqui muda os rótulos.
+    pub speaker_suggestions: Vec<SpeakerSuggestion>,
 }
 
-/// O JSON que o prompt pede ao LLM.
+/// "Pessoa `person`" talvez seja `name`, porque `reason`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeakerSuggestion {
+    pub person: u32,
+    /// Um dos participantes, na grafia que o usuário digitou.
+    pub name: String,
+    /// Uma frase, sem quebra de linha.
+    pub reason: String,
+}
+
+/// Teto do título gerado, em caracteres.
+const TITLE_MAX_CHARS: usize = 80;
+/// Teto da justificativa de uma sugestão, em caracteres.
+const REASON_MAX_CHARS: usize = 200;
+
+/// O JSON que o prompt pede ao LLM. `title` e `speaker_suggestions` são opcionais na leitura:
+/// sem eles, as notas saem como antes.
 #[derive(Debug, Deserialize)]
 pub(crate) struct Response {
+    #[serde(default)]
+    title: Option<String>,
     sections: Vec<ResponseSection>,
+    #[serde(default)]
+    speaker_suggestions: Vec<ResponseSuggestion>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponseSuggestion {
+    /// Lido largo: um número fora de `u32` descarta só a sugestão, não as notas.
+    person: i64,
+    name: String,
+    #[serde(default)]
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +124,62 @@ fn one_line(text: &str) -> String {
         .join(" ")
 }
 
+/// [`one_line`] cortada em `max` caracteres.
+fn short_line(text: &str, max: usize) -> String {
+    let line: String = one_line(text).chars().take(max).collect();
+    line.trim_end().to_string()
+}
+
+/// O título da resposta, só se a sessão está sem título.
+fn generated_title(input: &NotesInput, response: &Response) -> Option<String> {
+    if !input.title.trim().is_empty() {
+        return None;
+    }
+    let title = short_line(response.title.as_deref()?, TITLE_MAX_CHARS);
+    (!title.is_empty()).then_some(title)
+}
+
+/// As sugestões que valem: para uma "Pessoa N" que está na transcrição, com um nome dos
+/// participantes que ainda não é rótulo de ninguém, uma por pessoa e uma por nome.
+fn speaker_suggestions(input: &NotesInput, response: &Response) -> Vec<SpeakerSuggestion> {
+    let participants = input.participant_names();
+    let mut people = HashSet::new();
+    let mut taken = HashSet::new();
+    for segment in &input.transcript {
+        match &segment.speaker {
+            Speaker::Person(n) => {
+                people.insert(*n);
+            }
+            Speaker::Named(name) => {
+                taken.insert(name.to_lowercase());
+            }
+            Speaker::Me => {}
+        }
+    }
+    let mut out: Vec<SpeakerSuggestion> = Vec::new();
+    for suggestion in &response.speaker_suggestions {
+        let Ok(person) = u32::try_from(suggestion.person) else {
+            continue;
+        };
+        if !people.contains(&person) || out.iter().any(|s| s.person == person) {
+            continue;
+        }
+        let wanted = one_line(&suggestion.name).to_lowercase();
+        let Some(name) = participants.iter().find(|p| p.to_lowercase() == wanted) else {
+            continue;
+        };
+        if taken.contains(&wanted) || out.iter().any(|s| s.name == *name) {
+            continue;
+        }
+        out.push(SpeakerSuggestion {
+            person,
+            name: name.clone(),
+            reason: short_line(&suggestion.reason, REASON_MAX_CHARS),
+        });
+    }
+    out
+}
+
 pub(crate) fn annotations_block(input: &NotesInput) -> String {
     let lines = input.annotation_lines();
     if lines.is_empty() {
@@ -108,6 +198,8 @@ pub(crate) fn local_only(input: &NotesInput) -> Notes {
         generated: false,
         dropped_sources: 0,
         unsourced_lines: 0,
+        title: None,
+        speaker_suggestions: Vec::new(),
     }
 }
 
@@ -181,6 +273,8 @@ pub(crate) fn notes(input: &NotesInput, response: &Response) -> Notes {
         generated: true,
         dropped_sources,
         unsourced_lines,
+        title: generated_title(input, response),
+        speaker_suggestions: speaker_suggestions(input, response),
     }
 }
 
@@ -467,6 +561,88 @@ mod tests {
             notes.markdown,
             "## Anotações\n\ndecidir data ^a1\n\nAna: contrato ^a2\n"
         );
+    }
+
+    fn with_extras(title: &str, suggestions: serde_json::Value) -> String {
+        serde_json::json!({
+            "title": title,
+            "sections": [{"title": "Resumo", "lines": []}],
+            "speaker_suggestions": suggestions,
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn generated_title_never_replaces_the_users() {
+        let response = parse_response(&with_extras(
+            "Data do lançamento
+de novembro",
+            serde_json::json!([]),
+        ))
+        .unwrap();
+        let mut input = input();
+        assert_eq!(notes(&input, &response).title, None);
+
+        input.title = "  ".to_string();
+        assert_eq!(
+            notes(&input, &response).title.as_deref(),
+            Some("Data do lançamento de novembro")
+        );
+
+        let long = parse_response(&with_extras(&"x".repeat(200), serde_json::json!([]))).unwrap();
+        assert_eq!(notes(&input, &long).title.unwrap().chars().count(), 80);
+        let blank = parse_response(&with_extras(
+            " 
+ ",
+            serde_json::json!([]),
+        ))
+        .unwrap();
+        assert_eq!(notes(&input, &blank).title, None);
+        let missing = parse_response(&one_section(&[])).unwrap();
+        assert_eq!(notes(&input, &missing).title, None);
+        assert_eq!(local_only(&input).title, None);
+    }
+
+    #[test]
+    fn invalid_speaker_suggestions_are_dropped() {
+        let mut input = input();
+        input.transcript.push(segment(
+            20,
+            Speaker::Person(2),
+            90_000,
+            "Fecho com o jurídico.",
+        ));
+        input.participants.push("carla@empresa.com".to_string());
+        input.participants.push("Dani".to_string());
+        let response = parse_response(&with_extras(
+            "",
+            serde_json::json!([
+                {"person": 1, "name": "bruno lima", "reason": "Propõe a data,
+            como o Bruno na pauta."},
+                {"person": 1, "name": "Dani", "reason": "segunda para a mesma pessoa"},
+                {"person": -1, "name": "Dani", "reason": "número negativo"},
+                {"person": 4_294_967_297_i64, "name": "Dani", "reason": "fora de u32"},
+                {"person": 7, "name": "Bruno Lima", "reason": "Pessoa 7 não existe"},
+                {"person": 0, "name": "Bruno Lima", "reason": "Pessoa 0 não existe"},
+                {"person": 2, "name": "Ana", "reason": "Ana já é rótulo"},
+                {"person": 2, "name": "Carla", "reason": "fora dos participantes"},
+                {"person": 2, "name": "carla@empresa.com", "reason": "e-mail"},
+                {"person": 2, "name": "Bruno Lima", "reason": "nome já sugerido"},
+            ]),
+        ))
+        .unwrap();
+        assert_eq!(
+            notes(&input, &response).speaker_suggestions,
+            [SpeakerSuggestion {
+                person: 1,
+                name: "Bruno Lima".to_string(),
+                reason: "Propõe a data, como o Bruno na pauta.".to_string(),
+            }]
+        );
+
+        input.participants.clear();
+        assert!(notes(&input, &response).speaker_suggestions.is_empty());
+        assert!(local_only(&input).speaker_suggestions.is_empty());
     }
 
     #[test]

@@ -11,6 +11,7 @@
 //! meeting records, and the dictation stream is closed so the mic has a single stream.
 
 pub(crate) mod clip;
+pub(crate) mod context;
 mod disk;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
