@@ -754,25 +754,6 @@ async openMicrophonePrivacySettings() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * [Escolher microfone] in an overlay notice: closes the notice and opens the microphone
- * selector (Configurações > Geral) in the main window.
- */
-async openMicrophoneSettings() : Promise<void> {
-    await TAURI_INVOKE("open_microphone_settings");
-},
-/**
- * [Resolver] in an overlay notice: closes the notice and opens the Windows page that fixes
- * the microphone; elsewhere, the microphone selector.
- */
-async openMicrophoneTroubleshooting() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("open_microphone_troubleshooting") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };

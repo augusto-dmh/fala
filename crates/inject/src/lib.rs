@@ -6,7 +6,8 @@
 //!
 //! Inserção: [`platform_injector`] devolve o [`Injector`] do sistema operacional, que cola por
 //! clipboard + acorde ([`PasteChord`], Ctrl+V por padrão) e devolve ao clipboard o que estava
-//! nele, a sequência que o spike 03 mediu.
+//! nele, a sequência que o spike 03 mediu. O acorde depende do app: num terminal
+//! ([`is_terminal`]) é Shift+Insert, porque Ctrl+V lá não cola ([`PasteChord::for_app`]).
 //! O texto só é entregue quando um app o lê do clipboard, e essa leitura é a prova da cola: sem
 //! ela em `read_timeout`, `insert` devolve `InjectError::PasteNotRead`. Se o acorde falha,
 //! devolve `InjectError::Keystroke`. Nos dois casos o clipboard volta ao conteúdo de antes (se
@@ -19,9 +20,11 @@
 
 mod foreground;
 mod paste;
+mod terminal;
 
 pub use foreground::{app_name_from_exe_path, foreground_app, try_foreground_app};
 pub use paste::{platform_injector, Injector, PasteChord, PasteConfig};
+pub use terminal::is_terminal;
 
 /// Erros de `fala-inject`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

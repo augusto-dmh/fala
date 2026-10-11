@@ -6,7 +6,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "windows")]
 use winreg::{
@@ -151,55 +151,6 @@ pub fn open_microphone_privacy_settings() -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         Err("Opening microphone privacy settings is only supported on Windows".to_string())
-    }
-}
-
-/// The Windows settings page for a microphone that heard nothing: the privacy page when
-/// desktop apps are denied the microphone (Windows then delivers silence), the sound page
-/// (input device, volume, mute) otherwise.
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-fn troubleshooting_page(access_denied: bool) -> &'static str {
-    if access_denied {
-        "ms-settings:privacy-microphone"
-    } else {
-        "ms-settings:sound"
-    }
-}
-
-/// [Escolher microfone] in an overlay notice: closes the notice and opens the microphone
-/// selector (Configurações > Geral) in the main window.
-#[tauri::command]
-#[specta::specta]
-pub fn open_microphone_settings(app: AppHandle) {
-    crate::utils::hide_recording_overlay(&app);
-    crate::show_main_window(&app);
-    let _ = app.emit_to("main", "open-microphone-settings", ());
-}
-
-/// [Resolver] in an overlay notice: closes the notice and opens the Windows page that fixes
-/// the microphone; elsewhere, the microphone selector.
-#[tauri::command]
-#[specta::specta]
-pub fn open_microphone_troubleshooting(app: AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        crate::utils::hide_recording_overlay(&app);
-        let denied = matches!(
-            get_windows_microphone_permission_status_impl().overall_access,
-            PermissionAccess::Denied
-        );
-        Command::new("cmd")
-            .args(["/C", "start", "", troubleshooting_page(denied)])
-            .spawn()
-            .map_err(|e| format!("Failed to open Windows microphone settings: {}", e))?;
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        open_microphone_settings(app);
-        Ok(())
     }
 }
 
@@ -433,15 +384,4 @@ pub async fn set_selected_channel(app: AppHandle, channel: Option<u16>) -> Resul
     settings.selected_channel = channel;
     write_settings(&app, settings);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn troubleshooting_page_follows_permission() {
-        assert_eq!(troubleshooting_page(true), "ms-settings:privacy-microphone");
-        assert_eq!(troubleshooting_page(false), "ms-settings:sound");
-    }
 }

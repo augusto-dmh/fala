@@ -54,7 +54,7 @@ const OVERLAY_HEIGHT: f64 = 50.0;
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
-// A notice card (two lines with actions), alone or stacked over the 30h pill.
+// A notice card, alone in the window or (with a recording) stacked over the 30h pill.
 const OVERLAY_NOTICE_WIDTH: f64 = 340.0;
 const OVERLAY_NOTICE_HEIGHT: f64 = 110.0;
 
@@ -71,10 +71,6 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NoticeKind {
-    /// The microphone the recording opened, the first time it differs from the last one.
-    MicInUse,
-    /// The recording heard nothing at all.
-    MicMuted,
     /// The OS denied microphone access.
     MicDenied,
     /// No input device was found.
@@ -85,15 +81,10 @@ pub enum NoticeKind {
     ModelMissing,
 }
 
-/// How long a notice stays: the microphone name briefly, the notices with actions long
-/// enough to reach them.
+/// How long a notice stays: the microphone notices long enough to act on them.
 pub fn notice_duration(kind: NoticeKind) -> std::time::Duration {
     let ms = match kind {
-        NoticeKind::MicInUse => 1_500,
-        NoticeKind::MicMuted
-        | NoticeKind::MicDenied
-        | NoticeKind::NoMic
-        | NoticeKind::MicFailed => 6_000,
+        NoticeKind::MicDenied | NoticeKind::NoMic | NoticeKind::MicFailed => 6_000,
         NoticeKind::ModelMissing => 5_000,
     };
     std::time::Duration::from_millis(ms)
@@ -892,8 +883,6 @@ mod tests {
     #[test]
     fn notice_durations_and_codes() {
         let expected = [
-            (NoticeKind::MicInUse, "mic_in_use", 1_500),
-            (NoticeKind::MicMuted, "mic_muted", 6_000),
             (NoticeKind::MicDenied, "mic_denied", 6_000),
             (NoticeKind::NoMic, "no_mic", 6_000),
             (NoticeKind::MicFailed, "mic_failed", 6_000),

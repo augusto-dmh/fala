@@ -49,8 +49,7 @@ const RecordingOverlay: React.FC = () => {
   // The recording is close to the session limit (19 of 20 minutes): the dot
   // turns amber until the overlay hides or a new session shows.
   const [limitWarning, setLimitWarning] = useState(false);
-  // A notice from the backend (`overlay-notice`): a failed gesture or a muted microphone
-  // alone, or the microphone's name stacked over the recording pill.
+  // A notice from the backend (`overlay-notice`): why the dictation did not start.
   const [notice, setNotice] = useState<OverlayNotice | null>(null);
   // Recording starts while the model loads in the background. When the in-flight load started
   // (ms), or null: after the key is released the wait is the load, not the transcription, and a
@@ -283,21 +282,10 @@ const RecordingOverlay: React.FC = () => {
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
   };
 
-  const noticeCard = notice && (
-    <Notice
-      kind={notice.kind}
-      text={t(noticeKey(notice.kind), { device: notice.device ?? "" })}
-      chooseLabel={t("overlay.notice.chooseMic")}
-      resolveLabel={t("overlay.notice.resolve")}
-      onChoose={() => commands.openMicrophoneSettings()}
-      onResolve={() => commands.openMicrophoneTroubleshooting()}
-    />
-  );
-
   if (notice?.alone) {
     return (
       <div dir={direction} className={`ov-stage ${position}`}>
-        {noticeCard}
+        <Notice kind={notice.kind} text={t(noticeKey(notice.kind))} />
       </div>
     );
   }
@@ -455,31 +443,20 @@ const RecordingOverlay: React.FC = () => {
       ? t("overlay.recording")
       : t("overlay.processing");
 
-  const pill = (
-    <Pill
-      mode={pillMode}
-      holdToTalk={holdToTalk}
-      limit={limitWarning}
-      modelLoading={pillLoading}
-      ready={captureReady}
-      levels={levels}
-      label={pillLabel}
-    />
-  );
-
   return (
     <div
       dir={direction}
       className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
     >
-      {noticeCard ? (
-        <div className="ov-stack">
-          {noticeCard}
-          {pill}
-        </div>
-      ) : (
-        pill
-      )}
+      <Pill
+        mode={pillMode}
+        holdToTalk={holdToTalk}
+        limit={limitWarning}
+        modelLoading={pillLoading}
+        ready={captureReady}
+        levels={levels}
+        label={pillLabel}
+      />
     </div>
   );
 };
