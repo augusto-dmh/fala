@@ -53,13 +53,21 @@ export function titleOf(summary: MeetingSummary, t: Translate): string {
   return title || t("meeting.untitled", { date: when(summary.created_at) });
 }
 
-/** `[mm:ss] Eu: texto` / `[mm:ss] Pessoa 2: texto`. */
+/** `[mm:ss] Eu: texto` / `[mm:ss] Pessoa 2: texto`, or the name applied to Pessoa 2. */
 export function lineText(line: MeetingLine, t: Translate): string {
   const who =
     line.person === null
       ? t("meeting.speaker.me")
-      : t("meeting.speaker.person", { n: line.person });
+      : (line.name ?? t("meeting.speaker.person", { n: line.person }));
   return `[${clock(line.t0_ms)}] ${who}: ${line.text}`;
+}
+
+/** "Who was there" as typed: names split by comma, semicolon or line break, without blanks. */
+export function parseParticipants(typed: string): string[] {
+  return typed
+    .split(/[,;\n]/)
+    .map((name) => name.trim().replace(/\s+/g, " "))
+    .filter((name) => name !== "");
 }
 
 /**

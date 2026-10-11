@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { MeetingDetail, MeetingTemplate } from "@/bindings";
 import { Button } from "../ui/Button";
 import { AnnotationsField } from "./AnnotationsField";
+import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { lineText, titleOf } from "./meetingModel";
 
 export interface MeetingViewProps {
@@ -17,6 +18,8 @@ export interface MeetingViewProps {
   onCancelTranscription: () => void;
   onGenerate: (templateId: string) => void;
   onCopy: () => void;
+  /** A suggested name was applied: reload the transcript. */
+  onNamesChanged?: () => void;
 }
 
 /** One session: the draft's agenda, or the transcript, the typed notes and the notes. */
@@ -43,6 +46,11 @@ export function MeetingView(props: MeetingViewProps) {
           }
         />
       )}
+      <MeetingPeoplePanel
+        id={detail.summary.id}
+        notes={detail.notes_md}
+        onNamesChanged={props.onNamesChanged}
+      />
       {draft ? (
         <Button onClick={props.onRecordDraft}>
           {t("meeting.view.recordDraft")}
