@@ -1488,7 +1488,11 @@ paste_failed: boolean;
 /**
  * The dictation was not delivered and has text to recover (see `is_discarded`).
  */
-discarded: boolean }
+discarded: boolean; 
+/**
+ * A long dictation where some blocks have the LLM text and others the rules ("IA parcial").
+ */
+llm_partial: boolean }
 /**
  * Qual texto o item mostra agora: o final ou, depois de desfazer, o bruto.
  */

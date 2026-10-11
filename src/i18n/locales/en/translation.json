@@ -653,6 +653,7 @@
       "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
       "undoAiEdit": "Undo AI edit",
       "applyAiEdit": "Apply AI edit",
+      "partialAi": "Partial AI",
       "originalCopied": "Original text copied",
       "editedCopied": "Edited text copied",
       "editToggleError": "Couldn't switch the text",
