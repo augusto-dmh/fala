@@ -785,6 +785,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::set_post_process_selected_prompt,
             shortcut::update_custom_words,
             dictionary::update_dictionary_replacements,
+            dictionary::update_dictionary_snippets,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
             shortcut::change_cleanup_level_setting,

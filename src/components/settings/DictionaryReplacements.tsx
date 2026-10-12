@@ -4,16 +4,27 @@ import { toast } from "sonner";
 import { useSettings } from "../../hooks/useSettings";
 import { matchesQuery } from "../../lib/utils/search";
 import { Input } from "../ui/Input";
+import { Textarea } from "../ui/Textarea";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 
 interface DictionaryReplacementsProps {
   /** Shows only the pairs whose spoken or written form contains it. */
   filter?: string;
+  /** Spoken -> written pairs, or snippets: a trigger of two words or more -> fixed text. */
+  kind?: "replacements" | "snippets";
 }
 
+const KINDS = {
+  replacements: {
+    setting: "dictionary_replacements",
+    maxWritten: 200,
+    minWords: 1,
+  },
+  snippets: { setting: "dictionary_snippets", maxWritten: 4000, minWords: 2 },
+} as const;
+
 const MAX_SPOKEN = 60;
-const MAX_WRITTEN = 200;
 
 const ArrowIcon: React.FC = () => (
   <svg
@@ -32,34 +43,36 @@ const ArrowIcon: React.FC = () => (
   </svg>
 );
 
-/** The spoken -> written pairs of the personal dictionary, with how often each was applied. */
+/** The spoken -> written pairs, or the snippets, of the personal dictionary, with how often each
+ * was applied. */
 export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
-  React.memo(({ filter = "" }) => {
+  React.memo(({ filter = "", kind = "replacements" }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
     const [spoken, setSpoken] = useState("");
     const [written, setWritten] = useState("");
-    const pairs = getSetting("dictionary_replacements") || [];
-    const busy = isUpdating("dictionary_replacements");
+    const { setting, maxWritten, minWords } = KINDS[kind];
+    const keys = `dictionary.${kind}`;
+    const pairs = getSetting(setting) || [];
+    const busy = isUpdating(setting);
     const cleanSpoken = spoken.replace(/\s+/g, " ").trim();
     const cleanWritten = written.trim();
+    const words = cleanSpoken ? cleanSpoken.split(" ").length : 0;
     const canAdd =
-      cleanSpoken.length > 0 &&
+      words >= minWords &&
       cleanWritten.length > 0 &&
       cleanSpoken.length <= MAX_SPOKEN &&
-      cleanWritten.length <= MAX_WRITTEN &&
+      cleanWritten.length <= maxWritten &&
       !busy;
 
     const handleAdd = () => {
       if (!canAdd) return;
       const key = cleanSpoken.toLowerCase();
       if (pairs.some((pair) => pair.spoken.toLowerCase() === key)) {
-        toast.error(
-          t("dictionary.replacements.duplicate", { spoken: cleanSpoken }),
-        );
+        toast.error(t(`${keys}.duplicate`, { spoken: cleanSpoken }));
         return;
       }
-      updateSetting("dictionary_replacements", [
+      updateSetting(setting, [
         ...pairs,
         { spoken: cleanSpoken, written: cleanWritten, uses: 0 },
       ]);
@@ -69,13 +82,15 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
 
     const handleRemove = (target: string) => {
       updateSetting(
-        "dictionary_replacements",
+        setting,
         pairs.filter((pair) => pair.spoken !== target),
       );
     };
 
+    // A snippet's text can have line breaks: there Enter is a new line and Ctrl+Enter adds.
     const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
+      const multiline = e.target instanceof HTMLTextAreaElement;
+      if (e.key === "Enter" && (!multiline || e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         handleAdd();
       }
@@ -89,8 +104,8 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
     return (
       <>
         <SettingContainer
-          title={t("dictionary.replacements.title")}
-          description={t("dictionary.replacements.description")}
+          title={t(`${keys}.title`)}
+          description={t(`${keys}.description`)}
           grouped
           layout="stacked"
         >
@@ -101,34 +116,53 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
               value={spoken}
               onChange={(e) => setSpoken(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={t("dictionary.replacements.spokenPlaceholder")}
-              aria-label={t("dictionary.replacements.spokenLabel")}
+              placeholder={t(`${keys}.spokenPlaceholder`)}
+              aria-label={t(`${keys}.spokenLabel`)}
               maxLength={MAX_SPOKEN}
               variant="compact"
               disabled={busy}
             />
             <ArrowIcon />
-            <Input
-              type="text"
-              className="w-48"
-              value={written}
-              onChange={(e) => setWritten(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={t("dictionary.replacements.writtenPlaceholder")}
-              aria-label={t("dictionary.replacements.writtenLabel")}
-              maxLength={MAX_WRITTEN}
-              variant="compact"
-              disabled={busy}
-            />
+            {kind === "snippets" ? (
+              <Textarea
+                className="w-full"
+                value={written}
+                onChange={(e) => setWritten(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t(`${keys}.writtenPlaceholder`)}
+                aria-label={t(`${keys}.writtenLabel`)}
+                maxLength={maxWritten}
+                variant="compact"
+                disabled={busy}
+              />
+            ) : (
+              <Input
+                type="text"
+                className="w-48"
+                value={written}
+                onChange={(e) => setWritten(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t(`${keys}.writtenPlaceholder`)}
+                aria-label={t(`${keys}.writtenLabel`)}
+                maxLength={maxWritten}
+                variant="compact"
+                disabled={busy}
+              />
+            )}
             <Button
               onClick={handleAdd}
               disabled={!canAdd}
               variant="primary"
               size="md"
             >
-              {t("dictionary.replacements.add")}
+              {t(`${keys}.add`)}
             </Button>
           </div>
+          {minWords > 1 && words === 1 && (
+            <p className="mt-2 text-caption text-text-3">
+              {t(`${keys}.twoWords`)}
+            </p>
+          )}
         </SettingContainer>
         {visible.length > 0 && (
           <ul className="px-4 py-2 flex flex-col gap-1">
@@ -143,14 +177,14 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
                   {pair.written}
                 </span>
                 <span className="ms-auto text-caption text-text-3 shrink-0">
-                  {t("dictionary.replacements.uses", { count: pair.uses ?? 0 })}
+                  {t(`${keys}.uses`, { count: pair.uses ?? 0 })}
                 </span>
                 <Button
                   onClick={() => handleRemove(pair.spoken)}
                   disabled={busy}
                   variant="secondary"
                   size="sm"
-                  aria-label={t("dictionary.replacements.remove", {
+                  aria-label={t(`${keys}.remove`, {
                     spoken: pair.spoken,
                     written: pair.written,
                   })}

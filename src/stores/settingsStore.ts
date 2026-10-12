@@ -151,6 +151,19 @@ const settingUpdaters: {
         : null,
     }));
   },
+  dictionary_snippets: async (value) => {
+    const result = await commands.updateDictionarySnippets(
+      value as DictionaryReplacement[],
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, dictionary_snippets: result.data }
+        : null,
+    }));
+  },
   llm_enabled: (value) => commands.changeLlmEnabledSetting(value as boolean),
   notes_profile: (value) => commands.changeNotesProfileSetting(value as string),
   notes_language: (value) =>
