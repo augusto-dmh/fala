@@ -449,7 +449,22 @@
         "description": "Calls in these apps show no prompt.",
         "add": "Add app",
         "remove": "Ask again in {{app}}"
-      }
+      },
+      "retention": {
+        "title": "Meeting audio",
+        "description": "How long recorded audio stays on this computer. Without the audio, the transcript, typed notes and notes stay, but you can no longer play a passage or transcribe again.",
+        "keep": "Keep",
+        "days": "Delete after {{days}} days",
+        "confirm": "The audio of meetings that ended more than {{days}} days ago will be deleted now, and it cannot be recovered. The transcript and notes stay.",
+        "confirmAction": "Delete and save",
+        "cancel": "Cancel"
+      },
+      "cap": {
+        "title": "Recording limit",
+        "description": "The recording stops on its own at this length; 10 minutes before, Fala warns you and offers one more hour, up to 8 hours in total.",
+        "hours": "{{hours}} h"
+      },
+      "saveFailed": "This option could not be saved. Try again."
     },
     "sound": {
       "title": "Sound",
@@ -1052,7 +1067,13 @@
     "notNow": "Not now",
     "muteApp": "Don't ask in {{app}}",
     "stop": "Stop",
-    "keepRecording": "Keep recording"
+    "keepRecording": "Keep recording",
+    "quit": {
+      "title": "Stop the recording?",
+      "body": "Quitting Fala stops the recording."
+    },
+    "stopAndQuit": "Stop and quit",
+    "cancel": "Cancel"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
@@ -1239,7 +1260,7 @@
       "insufficient_disk": "Not enough disk space to record (less than 500 MB free).",
       "audio_device": "Could not open the microphone or the system audio.",
       "not_found": "Meeting not found.",
-      "still_recording": "Stop the recording before transcribing.",
+      "still_recording": "Stop the recording first.",
       "no_audio": "This meeting has no saved audio.",
       "missing_key": "The provider key is missing from the system keyring.",
       "invalid_key": "Empty or invalid key.",
@@ -1262,6 +1283,18 @@
       "copy": "Copy notice",
       "copied": "Notice copied",
       "text": "I'm recording this meeting to transcribe it and take my notes. If you'd rather I didn't record, let me know."
+    },
+    "delete": {
+      "action": "Delete meeting",
+      "title": "Delete this meeting?",
+      "body": "The audio, transcript, typed notes and notes leave this computer for good. This cannot be undone.",
+      "confirm": "Delete for good",
+      "cancel": "Cancel"
+    },
+    "recover": {
+      "title": "Recover the recording from {{time}} ({{minutes}} min)?",
+      "body": "Fala closed in the middle of this recording. The audio up to the last second is saved.",
+      "action": "Recover"
     }
   }
 }

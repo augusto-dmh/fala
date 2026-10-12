@@ -1478,6 +1478,61 @@ async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, str
 }
 },
 /**
+ * "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+ */
+async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Recordings the last run left without an end: "Recover the recording from 14:02 (12 min)?".
+ */
+async meetingOrphans() : Promise<Result<MeetingOrphan[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_orphans") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The click on "Recover"; retention and transcription follow in the background.
+ */
+async recoverMeeting(id: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recover_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
+ */
+async changeMeetingRetentionSetting(days: number | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_retention_setting", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The recording cap, 1 to 8 hours; the next recording uses it.
+ */
+async changeMeetingCapSetting(hours: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_cap_setting", { hours }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The card the prompt window should show now, for a window that just loaded.
  */
 async callPromptCurrent() : Promise<CallPromptPayload | null> {
@@ -1679,7 +1734,16 @@ call_prompt_enabled?: boolean;
 /**
  * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
  */
-call_prompt_muted_apps?: string[] }
+call_prompt_muted_apps?: string[]; 
+/**
+ * Days after a meeting ends when its retained audio is deleted (1 to 3650). `None` keeps
+ * it, the default (ADR-0005).
+ */
+meeting_audio_retention_days?: number | null; 
+/**
+ * The recording cap of a meeting in hours, 1 to 8.
+ */
+meeting_cap_hours?: number }
 /**
  * An app, as `fala_inject::app_name_from_exe_path` names it, and the id of its style.
  */
@@ -1695,7 +1759,7 @@ export type CallAppInfo = { id: string; name: string }
 /**
  * The person's answer, or the countdown running out.
  */
-export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "expired"
+export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "expired"
 export type CallPromptKind = 
 /**
  * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
@@ -1704,7 +1768,11 @@ export type CallPromptKind =
 /**
  * "Parar a gravação?" with [Parar] [Continuar].
  */
-"ask_stop"
+"ask_stop" | 
+/**
+ * "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
+ */
+"quit"
 /**
  * What the card shows.
  */
@@ -1902,6 +1970,18 @@ export type MeetingMode =
  * What the computer plays (a class, a video): no mic, diarized system channel.
  */
 "system_only"
+/**
+ * A recording the process left without an end: "Recover the recording from 14:02 (12 min)?".
+ */
+export type MeetingOrphan = { id: string; title: string; 
+/**
+ * RFC 3339 with the local offset at the time.
+ */
+started_at: string; 
+/**
+ * What the WAV header holds.
+ */
+recorded_ms: number }
 /**
  * An output the "Meeting sound" selector offers.
  */

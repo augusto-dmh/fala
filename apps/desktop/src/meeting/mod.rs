@@ -14,13 +14,15 @@ pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
 pub(crate) mod import;
+pub(crate) mod lifecycle;
 pub(crate) mod output;
 pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
+pub(crate) mod recovery;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -270,6 +272,24 @@ pub(crate) fn tray_start(consent: Option<&str>) -> TrayStart {
     }
 }
 
+/// How long "Stop and quit" waits for the capture to close before quitting anyway.
+const QUIT_GRACE: Duration = Duration::from_secs(10);
+
+/// Quitting with a meeting recording or paused asks first: closing Fala cuts the recording.
+pub(crate) fn quit_needs_question(indicator: MeetingIndicator) -> bool {
+    indicator != MeetingIndicator::None
+}
+
+/// The tray's "Quit": asks with the card instead of quitting while a meeting records. Returns
+/// whether it asked.
+pub(crate) fn ask_before_quit(app: &AppHandle) -> bool {
+    if !quit_needs_question(indicator()) {
+        return false;
+    }
+    crate::call_prompt::show_quit(app);
+    true
+}
+
 /// Which session a start records into: the draft the page created (title and agenda typed
 /// before recording), or a new id. `true` when the session row already exists.
 pub(crate) fn start_target(
@@ -361,8 +381,8 @@ struct Active {
 #[derive(Default)]
 struct Inner {
     active: Option<Active>,
-    /// Sessions whose audio is being retained.
-    processing: usize,
+    /// Stopped sessions still being finished (end saved, audio retained).
+    processing: Vec<SessionId>,
     status: MeetingStatus,
 }
 
@@ -375,10 +395,14 @@ pub struct MeetingManager {
     keys: Arc<dyn fala_secrets::SecretStore>,
     /// The transcription or notes generation in flight, one at a time.
     work: Mutex<pipeline::Work>,
-    /// Held for the whole WAV → Opus conversion.
+    /// Held for the whole WAV → Opus conversion, and while audio is deleted.
     retaining: Mutex<()>,
     /// The import in flight, one at a time.
     importing: Mutex<Option<fala_media::CancelToken>>,
+    /// Recordings the last run left without an end, found at startup (`recovery`).
+    orphans: Mutex<Vec<SessionId>>,
+    /// "Stop and quit": the app exits once the stopped session's end is saved.
+    quit_after_stop: AtomicBool,
 }
 
 impl MeetingManager {
@@ -395,15 +419,32 @@ impl MeetingManager {
                 None
             }
         };
+        // Before anything can record: afterwards an unended session may be the live one.
+        let audio_root = data.join("audio");
+        let orphans = match &store {
+            Some(store) => store
+                .meetings()
+                .map(|records| recovery::find_orphans(&records, &audio_root))
+                .unwrap_or_else(|e| {
+                    log::error!("meetings not read for orphans: {e}");
+                    Vec::new()
+                }),
+            None => Vec::new(),
+        };
+        if !orphans.is_empty() {
+            log::info!("{} meeting recording(s) left without an end", orphans.len());
+        }
         Ok(Self {
             app: app.clone(),
-            audio_root: data.join("audio"),
+            audio_root,
             store: Mutex::new(store),
             inner: Mutex::new(Inner::default()),
             keys: Arc::new(fala_secrets::KeyringStore),
             work: Mutex::new(pipeline::Work::default()),
             retaining: Mutex::new(()),
             importing: Mutex::new(None),
+            orphans: Mutex::new(orphans),
+            quit_after_stop: AtomicBool::new(false),
         })
     }
 
@@ -429,6 +470,13 @@ impl MeetingManager {
 
     pub fn status(&self) -> MeetingStatus {
         self.lock().status.clone()
+    }
+
+    /// The session records, or stopped and is still being finished.
+    pub(crate) fn is_live(&self, id: SessionId) -> bool {
+        let inner = self.lock();
+        inner.active.as_ref().is_some_and(|a| a.session.id() == id)
+            || inner.processing.contains(&id)
     }
 
     /// Records that the third-party notice was accepted, once; returns the stored date.
@@ -509,7 +557,7 @@ impl MeetingManager {
             mode: mode.session_mode(),
             title: title.to_string(),
             local_only: false,
-            cap: RecordingCap::default(),
+            cap: RecordingCap::from_hours(settings.meeting_cap_hours).unwrap_or_default(),
         });
         let effects = session.apply(
             millis(now),
@@ -633,6 +681,36 @@ impl MeetingManager {
             self.send(&inner, Control::SwitchSystem(name.to_string()));
         }
         Ok(self.publish(&mut inner))
+    }
+
+    /// "Stop and quit" on the quit question: the capture closes, the end is saved and the app
+    /// exits (`finish`). Should the capture not close, the app exits after a few seconds anyway:
+    /// the WAV header is at most a second behind, and the next start offers to recover it.
+    pub fn stop_and_quit(&self) {
+        self.quit_after_stop.store(true, Ordering::SeqCst);
+        if let Err(e) = self.stop() {
+            log::info!("quit: nothing left to stop ({e})");
+            let (capturing, finishing) = {
+                let inner = self.lock();
+                (inner.active.is_some(), !inner.processing.is_empty())
+            };
+            if !capturing {
+                if finishing {
+                    // `finish` exits at its next step; a transcription in flight ends now.
+                    self.cancel_transcription();
+                } else {
+                    self.app.exit(0);
+                }
+                return;
+            }
+        }
+        // Still capturing (or `Stopping`): `finish` exits once the WAV is closed.
+        let app = self.app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(QUIT_GRACE);
+            log::warn!("quit: the meeting capture did not close in time");
+            app.exit(0);
+        });
     }
 
     /// The tray's "Record meeting": without the notice accepted, opens the window on it.
@@ -788,7 +866,7 @@ impl MeetingManager {
         let id = active.session.id();
         let reason = stop_reason(active.session.state());
         let recorded_ms = inner.status.recorded_ms;
-        inner.processing += 1;
+        inner.processing.push(id);
         let app = self.app.clone();
         let dir = self.session_dir(id);
         log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms)");
@@ -801,7 +879,7 @@ impl MeetingManager {
             });
         if let Err(e) = spawned {
             log::error!("meeting {id}: processing thread did not start: {e}");
-            inner.processing -= 1;
+            inner.processing.retain(|p| *p != id);
         }
     }
 
@@ -811,21 +889,43 @@ impl MeetingManager {
         {
             log::error!("meeting {id}: end not saved: {e}");
         }
+        // The WAV is closed and the end saved: the next start retains and transcribes it.
+        if self.quit_if_asked(id) {
+            return;
+        }
         self.restore_dictation_mic();
         self.retain(id, dir);
+        if self.quit_if_asked(id) {
+            return;
+        }
         {
             let mut inner = self.lock();
-            inner.processing = inner.processing.saturating_sub(1);
+            inner.processing.retain(|p| *p != id);
             self.publish(&mut inner);
         }
+        let lines = self.transcribe_if_keyed(id);
+        if self.quit_if_asked(id) {
+            return;
+        }
         // After a stop, the notes follow the transcript (`auto_notes`).
-        if let Some(lines) = self.transcribe_if_keyed(id) {
+        if let Some(lines) = lines {
             self.auto_notes(id, &lines);
         }
+        self.quit_if_asked(id);
     }
 
-    /// With the key in the keyring, the transcript follows a stop or an import without another
-    /// click.
+    /// "Stop and quit" was clicked: each step of `finish` that completes is a safe place to exit.
+    fn quit_if_asked(&self, id: SessionId) -> bool {
+        let quit = self.quit_after_stop.load(Ordering::SeqCst);
+        if quit {
+            log::info!("meeting {id}: stopped to quit");
+            self.app.exit(0);
+        }
+        quit
+    }
+
+    /// With the key in the keyring, the transcript follows a stop, an import or a recovery
+    /// without another click.
     fn transcribe_if_keyed(&self, id: SessionId) -> Option<Vec<pipeline::MeetingLine>> {
         if !pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
             return None;
@@ -890,7 +990,7 @@ impl MeetingManager {
                 Some(active.session.id().to_string()),
                 Some(active.mode),
             ),
-            None if inner.processing > 0 => (MeetingPhase::Processing, None, None),
+            None if !inner.processing.is_empty() => (MeetingPhase::Processing, None, None),
             None => (MeetingPhase::Idle, None, None),
         };
         if state == MeetingPhase::Idle || (state == MeetingPhase::Processing && id.is_none()) {
@@ -1030,6 +1130,13 @@ mod tests {
             step(5_000, Input::CaptureFinalized),
             (vec![], vec![MediaAction::Resume])
         );
+    }
+
+    #[test]
+    fn quitting_while_recording_asks() {
+        assert!(quit_needs_question(MeetingIndicator::Recording));
+        assert!(quit_needs_question(MeetingIndicator::Paused));
+        assert!(!quit_needs_question(MeetingIndicator::None));
     }
 
     #[test]

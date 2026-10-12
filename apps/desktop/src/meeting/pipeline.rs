@@ -443,6 +443,18 @@ pub(crate) struct Work {
     notes: Option<SessionId>,
 }
 
+impl Work {
+    /// The session being transcribed, whose audio is being read.
+    pub(crate) fn transcribing(&self) -> Option<SessionId> {
+        self.transcribing.as_ref().map(|(id, _)| *id)
+    }
+
+    /// A transcription or a notes generation is working on `id`.
+    pub(crate) fn involves(&self, id: SessionId) -> bool {
+        self.transcribing() == Some(id) || self.notes == Some(id)
+    }
+}
+
 /// Clears the job slot when the job ends, however it ends.
 struct WorkGuard<'a> {
     work: &'a std::sync::Mutex<Work>,

@@ -12,6 +12,7 @@ use crate::meeting::pipeline::{
     templates, templates_dir, MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary,
     MeetingTemplates,
 };
+use crate::meeting::recovery::MeetingOrphan;
 use crate::meeting::{MeetingError, MeetingManager, MeetingMode, MeetingStatus};
 use crate::settings::{self, NotesLanguage};
 
@@ -360,4 +361,65 @@ pub async fn set_meeting_template(
     template_id: String,
 ) -> Result<(), MeetingError> {
     meetings.set_template(&id, &template_id)
+}
+
+/// Recordings the last run left without an end: "Recover the recording from 14:02 (12 min)?".
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_orphans(meetings: Meetings<'_>) -> Result<Vec<MeetingOrphan>, MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.orphans())
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// The click on "Recover"; retention and transcription follow in the background.
+#[tauri::command]
+#[specta::specta]
+pub async fn recover_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.recover(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.delete(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_meeting_retention_setting(
+    app: AppHandle,
+    meetings: Meetings<'_>,
+    days: Option<u16>,
+) -> Result<(), String> {
+    if let Some(days) = days {
+        fala_retention::RetentionDays::new(days).map_err(|e| e.to_string())?;
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_audio_retention_days = days;
+    settings::write_settings(&app, settings);
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.run_retention())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The recording cap, 1 to 8 hours; the next recording uses it.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_cap_setting(app: AppHandle, hours: u8) -> Result<(), String> {
+    fala_meeting::RecordingCap::from_hours(hours).map_err(|e| e.to_string())?;
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_cap_hours = hours;
+    settings::write_settings(&app, settings);
+    Ok(())
 }

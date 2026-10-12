@@ -15,6 +15,7 @@ import { PauseMediaOnMeeting, PauseMediaWhileRecording } from "../PauseMedia";
 import { ModelSettingsCard } from "./ModelSettingsCard";
 import { LlmSettings } from "../LlmSettings";
 import { CallPromptSettings } from "../CallPromptSettings";
+import { MeetingAudioSettings } from "../MeetingAudioSettings";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -50,6 +51,7 @@ export const GeneralSettings: React.FC = () => {
       </SettingsGroup>
       <SettingsGroup title={t("settings.meetings.title")}>
         <CallPromptSettings />
+        <MeetingAudioSettings />
       </SettingsGroup>
     </div>
   );

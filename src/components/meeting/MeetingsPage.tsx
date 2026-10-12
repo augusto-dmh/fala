@@ -10,6 +10,7 @@ import {
   type MeetingError,
   type MeetingKeys,
   type MeetingMode,
+  type MeetingOrphan,
   type MeetingOutputs,
   type MeetingStatus,
   type MeetingSummary,
@@ -20,12 +21,14 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
+import { DeleteMeeting } from "./DeleteMeeting";
 import { ImportDialog } from "./ImportDialog";
 import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
 import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
+import { RecoverBanner } from "./RecoverBanner";
 import { TemplatesSettings } from "./TemplatesSettings";
 import {
   errorDetail,
@@ -82,6 +85,8 @@ export function MeetingsPage() {
   const lastStage = useRef(new Map<string, string>());
   const [error, setError] = useState<MeetingError | string | null>(null);
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
+  const [orphans, setOrphans] = useState<MeetingOrphan[]>([]);
+  const [recovering, setRecovering] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importStage, setImportStage] = useState<ProgressStage | null>(null);
   // The session the running import writes, known from its first progress event.
@@ -120,6 +125,9 @@ export function MeetingsPage() {
       .meetingKeys()
       .then((r) => r.status === "ok" && setKeys(r.data));
     void refresh();
+    void commands
+      .meetingOrphans()
+      .then((r) => r.status === "ok" && setOrphans(r.data));
     // Mounted by a click on the meeting pill: open the session it records.
     const requested = takeOpenMeetingRequest();
     if (requested) void open(requested);
@@ -306,6 +314,30 @@ export function MeetingsPage() {
     } else setError(result.error);
   };
 
+  const recover = async (id: string) => {
+    setError(null);
+    setRecovering(id);
+    const result = await commands.recoverMeeting(id);
+    setRecovering(null);
+    if (result.status === "error") {
+      setError(result.error);
+      return;
+    }
+    setOrphans((current) => current.filter((o) => o.id !== id));
+    await refresh();
+    await open(id);
+  };
+
+  const remove = async (id: string) => {
+    setError(null);
+    const result = await commands.deleteMeeting(id);
+    if (result.status === "ok") {
+      setSelected((current) => (current?.summary.id === id ? null : current));
+      setOrphans((current) => current.filter((o) => o.id !== id));
+    } else setError(result.error);
+    await refresh();
+  };
+
   const saveKey = async (key: string) => {
     const result = await commands.setMeetingTranscriptionKey(key);
     if (result.status === "ok") setKeys(result.data);
@@ -315,6 +347,12 @@ export function MeetingsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("meeting.title")}>
+        <RecoverBanner
+          orphans={orphans}
+          busy={recovering !== null}
+          onRecover={(id) => void recover(id)}
+          t={t}
+        />
         {askConsent ? (
           <ConsentNotice
             onAccept={async () => {
@@ -413,6 +451,15 @@ export function MeetingsPage() {
             }
             onCopy={() => void copy(selected.summary.id)}
             onNamesChanged={() => void open(selected.summary.id)}
+          />
+          <DeleteMeeting
+            key={`delete-${selected.summary.id}`}
+            disabled={
+              status.id === selected.summary.id ||
+              transcribing === selected.summary.id ||
+              generating === selected.summary.id
+            }
+            onDelete={() => void remove(selected.summary.id)}
           />
         </SettingsGroup>
       )}
