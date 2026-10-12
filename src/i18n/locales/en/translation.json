@@ -1028,6 +1028,7 @@
     "meetingPaused": "Meeting paused",
     "callElsewhere": "The call's sound is playing on {{device}}",
     "recordFrom": "Record from this device",
+    "meetingConsent": "Only record with the consent of everyone on the call.",
     "pasteFailed": {
       "title": "Couldn't paste it.",
       "retry": "{{keys}} pastes it again · click to copy",
@@ -1098,6 +1099,7 @@
       "outputFrom": "Sound from {{device}}",
       "callElsewhere": "The call's sound is playing on {{device}}.",
       "recordFrom": "Record from this device",
+      "consentChip": "Only record with the consent of everyone on the call.",
       "systemOnly": "Only the computer sound (class, video)"
     },
     "import": {
@@ -1135,12 +1137,19 @@
       "cancel": "Cancel",
       "template": "Notes template",
       "generate": "Generate notes",
-      "generating": "Generating notes…",
       "copy": "Copy Markdown",
       "transcript": "Transcript",
       "noTranscript": "No transcript yet.",
       "notes": "Notes",
-      "notesAbove": "Recording now: this meeting's notes are in the field above."
+      "notesAbove": "Recording now: this meeting's notes are in the field above.",
+      "search": "Search the transcript",
+      "found_one": "{{count}} match",
+      "found_other": "{{count}} matches",
+      "copyTranscript": "Copy transcript",
+      "writing": "Writing notes…",
+      "enhancing": "Enhancing your notes…",
+      "notesFailed": "Couldn't generate the notes. Your typed notes and the audio are saved.",
+      "retry": "Try again"
     },
     "notesEdit": {
       "edit": "Edit",
@@ -1197,6 +1206,10 @@
       "keyterms": {
         "title": "Dictionary in the transcript",
         "description": "Sends your dictionary terms to ElevenLabs to get their spelling right. Costs about US$ 0.05 more per hour."
+      },
+      "autoNotes": {
+        "title": "Generate notes when it ends",
+        "description": "When you stop, after the transcript, the notes are written without a click (from 3 minutes and a long transcript on; never for a local-only session)."
       }
     },
     "key": {
@@ -1230,6 +1243,11 @@
       "import_no_audio": "That file has no audio track.",
       "import_too_long": "That file is longer than 12 hours, the import limit.",
       "generic": "Something went wrong. See the log."
+    },
+    "notice": {
+      "copy": "Copy notice",
+      "copied": "Notice copied",
+      "text": "I'm recording this meeting to transcribe it and take my notes. If you'd rather I didn't record, let me know."
     }
   }
 }
