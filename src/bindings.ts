@@ -538,7 +538,7 @@ async changeTranscribeGpuDevice(device: string | null) : Promise<Result<null, st
  * First-call cost is dominated by enumerating GPU devices through the
  * transcribe.cpp Metal/Vulkan backend, which loads dynamic libraries and
  * probes hardware. Run it on the blocking pool so the webview thread
- * stays responsive â€” see also the startup pre-warm in `lib.rs`.
+ * stays responsive — see also the startup pre-warm in `lib.rs`.
  */
 async getAvailableAccelerators() : Promise<AvailableAccelerators> {
     return await TAURI_INVOKE("get_available_accelerators");
@@ -810,7 +810,7 @@ async openMicrophonePrivacySettings() : Promise<Result<null, string>> {
 },
 /**
  * [Escolher microfone] in an overlay notice: closes the notice and opens the microphone
- * selector (ConfiguraÃ§Ãµes > Geral) in the main window.
+ * selector (Configurações > Geral) in the main window.
  */
 async openMicrophoneSettings() : Promise<void> {
     await TAURI_INVOKE("open_microphone_settings");
@@ -842,13 +842,13 @@ async setIdlePillHover(hover: boolean) : Promise<void> {
     await TAURI_INVOKE("set_idle_pill_hover", { hover });
 },
 /**
- * A click on the idle pill opens the main window on InÃ­cio.
+ * A click on the idle pill opens the main window on Início.
  */
 async openHomeFromPill() : Promise<void> {
     await TAURI_INVOKE("open_home_from_pill");
 },
 /**
- * A click on the meeting pill opens the main window on ReuniÃµes, on the session it records.
+ * A click on the meeting pill opens the main window on Reuniões, on the session it records.
  */
 async openMeetingFromPill() : Promise<void> {
     await TAURI_INVOKE("open_meeting_from_pill");
@@ -1015,7 +1015,7 @@ async retryHistoryEntryTranscription(id: number) : Promise<Result<null, string>>
 }
 },
 /**
- * "Desfazer ediÃ§Ã£o da IA": the entry's dictation shows its raw text again.
+ * "Desfazer edição da IA": the entry's dictation shows its raw text again.
  */
 async undoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
     try {
@@ -1026,7 +1026,7 @@ async undoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
 }
 },
 /**
- * "Reaplicar ediÃ§Ã£o da IA": the entry's dictation shows its edited text again.
+ * "Reaplicar edição da IA": the entry's dictation shows its edited text again.
  */
 async redoHistoryEntryEdit(id: number) : Promise<Result<HistoryEntry, string>> {
     try {
@@ -1048,8 +1048,8 @@ async getDictationStats(days: number) : Promise<Result<DictationStats, string>> 
 }
 },
 /**
- * Busca no histÃ³rico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
- * recentes primeiro, como linhas do histÃ³rico.
+ * Busca no histórico: os itens de `fala.sqlite` que casam com `query`, sem acento, mais
+ * recentes primeiro, como linhas do histórico.
  */
 async historySearch(query: string) : Promise<Result<HistoryEntry[], string>> {
     try {
@@ -1451,7 +1451,7 @@ async callPromptApps() : Promise<CallAppInfo[]> {
     return await TAURI_INVOKE("call_prompt_apps");
 },
 /**
- * "Avisar quando uma chamada comeÃ§ar"; off, the mic holders are not read at all.
+ * "Avisar quando uma chamada começar"; off, the mic holders are not read at all.
  */
 async changeCallPromptEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
@@ -1462,7 +1462,7 @@ async changeCallPromptEnabledSetting(enabled: boolean) : Promise<Result<null, st
 }
 },
 /**
- * "NÃ£o avisar nestes apps"; returns what was stored (known ids, once each).
+ * "Não avisar nestes apps"; returns what was stored (known ids, once each).
  */
 async changeCallPromptMutedAppsSetting(apps: string[]) : Promise<Result<string[], string>> {
     try {
@@ -1499,7 +1499,7 @@ streamTextEvent: "stream-text-event"
 
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
- * guarantees every field â€” including ones added in the future â€” falls back to
+ * guarantees every field — including ones added in the future — falls back to
  * its `get_default_settings()` value when missing from a stored settings
  * object, so a partial store can never fail the whole load (#1619).
  * Field-level defaults below take precedence where present.
@@ -1530,7 +1530,7 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
  * upgrading from before this key existed are blanked by the migration so they
- * see the current release's notes â€” see `apply_settings_migrations`.
+ * see the current release's notes — see `apply_settings_migrations`.
  */
 whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
 /**
@@ -1580,8 +1580,8 @@ transcribe_gpu_device?: string | null; extra_recording_buffer_ms?: number; vad_e
 vad_backend?: VadBackend; 
 /**
  * Which recording overlay to show: None / Minimal / Live. Streaming mode is
- * not gated on this â€” that follows model capability. Migrated from the old
- * `overlay_position` (position `none` â†’ style `None`).
+ * not gated on this — that follows model capability. Migrated from the old
+ * `overlay_position` (position `none` → style `None`).
  */
 overlay_style?: OverlayStyle; 
 /**
@@ -1611,12 +1611,12 @@ meeting_consent_accepted_at?: string | null;
  */
 meeting_output_device?: string | null; 
 /**
- * "Avisar quando uma chamada comeÃ§ar" (F8 `meeting-detection`): offer to record when a call
+ * "Avisar quando uma chamada começar" (F8 `meeting-detection`): offer to record when a call
  * app opens the mic. Off, the mic holders are not read.
  */
 call_prompt_enabled?: boolean; 
 /**
- * "NÃ£o avisar nestes apps": `fala_meeting::CallApp` ids.
+ * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
  */
 call_prompt_muted_apps?: string[]; 
 /**
@@ -1642,11 +1642,11 @@ export type CallAppInfo = { id: string; name: string }
 export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "expired"
 export type CallPromptKind = 
 /**
- * "Gravar reuniÃ£o?" with [Gravar] [Agora nÃ£o] [NÃ£o avisar no <app>].
+ * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
  */
 "offer" | 
 /**
- * "Parar a gravaÃ§Ã£o?" with [Parar] [Continuar].
+ * "Parar a gravação?" with [Parar] [Continuar].
  */
 "ask_stop"
 /**
@@ -1669,7 +1669,7 @@ export type CustomSounds = { start: boolean; stop: boolean }
  */
 export type DictationDay = { day: string; dictations: number; words: number }
 /**
- * `fala_storage::MetricsSummary` for the UI: `e2e` is release â†’ pasted text without the LLM,
+ * `fala_storage::MetricsSummary` for the UI: `e2e` is release → pasted text without the LLM,
  * `e2e_llm` with it asked.
  */
 export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
@@ -1681,13 +1681,13 @@ export type DictionaryReplacement = { spoken: string; written: string; uses?: nu
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
- * Voxtral, Qwen3-ASR, Nemotron, â€¦). The architecture is auto-detected from
+ * Voxtral, Qwen3-ASR, Nemotron, …). The architecture is auto-detected from
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 /**
- * O item de `fala.sqlite` ligado a uma linha do histÃ³rico.
+ * O item de `fala.sqlite` ligado a uma linha do histórico.
  */
 export type HistoryDictation = { raw_text: string; final_text: string; editor: HistoryEditor; showing: HistoryShowing; app_name: string | null }
 /**
@@ -1734,7 +1734,7 @@ reset_bindings: string[] }
 export type ImportSource = { kind: "file"; value: string } | { kind: "url"; value: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
- * Counts only â€” key identity is deliberately never captured.
+ * Counts only — key identity is deliberately never captured.
  */
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "fala_keys"
@@ -1903,7 +1903,7 @@ export type MeetingTemplate = { id: string; name: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
- * Where a model comes from and how Fala obtains it â€” the routing discriminant
+ * Where a model comes from and how Fala obtains it — the routing discriminant
  * for downloading and on-disk resolution.
  */
 export type ModelSource = 
@@ -1922,7 +1922,7 @@ sha256: string | null } } |
  */
 { HuggingFace: { repo_id: string; revision: string } } | 
 /**
- * Already present on disk â€” a user-provided custom model, or one discovered
+ * Already present on disk — a user-provided custom model, or one discovered
  * in a shared cache. Nothing to download.
  */
 "Local"
@@ -2034,7 +2034,7 @@ export type StreamPhase =
  */
 "listening" | 
 /**
- * Finalizing or post-processing â€” show a spinner.
+ * Finalizing or post-processing — show a spinner.
  */
 "working"
 /**
