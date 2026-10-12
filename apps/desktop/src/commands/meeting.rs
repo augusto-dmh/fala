@@ -423,3 +423,13 @@ pub fn change_meeting_cap_setting(app: AppHandle, hours: u8) -> Result<(), Strin
     settings::write_settings(&app, settings);
     Ok(())
 }
+
+/// "Keep the PC awake while recording"; the next recording uses it.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_keep_awake_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_keep_awake = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
