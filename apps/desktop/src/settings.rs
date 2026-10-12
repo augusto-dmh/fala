@@ -722,6 +722,12 @@ pub struct AppSettings {
     /// How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
     #[serde(default)]
     pub cleanup_level: CleanupLevel,
+    /// The user's writing styles; four come ready.
+    #[serde(default = "crate::app_styles::default_writing_styles")]
+    pub writing_styles: Vec<crate::app_styles::WritingStyle>,
+    /// App -> style; an app without one keeps the prompt without a style.
+    #[serde(default)]
+    pub app_styles: Vec<crate::app_styles::AppStyle>,
     /// When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
@@ -1281,6 +1287,8 @@ pub fn get_default_settings() -> AppSettings {
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
         cleanup_level: CleanupLevel::default(),
+        writing_styles: crate::app_styles::default_writing_styles(),
+        app_styles: Vec::new(),
         meeting_consent_accepted_at: None,
         meeting_output_device: None,
         call_prompt_enabled: default_call_prompt_enabled(),

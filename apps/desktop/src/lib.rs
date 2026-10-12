@@ -1,4 +1,5 @@
 mod actions;
+mod app_styles;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -789,6 +790,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
             shortcut::change_cleanup_level_setting,
+            app_styles::update_writing_styles,
+            app_styles::update_app_styles,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
