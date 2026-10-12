@@ -10,11 +10,15 @@ import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
 import { CallOutputCard, MeetingPill } from "./MeetingPill";
 import { IdlePill } from "./IdlePill";
+import { PasteFailedPill } from "./PasteFailedPill";
 import {
   SLOW_LOAD_MS,
   idleKeys,
   isHoldToTalk,
   nextModelLoadStart,
+  pasteFailedHint,
+  pasteFailedTimeout,
+  pasteLastShortcut,
   showsDoubleTapHint,
   showsModelLoading,
   toPillMode,
@@ -37,6 +41,7 @@ type OverlayState =
   | "processing"
   | "meeting"
   | "meeting_paused"
+  | "paste_failed"
   | "idle";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
@@ -82,6 +87,14 @@ const RecordingOverlay: React.FC = () => {
   const [idleHover, setIdleHover] = useState(false);
   const [idleKeyList, setIdleKeyList] = useState<string[]>([]);
   const [idleDoubleTap, setIdleDoubleTap] = useState(false);
+  // After a paste that failed: the pointer is over the pill (its timer stops), the click copied
+  // the text, and the shortcut that pastes the last dictation, if any.
+  const [pasteHover, setPasteHover] = useState(false);
+  const [pasteCopied, setPasteCopied] = useState(false);
+  const [pasteLastKeys, setPasteLastKeys] = useState<string | null>(null);
+  // The show the pill belongs to (`paste-failed`): a second failure restarts the timer, and the
+  // end names the pill it ends.
+  const [pasteGeneration, setPasteGeneration] = useState<number | null>(null);
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
   const [session, setSession] = useState(0);
@@ -165,6 +178,10 @@ const RecordingOverlay: React.FC = () => {
           setLevels(Array(WAVE_BARS).fill(0));
           setStreamText({ committed: "", tentative: "" });
         }
+        if (overlayState === "paste_failed") {
+          setNotice(null);
+          setPasteCopied(false);
+        }
 
         await syncLanguageFromSettings();
         // The Live panel flows downward from a top overlay and upward from a
@@ -176,6 +193,11 @@ const RecordingOverlay: React.FC = () => {
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
             setHoldToTalk(isHoldToTalk(settings.data.shortcut_activation));
+            setPasteLastKeys(
+              pasteLastShortcut(
+                settings.data.bindings?.paste_last?.current_binding,
+              ),
+            );
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -193,6 +215,7 @@ const RecordingOverlay: React.FC = () => {
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setIdleHover(false);
+        setPasteHover(false);
         setCaptureReady(false);
         setLimitWarning(false);
         setNotice(null);
@@ -202,6 +225,14 @@ const RecordingOverlay: React.FC = () => {
         "overlay-notice",
         (event) => {
           setNotice(event.payload);
+        },
+      );
+
+      const unlistenPasteFailed = await listen<{ generation: number }>(
+        "paste-failed",
+        (event) => {
+          setPasteCopied(false);
+          setPasteGeneration(event.payload.generation);
         },
       );
 
@@ -266,6 +297,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenReady();
         unlistenLimit();
         unlistenNotice();
+        unlistenPasteFailed();
         unlistenLevel();
         unlistenStream();
         unlistenMeeting();
@@ -293,6 +325,24 @@ const RecordingOverlay: React.FC = () => {
     );
     return () => clearTimeout(id);
   }, [notice]);
+
+  // The card unmounts without a mouseleave when another state replaces it.
+  useEffect(() => {
+    if (state !== "paste_failed") setPasteHover(false);
+  }, [state]);
+
+  // The paste-failed pill ends 5 s after the pointer leaves it; it stays while the pointer is on it.
+  useEffect(() => {
+    if (state !== "paste_failed" || !isVisible || pasteGeneration === null)
+      return;
+    const wait = pasteFailedTimeout(pasteHover);
+    if (wait === null) return;
+    const id = setTimeout(
+      () => void commands.endPasteFailed(pasteGeneration),
+      wait,
+    );
+    return () => clearTimeout(id);
+  }, [state, isVisible, pasteHover, pasteGeneration]);
 
   // While a load is in flight, wake up when it becomes slow so the recording pill can show it.
   useEffect(() => {
@@ -346,6 +396,25 @@ const RecordingOverlay: React.FC = () => {
     return (
       <div dir={direction} className={`ov-stage ${position}`}>
         {noticeCard}
+      </div>
+    );
+  }
+
+  if (state === "paste_failed") {
+    const hint = pasteFailedHint(pasteCopied, pasteLastKeys);
+    return (
+      <div dir={direction} className={`ov-stage ${position}`}>
+        <PasteFailedPill
+          onHover={setPasteHover}
+          title={t("overlay.pasteFailed.title")}
+          hint={t(hint.key, { keys: hint.keys })}
+          label={t("overlay.pasteFailed.label")}
+          onCopy={() =>
+            void commands
+              .copyFailedPaste()
+              .then((copied) => copied && setPasteCopied(true))
+          }
+        />
       </div>
     );
   }
@@ -501,6 +570,7 @@ const RecordingOverlay: React.FC = () => {
         paused={state === "meeting_paused"}
         recordedMs={meetingMs}
         muted={meetingMuted}
+        onOpen={() => void commands.openMeetingFromPill()}
         label={
           state === "meeting"
             ? t("overlay.meeting")

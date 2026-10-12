@@ -47,6 +47,19 @@
 .fnotice-dot.error {
   background: #e5322d;
 }
+/* After a paste that failed: the whole card copies the text, the hint sits under the title. */
+.fnotice.paste_failed {
+  gap: 2px;
+  cursor: pointer;
+}
+.fnotice-hint {
+  padding-left: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
 .fnotice-actions {
   display: flex;
   justify-content: flex-end;

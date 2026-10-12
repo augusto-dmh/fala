@@ -996,7 +996,14 @@
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",
     "callElsewhere": "The call's sound is playing on {{device}}",
-    "recordFrom": "Record from this device"
+    "recordFrom": "Record from this device",
+    "pasteFailed": {
+      "title": "Couldn't paste it.",
+      "retry": "{{keys}} pastes it again · click to copy",
+      "click": "Click to copy",
+      "copied": "Copied",
+      "label": "Couldn't paste it. Click to copy the text."
+    }
   },
   "callPrompt": {
     "offer": {
