@@ -90,6 +90,20 @@
       "duplicate": "\"{{spoken}}\" já tem uma forma escrita",
       "uses_one": "1 uso",
       "uses_other": "{{count}} usos"
+    },
+    "snippets": {
+      "title": "Snippets",
+      "description": "Diga o gatilho e o Fala insere o texto, como está: assinatura, link da agenda, endereço. O gatilho precisa de duas palavras ou mais e vale sem diferenciar maiúsculas nem acentos. {data}, {data_extenso} e {hora} viram a data e a hora do ditado. O texto do snippet nunca vai para a IA de formatação.",
+      "spokenPlaceholder": "minha assinatura",
+      "writtenPlaceholder": "Augusto Henriques\nfala.dev",
+      "spokenLabel": "Gatilho",
+      "writtenLabel": "Texto inserido",
+      "add": "Adicionar",
+      "remove": "Remover o snippet {{spoken}}",
+      "duplicate": "\"{{spoken}}\" já é gatilho de um snippet",
+      "twoWords": "O gatilho precisa de duas palavras ou mais.",
+      "uses_one": "1 uso",
+      "uses_other": "{{count}} usos"
     }
   },
   "settingsPage": {
@@ -411,7 +425,7 @@
       "title": "Reuniões",
       "callPrompt": {
         "label": "Avisar quando uma chamada começar",
-        "description": "Quando o Teams, o Zoom, o WhatsApp ou um navegador abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique, e pergunta se deve parar quando o app larga o microfone."
+        "description": "Quando o Teams, o Zoom, o WhatsApp ou uma reunião no navegador, como o Google Meet, abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique, e pergunta se deve parar quando o app larga o microfone."
       },
       "mutedApps": {
         "title": "Não avisar nestes apps",
@@ -994,15 +1008,24 @@
     "meetingPaused": "Reunião pausada",
     "callElsewhere": "O som da call está saindo por {{device}}",
     "recordFrom": "Gravar deste dispositivo",
-    "meetingConsent": "Grave só com o consentimento de quem participa."
+    "meetingConsent": "Grave só com o consentimento de quem participa.",
+    "pasteFailed": {
+      "title": "Não deu para colar.",
+      "retry": "{{keys}} cola de novo · clique para copiar",
+      "click": "Clique para copiar",
+      "copied": "Copiado",
+      "label": "Não deu para colar. Clique para copiar o texto."
+    }
   },
   "callPrompt": {
     "offer": {
       "title": "Parece uma chamada no {{app}}",
+      "titleWeb": "Parece uma chamada do {{web}} no {{app}}",
       "body": "Gravar reunião?"
     },
     "askStop": {
       "title": "{{app}} largou o microfone",
+      "titleWeb": "{{web}} no {{app}} largou o microfone",
       "body": "Parar a gravação?"
     },
     "record": "Gravar",
@@ -1059,7 +1082,24 @@
       "outputFrom": "Som de {{device}}",
       "callElsewhere": "O som da call está saindo por {{device}}.",
       "recordFrom": "Gravar deste dispositivo",
-      "consentChip": "Grave só com o consentimento de quem participa."
+      "consentChip": "Grave só com o consentimento de quem participa.",
+      "systemOnly": "Só o som do computador (aula, vídeo)"
+    },
+    "import": {
+      "open": "Importar arquivo ou link",
+      "file": "Escolher arquivo…",
+      "media": "Áudio e vídeo",
+      "anyFile": "Todos os arquivos",
+      "urlPlaceholder": "https://… (YouTube ou outro site)",
+      "url": "Importar link",
+      "close": "Fechar",
+      "hint": "Ou arraste um arquivo para esta página. Usa o ffmpeg e o yt-dlp instalados no computador; o áudio entra como uma reunião, sem microfone.",
+      "starting": "Preparando a importação…",
+      "downloading": "Baixando o áudio… {{percent}}%",
+      "downloadingBytes": "Baixando o áudio… {{mb}} MB",
+      "converting": "Convertendo o áudio… {{percent}}%",
+      "saving": "Salvando o áudio…",
+      "cancel": "Cancelar"
     },
     "annotations": {
       "placeholder": "Digite suas anotações. Elas são salvas sozinhas."
@@ -1179,6 +1219,12 @@
       "unknown_template": "Template desconhecido.",
       "notes": "A geração de notas falhou. Tente de novo.",
       "notes_edited": "A nota foi editada. Confirme antes de gerar de novo.",
+      "tool_missing": "O {{detail}} não está instalado ou não está no PATH. Instale-o e abra o Fala de novo.",
+      "invalid_url": "Use um link que comece com http:// ou https://.",
+      "download": "Não consegui baixar esse link. Baixe o vídeo pelo navegador e importe o arquivo. ({{detail}})",
+      "import": "Não consegui importar esse arquivo: {{detail}}",
+      "import_no_audio": "Esse arquivo não tem trilha de áudio.",
+      "import_too_long": "Esse arquivo passa de 12 horas, o limite da importação.",
       "generic": "Algo deu errado. Veja o log."
     },
     "notice": {

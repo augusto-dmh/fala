@@ -121,6 +121,9 @@ export function RecorderPanel(props: RecorderPanelProps) {
         >
           <option value="meeting">{t("meeting.recorder.online")}</option>
           <option value="in_person">{t("meeting.recorder.inPerson")}</option>
+          <option value="system_only">
+            {t("meeting.recorder.systemOnly")}
+          </option>
         </select>
         {props.outputs && (
           <OutputSelect
@@ -193,7 +196,9 @@ export function RecorderPanel(props: RecorderPanelProps) {
           {t("meeting.recorder.consentChip")}
         </p>
       )}
-      <Level label={t("meeting.recorder.mic")} value={status.mic_level} />
+      {status.mode !== "system_only" && (
+        <Level label={t("meeting.recorder.mic")} value={status.mic_level} />
+      )}
       <Level label={t("meeting.recorder.system")} value={status.system_level} />
       {status.system_output !== null && (
         <p className="text-xs text-mid-gray">

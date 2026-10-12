@@ -201,7 +201,7 @@ mod encode {
 
     #[test]
     fn rejects_other_formats() {
-        for (rate, channels, bits) in [(48_000, 1, 16), (44_100, 2, 16), (48_000, 2, 24)] {
+        for (rate, channels, bits) in [(48_000, 3, 16), (44_100, 2, 16), (48_000, 2, 24)] {
             let f = fixture();
             write_wav(&f.wav, rate, channels, bits, RATE, |i, _| 0.3 * tone(i));
             let result = retain_wav(&f.wav, &f.dir);

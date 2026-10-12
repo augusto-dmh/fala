@@ -74,7 +74,7 @@ const OVERLAY_IDLE_HOVER_HEIGHT: f64 = 64.0;
 fn overlay_dimensions(state: &str) -> (f64, f64) {
     match state {
         "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
-        "notice" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
+        "notice" | "paste_failed" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
         "meeting" | "meeting_paused" if MEETING_CARD.load(Ordering::Relaxed) => {
             (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT)
         }
@@ -576,6 +576,10 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
         OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
+        // The text of a failed paste lives only while its pill shows.
+        if state != "paste_failed" {
+            crate::last_dictation::forget_failed_paste();
+        }
 
         #[cfg(target_os = "linux")]
         let shown_with_layer_shell = if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
@@ -714,6 +718,76 @@ pub fn show_notice(app_handle: &AppHandle, kind: NoticeKind, device: Option<Stri
             }
         });
     });
+}
+
+/// The longest the pill says a paste failed. The page ends it 5 s after the pointer leaves
+/// (`end_paste_failed`); this bounds a page that never asks.
+const PASTE_FAILED_MAX: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Payload of `paste-failed`: the show the pill belongs to, which the page hands back to end it.
+#[derive(Clone, serde::Serialize)]
+struct PasteFailedPayload {
+    generation: u32,
+}
+
+/// The show generation as the page carries it.
+fn generation_token(generation: u64) -> u32 {
+    generation as u32
+}
+
+/// Whether a failed paste may take the overlay: not over a recording that started meanwhile,
+/// and never over the meeting indicator, which stays up for the whole meeting (ADR-0005).
+fn paste_failed_shows(recording: bool, meeting: MeetingIndicator) -> bool {
+    !recording && overlay_for_meeting(meeting).is_none()
+}
+
+/// The paste of a dictation failed: instead of hiding, the pill says so, and a click copies
+/// `text` (`copy_failed_paste`). Shown even with the overlay off, like a notice alone: nothing
+/// else in front of the user says the text did not go in. Returns `false` when the overlay
+/// belongs to a recording or a meeting; the main window's toast still says it then.
+pub fn show_paste_failed(app_handle: &AppHandle, text: String) -> bool {
+    let recording = app_handle
+        .try_state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .is_some_and(|audio| audio.is_recording());
+    if !paste_failed_shows(recording, crate::meeting::indicator()) {
+        log::debug!("paste failed while the overlay is in use; the pill keeps its state");
+        return false;
+    }
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        show_overlay_state_on_main(&handle, "paste_failed");
+        crate::last_dictation::remember_failed_paste(text);
+        let shown = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
+        let payload = PasteFailedPayload {
+            generation: generation_token(shown),
+        };
+        let _ = handle.emit_to("recording_overlay", "paste-failed", payload);
+        std::thread::spawn(move || {
+            std::thread::sleep(PASTE_FAILED_MAX);
+            end_paste_failed_shown(&handle, generation_token(shown));
+        });
+    });
+    true
+}
+
+/// Ends the pill of show `generation`, only while no newer state replaced it.
+fn end_paste_failed_shown(app_handle: &AppHandle, generation: u32) {
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        // On the main thread, where every show runs, so no show lands between check and hide.
+        if generation_token(OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst)) != generation {
+            return;
+        }
+        crate::last_dictation::forget_failed_paste();
+        hide_recording_overlay(&handle);
+    });
+}
+
+/// The pill that says the paste failed ran its time without the pointer over it.
+#[tauri::command]
+#[specta::specta]
+pub fn end_paste_failed(app: AppHandle, generation: u32) {
+    end_paste_failed_shown(&app, generation);
 }
 
 /// The overlay state of the meeting indicator: `meeting` (red dot and time) or
@@ -1050,6 +1124,17 @@ pub fn open_home_from_pill(app: AppHandle) {
     let _ = app.emit_to("main", "open-home", ());
 }
 
+/// A click on the meeting pill opens the main window on Reuniões, on the session it records.
+#[tauri::command]
+#[specta::specta]
+pub fn open_meeting_from_pill(app: AppHandle) {
+    let id = app
+        .try_state::<std::sync::Arc<crate::meeting::MeetingManager>>()
+        .and_then(|meetings| meetings.status().id);
+    crate::show_main_window(&app);
+    let _ = app.emit_to("main", "open-meeting", id);
+}
+
 /// Polls the notification state every 2 s while the idle pill is on, so it hides while a
 /// full-screen app is in front.
 #[cfg(target_os = "windows")]
@@ -1300,6 +1385,61 @@ mod tests {
         assert!(refresh.contains("idle_refresh(Shown::load(), current_rest())"));
         let show = body_of("fn show_overlay_state_on_main");
         assert!(show.contains("SHOWN.store(Shown::of(state)"));
+    }
+
+    #[test]
+    fn paste_failed_pill() {
+        assert_eq!(
+            overlay_dimensions("paste_failed"),
+            (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT)
+        );
+        assert_eq!(Shown::of("paste_failed"), Shown::Active);
+        assert_eq!(PASTE_FAILED_MAX, std::time::Duration::from_secs(60));
+        assert_eq!(generation_token(7), 7);
+        assert_eq!(generation_token(u64::from(u32::MAX) + 2), 1);
+        // Never over a live recording, nor over the meeting indicator (ADR-0005).
+        use MeetingIndicator::{None as NoMeeting, Paused, Recording};
+        assert!(paste_failed_shows(false, NoMeeting));
+        for (recording, meeting) in [(true, NoMeeting), (false, Recording), (false, Paused)] {
+            assert!(
+                !paste_failed_shows(recording, meeting),
+                "{recording} {meeting:?}"
+            );
+        }
+        // Shown like a notice alone, whatever `overlay_style` says; the page learns its show.
+        let show = body_of("pub fn show_paste_failed");
+        assert!(!show.contains("overlay_style"), "{show}");
+        let gate = show.find("if !paste_failed_shows(").unwrap();
+        let on = show
+            .find("show_overlay_state_on_main(&handle, \"paste_failed\")")
+            .unwrap();
+        let kept = show.find("remember_failed_paste(text)").unwrap();
+        let told = show.find("\"paste-failed\", payload").unwrap();
+        assert!(gate < on && on < kept && kept < told, "{show}");
+        // The end acts only on its own show, on the main thread, forgetting the text first.
+        let end = body_of("fn end_paste_failed_shown");
+        assert!(end.contains("run_on_main_thread"), "{end}");
+        let check = end.find("!= generation").unwrap();
+        let forget = end.find("forget_failed_paste()").unwrap();
+        let hide = end.find("hide_recording_overlay(&handle)").unwrap();
+        assert!(check < forget && forget < hide, "{end}");
+        // Any other state drops the text.
+        let any = body_of("fn show_overlay_state_on_main");
+        assert!(
+            any.contains("if state != \"paste_failed\" {\n            crate::last_dictation::forget_failed_paste();"),
+            "{any}"
+        );
+    }
+
+    #[test]
+    fn meeting_pill_opens_its_session() {
+        let open = body_of("pub fn open_meeting_from_pill");
+        assert!(open.contains("meetings.status().id"), "{open}");
+        assert!(open.contains("crate::show_main_window(&app)"), "{open}");
+        assert!(
+            open.contains("emit_to(\"main\", \"open-meeting\", id)"),
+            "{open}"
+        );
     }
 
     #[test]

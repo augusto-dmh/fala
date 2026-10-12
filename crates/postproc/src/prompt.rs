@@ -139,9 +139,19 @@ impl FromStr for CleanupLevel {
     }
 }
 
-/// O `systemInstruction`: o prompt fixo, o nível e o dicionário.
-pub(crate) fn system_text(cleanup: CleanupLevel, dictionary: &Dictionary) -> String {
+/// O que o prompt diz quando o texto traz o marcador de um snippet.
+pub const SNIPPET_INSTRUCTION: &str = "Placeholders: each ⟦S1⟧, ⟦S2⟧ and so on stands for fixed \
+text the speaker inserts. Keep every placeholder exactly once, unchanged, at its place in the \
+sentence.";
+
+/// O `systemInstruction`: o prompt fixo, o nível, a linha dos marcadores quando o texto os tem e
+/// o dicionário.
+pub(crate) fn system_text(cleanup: CleanupLevel, dictionary: &Dictionary, masked: bool) -> String {
     let mut system = format!("{SYSTEM_PROMPT}\n\n{}", cleanup.instruction());
+    if masked {
+        system.push_str("\n\n");
+        system.push_str(SNIPPET_INSTRUCTION);
+    }
     if !dictionary.is_empty() {
         system.push_str("\n\nPersonal dictionary:");
         for term in dictionary.terms() {
