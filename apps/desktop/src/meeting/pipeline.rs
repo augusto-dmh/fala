@@ -28,6 +28,12 @@ use super::context::{notes_settings, NotesSettings};
 use super::people::speaker_names;
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
 
+/// The notes follow a stop only from this much transcript text and recorded time (Granola waits
+/// for about the same before it writes notes on its own); below it, "Generate notes" stays a
+/// click.
+pub(crate) const AUTO_NOTES_MIN_CHARS: usize = 2_500;
+pub(crate) const AUTO_NOTES_MIN_MS: u64 = 3 * 60 * 1000;
+
 /// Keyring account of the ElevenLabs key (`fala-cli key set elevenlabs` stores the same one).
 pub(crate) const SCRIBE_KEY: &str = "elevenlabs";
 
@@ -76,6 +82,9 @@ pub struct MeetingDetail {
     pub notes_template: Option<String>,
     /// The notes were edited by hand since they were generated.
     pub notes_edited: bool,
+    /// Its notes are being written now (a click, or the stop's chain): a page that opens later
+    /// still shows it.
+    pub notes_running: bool,
     /// Both retained Opus files are on disk, so a transcript line can be played.
     pub audio_available: bool,
 }
@@ -308,6 +317,23 @@ pub(crate) fn notes_input(
     }
 }
 
+/// Whether the notes follow the transcript of a stop without a click: the setting is on, the
+/// session may reach the LLM (never "local only"), the key is there and the call is long enough.
+pub(crate) fn auto_notes_due(
+    enabled: bool,
+    record: &MeetingRecord,
+    has_key: bool,
+    lines: &[MeetingLine],
+) -> bool {
+    let chars: usize = lines.iter().map(|line| line.text.chars().count()).sum();
+    enabled
+        && has_key
+        && !record.local_only
+        && record.notes_md.is_none()
+        && record.recorded_ms >= AUTO_NOTES_MIN_MS
+        && chars >= AUTO_NOTES_MIN_CHARS
+}
+
 /// The notes were edited after `started`, the moment a generation began: its result must not
 /// replace an edit nobody confirmed. Stored times have whole seconds, so the start is cut to the
 /// second (an edit in that same second counts as during).
@@ -442,6 +468,7 @@ impl MeetingManager {
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
         let audio_available = super::clip::audio_available(&self.session_dir(id));
+        let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let names = speaker_names(store, id)?;
@@ -463,6 +490,7 @@ impl MeetingManager {
                 notes_md: record.notes_md,
                 notes_template: record.notes_template,
                 notes_edited: store.meeting_notes_edited(id)?,
+                notes_running,
                 audio_available,
             })
         })
@@ -587,6 +615,39 @@ impl MeetingManager {
                 chrono::Local::now().fixed_offset(),
             )?)
         })
+    }
+
+    /// The template for the next notes, picked in the draft or while recording; ignored once the
+    /// session has notes.
+    pub fn set_template(&self, id: &str, template_id: &str) -> Result<(), MeetingError> {
+        let id = parse_id(id)?;
+        find_template(template_id)?;
+        self.with_store(|store| {
+            store.set_meeting_template(id, template_id)?;
+            Ok(())
+        })
+    }
+
+    /// After the transcript of a stop: the notes, with the session's template, when
+    /// [`auto_notes_due`] says so. Progress and failure reach the page as `MeetingProgress`.
+    pub(crate) fn auto_notes(&self, id: SessionId, lines: &[MeetingLine]) {
+        let enabled = crate::settings::get_settings(&self.app).meeting_auto_notes;
+        let record = match self.with_store(|store| Ok(store.meeting(id)?)) {
+            Ok(record) => record,
+            Err(e) => return log::warn!("meeting {id}: automatic notes skipped: {e}"),
+        };
+        let has_key = has_key(self.keys.as_ref(), fala_notes::KEY_PROVIDER);
+        if !auto_notes_due(enabled, &record, has_key, lines) {
+            log::debug!("meeting {id}: notes left to a click");
+            return;
+        }
+        let template = record
+            .notes_template
+            .filter(|t| find_template(t).is_ok())
+            .unwrap_or_else(|| "geral".to_string());
+        if let Err(e) = self.generate_notes(&id.to_string(), &template, false) {
+            log::warn!("meeting {id}: automatic notes failed: {e}");
+        }
     }
 
     /// Cancels the transcription in flight, if any; it returns `cancelled` within a second.
@@ -843,6 +904,7 @@ mod tests {
             notes_md: None,
             notes_template: None,
         };
+        auto_notes_cases(&record);
         let segments = vec![MeetingSegment {
             seq: 1,
             channel: SegmentChannel::Mic,
@@ -896,6 +958,50 @@ mod tests {
             Err(MeetingError::UnknownTemplate)
         );
         assert!(templates().iter().any(|t| t.id == "um-a-um"));
+    }
+
+    /// Chain stop -> transcript -> notes: only when every condition holds.
+    fn auto_notes_cases(record: &MeetingRecord) {
+        let long = MeetingRecord {
+            recorded_ms: AUTO_NOTES_MIN_MS,
+            ..record.clone()
+        };
+        let text = "x".repeat(AUTO_NOTES_MIN_CHARS / 2);
+        let line = |seq| MeetingLine {
+            seq,
+            channel: "system".into(),
+            person: Some(1),
+            name: None,
+            t0_ms: 0,
+            t1_ms: 1,
+            text: text.clone(),
+        };
+        let enough = vec![line(1), line(2)];
+        assert!(auto_notes_due(true, &long, true, &enough));
+        assert!(!auto_notes_due(false, &long, true, &enough), "setting off");
+        assert!(!auto_notes_due(true, &long, false, &enough), "no key");
+        assert!(
+            !auto_notes_due(true, &long, true, &enough[..1]),
+            "short text"
+        );
+        let short = MeetingRecord {
+            recorded_ms: AUTO_NOTES_MIN_MS - 1,
+            ..long.clone()
+        };
+        assert!(!auto_notes_due(true, &short, true, &enough), "short call");
+        let local = MeetingRecord {
+            local_only: true,
+            ..long.clone()
+        };
+        assert!(!auto_notes_due(true, &local, true, &enough), "local only");
+        let with_notes = MeetingRecord {
+            notes_md: Some("- x".into()),
+            ..long
+        };
+        assert!(
+            !auto_notes_due(true, &with_notes, true, &enough),
+            "has notes"
+        );
     }
 
     #[test]

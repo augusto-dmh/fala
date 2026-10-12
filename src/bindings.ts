@@ -1410,33 +1410,22 @@ async saveMeetingNotes(id: string, markdown: string) : Promise<Result<null, Meet
 }
 },
 /**
- * "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+ * The template for the next notes, picked before or during the recording.
  */
-async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
+async setMeetingTemplate(id: string, templateId: string) : Promise<Result<null, MeetingError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_template", { id, templateId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
+ * "Generate notes when it ends": the notes follow the transcript of a stop.
  */
-async changeMeetingRetentionSetting(days: number | null) : Promise<Result<null, string>> {
+async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_meeting_retention_setting", { days }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * The recording cap, 1 to 8 hours; the next recording uses it.
- */
-async changeMeetingCapSetting(hours: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_meeting_cap_setting", { hours }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_notes_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1566,7 +1555,12 @@ notes_profile?: string; notes_language?: NotesLanguage;
 /**
  * Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
  */
-meeting_keyterms?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+meeting_keyterms?: boolean; 
+/**
+ * After the transcript of a stop, the notes follow without a click (never for a local-only
+ * session, nor for a short call).
+ */
+meeting_auto_notes?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
 /**
  * Pause the media playing on the PC while dictating; off by default.
  */
@@ -1631,16 +1625,7 @@ call_prompt_enabled?: boolean;
 /**
  * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
  */
-call_prompt_muted_apps?: string[]; 
-/**
- * Days after a meeting ends when its retained audio is deleted (1 to 3650). `None` keeps
- * it, the default (ADR-0005).
- */
-meeting_audio_retention_days?: number | null; 
-/**
- * The recording cap of a meeting in hours, 1 to 8.
- */
-meeting_cap_hours?: number }
+call_prompt_muted_apps?: string[] }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1769,6 +1754,11 @@ annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_templa
  * The notes were edited by hand since they were generated.
  */
 notes_edited: boolean; 
+/**
+ * Its notes are being written now (a click, or the stop's chain): a page that opens later
+ * still shows it.
+ */
+notes_running: boolean; 
 /**
  * Both retained Opus files are on disk, so a transcript line can be played.
  */

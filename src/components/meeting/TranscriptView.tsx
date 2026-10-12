@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import type { MeetingLine } from "@/bindings";
 import { Input } from "../ui/Input";
 import { clock, speakerOf, type Translate } from "./meetingModel";
+import { highlight } from "./transcriptSearch";
 
 export interface PlayButtonProps {
   playing: boolean;
@@ -103,6 +104,8 @@ export interface TranscriptViewProps {
   /** `seq` the note sources last pointed to. */
   highlighted: number | null;
   onPlay: (line: MeetingLine) => void;
+  /** The search in the transcript: matches are marked. */
+  query?: string;
   /** A name typed for "Person N"; absent, the labels are plain text. */
   onRename?: (person: number, name: string) => void;
   t: Translate;
@@ -118,7 +121,11 @@ export function TranscriptView(props: TranscriptViewProps) {
     <ol className="space-y-1">
       {lines.map((line, index) => {
         const me = line.person === null;
-        const turn = index === 0 || lines[index - 1].person !== line.person;
+        // Search results are far apart: each one keeps its speaker and time.
+        const turn =
+          index === 0 ||
+          (props.query ?? "").trim() !== "" ||
+          lines[index - 1].person !== line.person;
         const highlighted = props.highlighted === line.seq;
         return (
           <li
@@ -142,7 +149,17 @@ export function TranscriptView(props: TranscriptViewProps) {
                 onClick={() => props.onPlay(line)}
                 t={t}
               />
-              <span>{line.text}</span>
+              <span>
+                {highlight(line.text, props.query ?? "").map((piece, i) =>
+                  piece.hit ? (
+                    <mark key={i} className="rounded bg-accent/30 text-text">
+                      {piece.text}
+                    </mark>
+                  ) : (
+                    piece.text
+                  ),
+                )}
+              </span>
             </div>
           </li>
         );

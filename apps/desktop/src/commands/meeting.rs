@@ -242,6 +242,16 @@ pub fn change_notes_language_setting(
     Ok(())
 }
 
+/// "Generate notes when it ends": the notes follow the transcript of a stop.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_auto_notes_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_auto_notes = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// The dictionary as Scribe `keyterms` (ADR-0005).
 #[tauri::command]
 #[specta::specta]
@@ -305,6 +315,17 @@ pub async fn save_meeting_notes(
     markdown: String,
 ) -> Result<(), MeetingError> {
     meetings.save_edited_notes(&id, &markdown)
+}
+
+/// The template for the next notes, picked before or during the recording.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_template(
+    meetings: Meetings<'_>,
+    id: String,
+    template_id: String,
+) -> Result<(), MeetingError> {
+    meetings.set_template(&id, &template_id)
 }
 
 /// "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).

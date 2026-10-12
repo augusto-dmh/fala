@@ -43,3 +43,23 @@ Proof: `bun src/components/meeting/notesPolish.test.tsx` (NP-editable, NP-merge)
 repassa ao comando; strings em pt e en; `MeetingDetail.notes_edited` e `saveMeetingNotes` em
 `src/bindings.ts` (AC 3, AC 7)
 Proof: `bun src/components/meeting/notesPolish.test.tsx` (NP-confirm, NP-i18n) · `grep -n "notes_edited: boolean\|saveMeetingNotes" src/bindings.ts`
+
+## PR 3 - template antes, aviso, consentimento, busca e notas depois do parar
+
+**C10** - O template escolhido antes das notas fica na sessão; com notas, a escolha não troca o
+template que as escreveu (AC 8)
+Proof: `cargo test -p fala-storage --test meeting_notes template_is_picked_only_before_the_notes -- --exact`
+
+**C11** - Parar → transcrever → notas só com o ajuste ligado, a chave, sessão não "só local",
+sem notas, ≥ 3 min e ≥ 2.500 caracteres de transcrição (AC 9)
+Proof: `cargo test -p fala --lib meeting::pipeline::tests::notes_input_from_session -- --exact`
+
+**C12** - A pílula ganha espaço para o cartão nos primeiros 5 s de gravação ou com a call em
+outra saída (AC 10)
+Proof: `cargo test -p fala --lib meeting::tests::pill_card_for_the_call_or_the_first_seconds -- --exact`
+
+**C13** - Busca sem acento e sem maiúsculas com o trecho marcado; "Copiar transcrição" como
+"Nome: texto" por turno; chip de 5 s e "Copiar aviso" no painel e chip na pílula; o aviso não
+promete áudio só local; template no rascunho e na gravação; estados "Escrevendo notas" /
+"Aprimorando suas notas", erro com "Tentar de novo"; strings em pt e en (AC 8-11)
+Proof: `bun src/components/meeting/meetingFlow.test.tsx` (FL-search, FL-copy, FL-consent, FL-flow, FL-i18n)

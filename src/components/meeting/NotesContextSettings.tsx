@@ -74,6 +74,17 @@ export function NotesContextSettings() {
         descriptionMode="inline"
         grouped
       />
+      <ToggleSwitch
+        checked={getSetting("meeting_auto_notes") ?? true}
+        onChange={(enabled) =>
+          void updateSetting("meeting_auto_notes", enabled)
+        }
+        isUpdating={isUpdating("meeting_auto_notes")}
+        label={t("meeting.context.autoNotes.title")}
+        description={t("meeting.context.autoNotes.description")}
+        descriptionMode="inline"
+        grouped
+      />
     </SettingsGroup>
   );
 }

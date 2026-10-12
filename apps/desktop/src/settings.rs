@@ -612,6 +612,10 @@ pub struct AppSettings {
     /// Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
     #[serde(default = "default_meeting_keyterms")]
     pub meeting_keyterms: bool,
+    /// After the transcript of a stop, the notes follow without a click (never for a local-only
+    /// session, nor for a short call).
+    #[serde(default = "default_meeting_auto_notes")]
+    pub meeting_auto_notes: bool,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -889,6 +893,10 @@ fn default_app_language() -> String {
 }
 
 fn default_meeting_keyterms() -> bool {
+    true
+}
+
+fn default_meeting_auto_notes() -> bool {
     true
 }
 
@@ -1229,6 +1237,7 @@ pub fn get_default_settings() -> AppSettings {
         notes_profile: String::new(),
         notes_language: NotesLanguage::default(),
         meeting_keyterms: default_meeting_keyterms(),
+        meeting_auto_notes: default_meeting_auto_notes(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),

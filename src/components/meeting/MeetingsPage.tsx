@@ -51,6 +51,13 @@ const IDLE: MeetingStatus = {
   zero_system: false,
 };
 
+const withoutId = (ids: Set<string>, id: string) => {
+  if (!ids.has(id)) return ids;
+  const next = new Set(ids);
+  next.delete(id);
+  return next;
+};
+
 /** The Meetings page: record, the list of sessions and the open one. */
 export function MeetingsPage() {
   const { t } = useTranslation();
@@ -66,6 +73,9 @@ export function MeetingsPage() {
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
+  // Sessions whose last notes generation failed; the stage before `failed` says which step.
+  const [notesFailed, setNotesFailed] = useState<Set<string>>(new Set());
+  const lastStage = useRef(new Map<string, string>());
   const [error, setError] = useState<MeetingError | string | null>(null);
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
   const [importing, setImporting] = useState(false);
@@ -104,6 +114,8 @@ export function MeetingsPage() {
       events.meetingStatus.listen((event) => setStatus(event.payload)),
       events.meetingProgress.listen((event) => {
         const { id, stage } = event.payload;
+        const before = lastStage.current.get(id);
+        lastStage.current.set(id, stage.stage);
         if (stage.stage === "importing") importId.current = id;
         if (id === importId.current) {
           if (stage.stage === "importing" || stage.stage === "retaining")
@@ -112,8 +124,16 @@ export function MeetingsPage() {
             setImporting(false);
         }
         if (stage.stage === "transcribing") setTranscribing(id);
+        if (stage.stage === "notes") {
+          setGenerating(id);
+          setNotesFailed((ids) => withoutId(ids, id));
+        }
+        if (stage.stage === "failed" && before === "notes") {
+          setNotesFailed((ids) => new Set(ids).add(id));
+        }
         if (stage.stage === "done" || stage.stage === "failed") {
           setTranscribing((current) => (current === id ? null : current));
+          setGenerating((current) => (current === id ? null : current));
           void refresh();
           setSelected((current) => {
             if (current?.summary.id === id) void open(id);
@@ -217,7 +237,7 @@ export function MeetingsPage() {
       templateId,
       replaceEdited,
     );
-    setGenerating(null);
+    setGenerating((current) => (current === id ? null : current));
     if (result.status === "error") setError(result.error);
     await open(id);
     await refresh();
@@ -318,6 +338,20 @@ export function MeetingsPage() {
             onResume={() => void act(commands.resumeMeeting)}
             onStop={() => void act(commands.stopMeeting)}
             onExtend={() => void act(commands.extendMeetingCap)}
+            templates={templates}
+            template={live?.notes_template ?? null}
+            onTemplateChange={(templateId) => {
+              if (!live) return;
+              setLive({ ...live, notes_template: templateId });
+              void commands
+                .setMeetingTemplate(live.summary.id, templateId)
+                .then(() => {
+                  // The same session open below follows the pick.
+                  if (selected?.summary.id === live.summary.id) {
+                    void open(live.summary.id);
+                  }
+                });
+            }}
           />
         )}
         {!askConsent && (
@@ -361,7 +395,10 @@ export function MeetingsPage() {
             templates={templates}
             recording={status.id === selected.summary.id}
             transcribing={transcribing === selected.summary.id}
-            generating={generating === selected.summary.id}
+            generating={
+              generating === selected.summary.id || selected.notes_running
+            }
+            notesFailed={notesFailed.has(selected.summary.id)}
             onRecordDraft={() => void start(selected.summary.id)}
             onTranscribe={() => void transcribe(selected.summary.id)}
             onCancelTranscription={() =>

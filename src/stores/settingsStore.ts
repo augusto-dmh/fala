@@ -170,6 +170,8 @@ const settingUpdaters: {
     commands.changeNotesLanguageSetting(value as NotesLanguage),
   meeting_keyterms: (value) =>
     commands.changeMeetingKeytermsSetting(value as boolean),
+  meeting_auto_notes: (value) =>
+    commands.changeMeetingAutoNotesSetting(value as boolean),
   llm_disabled_apps: async (value) => {
     const result = await commands.changeLlmDisabledAppsSetting(
       value as string[],

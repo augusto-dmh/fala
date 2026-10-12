@@ -376,6 +376,21 @@ impl Store {
         )
     }
 
+    /// O template escolhido no rascunho ou durante a gravação; só vale enquanto a sessão não tem
+    /// notas (depois, `notes_template` diz qual template escreveu as notas). Devolve se trocou.
+    pub fn set_meeting_template(
+        &self,
+        id: SessionId,
+        template: &str,
+    ) -> Result<bool, StorageError> {
+        self.meeting(id)?;
+        let changed = self.conn.execute(
+            "UPDATE meetings SET notes_template = ?2 WHERE id = ?1 AND notes_md IS NULL",
+            params![id.to_string(), template],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// Grava as notas geradas e o template usado; a nota deixa de contar como editada.
     pub fn save_meeting_notes(
         &self,

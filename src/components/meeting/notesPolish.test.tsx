@@ -164,6 +164,7 @@ const lines: MeetingLine[] = [
     notes_md: BASE,
     notes_template: "geral",
     notes_edited: true,
+    notes_running: false,
     audio_available: true,
   };
   const html = renderToStaticMarkup(
@@ -202,8 +203,9 @@ const lines: MeetingLine[] = [
     needsConfirmation({ ...detail, notes_edited: false }, "geral"),
     false,
   );
-  // O "Gerar de novo" oferecido depois de um nome trocado passa pela mesma regra.
-  assert.equal(viewSource.match(/onClick=\{generate\}/g)?.length, 2);
+  // "Gerar notas", o "Gerar de novo" depois de um nome trocado e o "Tentar de novo" passam pela
+  // mesma regra.
+  assert.equal(viewSource.match(/onClick=\{generate\}/g)?.length, 3);
   assert.equal(
     viewSource.match(/props\.onGenerate\(templateId, true\)/g)?.length,
     1,
