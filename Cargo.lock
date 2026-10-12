@@ -2086,6 +2086,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fala-core",
+ "fala-meeting",
  "fala-storage",
  "log",
  "rmcp",
@@ -2122,6 +2123,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "ureq",
 ]

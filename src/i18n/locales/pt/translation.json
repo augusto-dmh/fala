@@ -920,7 +920,7 @@
           },
           "mcp": {
             "name": "Histórico para assistentes (MCP)",
-            "sends": "Ditados que não são dos apps sem IA, só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
+            "sends": "Ditados que não são dos apps sem IA e, com meetings = true, as reuniões que não são só locais (sem áudio), só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
             "destination": "O assistente local que você configurou, que pode mandá-los ao provedor dele"
           },
           "telemetry": {
@@ -1070,7 +1070,28 @@
       "body": "Fechar o Fala para a gravação."
     },
     "stopAndQuit": "Parar e sair",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "stillRecording": {
+      "title": "Ainda está gravando?",
+      "body": "Nada foi ouvido nos últimos 14 minutos. A gravação para em 1 minuto."
+    },
+    "silenceStopped": {
+      "title": "A gravação parou",
+      "body": "Foram 15 minutos de silêncio. O que já foi gravado está salvo."
+    },
+    "mistake": {
+      "title": "Gravou por engano?",
+      "short": "Foram só {{seconds}} s. Nada foi transcrito ainda.",
+      "quiet": "Quase nada foi dito em {{minutes}} min. Nada foi transcrito ainda."
+    },
+    "nothingRecorded": {
+      "title": "Nada foi gravado",
+      "body": "A gravação terminou sem áudio e foi descartada."
+    },
+    "recordAgain": "Gravar de novo",
+    "dismiss": "Fechar",
+    "keep": "Manter",
+    "discard": "Descartar"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
@@ -1234,6 +1255,20 @@
         "title": "Gerar notas ao terminar",
         "description": "Ao parar, depois da transcrição, as notas são escritas sem clique (a partir de 3 minutos e de uma transcrição longa; nunca numa sessão só local)."
       }
+    },
+    "templates": {
+      "title": "Templates de notas",
+      "description": "Os seus são arquivos .json numa pasta do Fala, editados em qualquer editor de texto. O Fala relê a pasta quando você volta para ele.",
+      "folder": "Pasta dos seus templates",
+      "folderDescription": "Um arquivo por template; o LEIAME.txt da pasta explica os campos.",
+      "open": "Abrir a pasta",
+      "duplicate": "Duplicar para editar",
+      "builtinOne": "Embutido",
+      "userOne": "Seu",
+      "builtin": "Embutidos",
+      "user": "Seus templates",
+      "search": "Buscar template",
+      "folderError": "Não consegui usar a pasta de templates: {{detail}}"
     },
     "key": {
       "label": "Chave da ElevenLabs para transcrever:",

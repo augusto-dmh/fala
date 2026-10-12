@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::meeting::import::ImportSource;
 use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
-    MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary, MeetingTemplate,
+    templates, templates_dir, MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary,
+    MeetingTemplates,
 };
 use crate::meeting::recovery::MeetingOrphan;
 use crate::meeting::search::MeetingSearchHit;
@@ -207,8 +209,40 @@ pub async fn meeting_markdown(meetings: Meetings<'_>, id: String) -> Result<Stri
 
 #[tauri::command]
 #[specta::specta]
-pub async fn meeting_templates() -> Result<Vec<MeetingTemplate>, MeetingError> {
-    Ok(crate::meeting::pipeline::templates())
+pub async fn meeting_templates(app: AppHandle) -> Result<MeetingTemplates, MeetingError> {
+    Ok(templates(&templates_dir(&app)?))
+}
+
+/// "Duplicate to edit": copies a built-in template to the templates folder with a new id and
+/// name, opens the folder and returns the new list.
+#[tauri::command]
+#[specta::specta]
+pub async fn duplicate_meeting_template(
+    app: AppHandle,
+    id: String,
+) -> Result<MeetingTemplates, MeetingError> {
+    let dir = templates_dir(&app)?;
+    fala_notes::duplicate_builtin(&dir, &id).map_err(|e| MeetingError::Storage(e.to_string()))?;
+    // The copy is written: a folder that does not open is not a failed duplicate.
+    if let Err(e) = open_folder(&app, &dir) {
+        log::warn!("templates folder did not open: {e:?}");
+    }
+    Ok(templates(&dir))
+}
+
+/// "Open the folder": created with its `LEIAME.txt` on the first click.
+#[tauri::command]
+#[specta::specta]
+pub async fn open_meeting_templates_folder(app: AppHandle) -> Result<(), MeetingError> {
+    let dir = templates_dir(&app)?;
+    fala_notes::ensure_templates_dir(&dir).map_err(|e| MeetingError::Storage(e.to_string()))?;
+    open_folder(&app, &dir)
+}
+
+fn open_folder(app: &AppHandle, dir: &std::path::Path) -> Result<(), MeetingError> {
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<String>)
+        .map_err(|e| MeetingError::Storage(e.to_string()))
 }
 
 #[tauri::command]

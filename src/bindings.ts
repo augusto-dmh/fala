@@ -1298,9 +1298,32 @@ async meetingMarkdown(id: string) : Promise<Result<string, MeetingError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async meetingTemplates() : Promise<Result<MeetingTemplate[], MeetingError>> {
+async meetingTemplates() : Promise<Result<MeetingTemplates, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meeting_templates") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Duplicate to edit": copies a built-in template to the templates folder with a new id and
+ * name, opens the folder and returns the new list.
+ */
+async duplicateMeetingTemplate(id: string) : Promise<Result<MeetingTemplates, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("duplicate_meeting_template", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Open the folder": created with its `LEIAME.txt` on the first click.
+ */
+async openMeetingTemplatesFolder() : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_meeting_templates_folder") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1747,7 +1770,7 @@ export type CallAppInfo = { id: string; name: string }
 /**
  * The person's answer, or the countdown running out.
  */
-export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "expired"
+export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "record_again" | "dismiss" | "keep" | "discard" | "expired"
 export type CallPromptKind = 
 /**
  * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
@@ -1760,7 +1783,23 @@ export type CallPromptKind =
 /**
  * "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
  */
-"quit"
+"quit" | 
+/**
+ * "Ainda está gravando?" a minute before the stop for silence: [Continuar] [Parar].
+ */
+"still_recording" | 
+/**
+ * "Parou depois de 15 min de silêncio" with [Gravar de novo] [Fechar].
+ */
+"silence_stopped" | 
+/**
+ * "Gravou por engano?" after a short or almost silent stop: [Manter] [Descartar].
+ */
+"mistake" | 
+/**
+ * "Nada foi gravado": the empty session is already gone.
+ */
+"nothing_recorded"
 /**
  * What the card shows.
  */
@@ -1768,7 +1807,15 @@ export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name
 /**
  * The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
  */
-web_name: string | null; countdown_ms: number }
+web_name: string | null; countdown_ms: number; 
+/**
+ * The session a "Gravou por engano?" is about.
+ */
+session_id: string | null; 
+/**
+ * Seconds recorded, for "Gravou por engano?".
+ */
+seconds: number | null }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
@@ -2044,7 +2091,15 @@ created_at: string;
  * `None` while the session is a draft that never recorded.
  */
 started_at: string | null; ended_at: string | null; recorded_ms: number; audio_retained: boolean; transcribed: boolean; has_notes: boolean }
-export type MeetingTemplate = { id: string; name: string }
+export type MeetingTemplate = { id: string; name: string; 
+/**
+ * What the notes are for; the pickers search it with the name.
+ */
+purpose: string; source: TemplateSource }
+/**
+ * The built-in templates, then the person's own, and the files that did not load.
+ */
+export type MeetingTemplates = { templates: MeetingTemplate[]; errors: TemplateFileError[] }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -2200,6 +2255,15 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+/**
+ * A file of the templates folder that is not a template, shown as "file.json: error".
+ */
+export type TemplateFileError = { file: string; error: string }
+export type TemplateSource = "builtin" | 
+/**
+ * A `*.json` of `<data>/templates`, edited outside the app.
+ */
+"user"
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Fala already ships.

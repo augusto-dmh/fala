@@ -903,7 +903,7 @@
           },
           "mcp": {
             "name": "History for assistants (MCP)",
-            "sends": "Dictations not made in the apps without AI, read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
+            "sends": "Dictations not made in the apps without AI and, with meetings = true, meetings that are not local-only (never the audio), read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
             "destination": "The local assistant you set up, which may send them to its own provider"
           },
           "telemetry": {
@@ -1073,7 +1073,28 @@
       "body": "Quitting Fala stops the recording."
     },
     "stopAndQuit": "Stop and quit",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "stillRecording": {
+      "title": "Still recording?",
+      "body": "Nothing was heard in the last 14 minutes. The recording stops in 1 minute."
+    },
+    "silenceStopped": {
+      "title": "The recording stopped",
+      "body": "There were 15 minutes of silence. What was recorded is saved."
+    },
+    "mistake": {
+      "title": "Recorded by mistake?",
+      "short": "It was only {{seconds}} s. Nothing was transcribed yet.",
+      "quiet": "Almost nothing was said in {{minutes}} min. Nothing was transcribed yet."
+    },
+    "nothingRecorded": {
+      "title": "Nothing was recorded",
+      "body": "The recording ended without audio and was discarded."
+    },
+    "recordAgain": "Record again",
+    "dismiss": "Close",
+    "keep": "Keep",
+    "discard": "Discard"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
@@ -1234,6 +1255,20 @@
         "title": "Generate notes when it ends",
         "description": "When you stop, after the transcript, the notes are written without a click (from 3 minutes and a long transcript on; never for a local-only session)."
       }
+    },
+    "templates": {
+      "title": "Notes templates",
+      "description": "Yours are .json files in a Fala folder, edited in any text editor. Fala reads the folder again when you come back to it.",
+      "folder": "Your templates folder",
+      "folderDescription": "One file per template; the folder's LEIAME.txt explains the fields.",
+      "open": "Open the folder",
+      "duplicate": "Duplicate to edit",
+      "builtinOne": "Built-in",
+      "userOne": "Yours",
+      "builtin": "Built-in",
+      "user": "Your templates",
+      "search": "Search templates",
+      "folderError": "Could not use the templates folder: {{detail}}"
     },
     "key": {
       "label": "ElevenLabs key to transcribe:",

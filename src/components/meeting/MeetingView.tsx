@@ -17,6 +17,7 @@ import { NotesEditor } from "./NotesEditor";
 import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
+import { shownTemplate, TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
 import { searchLines, transcriptText } from "./transcriptSearch";
 
@@ -46,6 +47,8 @@ export function MeetingView(props: MeetingViewProps) {
   const [templateId, setTemplateId] = useState(
     detail.notes_template ?? props.templates[0]?.id ?? "geral",
   );
+  // A user template deleted or broken after the pick: show and use the one the select shows.
+  const picked = shownTemplate(props.templates, templateId);
   const draft = detail.summary.started_at === null;
   const [playing, setPlaying] = useState<number | null>(null);
   const [clipError, setClipError] = useState<MeetingError | null>(null);
@@ -113,10 +116,10 @@ export function MeetingView(props: MeetingViewProps) {
   const generate = () => {
     setOfferRegenerate(false);
     const edited = detail.notes_edited || editedHere;
-    if (needsConfirmation({ ...detail, notes_edited: edited }, templateId)) {
+    if (needsConfirmation({ ...detail, notes_edited: edited }, picked)) {
       setConfirming(true);
     } else {
-      props.onGenerate(templateId, false);
+      props.onGenerate(picked, false);
     }
   };
   // The template stored with the session (picked in the recorder, or the one that wrote the
@@ -132,18 +135,11 @@ export function MeetingView(props: MeetingViewProps) {
     }
   };
   const templateSelect = (
-    <select
-      aria-label={t("meeting.view.template")}
-      className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
-      value={templateId}
-      onChange={(event) => pickTemplate(event.target.value)}
-    >
-      {props.templates.map((template) => (
-        <option key={template.id} value={template.id}>
-          {template.name}
-        </option>
-      ))}
-    </select>
+    <TemplateSelect
+      templates={props.templates}
+      value={picked}
+      onChange={pickTemplate}
+    />
   );
   const generatingLabel = detail.annotations.trim()
     ? t("meeting.view.enhancing")
@@ -279,7 +275,7 @@ export function MeetingView(props: MeetingViewProps) {
                 onClick={() => {
                   setConfirming(false);
                   setEditedHere(false);
-                  props.onGenerate(templateId, true);
+                  props.onGenerate(picked, true);
                 }}
               >
                 {t("meeting.notesEdit.regenerate")}

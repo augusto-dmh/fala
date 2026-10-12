@@ -5,7 +5,7 @@
 //! `anthropic` key the post-processing settings already store, for the notes.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset};
@@ -15,7 +15,10 @@ use fala_asr::meeting::{
 };
 use fala_core::{Dictionary, Language};
 use fala_meeting::SessionId;
-use fala_notes::{builtin_templates, generate_notes, Claude, NotesError, NotesInput, Template};
+use fala_notes::{
+    builtin_templates, generate_notes, load_user_templates, Claude, NotesError, NotesInput,
+    Template,
+};
 use fala_secrets::{ApiKey, SecretStore};
 use fala_storage::{
     MeetingRecord, MeetingSegment, NameSuggestion, SegmentChannel, SegmentSpeaker, Store,
@@ -93,6 +96,31 @@ pub struct MeetingDetail {
 pub struct MeetingTemplate {
     pub id: String,
     pub name: String,
+    /// What the notes are for; the pickers search it with the name.
+    pub purpose: String,
+    pub source: TemplateSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TemplateSource {
+    Builtin,
+    /// A `*.json` of `<data>/templates`, edited outside the app.
+    User,
+}
+
+/// A file of the templates folder that is not a template, shown as "file.json: error".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct TemplateFileError {
+    pub file: String,
+    pub error: String,
+}
+
+/// The built-in templates, then the person's own, and the files that did not load.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct MeetingTemplates {
+    pub templates: Vec<MeetingTemplate>,
+    pub errors: Vec<TemplateFileError>,
 }
 
 /// Which keys exist in the keyring; never the keys themselves.
@@ -271,23 +299,48 @@ pub(crate) fn needs_retain(dir: &Path) -> bool {
         && !(dir.join(MIC_FILE).is_file() && dir.join(SYSTEM_FILE).is_file())
 }
 
-pub(crate) fn find_template(id: &str) -> Result<Template, MeetingError> {
-    builtin_templates()
-        .map_err(|e| MeetingError::Notes(e.to_string()))?
+/// `<data>/templates`: the person's own templates, read again on every use (no watcher).
+pub(crate) fn templates_dir(app: &tauri::AppHandle) -> Result<PathBuf, MeetingError> {
+    crate::portable::app_data_dir(app)
+        .map(|data| data.join("templates"))
+        .map_err(|e| MeetingError::Storage(e.to_string()))
+}
+
+/// A built-in template, or one of `dir`; a user file never shadows a built-in id.
+pub(crate) fn find_template(dir: &Path, id: &str) -> Result<Template, MeetingError> {
+    let builtin = builtin_templates().map_err(|e| MeetingError::Notes(e.to_string()))?;
+    builtin
         .into_iter()
+        .chain(load_user_templates(dir).0)
         .find(|t| t.id == id)
         .ok_or(MeetingError::UnknownTemplate)
 }
 
-pub(crate) fn templates() -> Vec<MeetingTemplate> {
-    builtin_templates()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|t| MeetingTemplate {
+pub(crate) fn templates(dir: &Path) -> MeetingTemplates {
+    let (user, errors) = load_user_templates(dir);
+    let entry = |source: TemplateSource| {
+        move |t: Template| MeetingTemplate {
             id: t.id,
             name: t.name,
-        })
-        .collect()
+            purpose: t.purpose,
+            source,
+        }
+    };
+    MeetingTemplates {
+        templates: builtin_templates()
+            .unwrap_or_default()
+            .into_iter()
+            .map(entry(TemplateSource::Builtin))
+            .chain(user.into_iter().map(entry(TemplateSource::User)))
+            .collect(),
+        errors: errors
+            .into_iter()
+            .map(|e| TemplateFileError {
+                file: e.file,
+                error: e.error,
+            })
+            .collect(),
+    }
 }
 
 /// What the notes LLM receives, from the stored session (ADR-0016 list: title, local date and
@@ -509,8 +562,9 @@ impl MeetingManager {
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let segments = store.meeting_segments(id)?;
-            let template = find_template(record.notes_template.as_deref().unwrap_or("geral"))
-                .or_else(|_| find_template("geral"))?;
+            let template = self
+                .template(record.notes_template.as_deref().unwrap_or("geral"))
+                .or_else(|_| self.template("geral"))?;
             let input = notes_input(
                 &record,
                 &segments,
@@ -621,7 +675,7 @@ impl MeetingManager {
     /// session has notes.
     pub fn set_template(&self, id: &str, template_id: &str) -> Result<(), MeetingError> {
         let id = parse_id(id)?;
-        find_template(template_id)?;
+        self.template(template_id)?;
         self.with_store(|store| {
             store.set_meeting_template(id, template_id)?;
             Ok(())
@@ -643,7 +697,13 @@ impl MeetingManager {
         }
         let template = record
             .notes_template
-            .filter(|t| find_template(t).is_ok())
+            .filter(|t| match self.template(t) {
+                Ok(_) => true,
+                Err(e) => {
+                    log::warn!("meeting {id}: template {t} unavailable ({e}); notes use geral");
+                    false
+                }
+            })
             .unwrap_or_else(|| "geral".to_string());
         if let Err(e) = self.generate_notes(&id.to_string(), &template, false) {
             log::warn!("meeting {id}: automatic notes failed: {e}");
@@ -659,7 +719,12 @@ impl MeetingManager {
         }
     }
 
-    /// Generates the notes with a built-in template and stores the Markdown (ADR-0016). Notes
+    /// A built-in template or one of the person's own.
+    fn template(&self, id: &str) -> Result<Template, MeetingError> {
+        find_template(&templates_dir(&self.app)?, id)
+    }
+
+    /// Generates the notes with a built-in or user template and stores the Markdown (ADR-0016). Notes
     /// edited by hand are only replaced by the same template with `replace_edited`, the click on
     /// the confirmation.
     pub fn generate_notes(
@@ -669,7 +734,7 @@ impl MeetingManager {
         replace_edited: bool,
     ) -> Result<String, MeetingError> {
         let id = parse_id(id)?;
-        let template = find_template(template_id)?;
+        let template = self.template(template_id)?;
         self.with_store(|store| guard_edited_notes(store, id, template_id, replace_edited))?;
         {
             let mut work = self.work.lock().unwrap_or_else(|e| e.into_inner());
@@ -913,7 +978,7 @@ mod tests {
             t1_ms: 900,
             text: "oi".into(),
         }];
-        let template = find_template("geral").unwrap();
+        let template = find_template(Path::new("nao-existe"), "geral").unwrap();
         let settings = NotesSettings {
             language: Language::PtBr,
             profile: "PM do Fala".into(),
@@ -954,10 +1019,46 @@ mod tests {
             "13:50"
         );
         assert_eq!(
-            find_template("nao-existe"),
+            find_template(Path::new("nao-existe"), "nao-existe"),
             Err(MeetingError::UnknownTemplate)
         );
-        assert!(templates().iter().any(|t| t.id == "um-a-um"));
+    }
+
+    /// `meeting_templates`: the built-ins, then the folder's templates, and its broken files; a
+    /// user file never takes a built-in id.
+    #[test]
+    fn meeting_templates_lists_builtin_and_user_templates() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = |id: &str, name: &str| {
+            format!(
+                r#"{{"schema":1,"id":"{id}","name":"{name}","purpose":"Vender","style":"s","sections":[{{"title":"Dor","instruction":"x"}}]}}"#
+            )
+        };
+        std::fs::write(dir.path().join("vendas.json"), user("vendas", "Vendas")).unwrap();
+        std::fs::write(dir.path().join("geral.json"), user("geral", "Minha geral")).unwrap();
+        std::fs::write(dir.path().join("quebrado.json"), "{").unwrap();
+        let listed = templates(dir.path());
+        let ids: Vec<(&str, TemplateSource)> = listed
+            .templates
+            .iter()
+            .map(|t| (t.id.as_str(), t.source))
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                ("geral", TemplateSource::Builtin),
+                ("um-a-um", TemplateSource::Builtin),
+                ("vendas", TemplateSource::User),
+            ]
+        );
+        assert_eq!(listed.templates[2].purpose, "Vender");
+        let files: Vec<&str> = listed.errors.iter().map(|e| e.file.as_str()).collect();
+        assert_eq!(files, ["geral.json", "quebrado.json"]);
+        assert_eq!(find_template(dir.path(), "vendas").unwrap().name, "Vendas");
+        assert_eq!(
+            find_template(dir.path(), "geral").unwrap().name,
+            "Reunião geral"
+        );
     }
 
     /// Chain stop -> transcript -> notes: only when every condition holds.

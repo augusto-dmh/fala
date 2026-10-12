@@ -8,8 +8,11 @@ pub const MIN_FREE_DISK_BYTES: u64 = 500 * 1024 * 1024;
 pub const LOW_DISK_WARN_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Nível RMS linear abaixo do qual um canal conta como silêncio (≈ −60 dBFS).
 pub const SILENCE_RMS: f32 = 0.001;
-/// Silêncio contínuo nos canais considerados que para a gravação (decisão D6 do pitch).
+/// Silêncio contínuo nos canais considerados que para a gravação (decisão D6 do pitch). Conta o
+/// tempo gravado, não o de parede: uma suspensão do PC não soma silêncio.
 pub const SILENCE_STOP_AFTER: Duration = Duration::from_secs(15 * 60);
+/// Antecedência do "Ainda está gravando?" antes do fim por silêncio.
+pub const SILENCE_WARN_BEFORE: Duration = Duration::from_secs(60);
 /// Antecedência do aviso de teto.
 const CAP_WARNING_BEFORE: Duration = Duration::from_secs(10 * 60);
 
@@ -30,6 +33,8 @@ pub enum UserAction {
     StopRecording,
     /// "Mais 1 h" no aviso do teto.
     ExtendCap,
+    /// "Continuar gravando" no "Ainda está gravando?": o silêncio volta a contar do zero.
+    KeepRecording,
 }
 
 /// Nível RMS linear (0 a 1) de cada canal no último intervalo.
@@ -52,6 +57,9 @@ pub enum Input {
     OsSuspended,
     /// O SO voltou da suspensão.
     OsResumed,
+    /// O "Ainda está gravando?" apareceu na tela. Sem ele, o silêncio nunca para a gravação
+    /// (ninguém foi avisado).
+    SilenceWarningShown,
     /// O gravador fechou o cabeçalho e o arquivo da sessão.
     ///
     /// Contrato com o gravador: só responde assim a um [`Effect::FinalizeCapture`] pedido em
@@ -138,6 +146,10 @@ pub enum Effect {
     CapWarning {
         remaining: Duration,
     },
+    /// "Ainda está gravando?": o fim por silêncio vem em `remaining`, se o aviso aparecer.
+    SilenceWarning {
+        remaining: Duration,
+    },
     /// Depois da suspensão: perguntar "continuar ou parar".
     AskContinueOrStop,
     /// Entregar a sessão ao pipeline (conversão, ASR, notas).
@@ -179,6 +191,8 @@ pub struct MeetingSession {
     state: SessionState,
     recorded: Duration,
     silent_for: Duration,
+    silence_warned: bool,
+    silence_warning_shown: bool,
     cap_warned: bool,
     gaps: Vec<Gap>,
     started_at: Option<UnixMillis>,
@@ -192,6 +206,8 @@ impl MeetingSession {
             state: SessionState::Idle,
             recorded: Duration::ZERO,
             silent_for: Duration::ZERO,
+            silence_warned: false,
+            silence_warning_shown: false,
             cap_warned: false,
             gaps: Vec::new(),
             started_at: None,
@@ -262,6 +278,8 @@ impl MeetingSession {
                 self.start(now, free_disk_bytes)
             }
             (S::Recording { .. }, Input::User(UserAction::PauseRecording)) => {
+                // A warning seen before the pause does not allow a stop after the resume.
+                self.reset_silence();
                 self.open_gap(GapKind::Pause, now);
                 self.state = S::Paused {
                     indicator: Indicator::new(IndicatorKind::Paused),
@@ -290,7 +308,15 @@ impl MeetingSession {
                 self.cap_warned = false;
                 Ok(Vec::new())
             }
+            (S::Recording { .. } | S::Paused { .. }, Input::User(UserAction::KeepRecording)) => {
+                self.reset_silence();
+                Ok(Vec::new())
+            }
             (state, Input::User(action)) => Err(SessionError::InvalidTransition { state, action }),
+            (S::Recording { .. }, Input::SilenceWarningShown) => {
+                self.silence_warning_shown = self.silence_warned;
+                Ok(Vec::new())
+            }
             (S::Recording { .. }, Input::Tick { recorded, levels }) => {
                 Ok(self.tick(now, recorded, levels))
             }
@@ -311,7 +337,7 @@ impl MeetingSession {
                 Ok(vec![Effect::HideIndicator, Effect::Process])
             }
             (_, Input::Tick { .. } | Input::OsSuspended | Input::OsResumed)
-            | (_, Input::CaptureFinalized) => Ok(Vec::new()),
+            | (_, Input::CaptureFinalized | Input::SilenceWarningShown) => Ok(Vec::new()),
         }
     }
 
@@ -352,23 +378,38 @@ impl MeetingSession {
         if mic_silent && levels.system < SILENCE_RMS {
             self.silent_for += delta;
         } else {
-            self.silent_for = Duration::ZERO;
+            self.reset_silence();
         }
 
         let cap = self.config.cap.duration();
         if self.recorded >= cap {
             return self.begin_stop(now, StopReason::CapReached);
         }
-        if self.silent_for >= SILENCE_STOP_AFTER {
+        // Never a silent stop: only after the person could see the warning (Wispr's rule).
+        if self.silent_for >= SILENCE_STOP_AFTER && self.silence_warning_shown {
             return self.begin_stop(now, StopReason::Silence);
+        }
+        let mut effects = Vec::new();
+        let warn_at = SILENCE_STOP_AFTER - SILENCE_WARN_BEFORE;
+        if !self.silence_warned && self.silent_for >= warn_at {
+            self.silence_warned = true;
+            effects.push(Effect::SilenceWarning {
+                remaining: SILENCE_STOP_AFTER.saturating_sub(self.silent_for),
+            });
         }
         if !self.cap_warned && self.recorded >= cap.saturating_sub(CAP_WARNING_BEFORE) {
             self.cap_warned = true;
-            return vec![Effect::CapWarning {
+            effects.push(Effect::CapWarning {
                 remaining: cap - self.recorded,
-            }];
+            });
         }
-        Vec::new()
+        effects
+    }
+
+    fn reset_silence(&mut self) {
+        self.silent_for = Duration::ZERO;
+        self.silence_warned = false;
+        self.silence_warning_shown = false;
     }
 
     fn begin_stop(&mut self, now: UnixMillis, reason: StopReason) -> Vec<Effect> {
@@ -412,6 +453,7 @@ mod tests {
                 Effect::ResumeCapture => "ResumeCapture",
                 Effect::FinalizeCapture => "FinalizeCapture",
                 Effect::CapWarning { .. } => "CapWarning",
+                Effect::SilenceWarning { .. } => "SilenceWarning",
                 Effect::AskContinueOrStop => "AskContinueOrStop",
                 Effect::Process => "Process",
             }
@@ -425,6 +467,9 @@ mod tests {
             Effect::ResumeCapture,
             Effect::FinalizeCapture,
             Effect::CapWarning {
+                remaining: Duration::ZERO,
+            },
+            Effect::SilenceWarning {
                 remaining: Duration::ZERO,
             },
             Effect::AskContinueOrStop,

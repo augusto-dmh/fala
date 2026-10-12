@@ -2,9 +2,11 @@
 //!
 //! Expõe `search_dictations`, `get_dictation` e as resources `fala://dictation/<id>`. Fica
 //! desligado até `<data-dir>/mcp.toml` ter `enabled = true`; desligado, não abre o banco. Um
-//! ditado `sensitive` é inexistente para o MCP. Nunca escreve: só abre `fala.sqlite` se ele já
-//! existe e só chama `Store::search` e `Store::get`. O stdout é do protocolo; o log vai para o
-//! stderr. Desenho na ADR-0010 (proposed).
+//! ditado `sensitive` é inexistente para o MCP. As reuniões (`list_meetings`, `get_meeting`,
+//! `get_transcript_segment` e `fala://meeting/<id>`) pedem também `meetings = true`, e uma sessão
+//! "só local" é inexistente para o MCP. Nunca escreve: só abre `fala.sqlite` se ele já existe e
+//! só chama leituras do `Store`. O stdout é do protocolo; o log vai para o stderr. Desenho na
+//! ADR-0010 (proposed).
 
 mod config;
 mod server;
@@ -38,12 +40,16 @@ pub enum McpError {
 ///
 /// `data_dir` é a pasta do `fala.sqlite` e do `mcp.toml`, a mesma do `fala-cli history`.
 pub fn run_stdio(data_dir: &Path) -> Result<(), McpError> {
-    let enabled = config::enabled(data_dir);
-    let store = if enabled { open_store(data_dir)? } else { None };
+    let consent = config::consent(data_dir);
+    let store = if consent.enabled {
+        open_store(data_dir)?
+    } else {
+        None
+    };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .build()?;
-    let result = runtime.block_on(serve(FalaMcp::new(enabled, store)));
+    let result = runtime.block_on(serve(FalaMcp::new(consent, store)));
     // A leitura do stdin roda numa thread bloqueante do tokio; se a sessão acabou por erro com o
     // stdin ainda aberto, esperar por ela prenderia o processo.
     runtime.shutdown_background();
