@@ -2138,7 +2138,7 @@ export type StreamWorkKind = "transcribing" | "polishing"
 export type TemplateFileError = { file: string; error: string }
 export type TemplateSource = "builtin" | 
 /**
- * A `*.json` of `<data>/templates` (ADR-0006).
+ * A `*.json` of `<data>/templates`, edited outside the app.
  */
 "user"
 /**

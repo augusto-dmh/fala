@@ -105,7 +105,7 @@ pub struct MeetingTemplate {
 #[serde(rename_all = "snake_case")]
 pub enum TemplateSource {
     Builtin,
-    /// A `*.json` of `<data>/templates` (ADR-0006).
+    /// A `*.json` of `<data>/templates`, edited outside the app.
     User,
 }
 
@@ -685,7 +685,13 @@ impl MeetingManager {
         }
         let template = record
             .notes_template
-            .filter(|t| self.template(t).is_ok())
+            .filter(|t| match self.template(t) {
+                Ok(_) => true,
+                Err(e) => {
+                    log::warn!("meeting {id}: template {t} unavailable ({e}); notes use geral");
+                    false
+                }
+            })
             .unwrap_or_else(|| "geral".to_string());
         if let Err(e) = self.generate_notes(&id.to_string(), &template, false) {
             log::warn!("meeting {id}: automatic notes failed: {e}");

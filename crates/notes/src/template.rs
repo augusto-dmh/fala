@@ -62,7 +62,7 @@ pub fn builtin_templates() -> Result<Vec<Template>, NotesError> {
         .collect()
 }
 
-/// O `LEIAME.txt` da pasta de templates do usuário (ADR-0006: legível fora do app).
+/// O `LEIAME.txt` da pasta de templates do usuário, editada fora do app.
 pub const TEMPLATES_README: &str = "Cada arquivo .json desta pasta é um template de notas do Fala: schema (1), id (único), name, purpose (para que servem as notas), style (tom e tamanho) e sections, uma lista de {title, instruction}.\r\n\
 Para começar, use \"Duplicar para editar\" num template embutido em Reuniões e edite a cópia; o Fala relê esta pasta quando você volta para ele.\r\n";
 
@@ -101,8 +101,12 @@ pub fn load_user_templates(dir: &Path) -> (Vec<Template>, Vec<TemplateLoadError>
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
         })
         .collect();
-    // Pelo nome sem extensão: "geral-copia" antes de "geral-copia-2".
-    files.sort_by(|a, b| a.file_stem().cmp(&b.file_stem()));
+    // Pelo nome sem extensão e sem caixa ("geral-copia" antes de "geral-copia-2"); o caminho
+    // inteiro desempata, para a ordem não depender do `read_dir`.
+    files.sort_by_cached_key(|path| {
+        let stem = path.file_stem().unwrap_or_default();
+        (stem.to_string_lossy().to_lowercase(), path.clone())
+    });
     let builtin = builtin_ids();
     for path in files {
         let file = path
@@ -133,7 +137,8 @@ pub fn load_user_templates(dir: &Path) -> (Vec<Template>, Vec<TemplateLoadError>
         match parsed {
             Ok(template) => templates.push(template),
             Err(error) => {
-                log::warn!("template do usuário recusado: {file}: {error}");
+                // A lista é relida a cada foco: a UI mostra o erro, o log só em debug.
+                log::debug!("template do usuário recusado: {file}: {error}");
                 errors.push(TemplateLoadError { file, error });
             }
         }

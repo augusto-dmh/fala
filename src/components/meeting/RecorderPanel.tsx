@@ -11,7 +11,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { clock } from "./meetingModel";
-import { TemplateSelect } from "./TemplateSelect";
+import { shownTemplate, TemplateSelect } from "./TemplateSelect";
 
 export interface RecorderPanelProps {
   status: MeetingStatus;
@@ -176,7 +176,7 @@ export function RecorderPanel(props: RecorderPanelProps) {
         {props.templates && props.onTemplateChange && (
           <TemplateSelect
             templates={props.templates}
-            value={props.template ?? props.templates[0]?.id ?? ""}
+            value={shownTemplate(props.templates, props.template ?? null)}
             onChange={props.onTemplateChange}
           />
         )}

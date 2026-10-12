@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { MeetingTemplate } from "@/bindings";
 import {
   filterTemplates,
+  shownTemplate,
   TEMPLATE_SEARCH_ABOVE,
   TemplateSelect,
 } from "./TemplateSelect";
@@ -64,6 +65,16 @@ const vendas = template("vendas", "Vendas", "user", "Ligação com cliente");
   assert.ok(first < grouped.indexOf('value="geral"'), grouped);
   assert.ok(grouped.indexOf('value="um-a-um"') < second, grouped);
   assert.ok(second < grouped.indexOf('value="vendas"'), grouped);
+  // Grupo vazio não aparece; um template que sumiu da pasta dá lugar ao primeiro.
+  const onlyUser = renderToStaticMarkup(
+    <TemplateSelect templates={[vendas]} value="vendas" onChange={noop} />,
+  );
+  assert.equal(onlyUser.split("<optgroup").length, 2, onlyUser);
+  assert.equal(shownTemplate(builtin, "vendas"), "geral");
+  assert.equal(shownTemplate(builtin, "um-a-um"), "um-a-um");
+  assert.equal(shownTemplate(builtin, null), "geral");
+  assert.equal(shownTemplate([], "vendas"), "vendas");
+  assert.match(view, /props\.onGenerate\(picked, false\)/);
   // Os dois seletores (rascunho/nota e gravação) usam o mesmo componente.
   assert.match(view, /<TemplateSelect/);
   assert.match(recorder, /<TemplateSelect/);

@@ -25,6 +25,20 @@ export function filterTemplates(
   );
 }
 
+/**
+ * The id the pickers show and use: `id` while it is in the list, else the first template (a
+ * user file deleted or broken after the pick). Before the list loads, `id` as it is.
+ */
+export function shownTemplate(
+  templates: MeetingTemplate[],
+  id: string | null,
+): string {
+  if (templates.length === 0 || templates.some((t) => t.id === id)) {
+    return id ?? "";
+  }
+  return templates[0].id;
+}
+
 export interface TemplateSelectProps {
   templates: MeetingTemplate[];
   value: string;
@@ -67,9 +81,11 @@ export function TemplateSelect(props: TemplateSelectProps) {
           builtin.map(option)
         ) : (
           <>
-            <optgroup label={t("meeting.templates.builtin")}>
-              {builtin.map(option)}
-            </optgroup>
+            {builtin.length > 0 && (
+              <optgroup label={t("meeting.templates.builtin")}>
+                {builtin.map(option)}
+              </optgroup>
+            )}
             <optgroup label={t("meeting.templates.user")}>
               {user.map(option)}
             </optgroup>

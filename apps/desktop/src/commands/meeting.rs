@@ -211,7 +211,10 @@ pub async fn duplicate_meeting_template(
 ) -> Result<MeetingTemplates, MeetingError> {
     let dir = templates_dir(&app)?;
     fala_notes::duplicate_builtin(&dir, &id).map_err(|e| MeetingError::Storage(e.to_string()))?;
-    open_folder(&app, &dir)?;
+    // The copy is written: a folder that does not open is not a failed duplicate.
+    if let Err(e) = open_folder(&app, &dir) {
+        log::warn!("templates folder did not open: {e:?}");
+    }
     Ok(templates(&dir))
 }
 
