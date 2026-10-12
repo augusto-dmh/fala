@@ -24,7 +24,10 @@ import { StatsPage } from "./components/stats/StatsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { type SettingsView } from "./components/settingsNav";
 import { WhatsNewGate } from "./components/whats-new";
-import { requestConsent } from "./components/meeting/meetingModel";
+import {
+  requestConsent,
+  requestOpenMeeting,
+} from "./components/meeting/meetingModel";
 import { UPDATER_ENABLED } from "./lib/updater";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -84,6 +87,20 @@ function App() {
     const unlisten = listen("meeting-consent-required", () => {
       if (sectionRef.current !== "meetings") {
         requestConsent();
+        setDestination("meetings");
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // A click on the meeting pill: the Meetings page on the session being recorded. An open page
+  // opens it from its own listener, as with the notice above.
+  useEffect(() => {
+    const unlisten = listen<string | null>("open-meeting", (event) => {
+      if (sectionRef.current !== "meetings") {
+        if (event.payload) requestOpenMeeting(event.payload);
         setDestination("meetings");
       }
     });

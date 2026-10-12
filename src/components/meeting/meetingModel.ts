@@ -128,3 +128,19 @@ export function takeConsentRequest(): boolean {
   consentRequested = false;
   return requested;
 }
+
+/**
+ * Set by the app when a click on the meeting pill asked for the session being recorded, so the
+ * page opens it even if it mounts after the event.
+ */
+let openRequested: string | null = null;
+
+export function requestOpenMeeting(id: string): void {
+  openRequested = id;
+}
+
+export function takeOpenMeetingRequest(): string | null {
+  const id = openRequested;
+  openRequested = null;
+  return id;
+}

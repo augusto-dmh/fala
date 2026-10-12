@@ -26,7 +26,12 @@ import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
 import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
-import { errorDetail, errorKey, takeConsentRequest } from "./meetingModel";
+import {
+  errorDetail,
+  errorKey,
+  takeConsentRequest,
+  takeOpenMeetingRequest,
+} from "./meetingModel";
 
 const IDLE: MeetingStatus = {
   state: "idle",
@@ -91,6 +96,9 @@ export function MeetingsPage() {
       .meetingKeys()
       .then((r) => r.status === "ok" && setKeys(r.data));
     void refresh();
+    // Mounted by a click on the meeting pill: open the session it records.
+    const requested = takeOpenMeetingRequest();
+    if (requested) void open(requested);
     const unlisteners = [
       events.meetingStatus.listen((event) => setStatus(event.payload)),
       events.meetingProgress.listen((event) => {
@@ -114,6 +122,9 @@ export function MeetingsPage() {
       }),
       // The page is open: the app does not leave a request for the next mount.
       listen("meeting-consent-required", () => setAskConsent(true)),
+      listen<string | null>("open-meeting", (event) => {
+        if (event.payload) void open(event.payload);
+      }),
     ];
     return () => {
       unlisteners.forEach((p) => void p.then((unlisten) => unlisten()));

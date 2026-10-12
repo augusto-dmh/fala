@@ -836,6 +836,25 @@ async setIdlePillHover(hover: boolean) : Promise<void> {
 async openHomeFromPill() : Promise<void> {
     await TAURI_INVOKE("open_home_from_pill");
 },
+/**
+ * A click on the meeting pill opens the main window on Reuniões, on the session it records.
+ */
+async openMeetingFromPill() : Promise<void> {
+    await TAURI_INVOKE("open_meeting_from_pill");
+},
+/**
+ * The pill that says the paste failed ran its time without the pointer over it.
+ */
+async endPasteFailed(generation: number) : Promise<void> {
+    await TAURI_INVOKE("end_paste_failed", { generation });
+},
+/**
+ * A click on the pill that says the paste failed: puts that text on the clipboard, where the
+ * user asked for it. `false` when there is nothing to copy or the clipboard refused it.
+ */
+async copyFailedPaste() : Promise<boolean> {
+    return await TAURI_INVOKE("copy_failed_paste");
+},
 async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };

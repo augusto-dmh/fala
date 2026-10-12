@@ -993,7 +993,14 @@
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada",
     "callElsewhere": "O som da call está saindo por {{device}}",
-    "recordFrom": "Gravar deste dispositivo"
+    "recordFrom": "Gravar deste dispositivo",
+    "pasteFailed": {
+      "title": "Não deu para colar.",
+      "retry": "{{keys}} cola de novo · clique para copiar",
+      "click": "Clique para copiar",
+      "copied": "Copiado",
+      "label": "Não deu para colar. Clique para copiar o texto."
+    }
   },
   "callPrompt": {
     "offer": {
