@@ -21,3 +21,25 @@ Proof: `cargo test -p fala --lib meeting::pipeline::tests::typed_name_with_at_ne
 **C4** - "Pessoa N" e o nome aplicado viram botão de renomear, "Eu" não; o nome vai ao comando;
 numa sessão com notas, o nome trocado oferece gerar de novo; strings em pt e en (AC 4, AC 7)
 Proof: `bun src/components/meeting/speakerRename.test.tsx` (RN-label, RN-wiring, RN-i18n) · `grep -n "setMeetingSpeakerName" src/bindings.ts`
+
+## PR 2 - nota editável e confirmação antes de regenerar
+
+**C5** - `meeting_note_edits` nasce na abertura; editar marca, gerar desmarca, a marca sobrevive a
+reabrir; editar sem nota gerada é `NotFound` (AC 1, AC 2, door 1)
+Proof: `cargo test -p fala-storage --test meeting_notes edit_marks_the_notes_and_a_generation_clears_the_mark -- --exact`
+
+**C6** - Apagar a reunião apaga a marca (cascata) (AC 1)
+Proof: `cargo test -p fala-storage --test meeting_notes mark_goes_with_the_meeting -- --exact`
+
+**C7** - Regenerar nota editada com o mesmo template sem `replace_edited` devolve
+`{"kind":"notes_edited"}`; com ele, com outro template ou sem edição, segue (AC 3, door 2)
+Proof: `cargo test -p fala --lib meeting::pipeline::tests::edited_notes_are_regenerated_only_after_the_confirmation -- --exact`
+
+**C8** - O editor mostra o texto sem marcador/ponteiro/âncora; sem mudança a nota volta igual;
+linha gerada mudada perde marcador e fontes, as outras ficam (AC 6)
+Proof: `bun src/components/meeting/notesPolish.test.tsx` (NP-editable, NP-merge)
+
+**C9** - "Editar" na nota; a confirmação só com o mesmo template e `true` só nela; a página
+repassa ao comando; strings em pt e en; `MeetingDetail.notes_edited` e `saveMeetingNotes` em
+`src/bindings.ts` (AC 3, AC 7)
+Proof: `bun src/components/meeting/notesPolish.test.tsx` (NP-confirm, NP-i18n) · `grep -n "notes_edited: boolean\|saveMeetingNotes" src/bindings.ts`
