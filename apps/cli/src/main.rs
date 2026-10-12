@@ -55,7 +55,7 @@ enum Command {
     Format(format::FormatArgs),
     /// Histórico de ditado: gravar, buscar, desfazer e reaplicar a edição.
     History(history::HistoryArgs),
-    /// Reconstrói o banco do histórico a partir dos `.md` de `Ditados/`.
+    /// Reconstrói o banco a partir dos `.md` de `Ditados/` e `Reuniões/`.
     Reindex(history::DirArgs),
     /// Converte um arquivo de áudio ou vídeo num WAV mono 48 kHz pelo ffmpeg do PATH.
     Import(import::ImportArgs),
