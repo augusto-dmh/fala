@@ -2,10 +2,11 @@
 //!
 //! Expõe `search_dictations`, `get_dictation` e as resources `fala://dictation/<id>`. Fica
 //! desligado até `<data-dir>/mcp.toml` ter `enabled = true`; desligado, não abre o banco. Um
-//! ditado `sensitive` é inexistente para o MCP. As reuniões (`list_meetings` e `get_meeting`)
-//! pedem também `meetings = true`, e uma sessão "só local" é inexistente para o MCP. Nunca escreve: só abre `fala.sqlite` se ele já existe e
-//! só chama leituras do `Store`. O stdout é do protocolo; o log vai para o
-//! stderr. Desenho na ADR-0010 (proposed).
+//! ditado `sensitive` é inexistente para o MCP. As reuniões (`list_meetings`, `get_meeting`,
+//! `get_transcript_segment` e `fala://meeting/<id>`) pedem também `meetings = true`, e uma sessão
+//! "só local" é inexistente para o MCP. Nunca escreve: só abre `fala.sqlite` se ele já existe e
+//! só chama leituras do `Store`. O stdout é do protocolo; o log vai para o stderr. Desenho na
+//! ADR-0010 (proposed).
 
 mod config;
 mod server;
