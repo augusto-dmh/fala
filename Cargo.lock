@@ -1919,6 +1919,7 @@ dependencies = [
  "fala-audio",
  "fala-core",
  "fala-inject",
+ "fala-media",
  "fala-meeting",
  "fala-notes",
  "fala-postproc",

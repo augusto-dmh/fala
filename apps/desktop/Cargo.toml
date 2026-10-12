@@ -58,6 +58,7 @@ fala-storage = { workspace = true }
 # Meeting recording (phase 2): session, capture, retained audio, cloud ASR and notes.
 fala-asr = { workspace = true }
 fala-audio = { workspace = true }
+fala-media = { workspace = true }
 fala-meeting = { workspace = true }
 fala-notes = { workspace = true }
 fala-retention = { workspace = true }
