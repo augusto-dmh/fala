@@ -145,6 +145,7 @@ pub(crate) fn format_with_late_edit(
                 dictionary: &formatter.dictionary,
                 language: &dictation.raw.language,
                 cleanup: CleanupLevel::default(),
+                style: None,
             };
             let masked = Rules::default().mask(&fuzzy.apply(dictation.raw.text.clone()), &ctx);
             hits = masked.replaced.clone();

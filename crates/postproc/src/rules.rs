@@ -941,6 +941,7 @@ mod tests {
             dictionary: &dictionary,
             language: &Language::PtBr,
             cleanup: Default::default(),
+            style: None,
         };
         Rules::default().mask(text, &ctx)
     }
