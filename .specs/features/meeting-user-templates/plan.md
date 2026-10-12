@@ -8,18 +8,11 @@ O Fala tem dois templates de notas embutidos (`geral`, `um-a-um`) e o comentári
 
 ## Flow
 
-1. `<dados do Fala>/templates/*.json` (portátil: `Data/templates`), lida a cada uso, sem watcher
-2. `load_user_templates(dir)` → templates em ordem de nome do arquivo + erros `{arquivo, erro}`;
-   `id` vazio, igual a um embutido ou repetido perde, com erro
-3. `meeting_templates` → `{templates: [{id, name, purpose, source}], errors}`; `find_template`
-   procura nos embutidos e depois na pasta, então "Gerar notas", o template da sessão, as notas
-   depois do parar e o "Copiar Markdown" aceitam um template do usuário
-4. Reuniões → "Templates de notas": [Abrir a pasta] (cria a pasta e o `LEIAME.txt`), cada
-   template com a origem, [Duplicar para editar] nos embutidos (copia para `<id>-copia.json` com
-   nome "<nome> (cópia)", abre a pasta) e os arquivos quebrados como "arquivo.json: erro"
-5. A página relê a lista ao montar e quando a janela ganha o foco
-6. Os dois seletores viram `TemplateSelect`: grupos "Embutidos" / "Seus templates" quando há
-   template do usuário, e busca por nome e propósito (sem acento) com mais de 5
+1. `<dados>/templates/*.json` (portátil: `Data/templates`), relida a cada uso, sem watcher
+2. `load_user_templates` → templates + erros `{arquivo, erro}`; `meeting_templates` devolve os
+   dois com a origem; `find_template` procura nos embutidos e depois na pasta
+3. Reuniões → "Templates de notas": [Abrir a pasta], [Duplicar para editar] nos embutidos, erros;
+   relida no foco. Os dois seletores viram `TemplateSelect` (grupos e busca acima de 5)
 
 ## Landing
 
@@ -30,16 +23,9 @@ O Fala tem dois templates de notas embutidos (`geral`, `um-a-um`) e o comentári
 
 - Nada novo no payload (ADR-0016): o template do usuário entra no lugar do embutido.
 
-## Decisions (registradas no PR)
+## Decisions
 
-- Colisão de `id` com um embutido: o embutido fica e o arquivo aparece como erro (definição).
-- A cópia se chama "<nome> (cópia)" em pt, como o conteúdo dos embutidos, em qualquer idioma da UI.
-- `id` da cópia: `<id>-copia`, depois `-copia-2`…; nunca sobrescreve um arquivo.
-- JSON salvo com BOM (Bloco de Notas) é aceito.
-- Os grupos só aparecem quando há template do usuário; sem ele o seletor fica como antes.
-- Um template do usuário apagado depois de escolhido: as notas depois do parar e o Markdown caem
-  no `geral`, como já faziam com um id desconhecido; "Gerar notas" com ele responde "Template
-  desconhecido".
+No corpo do PR.
 
 ## Criteria
 

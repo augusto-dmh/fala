@@ -10,18 +10,13 @@ plus a `code-review` pass at level high. No independent verifier pane ran.
 
 | Check | Proof | Result |
 |---|---|---|
-| C1–C4 | `cargo test -p fala-notes` | 35 + 10 passed (5 new in `template::tests`) |
+| C1–C4 | `cargo test -p fala-notes` | 34 + 10 passed (4 new in `template::tests`) |
 | C5 | `cargo test -p fala --lib meeting` | 39 passed; bindings carry both commands and `source` |
 | C6 | `bun src/components/meeting/userTemplates.test.tsx` | UT-groups, UT-search, UT-settings, UT-i18n ok |
 
-Also clean: `cargo clippy --workspace --all-targets -- -D warnings`, `bunx tsc --noEmit`,
-`bun run lint`, `bun run format:check`, `bun run check:translations`, and the meeting UI tests
-whose fixtures changed (`meeting`, `meetingFlow`, `notesPolish`).
+Also clean: workspace clippy and tests (pre-push), tsc, lint, format, translations, UI tests.
 
 ## Manual (not run: needs a real call and the maintainer's Anthropic key)
 
-1. Meetings → "Templates de notas" → "Duplicar para editar" on "Reunião geral": the folder opens
-   with `geral-copia.json` and `LEIAME.txt`. Rename a section in Notepad, save, come back to Fala:
-   "Reunião geral (cópia)" is in the list and in the "Seus templates" group of both pickers.
-2. Generate notes for a transcribed meeting with the copy: the renamed section is in the notes.
-3. Break the JSON (delete a brace), come back: "geral-copia.json: …" shows in red; the others stay.
+Duplicate "Reunião geral", rename a section of `geral-copia.json` in Notepad, come back to Fala,
+generate notes with "Reunião geral (cópia)" and see the section; break the JSON and see it in red.

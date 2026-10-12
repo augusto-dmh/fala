@@ -304,6 +304,12 @@ mod tests {
             fs::read_to_string(dir.join("LEIAME.txt")).unwrap(),
             TEMPLATES_README
         );
+        fs::write(dir.join("LEIAME.txt"), "meu texto").unwrap();
+        ensure_templates_dir(&dir).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("LEIAME.txt")).unwrap(),
+            "meu texto"
+        );
         let (templates, errors) = load_user_templates(&dir);
         assert_eq!(templates, [first, second]);
         assert!(errors.is_empty());
@@ -311,17 +317,6 @@ mod tests {
             duplicate_builtin(&dir, "geral-copia"),
             Err(NotesError::InvalidTemplate(_))
         ));
-    }
-
-    #[test]
-    fn readme_is_never_rewritten() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("LEIAME.txt"), "meu texto").unwrap();
-        ensure_templates_dir(dir.path()).unwrap();
-        assert_eq!(
-            fs::read_to_string(dir.path().join("LEIAME.txt")).unwrap(),
-            "meu texto"
-        );
     }
 
     #[test]

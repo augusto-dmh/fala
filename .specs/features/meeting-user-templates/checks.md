@@ -18,7 +18,7 @@ Proof: `cargo test -p fala-notes template::tests::colliding_id_loses_to_the_buil
 
 **C4** - Duplicar: `geral-copia`, "Reunião geral (cópia)", depois `geral-copia-2`; o arquivo passa
 em `from_json`; `LEIAME.txt` criado e nunca reescrito (AC 4)
-Proof: `cargo test -p fala-notes template::tests::duplicate_gets_a_new_id_and_name_and_loads_back -- --exact` · `cargo test -p fala-notes template::tests::readme_is_never_rewritten -- --exact`
+Proof: `cargo test -p fala-notes template::tests::duplicate_gets_a_new_id_and_name_and_loads_back -- --exact`
 
 **C5** - `meeting_templates` devolve embutidos e do usuário com a origem e os erros;
 `find_template` acha o do usuário e mantém o embutido numa colisão (AC 5)

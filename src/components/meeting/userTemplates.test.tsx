@@ -1,8 +1,5 @@
-// Prova dos templates do usuário na UI (`meeting-user-templates`): os dois grupos no seletor, a
-// busca acima de 5, a lista em Reuniões com [Abrir a pasta], [Duplicar para editar] só nos
-// embutidos e o arquivo quebrado visível, e a releitura ao voltar o foco. Rode com
-// `bun src/components/meeting/userTemplates.test.tsx`: imprime `<check> ok` e sai com erro na
-// primeira falha.
+// Templates do usuário na UI (`meeting-user-templates`). Rode com
+// `bun src/components/meeting/userTemplates.test.tsx`: imprime `<check> ok`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
