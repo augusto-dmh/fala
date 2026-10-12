@@ -146,8 +146,8 @@ export function TranscriptView(props: TranscriptViewProps) {
   const searching = (props.query ?? "").trim() !== "";
   const marks = searching ? new Map() : sleepMarks(lines, props.sleeps ?? []);
   const marksAt = (index: number) =>
-    (marks.get(index) ?? []).map((sleep: MeetingSleep) => (
-      <SleepMark key={`sleep-${sleep.at_ms}`} sleep={sleep} t={t} />
+    (marks.get(index) ?? []).map((sleep: MeetingSleep, n: number) => (
+      <SleepMark key={`sleep-${index}-${n}`} sleep={sleep} t={t} />
     ));
   return (
     <ol className="space-y-1">

@@ -136,8 +136,8 @@ impl MeetingRecorder {
         Ok(())
     }
 
-    /// Põe no disco o que já foi escrito, com o cabeçalho, sem esperar o próximo `FLUSH_EVERY`
-    /// (o SO vai suspender).
+    /// Reescreve o cabeçalho e entrega ao SO o que já foi escrito, sem esperar o próximo
+    /// `FLUSH_EVERY` (o SO vai suspender).
     pub fn flush(&mut self) -> Result<(), AudioError> {
         self.wav.flush()
     }

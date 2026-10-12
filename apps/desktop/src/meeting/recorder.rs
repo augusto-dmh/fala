@@ -244,12 +244,25 @@ fn streams(system_name: &str, with_mic: bool) -> Result<(SystemAudio, Option<Mic
 }
 
 /// After a sleep the old streams rarely deliver again: both are opened anew (the output by
-/// name, the mic as the current default), retried for [`WAKE_GRACE`]. What the old ones held is
-/// dropped: it was captured around the sleep.
-fn reopen(capture: &mut Capture) -> Result<(), String> {
-    let deadline = Instant::now() + WAKE_GRACE;
-    let (system, mic) = loop {
-        match streams(&capture.system_name, capture.mic.is_some()) {
+/// name, the mic as the current default), retried for [`WAKE_GRACE`]. From half of it on, an
+/// output that did not come back (a Bluetooth headset still pairing) gives way to the default
+/// one; the new name is returned then. What the old streams held is dropped: it was captured
+/// around the sleep.
+fn reopen(capture: &mut Capture) -> Result<Option<String>, String> {
+    let started = Instant::now();
+    let deadline = started + WAKE_GRACE;
+    let with_mic = capture.mic.is_some();
+    let (name, (system, mic)) = loop {
+        let mut opened = streams(&capture.system_name, with_mic)
+            .map(|streams| (capture.system_name.clone(), streams));
+        if opened.is_err() && started.elapsed() >= WAKE_GRACE / 2 {
+            if let Ok(default) = SystemAudio::default_name() {
+                if default != capture.system_name {
+                    opened = streams(&default, with_mic).map(|streams| (default, streams));
+                }
+            }
+        }
+        match opened {
             Ok(opened) => break opened,
             Err(e) if Instant::now() + WAKE_RETRY < deadline => {
                 log::info!("meeting capture not back after sleep yet: {e}");
@@ -270,8 +283,10 @@ fn reopen(capture: &mut Capture) -> Result<(), String> {
     }
     capture.system = system;
     capture.mic = mic;
-    log::info!("meeting capture open again after sleep");
-    Ok(())
+    log::info!("meeting capture open again after sleep: {name}");
+    let switched = (name != capture.system_name).then(|| name.clone());
+    capture.system_name = name;
+    Ok(switched)
 }
 
 /// Opens `name` and, only once it is open, drops the old system stream: a failed switch keeps
@@ -423,7 +438,10 @@ fn run(
             }
             Ok(Control::Wake) => {
                 match reopen(&mut capture) {
-                    Ok(()) => {
+                    Ok(switched) => {
+                        if let Some(name) = switched {
+                            on_report(Report::SystemSwitched { name, error: None });
+                        }
                         gate.wake(Instant::now());
                         on_report(Report::Woke);
                     }

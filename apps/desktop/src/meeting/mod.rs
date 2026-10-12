@@ -708,6 +708,10 @@ impl MeetingManager {
             let Some(active) = inner.active.as_mut() else {
                 return;
             };
+            if event == SleepEvent::Suspending {
+                // The silence count restarts; nobody can answer the card while asleep.
+                crate::call_prompt::hide_still_recording(&self.app);
+            }
             match active.session.apply(millis(now_local()), input) {
                 Ok(effects) => self.run_effects(&mut inner, effects),
                 Err(e) => log::warn!("meeting: {event:?} refused: {e}"),
@@ -877,7 +881,9 @@ impl MeetingManager {
                 if let Some(e) = error {
                     log::error!("meeting capture failed: {e}");
                     active.capture_failed = true;
-                    active.interrupted = active.waking;
+                    // A stop asked meanwhile (the person, the cap) stays that stop.
+                    active.interrupted = active.waking
+                        && !matches!(active.session.state(), SessionState::Stopping { .. });
                 }
                 let now = millis(now_local());
                 if matches!(

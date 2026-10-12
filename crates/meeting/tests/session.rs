@@ -809,9 +809,39 @@ mod suspend {
     }
 
     #[test]
-    fn a_click_cannot_resume_while_the_pc_sleeps() {
-        let mut s = suspended();
-        assert!(s.apply(at(5), user(UserAction::ResumeRecording)).is_err());
-        assert!(matches!(s.state(), SessionState::Suspended { .. }));
+    fn a_click_wakes_a_session_whose_wake_notice_never_came() {
+        for (name, mut s) in [
+            ("recording", suspended()),
+            ("paused", suspended_while_paused()),
+        ] {
+            let effects = s.apply(at(5), user(UserAction::ResumeRecording)).unwrap();
+            assert_eq!(
+                effects,
+                vec![
+                    Effect::WakeCapture,
+                    Effect::ShowIndicator(IndicatorKind::Recording),
+                    Effect::ResumeCapture
+                ],
+                "{name}"
+            );
+            assert!(matches!(s.state(), SessionState::Recording { .. }));
+            assert!(s.gaps().iter().all(|gap| gap.to.is_some()), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_warning_from_before_the_sleep_never_stops_after_it() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=14 {
+            s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap();
+        }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
+        s.apply(at(14), Input::OsSuspended).unwrap();
+        s.apply(at(60), Input::OsResumed).unwrap();
+        for m in 15..=27 {
+            let effects = s.apply(at(60 + m), tick(mins(m), 0.0, 0.0)).unwrap();
+            assert!(effects.is_empty(), "minute {m}: {effects:?}");
+        }
+        assert!(matches!(s.state(), SessionState::Recording { .. }));
     }
 }

@@ -28,7 +28,7 @@ pub enum UserAction {
         free_disk_bytes: u64,
     },
     PauseRecording,
-    /// "Retomar" depois de uma pausa.
+    /// "Retomar" depois de uma pausa (ou numa suspensão cujo aviso de volta nunca chegou).
     ResumeRecording,
     StopRecording,
     /// "Mais 1 h" no aviso do teto.
@@ -300,6 +300,19 @@ impl MeetingSession {
                     Effect::ResumeCapture,
                 ])
             }
+            // The wake notice never came (a sleep vetoed after PBT_APMSUSPEND): the click wakes
+            // the capture and records.
+            (S::Suspended { .. }, Input::User(UserAction::ResumeRecording)) => {
+                self.close_gap(now);
+                self.state = S::Recording {
+                    indicator: Indicator::new(IndicatorKind::Recording),
+                };
+                Ok(vec![
+                    Effect::WakeCapture,
+                    Effect::ShowIndicator(IndicatorKind::Recording),
+                    Effect::ResumeCapture,
+                ])
+            }
             (
                 S::Recording { .. } | S::Paused { .. } | S::Suspended { .. },
                 Input::User(UserAction::StopRecording),
@@ -323,6 +336,8 @@ impl MeetingSession {
             }
             (S::Recording { .. } | S::Paused { .. }, Input::OsSuspended) => {
                 let paused = matches!(self.state, S::Paused { .. });
+                // Like a pause: a warning nobody can answer while asleep never stops it after.
+                self.reset_silence();
                 self.close_gap(now);
                 self.open_gap(GapKind::Suspend, now);
                 self.state = S::Suspended {
