@@ -47,6 +47,7 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
   const open = useRef(false);
   const person = line.person;
   if (person === null || !onRename) return <>{speakerOf(line, t)}</>;
+  const current = line.name ?? "";
   const label = t("meeting.speaker.person", { n: person });
   if (typed === null) {
     return (
@@ -56,7 +57,7 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
         title={t("meeting.rename.hint", { person: label })}
         onClick={() => {
           open.current = true;
-          setTyped(line.name ?? "");
+          setTyped(current);
         }}
       >
         {speakerOf(line, t)}
@@ -67,7 +68,10 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
     if (!open.current) return;
     open.current = false;
     setTyped(null);
-    if (save && typed.trim() !== (line.name ?? "")) onRename(person, typed);
+    // The app collapses spaces the same way: an edit that changes nothing is not a rename.
+    if (save && typed.trim().replace(/\s+/g, " ") !== current) {
+      onRename(person, typed);
+    }
   };
   return (
     <Input
@@ -79,7 +83,9 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
       onChange={(event) => setTyped(event.target.value)}
       onBlur={() => close(true)}
       onKeyDown={(event) => {
-        if (event.key === "Enter") close(true);
+        // Enter that confirms an IME composition is not the end of the name.
+        if (event.key === "Enter" && !event.nativeEvent.isComposing)
+          close(true);
         if (event.key === "Escape") close(false);
       }}
     />

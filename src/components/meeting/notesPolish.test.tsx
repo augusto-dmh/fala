@@ -1,6 +1,6 @@
-// Prova da nota editável, da confirmação antes de regenerar e do renomear "Pessoa N"
-// (`meeting-notes-polish`). Rode com `bun src/components/meeting/notesPolish.test.tsx`: imprime
-// `<check> ok` e sai com erro na primeira falha.
+// Prova da nota editável e da confirmação antes de regenerar (`meeting-notes-polish`, PR 2).
+// Rode com `bun src/components/meeting/notesPolish.test.tsx`: imprime `<check> ok` e sai com
+// erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -13,7 +13,6 @@ import {
   mergeEdit,
   parseNotes,
 } from "./notesModel";
-import { SpeakerName, TranscriptView } from "./TranscriptView";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -195,11 +194,8 @@ const lines: MeetingLine[] = [
     needsConfirmation({ ...detail, notes_edited: false }, "geral"),
     false,
   );
-  // Depois de um nome trocado numa sessão com notas, "Gerar de novo" passa pela mesma regra.
-  assert.match(
-    viewSource,
-    /result\.status === "ok" && detail\.notes_md !== null[\s\S]*setOfferRegenerate\(true\)/,
-  );
+  // O "Gerar de novo" oferecido depois de um nome trocado passa pela mesma regra.
+  assert.equal(viewSource.match(/onClick=\{generate\}/g)?.length, 2);
   assert.equal(
     viewSource.match(/props\.onGenerate\(templateId, true\)/g)?.length,
     1,
@@ -215,29 +211,6 @@ const lines: MeetingLine[] = [
   ok("NP-confirm");
 }
 
-// "Pessoa N" e o nome aplicado viram botão de renomear; "Eu" continua texto; sem `onRename`,
-// nada muda.
-{
-  const html = renderToStaticMarkup(
-    <TranscriptView
-      lines={lines}
-      audioAvailable
-      playing={null}
-      highlighted={null}
-      onPlay={noop}
-      onRename={noop}
-      t={tr}
-    />,
-  );
-  assert.equal(html.match(/<button[^>]*title="Clique para dar/g)?.length, 2);
-  assert.ok(html.includes(">Pessoa 1</button>"), html);
-  assert.ok(html.includes(">Ana</button>"), html);
-  assert.ok(html.includes("Eu ·") || html.includes("Eu<!-- --> ·"), html);
-  const plain = renderToStaticMarkup(<SpeakerName line={lines[0]} t={tr} />);
-  assert.equal(plain, "Pessoa 1");
-  ok("NP-rename");
-}
-
 // Toda string nova existe em pt e en.
 {
   const keys = [
@@ -247,10 +220,6 @@ const lines: MeetingLine[] = [
     "meeting.notesEdit.done",
     "meeting.notesEdit.confirm",
     "meeting.notesEdit.regenerate",
-    "meeting.rename.hint",
-    "meeting.rename.label",
-    "meeting.rename.regenerate",
-    "meeting.rename.dismiss",
     "meeting.errors.notes_edited",
   ];
   for (const key of keys) {

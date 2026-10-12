@@ -15,15 +15,17 @@ o clique de gerar, sem estados nem erro que diga que nada se perdeu.
   `meeting_speakers` com `name`; transcrever de novo apaga os nomes.
 - Transcrever sozinho ao parar quando há a chave da ElevenLabs (`MeetingManager::finish`).
 
-## Fatias (dois PRs empilhados; o CI barra acima de 1000 linhas)
+## Fatias (três PRs empilhados; o CI barra acima de 1000 linhas)
 
-- **PR A** `feat/meeting-notes-polish`: renomear "Pessoa N" (e desfazer), nota editável, confirmar
-  antes de regenerar uma nota editada.
-- **PR B** `feat/meeting-notes-polish-2` (sobre A): template no rascunho e na gravação, "Copiar
-  aviso", chip de consentimento de 5 s, busca sem acento na transcrição, parar → transcrever →
-  gerar encadeados com estados e erro.
+- **PR 1** `feat/meeting-notes-polish`: renomear "Pessoa N" (e desfazer) e, numa sessão com
+  notas, oferecer "Gerar de novo" depois do nome trocado.
+- **PR 2** `feat/meeting-notes-polish-2` (sobre 1): nota editável e confirmação antes de regenerar
+  uma nota editada com o mesmo template.
+- **PR 3** `feat/meeting-notes-polish-3` (sobre 2): template no rascunho e na gravação, "Copiar
+  aviso", chip de consentimento de 5 s, busca sem acento, "Copiar transcrição", parar →
+  transcrever → gerar encadeados (acima de um mínimo) com estados e erro.
 
-## Flow (PR A)
+## Flow (PRs 1 e 2)
 
 1. Clique no rótulo "Pessoa N" da transcrição → campo → Enter/blur → `set_meeting_speaker_name`
    → `meeting_speakers.name` (vazio apaga o nome; a sugestão pendente daquela pessoa some)
@@ -32,9 +34,12 @@ o clique de gerar, sem estados nem erro que diga que nada se perdeu.
    `save_meeting_notes` → `notes_md` e `meeting_note_edits`
 3. `mergeEdit`: linha igual a uma linha da nota de antes volta com o Markdown original (marcador
    e ponteiros); linha mudada ou nova vira texto do usuário (sem marcador, sem ponteiro)
-4. "Gerar notas" numa nota editada → confirmação na página → `generate_meeting_notes(id,
-   template, replace_edited: true)`; sem a confirmação o backend devolve `notes_edited`
+4. "Gerar notas" numa nota editada, com o mesmo template → confirmação na página →
+   `generate_meeting_notes(id, template, replace_edited: true)`; sem a confirmação o backend
+   devolve `notes_edited`. Outro template não pergunta (é uma versão nova, como no Granola)
 5. Uma geração grava a nota e apaga a marca de editada
+6. Nome trocado numa sessão que já tem notas → "Nome trocado. Gerar as notas de novo?" [Gerar de
+   novo] [Agora não]; gerar passa pela regra do passo 4
 
 ## Landing
 
@@ -52,13 +57,18 @@ o clique de gerar, sem estados nem erro que diga que nada se perdeu.
   ao "Concluir". A linha gerada que a pessoa muda perde o marcador e os ponteiros (regra do Granola).
 - Renomear vale para a sessão (transcrição, próximas notas, Markdown); não reescreve a nota já gerada.
 - Nome com `@` fica na transcrição como digitado, mas nunca vai ao LLM (ADR-0016).
+- Pesquisa REA (`research/23` § 1): confirmar só com o mesmo template, no texto do Granola
+  ("Você editou estas notas. Gerar de novo substitui as suas edições, e isso não pode ser
+  desfeito."); oferecer gerar de novo depois de um nome trocado; encadear só acima de 2.500
+  caracteres e 3 min de transcrição; busca sem acento; "Copiar transcrição" como "Nome: texto"
+  por turno. O "/" que aplica o template como esqueleto fica de fora.
 
 ## Criteria
 
 1. WHEN a sessão é aberta THEN `meeting_note_edits` SHALL existir, e apagar a reunião apaga a linha
 2. WHEN a nota é salva pela edição THEN `notes_md` SHALL mudar e `meeting_notes_edited` ser `true`; uma geração SHALL zerar a marca
-3. WHEN a nota editada é regenerada sem `replace_edited` THEN SHALL voltar `notes_edited` sem chamar o LLM
+3. WHEN a nota editada é regenerada com o mesmo template sem `replace_edited` THEN SHALL voltar `notes_edited` sem chamar o LLM; com outro template, SHALL seguir
 4. WHEN "Pessoa 2" recebe um nome à mão THEN a transcrição, a próxima `notes_input` e o Markdown SHALL usar o nome, e a sugestão pendente dela some; nome vazio SHALL voltar a "Pessoa 2"
 5. WHEN o nome aplicado contém `@` THEN o payload SHALL rotular "Pessoa N"
 6. WHEN uma linha gerada é editada THEN ela SHALL perder o marcador e os ponteiros; as linhas iguais SHALL manter os dois
-7. The UI SHALL pedir confirmação antes de regenerar uma nota editada, e toda string nova SHALL estar em pt e en
+7. The UI SHALL pedir confirmação antes de regenerar uma nota editada com o mesmo template, oferecer gerar de novo depois de um nome trocado numa sessão com notas, e toda string nova SHALL estar em pt e en

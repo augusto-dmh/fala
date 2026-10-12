@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   commands,
@@ -45,9 +45,9 @@ export function MeetingView(props: MeetingViewProps) {
   const [playing, setPlaying] = useState<number | null>(null);
   const [clipError, setClipError] = useState<MeetingError | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
+  const [nameError, setNameError] = useState<MeetingError | null>(null);
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [nameError, setNameError] = useState<MeetingError | null>(null);
   // A name changed in a session that already has notes: offer to write them again.
   const [offerRegenerate, setOfferRegenerate] = useState(false);
   const player = useMemo(() => new ClipPlayer(setPlaying), []);
@@ -75,17 +75,28 @@ export function MeetingView(props: MeetingViewProps) {
       .play(detail.summary.id, line.seq, line.t0_ms, line.t1_ms)
       .catch((error: MeetingError) => setClipError(error));
   };
+  // A rename that ends after the session was left must not reload it over the next one.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // Notes that exist (or are being written) still have the old label: offer to write them again.
+  const namesChanged = () => {
+    if (detail.notes_md !== null || props.generating) setOfferRegenerate(true);
+    props.onNamesChanged?.();
+  };
   const rename = async (person: number, name: string) => {
     const result = await commands.setMeetingSpeakerName(
       detail.summary.id,
       person,
       name,
     );
+    if (!mounted.current) return;
     setNameError(result.status === "error" ? result.error : null);
-    if (result.status === "ok" && detail.notes_md !== null) {
-      setOfferRegenerate(true);
-    }
-    props.onNamesChanged?.();
+    if (result.status === "ok") namesChanged();
   };
   const generate = () => {
     setOfferRegenerate(false);
@@ -117,7 +128,7 @@ export function MeetingView(props: MeetingViewProps) {
       <MeetingPeoplePanel
         id={detail.summary.id}
         reloadOn={detail}
-        onNamesChanged={props.onNamesChanged}
+        onNamesChanged={namesChanged}
       />
       {draft ? (
         <Button onClick={props.onRecordDraft}>
@@ -177,7 +188,7 @@ export function MeetingView(props: MeetingViewProps) {
                 disabled={props.recording || props.generating || editing}
                 onClick={generate}
               >
-                {t("meeting.notesEdit.regenerate")}
+                {t("meeting.rename.generate")}
               </Button>
               <Button
                 variant="ghost"
@@ -242,7 +253,12 @@ export function MeetingView(props: MeetingViewProps) {
                   playing={playing}
                   highlighted={highlighted}
                   onPlay={play}
-                  onRename={(person, name) => void rename(person, name)}
+                  // A new transcript renumbers "Person N" and drops the names.
+                  onRename={
+                    props.transcribing
+                      ? undefined
+                      : (person, name) => void rename(person, name)
+                  }
                   t={t}
                 />
               </>
