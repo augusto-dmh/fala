@@ -897,6 +897,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::stop_meeting,
             commands::meeting::extend_meeting_cap,
             commands::meeting::list_meetings,
+            commands::meeting::search_meetings,
             commands::meeting::get_meeting,
             commands::meeting::transcribe_meeting,
             commands::meeting::cancel_meeting_transcription,

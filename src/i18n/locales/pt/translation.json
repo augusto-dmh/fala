@@ -1168,7 +1168,9 @@
       "empty": "Nenhuma reunião ainda. Grave uma ou crie uma sem gravar para escrever a pauta.",
       "draft": "rascunho",
       "transcribed": "transcrita",
-      "notes": "com notas"
+      "notes": "com notas",
+      "search": "Buscar no título, nas notas e na transcrição",
+      "noResults": "Nenhuma reunião encontrada."
     },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",
