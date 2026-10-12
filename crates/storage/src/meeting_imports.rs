@@ -2,16 +2,22 @@
 //! sessão `import` sem áudio, e `meeting_imports` liga o id da origem à sessão, para importar de
 //! novo atualizar em vez de duplicar.
 //!
+//! Importar de novo reescreve o que é do Granola (data, resumo, transcrição) e guarda o que a
+//! pessoa mudou no Fala: o título e as anotações só trocam se ainda são os da última importação
+//! (`meeting_imports` guarda os dois), a nota editada à mão fica, e um nome aplicado a "Pessoa N"
+//! também.
+//!
 //! Tabela aditiva, criada a cada abertura como `meeting_speakers`, sem subir `user_version`.
 //! Apagar a sessão apaga a ligação (cascata): importar de novo a traz de volta.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, FixedOffset};
 use fala_meeting::{SessionId, SessionMode};
 use rusqlite::{params, OptionalExtension};
 
 use crate::granola::GranolaMeeting;
+use crate::meeting_mirror::GENERATED_MARKER;
 use crate::meetings::{bad, channel_str, mode_str, rfc3339};
 use crate::{MeetingSegment, SegmentChannel, SegmentSpeaker, StorageError, Store};
 
@@ -21,17 +27,18 @@ CREATE TABLE IF NOT EXISTS meeting_imports (
     external_id TEXT NOT NULL,
     meeting_id TEXT NOT NULL UNIQUE REFERENCES meetings(id) ON DELETE CASCADE,
     imported_at TEXT NOT NULL,
+    title TEXT NOT NULL,
+    annotations TEXT NOT NULL,
     PRIMARY KEY (source, external_id)
 );
 ";
 
 /// A origem das reuniões do "Historical Data Export" do Granola.
 pub const GRANOLA: &str = "granola";
-/// O marcador das linhas geradas (`fala_notes::GENERATED_MARKER`): o resumo do Granola é texto
-/// de IA de outro produto (ADR-0016).
-const GENERATED_MARKER: &str = "<!-- fala:ia -->";
 /// Rótulos da transcrição que são a própria pessoa (canal do mic).
 const ME_LABELS: [&str; 5] = ["me", "you", "eu", "você", "voce"];
+/// Rótulos que dizem "outra pessoa" sem dizer quem: viram "Pessoa N" sem nome.
+const GENERIC_LABELS: [&str; 5] = ["them", "they", "speaker", "eles", "outro"];
 /// Teto de um rótulo de falante, em caracteres; acima disso o ":" é parte da frase.
 const LABEL_MAX_CHARS: usize = 40;
 
@@ -39,32 +46,37 @@ const LABEL_MAX_CHARS: usize = 40;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportOutcome {
     Created,
-    /// A reunião já tinha vindo antes: a sessão dela foi reescrita com o conteúdo de agora.
+    /// A reunião já tinha vindo antes: a sessão dela foi atualizada com o conteúdo de agora.
     Updated,
 }
 
-/// O resumo como notas: cada linha não vazia com o marcador de IA, e o rodapé da importação.
-/// Resumo em branco: sem notas.
+/// O resumo como notas: cada linha não vazia com o marcador de IA (o resumo é texto de IA de
+/// outro produto, ADR-0016), menos onde o comentário quebraria o Markdown (bloco de código e
+/// linha de tabela), e o rodapé da importação. Resumo em branco: sem notas.
 pub(crate) fn summary_notes(summary: &str, imported_at: &DateTime<FixedOffset>) -> Option<String> {
-    let lines: Vec<String> = summary
-        .lines()
-        .map(str::trim_end)
-        .map(|line| {
-            if line.trim().is_empty() {
-                String::new()
-            } else {
-                format!("{line} {GENERATED_MARKER}")
-            }
-        })
-        .collect();
+    let mut fenced = false;
+    let mut lines = Vec::new();
+    for line in summary.lines().map(str::trim_end) {
+        let trimmed = line.trim_start();
+        let fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
+        if fence {
+            fenced = !fenced;
+        }
+        let plain = trimmed.is_empty() || fence || fenced || trimmed.starts_with('|');
+        lines.push(if plain {
+            line.to_string()
+        } else {
+            format!("{line} {GENERATED_MARKER}")
+        });
+    }
     let body = lines.join("\n");
     let body = body.trim_matches('\n');
-    if body.is_empty() {
+    if body.trim().is_empty() {
         return None;
     }
     Some(format!(
         "{body}\n\n_Importado do Granola em {}._",
-        imported_at.format("%d/%m/%Y")
+        imported_at.format("%Y-%m-%d")
     ))
 }
 
@@ -78,31 +90,62 @@ fn split_label(line: &str) -> Option<(&str, &str)> {
     (named && (text.is_empty() || text.starts_with(char::is_whitespace))).then_some((label, text))
 }
 
+/// Quem um rótulo é: a própria pessoa, uma "Pessoa N" sem nome (`Them`), uma com o rótulo como
+/// nome, ou ninguém (o ":" é parte da frase).
+#[derive(Clone, Copy)]
+enum Label {
+    Me,
+    Other { named: bool },
+}
+
 /// A transcrição do CSV em trechos, um por linha não vazia, sem tempo (o CSV não tem): "Me:" e
-/// "You:" são o mic; cada outro rótulo é uma "Pessoa N", na ordem em que aparece, com o rótulo
-/// como nome. Uma linha sem rótulo continua com quem falava antes.
+/// "You:" são o mic; "Them:" e cada nome são uma "Pessoa N", na ordem em que aparecem, com o
+/// nome aplicado. Um nome só conta como falante se abre mais de uma linha (assim "Próximos
+/// passos: …" fica no texto); uma linha sem rótulo continua com quem falava antes.
 pub(crate) fn transcript_segments(text: &str) -> (Vec<MeetingSegment>, BTreeMap<u32, String>) {
+    let mut opens: HashMap<&str, usize> = HashMap::new();
+    for (label, _) in text.lines().filter_map(split_label) {
+        *opens.entry(label).or_default() += 1;
+    }
+    let kind = |label: &str| {
+        let lower = label.to_lowercase();
+        if ME_LABELS.contains(&lower.as_str()) {
+            Some(Label::Me)
+        } else if GENERIC_LABELS.contains(&lower.as_str()) {
+            Some(Label::Other { named: false })
+        } else if opens.get(label).is_some_and(|n| *n > 1) {
+            Some(Label::Other { named: true })
+        } else {
+            None
+        }
+    };
     let mut segments = Vec::new();
+    let mut people: Vec<&str> = Vec::new();
     let mut names: BTreeMap<u32, String> = BTreeMap::new();
     let mut speaker = (SegmentChannel::System, SegmentSpeaker::Person(1));
     for line in text.lines() {
-        let (label, said) = match split_label(line) {
-            Some((label, said)) => (Some(label), said.trim()),
-            None => (None, line.trim()),
+        let labelled =
+            split_label(line).and_then(|(label, said)| Some((label, said, kind(label)?)));
+        let said = match labelled {
+            Some((_, said, Label::Me)) => {
+                speaker = (SegmentChannel::Mic, SegmentSpeaker::Me);
+                said
+            }
+            Some((label, said, Label::Other { named })) => {
+                let index = people.iter().position(|p| *p == label).unwrap_or_else(|| {
+                    people.push(label);
+                    people.len() - 1
+                });
+                let person = index as u32 + 1;
+                if named {
+                    names.insert(person, label.to_string());
+                }
+                speaker = (SegmentChannel::System, SegmentSpeaker::Person(person));
+                said
+            }
+            None => line,
         };
-        if let Some(label) = label {
-            speaker = if ME_LABELS.contains(&label.to_lowercase().as_str()) {
-                (SegmentChannel::Mic, SegmentSpeaker::Me)
-            } else {
-                let person = names
-                    .iter()
-                    .find(|(_, name)| name.as_str() == label)
-                    .map(|(n, _)| *n)
-                    .unwrap_or(names.len() as u32 + 1);
-                names.insert(person, label.to_string());
-                (SegmentChannel::System, SegmentSpeaker::Person(person))
-            };
-        }
+        let said = said.trim();
         if said.is_empty() {
             continue;
         }
@@ -118,21 +161,12 @@ pub(crate) fn transcript_segments(text: &str) -> (Vec<MeetingSegment>, BTreeMap<
     (segments, names)
 }
 
-fn title(meeting: &GranolaMeeting) -> String {
-    if meeting.title.is_empty() {
-        format!(
-            "Reunião do Granola de {}",
-            meeting.created_at.format("%d/%m/%Y")
-        )
-    } else {
-        meeting.title.clone()
-    }
-}
-
 impl Store {
     /// Grava uma reunião do Granola: sessão `import` terminada, sem áudio, no instante de
     /// `document_created`; `notes` vira as anotações, `summary` as notas (marcadas como IA) e
-    /// `transcript` os trechos. Se o `document_id` já veio antes, a mesma sessão é reescrita.
+    /// `transcript` os trechos. O título vazio fica vazio: a UI mostra "Reunião" e a data no
+    /// idioma dela. Se o `document_id` já veio antes, a mesma sessão é atualizada, sem desfazer
+    /// o que a pessoa mudou no Fala (ver o módulo).
     ///
     /// Tudo numa transação; o `.md` da sessão vem depois do commit.
     pub fn import_granola_meeting(
@@ -159,26 +193,30 @@ impl Store {
                     .parse()
                     .map_err(|_| bad(0, format!("id de sessão inválido {id:?}")))?;
                 tx.execute(
-                    "UPDATE meetings SET title = ?2, created_at = ?3, created_ms = ?4,
-                         started_at = ?3, started_ms = ?4, ended_at = ?3, annotations = ?5,
-                         transcribed_at = ?6, notes_md = ?7
+                    "UPDATE meetings SET created_at = ?2, created_ms = ?3, started_at = ?2,
+                         started_ms = ?3, ended_at = ?2, transcribed_at = ?4,
+                         title = CASE WHEN title = (SELECT i.title FROM meeting_imports i
+                             WHERE i.meeting_id = ?1) THEN ?5 ELSE title END,
+                         annotations = CASE WHEN annotations = (SELECT i.annotations
+                             FROM meeting_imports i WHERE i.meeting_id = ?1)
+                             THEN ?6 ELSE annotations END,
+                         notes_md = CASE WHEN EXISTS (SELECT 1 FROM meeting_note_edits e
+                             WHERE e.meeting_id = ?1) THEN notes_md ELSE ?7 END
                      WHERE id = ?1",
                     params![
                         id.to_string(),
-                        title(meeting),
                         created,
                         created_ms,
-                        meeting.notes,
                         transcribed,
+                        meeting.title,
+                        meeting.notes,
                         notes
                     ],
                 )?;
-                for table in ["meeting_segments", "meeting_speakers", "meeting_note_edits"] {
-                    tx.execute(
-                        &format!("DELETE FROM {table} WHERE meeting_id = ?1"),
-                        [id.to_string()],
-                    )?;
-                }
+                tx.execute(
+                    "DELETE FROM meeting_segments WHERE meeting_id = ?1",
+                    [id.to_string()],
+                )?;
                 (id, ImportOutcome::Updated)
             }
             None => {
@@ -191,7 +229,7 @@ impl Store {
                      VALUES (?1, ?2, ?3, 0, ?4, ?5, ?4, ?5, ?4, ?6, ?7, ?8)",
                     params![
                         id.to_string(),
-                        title(meeting),
+                        meeting.title,
                         mode_str(SessionMode::Import),
                         created,
                         created_ms,
@@ -218,27 +256,52 @@ impl Store {
                 ],
             )?;
         }
+        // Um nome que a pessoa já aplicou fica; os do Granola só preenchem quem está sem nome.
         for (person, name) in &names {
             tx.execute(
-                "INSERT INTO meeting_speakers (meeting_id, person, name) VALUES (?1, ?2, ?3)",
+                "INSERT INTO meeting_speakers (meeting_id, person, name) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (meeting_id, person) DO UPDATE SET name = excluded.name
+                 WHERE meeting_speakers.name IS NULL",
                 params![id.to_string(), person, name],
             )?;
         }
         tx.execute(
-            "INSERT INTO meeting_imports (source, external_id, meeting_id, imported_at)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT (source, external_id) DO UPDATE SET imported_at = excluded.imported_at",
+            "INSERT INTO meeting_imports
+                 (source, external_id, meeting_id, imported_at, title, annotations)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (source, external_id) DO UPDATE SET imported_at = excluded.imported_at,
+                 title = excluded.title, annotations = excluded.annotations",
             params![
                 GRANOLA,
                 meeting.document_id,
                 id.to_string(),
-                rfc3339(&imported_at)
+                rfc3339(&imported_at),
+                meeting.title,
+                meeting.notes
             ],
         )?;
         tx.commit()?;
         log::debug!("reunião {id} importada do Granola ({outcome:?})");
         self.mirror_meeting(id);
         Ok((id, outcome))
+    }
+
+    /// De onde cada sessão importada veio (`granola`), numa consulta só, para a lista.
+    pub fn meeting_import_sources(&self) -> Result<HashMap<SessionId, String>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT meeting_id, source FROM meeting_imports")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut sources = HashMap::new();
+        for row in rows {
+            let (id, source) = row?;
+            if let Ok(id) = id.parse() {
+                sources.insert(id, source);
+            }
+        }
+        Ok(sources)
     }
 
     /// De onde a sessão foi importada (`granola`), se foi.
@@ -276,7 +339,10 @@ mod tests {
 
     #[test]
     fn transcript_lines_become_untimed_segments_by_speaker() {
-        let text = "Me: Bom dia.\r\n\nThem: Oi, tudo bem?\n  continua aqui\nAna Souza: Às 10:30 então.\nYou: Fechado: https://x.y\n10:30 sem rótulo\nThem:\n";
+        let text = "Me: Bom dia.\r\n\nThem: Oi, tudo bem?\n  continua aqui\n\
+                    Ana Souza: Às 10:30 então.\nThem: Próximos passos: contrato\n\
+                    You: Fechado: https://x.y\nAna Souza: certo\n\
+                    Próximos passos: não é falante\n10:30 sem rótulo\nThem:\n";
         let (segments, names) = transcript_segments(text);
         use SegmentChannel::{Mic, System};
         use SegmentSpeaker::{Me, Person};
@@ -287,14 +353,15 @@ mod tests {
                 seg(System, Person(1), 2, "Oi, tudo bem?"),
                 seg(System, Person(1), 3, "continua aqui"),
                 seg(System, Person(2), 4, "Às 10:30 então."),
-                seg(Mic, Me, 5, "Fechado: https://x.y"),
-                seg(Mic, Me, 6, "10:30 sem rótulo"),
+                seg(System, Person(1), 5, "Próximos passos: contrato"),
+                seg(Mic, Me, 6, "Fechado: https://x.y"),
+                seg(System, Person(2), 7, "certo"),
+                seg(System, Person(2), 8, "Próximos passos: não é falante"),
+                seg(System, Person(2), 9, "10:30 sem rótulo"),
             ]
         );
-        assert_eq!(
-            names,
-            BTreeMap::from([(1, "Them".to_string()), (2, "Ana Souza".to_string())])
-        );
+        // "Them" fica "Pessoa 1"; só o nome que abre mais de uma fala vira nome aplicado.
+        assert_eq!(names, BTreeMap::from([(2, "Ana Souza".to_string())]));
         // Sem rótulo nenhum, tudo é a "Pessoa 1", sem nome.
         let (segments, names) = transcript_segments("primeira linha\nsegunda");
         assert_eq!(segments.len(), 2);
@@ -305,11 +372,11 @@ mod tests {
     #[test]
     fn the_summary_is_marked_as_ai_line_by_line() {
         let at = DateTime::parse_from_rfc3339("2026-10-12T21:00:00-03:00").unwrap();
-        let notes = summary_notes("\n### Decisões\n\n- Lançar em novembro  \n", &at).unwrap();
+        let summary = "\n### Decisões\n\n- Lançar em novembro  \n```\ncódigo\n```\n| a | b |\n";
         assert_eq!(
-            notes,
-            "### Decisões <!-- fala:ia -->\n\n- Lançar em novembro <!-- fala:ia -->\n\n\
-             _Importado do Granola em 12/10/2026._"
+            summary_notes(summary, &at).unwrap(),
+            "### Decisões <!-- fala:ia -->\n\n- Lançar em novembro <!-- fala:ia -->\n\
+             ```\ncódigo\n```\n| a | b |\n\n_Importado do Granola em 2026-10-12._"
         );
         assert_eq!(summary_notes(" \n\n", &at), None);
     }
