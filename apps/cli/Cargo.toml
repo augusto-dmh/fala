@@ -42,6 +42,8 @@ env_logger = "0.10"
 [dev-dependencies]
 # `tests/mcp.rs`: fala JSON-RPC com o binário e quebra o banco no meio de uma sessão.
 rusqlite.workspace = true
+# `tests/mcp.rs`: monta reuniões com o id da sessão.
+fala-meeting.workspace = true
 
 [features]
 # GPU só por feature de build; o default é CPU.
