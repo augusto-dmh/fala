@@ -42,6 +42,8 @@ pub enum CallPromptKind {
     Offer,
     /// "Parar a gravação?" with [Parar] [Continuar].
     AskStop,
+    /// "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
+    Quit,
 }
 
 /// What the card shows.
@@ -69,6 +71,16 @@ impl CallPromptPayload {
             countdown_ms: COUNTDOWN.as_millis() as u32,
         }
     }
+
+    fn quit() -> Self {
+        Self {
+            kind: CallPromptKind::Quit,
+            app_id: String::new(),
+            app_name: String::new(),
+            web_name: None,
+            countdown_ms: COUNTDOWN.as_millis() as u32,
+        }
+    }
 }
 
 /// The person's answer, or the countdown running out.
@@ -80,6 +92,8 @@ pub enum CallPromptAnswer {
     MuteApp,
     Stop,
     KeepRecording,
+    StopAndQuit,
+    Cancel,
     Expired,
 }
 
@@ -89,6 +103,7 @@ pub(crate) enum AnswerAction {
     /// The explicit "record" click, through the tray's start path (consent first).
     Record,
     Stop,
+    StopAndQuit,
     Mute(String),
     Close,
 }
@@ -107,6 +122,9 @@ pub(crate) fn answer_action(
         (CallPromptKind::Offer, A::NotNow | A::Expired) => Some(AnswerAction::Close),
         (CallPromptKind::AskStop, A::Stop) => Some(AnswerAction::Stop),
         (CallPromptKind::AskStop, A::KeepRecording | A::Expired) => Some(AnswerAction::Close),
+        (CallPromptKind::Quit, A::StopAndQuit) => Some(AnswerAction::StopAndQuit),
+        // Nobody answering never quits: the recording goes on.
+        (CallPromptKind::Quit, A::Cancel | A::Expired) => Some(AnswerAction::Close),
         _ => None,
     }
 }
@@ -204,13 +222,29 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow) {
 
 /// Shows the card for `prompt`, replacing any card on screen.
 pub fn show(app: &AppHandle, prompt: CallPrompt) {
-    let payload = CallPromptPayload::from_prompt(prompt);
+    show_payload(app, CallPromptPayload::from_prompt(prompt));
+}
+
+/// "Stop the recording? Quitting Fala stops it." for the tray's "Quit".
+pub fn show_quit(app: &AppHandle) {
+    show_payload(app, CallPromptPayload::quit());
+}
+
+fn show_payload(app: &AppHandle, payload: CallPromptPayload) {
+    let quit = payload.kind == CallPromptKind::Quit;
     set_current(Some(payload.clone()));
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let Some(window) = ensure_window(&handle) else {
             set_current(None);
+            // Without the card, "Quit" would do nothing: stop the recording safely and quit.
+            if quit {
+                if let Some(meetings) = handle.try_state::<Arc<MeetingManager>>() {
+                    let meetings = Arc::clone(&meetings);
+                    std::thread::spawn(move || meetings.stop_and_quit());
+                }
+            }
             return;
         };
         place(&handle, &window);
@@ -274,6 +308,12 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         AnswerAction::Stop => {
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 meetings.stop().map_err(|e| e.to_string())?;
+            }
+        }
+        AnswerAction::StopAndQuit => {
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                let meetings = Arc::clone(&meetings);
+                tauri::async_runtime::spawn_blocking(move || meetings.stop_and_quit());
             }
         }
         AnswerAction::Mute(id) => {
@@ -404,6 +444,26 @@ mod tests {
     }
 
     #[test]
+    fn answer_maps_each_quit_button() {
+        let quit = CallPromptPayload::quit();
+        use CallPromptAnswer as A;
+        assert_eq!(
+            answer_action(Some(&quit), A::StopAndQuit),
+            Some(AnswerAction::StopAndQuit)
+        );
+        // Cancelling or letting it run out keeps recording and the app open.
+        for keep in [A::Cancel, A::Expired] {
+            assert_eq!(answer_action(Some(&quit), keep), Some(AnswerAction::Close));
+        }
+        for stale in [A::Record, A::Stop, A::MuteApp] {
+            assert_eq!(answer_action(Some(&quit), stale), None);
+        }
+        // The call cards do not quit.
+        let ask = card(CallPromptKind::AskStop);
+        assert_eq!(answer_action(Some(&ask), A::StopAndQuit), None);
+    }
+
+    #[test]
     fn answer_without_a_card_does_nothing() {
         use CallPromptAnswer as A;
         for answer in [
@@ -412,6 +472,8 @@ mod tests {
             A::MuteApp,
             A::Stop,
             A::KeepRecording,
+            A::StopAndQuit,
+            A::Cancel,
             A::Expired,
         ] {
             assert_eq!(answer_action(None, answer), None);

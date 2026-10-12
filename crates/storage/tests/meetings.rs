@@ -491,6 +491,30 @@ fn delete_meeting_cascades_and_is_final() {
 }
 
 #[test]
+fn recover_meeting_ends_only_an_unfinished_session() {
+    let e = env("meetings_recover");
+    let store = e.open();
+    let orphan = recorded(&store, 1, 14);
+    store
+        .recover_meeting(orphan.id, at(14, 10, 0), 599_000)
+        .unwrap();
+    let record = store.meeting(orphan.id).unwrap();
+    assert_eq!(record.ended_at, Some(at(14, 10, 0)));
+    assert_eq!(record.recorded_ms, 599_000);
+    assert_eq!(record.stop_reason, None);
+
+    // Already ended, or never started: nothing to recover.
+    assert!(store.recover_meeting(orphan.id, at(15, 0, 0), 1).is_err());
+    let draft = new_meeting(2, 9);
+    store.create_meeting(&draft).unwrap();
+    assert!(store.recover_meeting(draft.id, at(15, 0, 0), 1).is_err());
+    assert_eq!(
+        store.meeting(orphan.id).unwrap().ended_at,
+        Some(at(14, 10, 0))
+    );
+}
+
+#[test]
 fn retained_audio_can_be_cleared() {
     let e = env("meetings_clear_audio");
     let store = e.open();

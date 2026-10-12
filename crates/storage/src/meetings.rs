@@ -356,6 +356,23 @@ impl Store {
         )
     }
 
+    /// Fecha uma sessão que o processo deixou sem fim (gravação recuperada): instante e duração
+    /// vêm do WAV, e `stop_reason` fica nulo, porque ninguém parou. Só vale para uma sessão
+    /// começada e sem fim.
+    pub fn recover_meeting(
+        &self,
+        id: SessionId,
+        ended_at: DateTime<FixedOffset>,
+        recorded_ms: u64,
+    ) -> Result<(), StorageError> {
+        self.update(
+            id,
+            "UPDATE meetings SET ended_at = ?2, recorded_ms = ?3
+             WHERE id = ?1 AND started_at IS NOT NULL AND ended_at IS NULL",
+            params![id.to_string(), rfc3339(&ended_at), ms(recorded_ms)],
+        )
+    }
+
     /// Apaga a sessão e, em cascata, trechos, participantes e nomes de falantes. Irreversível.
     pub fn delete_meeting(&self, id: SessionId) -> Result<(), StorageError> {
         self.update(

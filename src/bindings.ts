@@ -1466,6 +1466,28 @@ async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
 }
 },
 /**
+ * Recordings the last run left without an end: "Recover the recording from 14:02 (12 min)?".
+ */
+async meetingOrphans() : Promise<Result<MeetingOrphan[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_orphans") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The click on "Recover"; retention and transcription follow in the background.
+ */
+async recoverMeeting(id: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recover_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
  */
 async changeMeetingRetentionSetting(days: number | null) : Promise<Result<null, string>> {
@@ -1714,7 +1736,7 @@ export type CallAppInfo = { id: string; name: string }
 /**
  * The person's answer, or the countdown running out.
  */
-export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "expired"
+export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "expired"
 export type CallPromptKind = 
 /**
  * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
@@ -1723,7 +1745,11 @@ export type CallPromptKind =
 /**
  * "Parar a gravação?" with [Parar] [Continuar].
  */
-"ask_stop"
+"ask_stop" | 
+/**
+ * "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
+ */
+"quit"
 /**
  * What the card shows.
  */
@@ -1921,6 +1947,18 @@ export type MeetingMode =
  * What the computer plays (a class, a video): no mic, diarized system channel.
  */
 "system_only"
+/**
+ * A recording the process left without an end: "Recover the recording from 14:02 (12 min)?".
+ */
+export type MeetingOrphan = { id: string; title: string; 
+/**
+ * RFC 3339 with the local offset at the time.
+ */
+started_at: string; 
+/**
+ * What the WAV header holds.
+ */
+recorded_ms: number }
 /**
  * An output the "Meeting sound" selector offers.
  */

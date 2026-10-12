@@ -293,7 +293,7 @@ assert.equal(meetingAudioDir(""), "");
 // The backend keeps meeting audio in `<data dir>/audio`.
 assert.match(
   read("../../../../apps/desktop/src/meeting/mod.rs"),
-  /audio_root: data\.join\("audio"\)/,
+  /audio_root\s*[:=]\s*data\.join\("audio"\)/,
 );
 const withPath = render(
   rowsFor(settings()),
