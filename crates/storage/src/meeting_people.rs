@@ -61,7 +61,7 @@ impl Store {
             )?;
         }
         tx.commit()?;
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 
@@ -153,7 +153,7 @@ impl Store {
             [id.to_string()],
         )?;
         tx.commit()?;
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 
@@ -183,7 +183,7 @@ impl Store {
             params![id.to_string(), person],
         )?;
         tx.commit()?;
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(name)
     }
 }

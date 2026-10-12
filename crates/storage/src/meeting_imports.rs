@@ -168,7 +168,7 @@ impl Store {
     /// idioma dela. Se o `document_id` já veio antes, a mesma sessão é atualizada, sem desfazer
     /// o que a pessoa mudou no Fala (ver o módulo).
     ///
-    /// Tudo numa transação; o `.md` da sessão vem depois do commit.
+    /// Tudo numa transação; a linha de busca e o `.md` da sessão vêm depois do commit.
     pub fn import_granola_meeting(
         &mut self,
         meeting: &GranolaMeeting,
@@ -282,7 +282,7 @@ impl Store {
         )?;
         tx.commit()?;
         log::debug!("reunião {id} importada do Granola ({outcome:?})");
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok((id, outcome))
     }
 
