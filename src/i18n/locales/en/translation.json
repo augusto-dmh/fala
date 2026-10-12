@@ -1171,7 +1171,7 @@
         "no_csv_in_zip": "This ZIP has no CSV in it.",
         "zip_mismatch": "The CSVs in this ZIP don't share the same columns.",
         "unreadable": "Couldn't read this file: {{detail}}",
-        "busy": "An import is already running.",
+        "busy": "Wait for the import, transcription or notes generation in progress to finish.",
         "cancelled": "Import cancelled. The meetings saved before the click stay.",
         "storage": "Couldn't save the meetings: {{detail}}"
       }

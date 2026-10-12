@@ -167,7 +167,7 @@ pub enum ProgressStage {
     },
 }
 
-fn rfc3339(at: &DateTime<FixedOffset>) -> String {
+pub(crate) fn rfc3339(at: &DateTime<FixedOffset>) -> String {
     at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
 }
 
@@ -194,7 +194,7 @@ pub(crate) fn summary(record: &MeetingRecord) -> MeetingSummary {
     }
 }
 
-/// The summary with where the session came from, for the list and the opened session.
+/// The summary with where the session came from, for the opened session.
 fn summary_in(store: &Store, record: &MeetingRecord) -> Result<MeetingSummary, MeetingError> {
     Ok(MeetingSummary {
         imported_from: store.meeting_import_source(record.id)?,
@@ -462,6 +462,11 @@ impl Work {
         self.transcribing.as_ref().map(|(id, _)| *id)
     }
 
+    /// A transcription or a notes generation is running, on any session.
+    pub(crate) fn busy(&self) -> bool {
+        self.transcribing.is_some() || self.notes.is_some()
+    }
+
     /// A transcription or a notes generation is working on `id`.
     pub(crate) fn involves(&self, id: SessionId) -> bool {
         self.transcribing() == Some(id) || self.notes == Some(id)
@@ -529,11 +534,15 @@ impl MeetingManager {
 
     pub fn list(&self) -> Result<Vec<MeetingSummary>, MeetingError> {
         self.with_store(|store| {
-            store
+            let mut sources = store.meeting_import_sources()?;
+            Ok(store
                 .meetings()?
                 .iter()
-                .map(|record| summary_in(store, record))
-                .collect()
+                .map(|record| MeetingSummary {
+                    imported_from: sources.remove(&record.id),
+                    ..summary(record)
+                })
+                .collect())
         })
     }
 

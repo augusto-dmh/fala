@@ -13,6 +13,7 @@ const read = (path: string) =>
 const pt = JSON.parse(read("../../i18n/locales/pt/translation.json"));
 const page = read("./MeetingsPage.tsx");
 const dialog = read("./ImportDialog.tsx");
+const view_ = read("./MeetingView.tsx");
 
 function ok(id: string) {
   console.log(`${id} ok`);
@@ -123,6 +124,13 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
 {
   assert.ok(/chooseGranola[\s\S]*extensions: \["csv", "zip"\]/.test(dialog));
   assert.ok(/onGranola=\{setGranolaPath\}/.test(page));
+  // Sem áudio, "Transcrever" fica desligado, e as notas dizem que não têm âncoras.
+  assert.ok(
+    /props\.transcribing \|\|[\s\S]*imported_from === "granola"\s*\}\s*onClick=\{props\.onTranscribe\}/.test(
+      view_,
+    ),
+  );
+  assert.ok(view_.includes('t("meeting.granola.noAnchors")'));
   assert.ok(
     /<GranolaImport[\s\S]*onImported=\{\(\) => void refresh\(\)\}/.test(page),
   );

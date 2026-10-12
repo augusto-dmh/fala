@@ -1171,7 +1171,7 @@
         "no_csv_in_zip": "Esse ZIP não tem nenhum CSV.",
         "zip_mismatch": "Os CSVs desse ZIP não têm as mesmas colunas.",
         "unreadable": "Não consegui ler esse arquivo: {{detail}}",
-        "busy": "Já há uma importação em andamento.",
+        "busy": "Espere a importação, a transcrição ou a geração de notas em andamento terminar.",
         "cancelled": "Importação cancelada. As reuniões salvas antes do clique ficaram.",
         "storage": "Não consegui salvar as reuniões: {{detail}}"
       }

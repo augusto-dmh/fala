@@ -5,9 +5,9 @@
 //! leaves the machine: no Granola login (ADR-0008).
 
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, FixedOffset};
 use fala_media::CancelToken;
 use fala_storage::{
     GranolaError, GranolaExport, GranolaMeeting, ImportOutcome, RejectReason, StorageError,
@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
+use super::pipeline::rfc3339;
 use super::{now_local, MeetingManager};
 
 /// Least time between two progress events.
@@ -117,8 +118,13 @@ fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-fn rfc3339(at: &DateTime<FixedOffset>) -> String {
-    at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+/// Frees the one-import slot however the import ends, a panic included.
+struct Slot<'a>(&'a Mutex<Option<CancelToken>>);
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 pub(crate) fn preview(export: &GranolaExport) -> GranolaPreview {
@@ -192,8 +198,14 @@ impl MeetingManager {
 
     /// Imports the export at `path`, sharing the one-import-at-a-time slot (and its Cancel) with
     /// the file and URL import. Progress comes as `GranolaProgress` events.
+    ///
+    /// Not while a transcription or a notes generation runs: a re-import rewrites the segments
+    /// that job may be reading.
     pub fn import_granola(&self, path: &str) -> Result<GranolaImported, GranolaImportError> {
         let export = read(path)?;
+        if self.work.lock().unwrap_or_else(|e| e.into_inner()).busy() {
+            return Err(GranolaImportError::Busy);
+        }
         let cancel = CancelToken::new();
         {
             let mut importing = self.importing.lock().unwrap_or_else(|e| e.into_inner());
@@ -202,6 +214,7 @@ impl MeetingManager {
             }
             *importing = Some(cancel.clone());
         }
+        let _slot = Slot(&self.importing);
         let imported_at = now_local();
         let mut last: Option<Instant> = None;
         let result = import_rows(
@@ -224,7 +237,6 @@ impl MeetingManager {
                 }
             },
         );
-        *self.importing.lock().unwrap_or_else(|e| e.into_inner()) = None;
         match &result {
             Ok(imported) => log::info!("granola import: {imported:?}"),
             Err(error) => log::warn!("granola import stopped: {error:?}"),

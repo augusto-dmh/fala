@@ -189,7 +189,12 @@ export function MeetingView(props: MeetingViewProps) {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="secondary"
-              disabled={props.recording || props.transcribing}
+              disabled={
+                props.recording ||
+                props.transcribing ||
+                // Granola sends no audio: there is nothing to transcribe.
+                detail.summary.imported_from === "granola"
+              }
               onClick={props.onTranscribe}
             >
               {props.transcribing
