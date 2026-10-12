@@ -15,13 +15,22 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, FixedOffset, SecondsFormat};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
-use fala_storage::Store;
+use fala_meeting::{SessionId, SessionMode, StopReason};
+use fala_storage::{
+    MeetingSegment, NameSuggestion, NewMeeting, SegmentChannel, SegmentSpeaker, Store,
+};
 use serde_json::{json, Value};
 
 const DISABLED: &str =
     "Fala MCP is disabled: set enabled = true in mcp.toml in the Fala data folder";
 const INVALID_PARAMS: i64 = -32602;
 const MISSING: &str = "01999999-0000-7000-8000-000000000000";
+const TOOLS: [&str; 4] = [
+    "search_dictations",
+    "get_dictation",
+    "list_meetings",
+    "get_meeting",
+];
 
 // ---------------------------------------------------------------- fixture
 
@@ -318,7 +327,7 @@ fn initialize_legacy_reports_fala() {
 }
 
 #[test]
-fn tools_list_has_two_read_only_tools_in_order() {
+fn tools_list_has_read_only_tools_in_order() {
     let data = Data::enabled("tools-list");
     let mut s = data.session();
     let tools = s.request("tools/list", json!({}))["result"]["tools"].clone();
@@ -328,7 +337,7 @@ fn tools_list_has_two_read_only_tools_in_order() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["search_dictations", "get_dictation"]);
+    assert_eq!(names, TOOLS);
     for tool in tools.as_array().unwrap() {
         let a = &tool["annotations"];
         assert_eq!(a["readOnlyHint"], json!(true), "{tool}");
@@ -985,7 +994,7 @@ fn disabled_still_lists_tools() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["search_dictations", "get_dictation"]);
+    assert_eq!(names, TOOLS);
     s.finish();
 }
 
@@ -1123,4 +1132,398 @@ fn unknown_argument_exits_two() {
     };
     assert_eq!(status.code(), Some(2));
     s.finish();
+}
+
+// ---------------------------------------------------------------- S7 reuniões
+
+const MEETINGS_DISABLED: &str =
+    "Fala MCP meetings are disabled: set meetings = true in mcp.toml in the Fala data folder";
+
+/// Uma sessão criada às 10:`created`; com `started`, gravou a partir dali e, com `finished`,
+/// terminou um minuto depois.
+fn meeting(
+    store: &mut Store,
+    created: u32,
+    started: Option<u32>,
+    finished: bool,
+    title: &str,
+    local_only: bool,
+) -> String {
+    let id = SessionId::from_parts(1_759_000_000_000 + u64::from(created), u128::from(created));
+    store
+        .create_meeting(&NewMeeting {
+            id,
+            title: title.to_string(),
+            mode: SessionMode::Meeting,
+            local_only,
+            created_at: at(created),
+        })
+        .unwrap();
+    if let Some(minute) = started {
+        store
+            .start_meeting_recording(id, SessionMode::Meeting, at(minute))
+            .unwrap();
+        if finished {
+            store
+                .finish_meeting(id, at(minute + 1), 61_500, StopReason::User)
+                .unwrap();
+            store.set_meeting_audio_retained(id).unwrap();
+        }
+    }
+    id.to_string()
+}
+
+fn segments(store: &mut Store, id: &str, texts: &[&str]) {
+    let segments = texts
+        .iter()
+        .enumerate()
+        .map(|(i, text)| MeetingSegment {
+            seq: 0,
+            channel: if i % 2 == 0 {
+                SegmentChannel::Mic
+            } else {
+                SegmentChannel::System
+            },
+            speaker: if i % 2 == 0 {
+                SegmentSpeaker::Me
+            } else {
+                SegmentSpeaker::Person(1)
+            },
+            t0_ms: i as u64 * 1000,
+            t1_ms: i as u64 * 1000 + 900,
+            text: text.to_string(),
+        })
+        .collect();
+    store
+        .replace_meeting_segments(id.parse().unwrap(), segments, at(30))
+        .unwrap();
+}
+
+/// Duas reuniões visíveis, uma "só local", um rascunho e uma gravação em curso. A 2 foi criada
+/// antes da 1 mas gravou depois, e tem notas, pessoas e trechos.
+struct Meetings {
+    first: String,
+    second: String,
+    local: String,
+    draft: String,
+    live: String,
+}
+
+fn meetings(data: &Data) -> Meetings {
+    let mut store = data.store();
+    let first = meeting(&mut store, 1, Some(1), true, "Kickoff", false);
+    let second = meeting(&mut store, 0, Some(2), true, "Contrato com a Ana", false);
+    let local = meeting(&mut store, 3, Some(3), true, "Médico", true);
+    let draft = meeting(&mut store, 4, None, false, "Pauta de amanhã", false);
+    let live = meeting(&mut store, 5, Some(5), false, "Ao vivo", false);
+    let id: SessionId = second.parse().unwrap();
+    store
+        .set_meeting_participants(id, &["Ana".to_string(), "Bruno".to_string()])
+        .unwrap();
+    segments(
+        &mut store,
+        &second,
+        &["oi", "o contrato sai dia 15", "fechado"],
+    );
+    store.set_meeting_speaker_name(id, 1, Some("Ana")).unwrap();
+    let suggestion = NameSuggestion {
+        name: "Bruno".into(),
+        reason: "disse".into(),
+    };
+    store
+        .save_speaker_suggestions(id, &[(2, suggestion)])
+        .unwrap();
+    store.save_meeting_annotations(id, "pauta: prazo").unwrap();
+    store
+        .save_meeting_notes(id, "geral", "## Decisões\n- 15/11 [[#^s2|00:01]]")
+        .unwrap();
+    segments(&mut store, &local, &["segredo do consultório"]);
+    Meetings {
+        first,
+        second,
+        local,
+        draft,
+        live,
+    }
+}
+
+impl Data {
+    fn with_meetings(name: &str) -> Self {
+        let data = Data::new(name);
+        data.toml("enabled = true\nmeetings = true\n");
+        data
+    }
+}
+
+fn items(page: &Value) -> Vec<String> {
+    ids(page["items"].as_array().unwrap())
+}
+
+#[test]
+fn meetings_are_off_until_their_own_key_is_true() {
+    for (name, toml, text) in [
+        ("meetings-absent", "enabled = true\n", MEETINGS_DISABLED),
+        (
+            "meetings-false",
+            "enabled = true\nmeetings = false\n",
+            MEETINGS_DISABLED,
+        ),
+        (
+            "meetings-yes",
+            "enabled = true\nmeetings = \"yes\"\n",
+            MEETINGS_DISABLED,
+        ),
+        ("meetings-mcp-off", "meetings = true\n", DISABLED),
+    ] {
+        let data = Data::new(name);
+        data.toml(toml);
+        let m = meetings(&data);
+        let mut s = data.session();
+        for (tool, args) in [
+            ("list_meetings", json!({})),
+            ("get_meeting", json!({ "id": m.second })),
+        ] {
+            let response = s.call(tool, args);
+            assert_eq!(
+                response["result"]["isError"],
+                json!(true),
+                "{name}: {response}"
+            );
+            assert_eq!(tool_text(&response), text, "{name}");
+        }
+        let tools = s.request("tools/list", json!({}));
+        assert_eq!(
+            tools["result"]["tools"].as_array().unwrap().len(),
+            TOOLS.len()
+        );
+        s.finish();
+    }
+}
+
+#[test]
+fn list_meetings_hides_local_only_and_drafts_newest_first() {
+    let data = Data::with_meetings("meetings-list");
+    let m = meetings(&data);
+    let mut s = data.session();
+    let page = s.ok("list_meetings", json!({}));
+    assert_eq!(page["content_origin"], json!("third_party_speech"));
+    assert_eq!(page["next_cursor"], json!(null));
+    assert_eq!(items(&page), [m.second.as_str(), m.first.as_str()]);
+    let item = &page["items"][0];
+    assert_eq!(
+        keys(item),
+        set(&[
+            "id",
+            "title",
+            "started_at",
+            "ended_at",
+            "duration_s",
+            "source",
+            "participants",
+            "has_notes",
+            "transcribed",
+        ])
+    );
+    assert_eq!(item["title"], json!("Contrato com a Ana"));
+    assert_eq!(item["started_at"], json!("2026-10-01T10:02:00-03:00"));
+    assert_eq!(item["ended_at"], json!("2026-10-01T10:03:00-03:00"));
+    assert_eq!(item["duration_s"], json!(61));
+    assert_eq!(item["source"], json!("meeting"));
+    assert_eq!(item["participants"], json!(["Ana", "Bruno"]));
+    assert_eq!(item["has_notes"], json!(true));
+    assert_eq!(item["transcribed"], json!(true));
+    assert_eq!(page["items"][1]["has_notes"], json!(false));
+
+    let first = s.ok("list_meetings", json!({ "limit": 1 }));
+    assert_eq!(items(&first), [m.second.as_str()]);
+    assert!(first["next_cursor"].is_string(), "{first}");
+    let next = s.ok(
+        "list_meetings",
+        json!({ "limit": 1, "cursor": first["next_cursor"] }),
+    );
+    assert_eq!(items(&next), [m.first.as_str()]);
+    assert_eq!(next["next_cursor"], json!(null));
+    let beyond = s.ok(
+        "list_meetings",
+        json!({ "cursor": format!("0:{}", m.first) }),
+    );
+    assert!(items(&beyond).is_empty(), "{beyond}");
+
+    let since = s.ok(
+        "list_meetings",
+        json!({ "since": "2026-10-01T10:02:00-03:00" }),
+    );
+    assert_eq!(items(&since), [m.second.as_str()]);
+    let until = s.ok("list_meetings", json!({ "until": "2026-10-01T13:02:00Z" }));
+    assert_eq!(items(&until), [m.first.as_str()]);
+
+    for args in [
+        json!({ "since": "ontem" }),
+        json!({ "limit": 0 }),
+        json!({ "limit": 51 }),
+        json!({ "cursor": "x" }),
+        json!({ "bogus": 1 }),
+    ] {
+        let response = s.call("list_meetings", args.clone());
+        assert_eq!(
+            response["error"]["code"],
+            json!(INVALID_PARAMS),
+            "{args}: {response}"
+        );
+    }
+
+    // Uma reunião gravada entre duas páginas não desloca a página seguinte.
+    let page = s.ok("list_meetings", json!({ "limit": 1 }));
+    meeting(&mut data.store(), 6, Some(6), true, "Nova", false);
+    let next = s.ok(
+        "list_meetings",
+        json!({ "limit": 1, "cursor": page["next_cursor"] }),
+    );
+    assert_eq!(items(&next), [m.first.as_str()]);
+    let done = s.finish();
+    for line in &done.stdout {
+        assert!(!line.contains(&m.local), "só local vazou: {line}");
+        assert!(!line.contains(&m.draft), "rascunho vazou: {line}");
+        assert!(!line.contains(&m.live), "gravação em curso vazou: {line}");
+    }
+}
+
+#[test]
+fn get_meeting_returns_notes_without_the_transcript() {
+    let data = Data::with_meetings("meetings-get");
+    let m = meetings(&data);
+    let mut s = data.session();
+    let got = s.ok("get_meeting", json!({ "id": m.second }));
+    assert_eq!(
+        keys(&got),
+        set(&[
+            "id",
+            "title",
+            "started_at",
+            "ended_at",
+            "duration_s",
+            "source",
+            "participants",
+            "speakers",
+            "annotations",
+            "notes",
+            "notes_edited",
+            "transcript_segments",
+            "content_origin",
+        ])
+    );
+    assert_eq!(got["notes"], json!("## Decisões\n- 15/11 [[#^s2|00:01]]"));
+    assert_eq!(got["notes_edited"], json!(false));
+    assert_eq!(got["annotations"], json!("pauta: prazo"));
+    // Só o nome aplicado; a sugestão para a pessoa 2 não vale sem o clique.
+    assert_eq!(
+        got["speakers"],
+        json!([{ "speaker": "person_1", "name": "Ana" }])
+    );
+    assert_eq!(got["transcript_segments"], json!(3));
+    assert_eq!(got["content_origin"], json!("third_party_speech"));
+    assert!(!got.to_string().contains("o contrato sai dia 15"), "{got}");
+
+    let empty = s.ok("get_meeting", json!({ "id": m.first }));
+    assert_eq!(empty["notes"], json!(null));
+    assert_eq!(empty["speakers"], json!([]));
+    assert_eq!(empty["transcript_segments"], json!(0));
+
+    for id in [
+        m.local.as_str(),
+        m.draft.as_str(),
+        m.live.as_str(),
+        MISSING,
+        "nada",
+    ] {
+        let response = s.call("get_meeting", json!({ "id": id }));
+        assert_eq!(response["result"]["isError"], json!(true), "{response}");
+        assert_eq!(tool_text(&response), format!("meeting not found: {id}"));
+    }
+    let response = s.call("get_meeting", json!({}));
+    assert_eq!(
+        response["error"]["code"],
+        json!(INVALID_PARAMS),
+        "{response}"
+    );
+    s.finish();
+}
+
+#[test]
+fn meeting_responses_never_carry_audio_or_paths() {
+    let data = Data::with_meetings("meetings-no-leak");
+    let m = meetings(&data);
+    let mut s = data.session();
+    s.request("tools/list", json!({}));
+    s.call("list_meetings", json!({}));
+    s.call("get_meeting", json!({ "id": m.second }));
+    let done = s.finish();
+    let dir = data.dir.to_str().unwrap();
+    for line in &done.stdout {
+        assert!(!line.contains(dir), "caminho vazou: {line}");
+        for word in ["audio", ".opus", ".wav", "local_only", "segredo"] {
+            assert!(!line.contains(word), "{word} vazou: {line}");
+        }
+    }
+    assert!(
+        !done.stderr.contains("o contrato sai dia 15"),
+        "{}",
+        done.stderr
+    );
+}
+
+#[test]
+fn deleted_meeting_disappears_mid_session() {
+    let data = Data::with_meetings("meetings-deleted");
+    let m = meetings(&data);
+    let mut s = data.session();
+    assert_eq!(items(&s.ok("list_meetings", json!({}))).len(), 2);
+    rusqlite::Connection::open(data.db())
+        .unwrap()
+        .execute("DELETE FROM meetings WHERE id = ?1", [&m.second])
+        .unwrap();
+    assert_eq!(items(&s.ok("list_meetings", json!({}))), [m.first.as_str()]);
+    let response = s.call("get_meeting", json!({ "id": m.second }));
+    assert_eq!(
+        tool_text(&response),
+        format!("meeting not found: {}", m.second)
+    );
+    s.finish();
+}
+
+#[test]
+fn meeting_storage_failure_is_opaque_error() {
+    let data = Data::with_meetings("meetings-storage-failure");
+    let m = meetings(&data);
+    let mut s = data.session();
+    // Uma chamada antes garante que o servidor já abriu o banco (e criou as tabelas aditivas).
+    assert_eq!(items(&s.ok("list_meetings", json!({}))).len(), 2);
+    rusqlite::Connection::open(data.db())
+        .unwrap()
+        .execute_batch("ALTER TABLE meeting_participants RENAME TO broken;")
+        .unwrap();
+    for (tool, args) in [
+        ("get_meeting", json!({ "id": m.second })),
+        ("list_meetings", json!({})),
+    ] {
+        let response = s.call(tool, args);
+        assert_eq!(response["result"]["isError"], json!(true), "{response}");
+        assert_eq!(tool_text(&response), "storage error");
+    }
+    let done = s.finish();
+    assert!(done.stdout.iter().all(|l| !l.contains("no such table")));
+}
+
+#[test]
+fn meetings_without_db_list_empty() {
+    let data = Data::with_meetings("meetings-missing-db");
+    let mut s = data.session();
+    assert!(items(&s.ok("list_meetings", json!({}))).is_empty());
+    let response = s.call("get_meeting", json!({ "id": MISSING }));
+    assert_eq!(
+        tool_text(&response),
+        format!("meeting not found: {MISSING}")
+    );
+    s.finish();
+    assert!(!data.db().exists());
 }
