@@ -1336,6 +1336,17 @@ async applySpeakerSuggestion(id: string, person: number) : Promise<Result<Meetin
 }
 },
 /**
+ * The name typed for "Person N"; blank gives the label back.
+ */
+async setMeetingSpeakerName(id: string, person: number, name: string) : Promise<Result<MeetingPeople, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_speaker_name", { id, person, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The card the prompt window should show now, for a window that just loaded.
  */
 async callPromptCurrent() : Promise<CallPromptPayload | null> {

@@ -1099,6 +1099,13 @@
       "me": "Me",
       "person": "Person {{n}}"
     },
+    "rename": {
+      "hint": "Click to name {{person}} for the whole meeting",
+      "label": "Name of {{person}}",
+      "regenerate": "Name changed. Generate the notes again?",
+      "generate": "Generate again",
+      "dismiss": "Not now"
+    },
     "people": {
       "participants": "Who was there",
       "placeholder": "Ana Souza, Bruno Lima",

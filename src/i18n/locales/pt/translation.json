@@ -1099,6 +1099,13 @@
       "me": "Eu",
       "person": "Pessoa {{n}}"
     },
+    "rename": {
+      "hint": "Clique para dar um nome a {{person}} na reunião toda",
+      "label": "Nome de {{person}}",
+      "regenerate": "Nome trocado. Gerar as notas de novo?",
+      "generate": "Gerar de novo",
+      "dismiss": "Agora não"
+    },
     "people": {
       "participants": "Quem estava",
       "placeholder": "Ana Souza, Bruno Lima",

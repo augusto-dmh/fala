@@ -256,3 +256,15 @@ pub async fn apply_speaker_suggestion(
 ) -> Result<MeetingPeople, MeetingError> {
     meetings.apply_speaker_suggestion(&id, person)
 }
+
+/// The name typed for "Person N"; blank gives the label back.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_speaker_name(
+    meetings: Meetings<'_>,
+    id: String,
+    person: u32,
+    name: String,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.set_speaker_name(&id, person, &name)
+}
