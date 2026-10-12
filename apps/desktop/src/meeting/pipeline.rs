@@ -56,6 +56,10 @@ pub struct MeetingSummary {
     pub audio_retained: bool,
     pub transcribed: bool,
     pub has_notes: bool,
+    /// Where the session was imported from (`granola`); absent for the rest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub imported_from: Option<String>,
 }
 
 /// One transcript line: `person` is `None` for "me" (the mic outside in-person mode).
@@ -186,7 +190,16 @@ pub(crate) fn summary(record: &MeetingRecord) -> MeetingSummary {
         audio_retained: record.audio_retained,
         transcribed: record.transcribed_at.is_some(),
         has_notes: record.notes_md.is_some(),
+        imported_from: None,
     }
+}
+
+/// The summary with where the session came from, for the list and the opened session.
+fn summary_in(store: &Store, record: &MeetingRecord) -> Result<MeetingSummary, MeetingError> {
+    Ok(MeetingSummary {
+        imported_from: store.meeting_import_source(record.id)?,
+        ..summary(record)
+    })
 }
 
 pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
@@ -515,7 +528,13 @@ impl MeetingManager {
     }
 
     pub fn list(&self) -> Result<Vec<MeetingSummary>, MeetingError> {
-        self.with_store(|store| Ok(store.meetings()?.iter().map(summary).collect()))
+        self.with_store(|store| {
+            store
+                .meetings()?
+                .iter()
+                .map(|record| summary_in(store, record))
+                .collect()
+        })
     }
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
@@ -537,7 +556,7 @@ impl MeetingManager {
                 })
                 .collect();
             Ok(MeetingDetail {
-                summary: summary(&record),
+                summary: summary_in(store, &record)?,
                 annotations: record.annotations,
                 lines,
                 notes_md: record.notes_md,
