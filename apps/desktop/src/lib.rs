@@ -905,6 +905,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::generate_meeting_notes,
             commands::meeting::meeting_markdown,
             commands::meeting::meeting_templates,
+            commands::meeting::duplicate_meeting_template,
+            commands::meeting::open_meeting_templates_folder,
             commands::meeting::meeting_keys,
             commands::meeting::set_meeting_transcription_key,
             commands::meeting_output::meeting_outputs,
