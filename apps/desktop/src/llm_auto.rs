@@ -4,7 +4,9 @@
 //! more than 15 words. An unknown app keeps the LLM on (D4 of the phase 1 plan).
 //!
 //! `custom_words` and `dictionary_replacements` are the personal dictionary: the rules apply its
-//! spelling and its spoken -> written pairs, and the Gemini gets the terms in the prompt. While the LLM is configured, the inherited fuzzy correction waits until the
+//! spelling, its spoken -> written pairs and its snippets, and the Gemini gets the terms in the
+//! prompt and each snippet only as an opaque marker. While the LLM is configured, the inherited
+//! fuzzy correction waits until the
 //! LLM is out of the way and only touches text the LLM did not write.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -30,6 +32,8 @@ pub(crate) struct AutoFormatted {
     pub fallback: Option<Fallback>,
     /// The spoken form of each dictionary pair the rules applied, once per occurrence.
     pub replaced: Vec<String>,
+    /// The trigger of each snippet the rules applied, once per occurrence.
+    pub snippets: Vec<String>,
 }
 
 /// The `Postprocessor` the settings describe, the personal dictionary and the fuzzy correction
@@ -129,6 +133,7 @@ pub(crate) fn format_with_late_edit(
     );
     let llm_produced = editor == Editor::Llm;
     let mut hits = formatted.replaced;
+    let mut snippet_hits = formatted.snippets;
     let dictation = formatted.dictation;
     // Text the LLM did not write goes through the fuzzy correction and then the rules, the
     // order it had before the LLM: the fuzzy matcher reads ASR text, and the rules fix the
@@ -143,11 +148,13 @@ pub(crate) fn format_with_late_edit(
             };
             let masked = Rules::default().mask(&fuzzy.apply(dictation.raw.text.clone()), &ctx);
             hits = masked.replaced.clone();
+            snippet_hits = masked.snippets.clone();
             Some(masked.unmasked())
         }
         _ => None,
     };
     let replacements = formatter.dictionary.replacements();
+    let snippets = formatter.dictionary.snippets();
     let auto = AutoFormatted {
         final_text: refixed.unwrap_or(dictation.final_text),
         llm_produced,
@@ -155,6 +162,10 @@ pub(crate) fn format_with_late_edit(
         replaced: hits
             .into_iter()
             .filter_map(|i| replacements.get(i).map(|pair| pair.spoken().to_string()))
+            .collect(),
+        snippets: snippet_hits
+            .into_iter()
+            .filter_map(|i| snippets.get(i).map(|snippet| snippet.trigger().to_string()))
             .collect(),
     };
     (auto, formatted.late_edit)
@@ -526,6 +537,7 @@ Personal dictionary:
                 llm_produced: true,
                 fallback: None,
                 replaced: Vec::new(),
+                snippets: Vec::new(),
             }
         );
     }
@@ -594,6 +606,31 @@ Personal dictionary:
     }
 
     #[test]
+    fn snippets_are_applied_and_reported_with_or_without_the_llm() {
+        let server = FakeGemini::ok(Duration::ZERO);
+        let mut settings = settings_with_key();
+        settings.custom_words = words(&["Augusto"]);
+        settings.dictionary_snippets = vec![crate::dictionary::DictionaryReplacement {
+            spoken: "minha assinatura".to_string(),
+            written: "Augusto\nfala.dev".to_string(),
+            uses: 0,
+        }];
+        // Short text, LLM configured: the deferred fuzzy and the rules run again; one count.
+        let short = run(
+            &settings,
+            &server,
+            "o agusto e minha assinatura",
+            app("notepad"),
+        );
+        assert_eq!(short.final_text, "O Augusto e Augusto\nfala.dev");
+        assert_eq!(short.snippets, ["minha assinatura"]);
+        // The whole dictation is the trigger: the text as is, no request.
+        let whole = run(&settings, &server, "Minha assinatura.", app("notepad"));
+        assert_eq!(whole.final_text, "Augusto\nfala.dev");
+        assert_eq!(server.requests(), 0);
+    }
+
+    #[test]
     fn custom_words_are_normalized() {
         assert_eq!(
             normalize_words(words(&[" Fala ", "fala", "", "ChargeBee", "  "])),
@@ -612,6 +649,7 @@ Personal dictionary:
                 llm_produced: true,
                 fallback: None,
                 replaced: Vec::new(),
+                snippets: Vec::new(),
             }
         );
         assert_eq!(server.requests(), 1);

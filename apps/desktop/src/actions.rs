@@ -616,7 +616,7 @@ pub(crate) async fn process_transcription_output(
     .await
     {
         Ok((auto, late_edit)) => {
-            crate::dictionary::record_uses(app, &auto.replaced);
+            crate::dictionary::record_uses(app, &auto.replaced, &auto.snippets);
             ProcessedTranscription {
                 late_edit,
                 ..auto_processed(transcription, auto)
@@ -631,6 +631,7 @@ pub(crate) async fn process_transcription_output(
                     llm_produced: false,
                     fallback: None,
                     replaced: Vec::new(),
+                    snippets: Vec::new(),
                 },
             )
         }
