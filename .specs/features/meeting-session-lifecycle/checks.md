@@ -54,3 +54,20 @@ Proof: `cargo test -p fala --lib quit` (`quitting_while_recording_asks`,
 **C11** - manual: gravar ~1 min, `taskkill /F /IM fala.exe`, reabrir, Recuperar; a duração perde
 ≤ ~1 s e `mic.opus`/`sys.opus` aparecem; sair pela bandeja gravando mostra o cartão
 Proof: manual (Windows, app de debug portátil)
+
+## S3 — avisos de silêncio e de engano (PR 3)
+
+**C12** - "Ainda está gravando?" 1 min antes do fim por silêncio, uma vez por trecho; o silêncio
+só para depois que o cartão apareceu (sem ele, nunca); continuar, som ou pausa recomeçam a conta
+Proof: `cargo test -p fala-meeting --test session silence`
+
+**C13** - Parada clicada ou por silêncio: < 1 s sem nada digitado descarta e avisa; < 30 s ou
+< 5 s de fala pergunta e não transcreve; teto e falha de dispositivo nunca perguntam
+Proof: `cargo test -p fala --lib a_short_or_silent_stop_looks_like_a_mistake`
+
+**C14** - Cada cartão mapeia seus botões; o fim da contagem nunca apaga nem para; textos em pt/en
+Proof: `cargo test -p fala --lib answer_maps_each_meeting_card`; `bun src/callprompt/callprompt.test.tsx`
+
+**C15** - manual: gravar 10 s calado e parar mostra "Gravou por engano?"; 15 min sem som mostra
+"Ainda está gravando?" e depois "A gravação parou"
+Proof: manual (Windows, app de debug portátil)

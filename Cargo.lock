@@ -2123,6 +2123,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "ureq",
 ]
@@ -2171,6 +2172,7 @@ dependencies = [
  "chrono",
  "fala-core",
  "fala-meeting",
+ "fala-notes",
  "log",
  "rusqlite",
  "serde",
