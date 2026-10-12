@@ -31,7 +31,8 @@ pub struct RetainedAudio {
 }
 
 /// Converte o WAV de trabalho em `mic.opus` (L) e `sys.opus` (R) dentro de `session_dir`,
-/// valida os dois por decodificação e só então apaga o WAV.
+/// valida os dois por decodificação e só então apaga o WAV. Um WAV mono (sessão de importação)
+/// vira o `sys.opus`, e o `mic.opus` sai em silêncio com a mesma duração.
 ///
 /// Os arquivos são escritos como `.part` e renomeados depois da validação; uma tentativa
 /// anterior interrompida é sobrescrita. Em qualquer erro o WAV continua no disco.
@@ -48,7 +49,7 @@ fn retain_wav_with(
     let reader = hound::WavReader::open(wav).map_err(|e| wav_error(wav, e))?;
     let spec = reader.spec();
     if spec.sample_rate != SAMPLE_RATE_HZ
-        || spec.channels != 2
+        || !(spec.channels == 1 || spec.channels == 2)
         || spec.bits_per_sample != 16
         || spec.sample_format != hound::SampleFormat::Int
     {
@@ -134,7 +135,8 @@ pub fn validate_opus(path: &Path, expected_samples: u64) -> Result<(), Retention
     Ok(())
 }
 
-/// Lê o WAV em blocos de 20 ms e codifica L e R em dois streams Ogg Opus.
+/// Lê o WAV em blocos de 20 ms e codifica L e R em dois streams Ogg Opus; o canal único de um
+/// WAV mono é o R, e o L fica em zeros.
 fn encode_channels(
     reader: hound::WavReader<BufReader<File>>,
     wav: &Path,
@@ -142,6 +144,7 @@ fn encode_channels(
     system_part: &Path,
 ) -> Result<u64, RetentionError> {
     let total = u64::from(reader.duration());
+    let stereo = reader.spec().channels == 2;
     let mut mic = OpusStream::create(mic_part, 1)?;
     let mut system = OpusStream::create(system_part, 2)?;
 
@@ -157,12 +160,18 @@ fn encode_channels(
         left.clear();
         right.clear();
         while left.len() < FRAME {
-            let Some(l) = samples.next() else { break };
-            let r = samples
-                .next()
-                .ok_or_else(|| wav_message(wav, "quadro estéreo incompleto"))?;
-            left.push(l.map_err(|e| wav_error(wav, e))?);
-            right.push(r.map_err(|e| wav_error(wav, e))?);
+            let Some(first) = samples.next() else { break };
+            let first = first.map_err(|e| wav_error(wav, e))?;
+            if stereo {
+                let r = samples
+                    .next()
+                    .ok_or_else(|| wav_message(wav, "quadro estéreo incompleto"))?;
+                left.push(first);
+                right.push(r.map_err(|e| wav_error(wav, e))?);
+            } else {
+                left.push(0);
+                right.push(first);
+            }
         }
         read += left.len() as u64;
         left.resize(FRAME, 0);
@@ -352,6 +361,36 @@ mod tests {
             writer.write_sample(((i % 200) as i16 - 100) * 50).unwrap();
         }
         writer.finalize().unwrap();
+    }
+
+    #[test]
+    fn mono_wav_becomes_the_system_channel() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wav = tmp.path().join("importado.wav");
+        let dir = tmp.path().join("sessao");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: SAMPLE_RATE_HZ,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&wav, spec).unwrap();
+        for i in 0..SAMPLE_RATE_HZ {
+            let phase = f64::from(i) * 440.0 * std::f64::consts::TAU / f64::from(SAMPLE_RATE_HZ);
+            writer.write_sample((phase.sin() * 8_000.0) as i16).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let audio = retain_wav(&wav, &dir).unwrap();
+        assert_eq!(audio.samples, u64::from(SAMPLE_RATE_HZ));
+        assert!(!wav.exists());
+        let peak = |path: &Path| {
+            let pcm = crate::decode_range(path, 0, audio.samples).unwrap();
+            assert_eq!(pcm.len() as u64, audio.samples);
+            pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0)
+        };
+        assert!(peak(&audio.mic) < 10, "mic em silêncio");
+        assert!(peak(&audio.system) > 4_000, "o tom está no sistema");
     }
 
     #[test]
