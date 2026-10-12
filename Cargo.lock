@@ -2171,6 +2171,7 @@ dependencies = [
  "chrono",
  "fala-core",
  "fala-meeting",
+ "fala-notes",
  "log",
  "rusqlite",
  "serde",
