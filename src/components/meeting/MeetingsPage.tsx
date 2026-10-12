@@ -20,6 +20,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
+import { DeleteMeeting } from "./DeleteMeeting";
 import { ImportDialog } from "./ImportDialog";
 import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
@@ -292,6 +293,15 @@ export function MeetingsPage() {
     } else setError(result.error);
   };
 
+  const remove = async (id: string) => {
+    setError(null);
+    const result = await commands.deleteMeeting(id);
+    if (result.status === "ok") {
+      setSelected((current) => (current?.summary.id === id ? null : current));
+    } else setError(result.error);
+    await refresh();
+  };
+
   const saveKey = async (key: string) => {
     const result = await commands.setMeetingTranscriptionKey(key);
     if (result.status === "ok") setKeys(result.data);
@@ -399,6 +409,15 @@ export function MeetingsPage() {
             }
             onCopy={() => void copy(selected.summary.id)}
             onNamesChanged={() => void open(selected.summary.id)}
+          />
+          <DeleteMeeting
+            key={`delete-${selected.summary.id}`}
+            disabled={
+              status.id === selected.summary.id ||
+              transcribing === selected.summary.id ||
+              generating === selected.summary.id
+            }
+            onDelete={() => void remove(selected.summary.id)}
           />
         </SettingsGroup>
       )}

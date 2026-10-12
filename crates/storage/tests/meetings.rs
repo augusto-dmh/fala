@@ -437,3 +437,66 @@ fn schema_constraints() {
         .unwrap();
     assert_eq!(left, 0);
 }
+
+#[test]
+fn delete_meeting_cascades_and_is_final() {
+    let e = env("meetings_delete");
+    let mut store = e.open();
+    let gone = recorded(&store, 1, 14);
+    let kept = recorded(&store, 2, 15);
+    for meeting in [&gone, &kept] {
+        store
+            .replace_meeting_segments(
+                meeting.id,
+                vec![segment(0, SegmentSpeaker::Person(1), "oi")],
+                at(16, 0, 0),
+            )
+            .unwrap();
+        store
+            .set_meeting_participants(meeting.id, &["Ana".to_string()])
+            .unwrap();
+        store
+            .save_speaker_suggestions(
+                meeting.id,
+                &[(
+                    1,
+                    fala_storage::NameSuggestion {
+                        name: "Ana".into(),
+                        reason: "disse".into(),
+                    },
+                )],
+            )
+            .unwrap();
+    }
+
+    store.delete_meeting(gone.id).unwrap();
+    assert_not_found(store.meeting(gone.id), gone.id);
+    assert_not_found(store.delete_meeting(gone.id), gone.id);
+    let conn = Connection::open(&e.db).unwrap();
+    for table in [
+        "meeting_segments",
+        "meeting_participants",
+        "meeting_speakers",
+    ] {
+        let left: Vec<String> = conn
+            .prepare(&format!("SELECT DISTINCT meeting_id FROM {table}"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(left, vec![kept.id.to_string()], "{table}");
+    }
+    assert_eq!(store.meeting_segments(kept.id).unwrap().len(), 1);
+}
+
+#[test]
+fn retained_audio_can_be_cleared() {
+    let e = env("meetings_clear_audio");
+    let store = e.open();
+    let meeting = recorded(&store, 1, 14);
+    store.set_meeting_audio_retained(meeting.id).unwrap();
+    store.clear_meeting_audio_retained(meeting.id).unwrap();
+    assert!(!store.meeting(meeting.id).unwrap().audio_retained);
+    assert_not_found(store.clear_meeting_audio_retained(id(99)), id(99));
+}

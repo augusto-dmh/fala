@@ -449,7 +449,22 @@
         "description": "Chamadas nesses apps não mostram o aviso.",
         "add": "Adicionar app",
         "remove": "Voltar a avisar no {{app}}"
-      }
+      },
+      "retention": {
+        "title": "Áudio das reuniões",
+        "description": "Por quanto tempo o áudio gravado fica neste computador. Sem o áudio, a transcrição, as anotações e as notas ficam, mas não dá mais para tocar um trecho nem transcrever de novo.",
+        "keep": "Manter",
+        "days": "Apagar após {{days}} dias",
+        "confirm": "O áudio das reuniões encerradas há mais de {{days}} dias será apagado agora, e não dá para recuperar. A transcrição e as notas ficam.",
+        "confirmAction": "Apagar e salvar",
+        "cancel": "Cancelar"
+      },
+      "cap": {
+        "title": "Limite de gravação",
+        "description": "A gravação para sozinha ao chegar nesse tempo; 10 minutos antes, o Fala avisa e oferece mais 1 hora, até 8 horas no total.",
+        "hours": "{{hours}} h"
+      },
+      "saveFailed": "Não consegui salvar essa opção. Tente de novo."
     },
     "sound": {
       "title": "Som",
@@ -1225,7 +1240,7 @@
       "insufficient_disk": "Espaço em disco insuficiente para gravar (menos de 500 MB livres).",
       "audio_device": "Não consegui abrir o microfone ou o áudio do sistema.",
       "not_found": "Reunião não encontrada.",
-      "still_recording": "Pare a gravação antes de transcrever.",
+      "still_recording": "Pare a gravação primeiro.",
       "no_audio": "Essa reunião não tem áudio salvo.",
       "missing_key": "Falta a chave do provedor no cofre do sistema.",
       "invalid_key": "Chave vazia ou inválida.",
@@ -1248,6 +1263,13 @@
       "copy": "Copiar aviso",
       "copied": "Aviso copiado",
       "text": "Estou gravando esta reunião para transcrever e fazer minhas notas. Se preferir que eu não grave, me avise."
+    },
+    "delete": {
+      "action": "Apagar reunião",
+      "title": "Apagar esta reunião?",
+      "body": "O áudio, a transcrição, as anotações e as notas saem deste computador para sempre. Não dá para desfazer.",
+      "confirm": "Apagar para sempre",
+      "cancel": "Cancelar"
     }
   }
 }

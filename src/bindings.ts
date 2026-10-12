@@ -1455,6 +1455,39 @@ async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, str
 }
 },
 /**
+ * "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+ */
+async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
+ */
+async changeMeetingRetentionSetting(days: number | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_retention_setting", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The recording cap, 1 to 8 hours; the next recording uses it.
+ */
+async changeMeetingCapSetting(hours: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_cap_setting", { hours }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The card the prompt window should show now, for a window that just loaded.
  */
 async callPromptCurrent() : Promise<CallPromptPayload | null> {
@@ -1656,7 +1689,16 @@ call_prompt_enabled?: boolean;
 /**
  * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
  */
-call_prompt_muted_apps?: string[] }
+call_prompt_muted_apps?: string[]; 
+/**
+ * Days after a meeting ends when its retained audio is deleted (1 to 3650). `None` keeps
+ * it, the default (ADR-0005).
+ */
+meeting_audio_retention_days?: number | null; 
+/**
+ * The recording cap of a meeting in hours, 1 to 8.
+ */
+meeting_cap_hours?: number }
 /**
  * An app, as `fala_inject::app_name_from_exe_path` names it, and the id of its style.
  */

@@ -327,3 +327,44 @@ pub async fn set_meeting_template(
 ) -> Result<(), MeetingError> {
     meetings.set_template(&id, &template_id)
 }
+
+/// "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.delete(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_meeting_retention_setting(
+    app: AppHandle,
+    meetings: Meetings<'_>,
+    days: Option<u16>,
+) -> Result<(), String> {
+    if let Some(days) = days {
+        fala_retention::RetentionDays::new(days).map_err(|e| e.to_string())?;
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_audio_retention_days = days;
+    settings::write_settings(&app, settings);
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.run_retention())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The recording cap, 1 to 8 hours; the next recording uses it.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_cap_setting(app: AppHandle, hours: u8) -> Result<(), String> {
+    fala_meeting::RecordingCap::from_hours(hours).map_err(|e| e.to_string())?;
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_cap_hours = hours;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
