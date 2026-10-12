@@ -1220,7 +1220,24 @@ pub async fn open_pill_menu(app: AppHandle) {
         if let Ok(hwnd) = overlay_window.hwnd() {
             crate::last_dictation::return_focus_from(hwnd);
         }
+        // The menu held the pointer, so the page never heard it leave: close the shortcut card
+        // when the pointer ended up off the pill.
+        if Shown::load() == Shown::IdleHover && !pointer_over(&handle, &overlay_window) {
+            show_overlay_state_on_main(&handle, "idle");
+        }
     });
+}
+
+/// Whether the cursor is over the overlay window. Physical on Windows, where the idle pill lives.
+fn pointer_over(app_handle: &AppHandle, window: &tauri::webview::WebviewWindow) -> bool {
+    match (
+        input::get_cursor_position(app_handle),
+        window.outer_position(),
+        window.outer_size(),
+    ) {
+        (Some(cursor), Ok(position), Ok(size)) => is_mouse_within_monitor(cursor, &position, &size),
+        _ => false,
+    }
 }
 
 /// A click on the idle pill opens the main window on Início.
@@ -1602,6 +1619,12 @@ mod tests {
             menu.find("remember_foreground").unwrap() < menu.find("popup_menu").unwrap()
                 && menu.find("popup_menu").unwrap() < menu.find("return_focus_from").unwrap()
         );
+        // The page never hears the pointer leave during the menu: the card closes after it.
+        let reset = menu
+            .find("!pointer_over(&handle, &overlay_window)")
+            .unwrap();
+        assert!(menu.find("popup_menu").unwrap() < reset);
+        assert!(menu[reset..].contains("show_overlay_state_on_main(&handle, \"idle\")"));
         // The focus goes back only from the pill: a click that closed the menu elsewhere stays.
         let focus = include_str!("last_dictation.rs");
         let focus = &focus[focus.find("pub(super) fn return_focus_from").unwrap()..];
