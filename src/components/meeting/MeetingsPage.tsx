@@ -205,10 +205,18 @@ export function MeetingsPage() {
     await refresh();
   };
 
-  const generate = async (id: string, templateId: string) => {
+  const generate = async (
+    id: string,
+    templateId: string,
+    replaceEdited: boolean,
+  ) => {
     setError(null);
     setGenerating(id);
-    const result = await commands.generateMeetingNotes(id, templateId);
+    const result = await commands.generateMeetingNotes(
+      id,
+      templateId,
+      replaceEdited,
+    );
     setGenerating(null);
     if (result.status === "error") setError(result.error);
     await open(id);
@@ -359,8 +367,8 @@ export function MeetingsPage() {
             onCancelTranscription={() =>
               void commands.cancelMeetingTranscription()
             }
-            onGenerate={(templateId) =>
-              void generate(selected.summary.id, templateId)
+            onGenerate={(templateId, replaceEdited) =>
+              void generate(selected.summary.id, templateId, replaceEdited)
             }
             onCopy={() => void copy(selected.summary.id)}
             onNamesChanged={() => void open(selected.summary.id)}

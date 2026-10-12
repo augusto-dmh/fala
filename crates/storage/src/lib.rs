@@ -7,12 +7,13 @@
 //! O banco é `fala.sqlite`, separado do `history.db` do desktop: cada um tem o seu `user_version`.
 //! O schema 2 acrescenta as reuniões (`meetings`, `meeting_segments`), sem mexer nos ditados;
 //! `meeting_participants` e `meeting_speakers` (quem estava, nomes aplicados e sugestões) entram
-//! sem subir a versão, como as métricas.
+//! sem subir a versão, como as métricas; `meeting_note_edits` (a nota editada à mão) também.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
 //! `Store::metrics_summary`.
 
+mod meeting_notes;
 mod meeting_people;
 mod meetings;
 mod metrics;

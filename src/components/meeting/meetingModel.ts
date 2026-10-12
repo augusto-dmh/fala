@@ -1,4 +1,5 @@
 import type {
+  MeetingDetail,
   MeetingError,
   MeetingLine,
   MeetingSummary,
@@ -36,6 +37,7 @@ export function errorKey(error: MeetingError | string | undefined): string {
     case "busy":
     case "unknown_template":
     case "notes":
+    case "notes_edited":
     case "tool_missing":
     case "invalid_url":
     case "download":
@@ -127,6 +129,17 @@ export function takeConsentRequest(): boolean {
   const requested = consentRequested;
   consentRequested = false;
   return requested;
+}
+
+/**
+ * Generating again with the template of the notes the person edited replaces the edits: ask
+ * first. Another template is a new version they asked for (Granola asks the same way).
+ */
+export function needsConfirmation(
+  detail: Pick<MeetingDetail, "notes_edited" | "notes_template">,
+  templateId: string,
+): boolean {
+  return detail.notes_edited && detail.notes_template === templateId;
 }
 
 /**

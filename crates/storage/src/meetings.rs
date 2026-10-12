@@ -376,18 +376,27 @@ impl Store {
         )
     }
 
-    /// Grava as notas geradas e o template usado.
+    /// Grava as notas geradas e o template usado; a nota deixa de contar como editada.
     pub fn save_meeting_notes(
         &self,
         id: SessionId,
         template: &str,
         markdown: &str,
     ) -> Result<(), StorageError> {
-        self.update(
-            id,
+        let tx = self.conn.unchecked_transaction()?;
+        let changed = tx.execute(
             "UPDATE meetings SET notes_template = ?2, notes_md = ?3 WHERE id = ?1",
             params![id.to_string(), template, markdown],
-        )
+        )?;
+        if changed == 0 {
+            return Err(StorageError::NotFound(id.to_string()));
+        }
+        tx.execute(
+            "DELETE FROM meeting_note_edits WHERE meeting_id = ?1",
+            [id.to_string()],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Substitui os trechos da sessão, numa transação: ordena por `t0_ms` (o mic antes do

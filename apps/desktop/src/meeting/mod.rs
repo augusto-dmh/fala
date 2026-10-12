@@ -140,6 +140,8 @@ pub enum MeetingError {
     Busy,
     UnknownTemplate,
     Notes(String),
+    /// The notes were edited by hand: regenerating needs the user's confirmation.
+    NotesEdited,
     /// `ffmpeg`, `ffprobe` or `yt-dlp` is not on the PATH.
     ToolMissing(String),
     /// Only `http://` and `https://` URLs are imported.

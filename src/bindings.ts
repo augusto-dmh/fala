@@ -1241,11 +1241,13 @@ async cancelMeetingImport() : Promise<Result<null, MeetingError>> {
 }
 },
 /**
- * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown.
+ * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown. Notes
+ * edited by hand, regenerated with the same template, return `notes_edited` unless
+ * `replace_edited` (the confirmation click).
  */
-async generateMeetingNotes(id: string, templateId: string) : Promise<Result<string, MeetingError>> {
+async generateMeetingNotes(id: string, templateId: string, replaceEdited: boolean) : Promise<Result<string, MeetingError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("generate_meeting_notes", { id, templateId }) };
+    return { status: "ok", data: await TAURI_INVOKE("generate_meeting_notes", { id, templateId, replaceEdited }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1391,6 +1393,17 @@ async applySpeakerSuggestion(id: string, person: number) : Promise<Result<Meetin
 async setMeetingSpeakerName(id: string, person: number, name: string) : Promise<Result<MeetingPeople, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_meeting_speaker_name", { id, person, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The notes as edited in the page.
+ */
+async saveMeetingNotes(id: string, markdown: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_meeting_notes", { id, markdown }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1753,6 +1766,10 @@ export type MeetingDetail = { summary: MeetingSummary;
  */
 annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null; 
 /**
+ * The notes were edited by hand since they were generated.
+ */
+notes_edited: boolean; 
+/**
  * Both retained Opus files are on disk, so a transcript line can be played.
  */
 audio_available: boolean }
@@ -1777,6 +1794,10 @@ export type MeetingError = { kind: "consent_required" } | { kind: "already_activ
  * A transcription or a notes generation is already running.
  */
 { kind: "busy" } | { kind: "unknown_template" } | { kind: "notes"; detail: string } | 
+/**
+ * The notes were edited by hand: regenerating needs the user's confirmation.
+ */
+{ kind: "notes_edited" } | 
 /**
  * `ffmpeg`, `ffprobe` or `yt-dlp` is not on the PATH.
  */

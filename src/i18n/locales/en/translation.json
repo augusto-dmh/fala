@@ -1140,6 +1140,14 @@
       "notes": "Notes",
       "notesAbove": "Recording now: this meeting's notes are in the field above."
     },
+    "notesEdit": {
+      "edit": "Edit",
+      "label": "Notes text",
+      "hint": "A line you change becomes yours: it loses the AI colour and its sources.",
+      "done": "Done",
+      "confirm": "You've edited these notes. Generating them again replaces your edits, and this can't be undone.",
+      "regenerate": "Generate again"
+    },
     "source": {
       "open": "See where this line came from",
       "title": "Source",
@@ -1212,6 +1220,7 @@
       "busy": "A transcription or notes generation is already running.",
       "unknown_template": "Unknown template.",
       "notes": "Notes generation failed. Try again.",
+      "notes_edited": "These notes were edited. Confirm before generating again.",
       "tool_missing": "{{detail}} is not installed or not on the PATH. Install it and open Fala again.",
       "invalid_url": "Use a link that starts with http:// or https://.",
       "download": "Could not download that link. Download the video in the browser and import the file. ({{detail}})",
