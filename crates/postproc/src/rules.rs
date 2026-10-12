@@ -1,7 +1,8 @@
-//! O `Formatter` local e determinístico: fillers, gaguejo, pontuação falada, dicionário, espaços
-//! e maiúscula inicial. Sempre roda, sem rede, e é o texto que fica quando o LLM não responde.
+//! O `Formatter` local e determinístico: fillers, gaguejo, pontuação falada, snippets,
+//! dicionário, espaços e maiúscula inicial. Sempre roda, sem rede, e é o texto que fica quando o
+//! LLM não responde.
 
-use fala_core::{Language, Replacement};
+use fala_core::{Language, Replacement, Snippet};
 
 use crate::{FormatContext, Formatter, PostprocError};
 
@@ -21,6 +22,14 @@ const MIN_REPEATS: usize = 3;
 /// Maior número de palavras de um gatilho de pontuação falada ("ponto de interrogação").
 const MAX_TRIGGER_WORDS: usize = 3;
 
+/// O começo do marcador opaco de um snippet: `⟦S1⟧`, `⟦S2⟧`…
+pub(crate) const MARK_OPEN: &str = "⟦S";
+const MARK_CLOSE: char = '⟧';
+
+fn marker(n: usize) -> String {
+    format!("{MARK_OPEN}{n}{MARK_CLOSE}")
+}
+
 /// Regras locais. O dicionário e o idioma vêm do `FormatContext`; aqui só o que liga e desliga.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rules {
@@ -38,20 +47,112 @@ impl Default for Rules {
 
 impl Formatter for Rules {
     fn format(&self, text: &str, ctx: &FormatContext<'_>) -> Result<String, PostprocError> {
-        Ok(self.format_with_hits(text, ctx).0)
+        Ok(self.mask(text, ctx).unmasked())
     }
 }
 
+/// O texto das regras com um marcador opaco no lugar de cada snippet, e o que entrou nele. É o
+/// que o LLM recebe: nem o gatilho nem a expansão saem da máquina.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Masked {
+    /// O texto com `⟦S1⟧`, `⟦S2⟧`… na ordem em que os snippets aparecem.
+    pub text: String,
+    /// Os pares "falado → escrito" aplicados: índices em `Dictionary::replacements()`, um por
+    /// ocorrência.
+    pub replaced: Vec<usize>,
+    /// Os snippets aplicados: índices em `Dictionary::snippets()`; `snippets[k]` é o do marcador
+    /// `⟦S{k+1}⟧`.
+    pub snippets: Vec<usize>,
+    expansions: Vec<String>,
+}
+
+impl Masked {
+    /// O texto das regras: cada marcador vira a expansão. Se o ditado foi só o gatilho, fica só
+    /// a expansão, como está, sem a pontuação que o ASR pôs em volta.
+    pub fn unmasked(&self) -> String {
+        if self.is_whole_snippet() {
+            return self.expansions[0].clone();
+        }
+        self.restore(&self.text)
+            .unwrap_or_else(|| self.text.clone())
+    }
+
+    /// O ditado inteiro é um gatilho: o texto final é a expansão e o LLM não roda.
+    pub fn is_whole_snippet(&self) -> bool {
+        let rest = self
+            .text
+            .trim_start_matches(|c: char| !c.is_alphanumeric() && !MARK_OPEN.starts_with(c))
+            .trim_end_matches(|c: char| !c.is_alphanumeric() && c != MARK_CLOSE);
+        self.expansions.len() == 1 && rest == marker(1)
+    }
+
+    /// `text` (a resposta do LLM) com cada marcador trocado pela expansão; `None` se um marcador
+    /// falta, se repete ou não existe.
+    pub fn restore(&self, text: &str) -> Option<String> {
+        fill(text, &self.expansions)
+    }
+
+    pub(crate) fn expansions(&self) -> &[String] {
+        &self.expansions
+    }
+}
+
+/// Troca cada `⟦Sn⟧` pela expansão `n`, num passe só: uma expansão que traga `⟦S` não é relida.
+/// Sem snippet, o texto passa como está.
+pub(crate) fn fill(text: &str, expansions: &[String]) -> Option<String> {
+    if expansions.is_empty() {
+        return Some(text.to_string());
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut seen = vec![false; expansions.len()];
+    let mut rest = text;
+    while let Some(start) = rest.find(MARK_OPEN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + MARK_OPEN.len()..];
+        let end = after.find(MARK_CLOSE)?;
+        let digits = &after[..end];
+        if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let index = digits.parse::<usize>().ok()?.checked_sub(1)?;
+        let slot = seen.get_mut(index)?;
+        if std::mem::replace(slot, true) {
+            return None;
+        }
+        out.push_str(&expansions[index]);
+        rest = &after[end + MARK_CLOSE.len_utf8()..];
+    }
+    out.push_str(rest);
+    seen.iter().all(|&s| s).then_some(out)
+}
+
 impl Rules {
-    /// O texto das regras e os pares "falado → escrito" que entraram nele: índices em
-    /// `ctx.dictionary.replacements()`, um por ocorrência, na ordem do texto.
-    pub fn format_with_hits(&self, text: &str, ctx: &FormatContext<'_>) -> (String, Vec<usize>) {
-        self.apply_counted(
+    /// As regras com os snippets mascarados; `unmasked()` dá o texto final das regras.
+    pub fn mask(&self, text: &str, ctx: &FormatContext<'_>) -> Masked {
+        let snippets = ctx.dictionary.snippets();
+        let (text, hits) = self.apply_all(
             text,
             *ctx.language,
             ctx.dictionary.terms(),
             ctx.dictionary.replacements(),
-        )
+            snippets,
+        );
+        let mut masked = Masked {
+            text,
+            ..Masked::default()
+        };
+        for hit in hits {
+            match hit {
+                Hit::Pair(index) => masked.replaced.push(index),
+                Hit::Snippet(index) => {
+                    masked.snippets.push(index);
+                    masked
+                        .expansions
+                        .push(snippets[index].expansion().to_string());
+                }
+            }
+        }
+        masked
     }
 
     #[cfg(test)]
@@ -59,6 +160,7 @@ impl Rules {
         self.apply_counted(text, language, terms, &[]).0
     }
 
+    #[cfg(test)]
     fn apply_counted(
         &self,
         text: &str,
@@ -66,15 +168,37 @@ impl Rules {
         terms: &[String],
         replacements: &[Replacement],
     ) -> (String, Vec<usize>) {
+        let (text, hits) = self.apply_all(text, language, terms, replacements, &[]);
+        let pairs = hits
+            .into_iter()
+            .filter_map(|hit| match hit {
+                Hit::Pair(index) => Some(index),
+                Hit::Snippet(_) => None,
+            })
+            .collect();
+        (text, pairs)
+    }
+
+    fn apply_all(
+        &self,
+        text: &str,
+        language: Language,
+        terms: &[String],
+        replacements: &[Replacement],
+        snippets: &[Snippet],
+    ) -> (String, Vec<Hit>) {
         let tokens = tokenize(text);
         let tokens = remove_fillers(tokens, language);
         let tokens = collapse_repeats(tokens);
+        // Os gatilhos antes da pontuação falada, para um gatilho poder ter "vírgula" ou "ponto".
+        let (tokens, mut hits) = apply_snippets(tokens, snippets);
         let tokens = if self.spoken_punctuation {
             spoken_punctuation(tokens, language)
         } else {
             tokens
         };
-        let (tokens, hits) = apply_dictionary(tokens, terms, replacements);
+        let (tokens, pair_hits) = apply_dictionary(tokens, terms, replacements);
+        hits.extend(pair_hits);
         (capitalize_first(&join(&tokens)), hits)
     }
 }
@@ -199,14 +323,14 @@ fn collapse_repeats(tokens: Vec<Token>) -> Vec<Token> {
     out
 }
 
-/// Os pares "falado → escrito" e depois os termos, num passe só do motor de frases. Um termo
-/// casa com 1 a 3 palavras ditas (`charge bee` → `ChargeBee`); um par, com até tantas palavras
-/// quantas tem o falado. Devolve os índices dos pares aplicados.
+/// Os snippets, os pares "falado → escrito" e depois os termos, num passe só do motor de frases.
+/// Um termo casa com 1 a 3 palavras ditas (`charge bee` → `ChargeBee`); um par ou um gatilho, com
+/// até tantas palavras quantas tem. Devolve o que foi aplicado, na ordem do texto.
 fn apply_dictionary(
     tokens: Vec<Token>,
     terms: &[String],
     replacements: &[Replacement],
-) -> (Vec<Token>, Vec<usize>) {
+) -> (Vec<Token>, Vec<Hit>) {
     let pairs: Vec<Phrase<'_>> = replacements
         .iter()
         .enumerate()
@@ -214,7 +338,7 @@ fn apply_dictionary(
             key: match_key(pair.spoken()),
             max_words: pair.spoken().split_whitespace().count(),
             text: pair.written(),
-            id: Some(index),
+            id: Some(Hit::Pair(index)),
         })
         .collect();
     let spellings: Vec<Phrase<'_>> = terms
@@ -229,6 +353,28 @@ fn apply_dictionary(
     replace_phrases(tokens, &[&pairs, &spellings])
 }
 
+/// Os gatilhos dos snippets: cada um casa com até tantas palavras quantas tem e vira `⟦Sn⟧`.
+fn apply_snippets(tokens: Vec<Token>, snippets: &[Snippet]) -> (Vec<Token>, Vec<Hit>) {
+    let triggers: Vec<Phrase<'_>> = snippets
+        .iter()
+        .enumerate()
+        .map(|(index, snippet)| Phrase {
+            key: match_key(snippet.trigger()),
+            max_words: snippet.trigger().split_whitespace().count(),
+            text: "",
+            id: Some(Hit::Snippet(index)),
+        })
+        .collect();
+    replace_phrases(tokens, &[&triggers])
+}
+
+/// Uma frase aplicada pelo motor: um par ou um snippet, pelo índice no `Dictionary`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hit {
+    Pair(usize),
+    Snippet(usize),
+}
+
 /// Uma frase que o motor procura e o que entra no lugar dela.
 #[derive(Debug, Clone)]
 struct Phrase<'a> {
@@ -236,18 +382,19 @@ struct Phrase<'a> {
     key: String,
     /// Quantos tokens do texto a frase pode ocupar.
     max_words: usize,
-    /// O texto que substitui a sequência; o lugar onde um snippet põe o seu marcador opaco.
+    /// O texto que substitui a sequência; um snippet põe o seu marcador opaco no lugar.
     text: &'a str,
     /// Devolvido em `hits` a cada aplicação; `None` para o que não se conta.
-    id: Option<usize>,
+    id: Option<Hit>,
 }
 
 /// O motor de regras do dicionário: troca uma sequência de palavras inteiras cuja chave (sem
 /// caixa, acento, hífen ou pontuação interna) bate com a de uma frase. Nunca junta palavras
 /// separadas por pontuação e nunca casa com parte de uma palavra. Em cada posição, os grupos
 /// são tentados em ordem e, dentro do grupo, a sequência mais longa primeiro; o texto que entrou
-/// não é relido. Devolve os tokens e os `id` das frases aplicadas, um por ocorrência.
-fn replace_phrases(tokens: Vec<Token>, groups: &[&[Phrase<'_>]]) -> (Vec<Token>, Vec<usize>) {
+/// não é relido. Devolve os tokens e os `id` das frases aplicadas, um por ocorrência. Cada
+/// snippet vira `⟦Sn⟧`, com `n` contando os snippets do texto a partir de 1.
+fn replace_phrases(tokens: Vec<Token>, groups: &[&[Phrase<'_>]]) -> (Vec<Token>, Vec<Hit>) {
     let max = groups
         .iter()
         .flat_map(|group| group.iter())
@@ -260,6 +407,7 @@ fn replace_phrases(tokens: Vec<Token>, groups: &[&[Phrase<'_>]]) -> (Vec<Token>,
     }
     let mut out = Vec::with_capacity(tokens.len());
     let mut hits = Vec::new();
+    let mut markers = 0;
     let mut i = 0;
     while i < tokens.len() {
         // `keys[n - 1]`: a chave das `n` palavras que começam em `i`, se elas podem se juntar.
@@ -277,9 +425,16 @@ fn replace_phrases(tokens: Vec<Token>, groups: &[&[Phrase<'_>]]) -> (Vec<Token>,
         });
         match found {
             Some((n, phrase)) => {
+                let core = match phrase.id {
+                    Some(Hit::Snippet(_)) => {
+                        markers += 1;
+                        marker(markers)
+                    }
+                    _ => phrase.text.to_string(),
+                };
                 out.push(Token {
                     lead: tokens[i].lead.clone(),
-                    core: phrase.text.to_string(),
+                    core,
                     trail: tokens[i + n - 1].trail.clone(),
                 });
                 hits.extend(phrase.id);
@@ -295,14 +450,15 @@ fn replace_phrases(tokens: Vec<Token>, groups: &[&[Phrase<'_>]]) -> (Vec<Token>,
 }
 
 /// A chave das palavras juntas, ou `None` se há pontuação entre elas, um sinal sem palavra
-/// (travessão, parêntese solto) ou nada que sobre na chave.
+/// (travessão, parêntese solto), o marcador de um snippet ou nada que sobre na chave.
 fn window_key(window: &[Token]) -> Option<String> {
     let n = window.len();
     let joinable = window
         .iter()
         .enumerate()
         .all(|(k, t)| (k == 0 || t.lead.is_empty()) && (k == n - 1 || t.trail.is_empty()));
-    if !joinable || window.iter().any(|t| t.core.is_empty()) {
+    let blocked = |t: &Token| t.core.is_empty() || t.core.starts_with(MARK_OPEN);
+    if !joinable || window.iter().any(blocked) {
         return None;
     }
     let key: String = window.iter().map(|t| match_key(&t.core)).collect();
@@ -768,6 +924,99 @@ mod tests {
                 "By the way Fala.sqlite, by the way".to_string(),
                 vec![1, 0, 1]
             )
+        );
+    }
+
+    /// Um snippet, um par com o mesmo falado e um termo.
+    fn masked(text: &str) -> Masked {
+        let dictionary = fala_core::Dictionary::new(["Itaú", "S1"])
+            .with_replacements([("minha assinatura", "perdeu para o snippet")])
+            .with_snippets([
+                ("minha assinatura", "Augusto\nfala.dev"),
+                ("link da agenda", "https://cal.example/augusto"),
+                ("o site ponto final", "o https://fala.dev"),
+            ]);
+        let ctx = FormatContext {
+            app: &fala_core::AppContext::default(),
+            dictionary: &dictionary,
+            language: &Language::PtBr,
+            cleanup: Default::default(),
+        };
+        Rules::default().mask(text, &ctx)
+    }
+
+    #[test]
+    fn snippet_becomes_a_marker_and_then_its_text() {
+        let m = masked("então mínha ASSINATURA vírgula itau e o link-da agenda");
+        assert_eq!(m.text, "Então ⟦S1⟧, Itaú e o ⟦S2⟧");
+        assert_eq!(
+            (m.snippets.as_slice(), m.replaced.as_slice()),
+            (&[0, 1][..], &[][..])
+        );
+        assert_eq!(
+            m.unmasked(),
+            "Então Augusto\nfala.dev, Itaú e o https://cal.example/augusto"
+        );
+        assert!(!m.is_whole_snippet());
+        let twice = masked("minha assinatura e minha assinatura");
+        assert_eq!(twice.text, "⟦S1⟧ e ⟦S2⟧");
+        assert_eq!(twice.snippets, [0, 0]);
+        // Um gatilho com pontuação falada casa antes de ela virar sinal.
+        let punct = masked("o site ponto final por favor");
+        // A expansão entra como está, também no começo do texto.
+        assert_eq!(punct.unmasked(), "o https://fala.dev por favor");
+    }
+
+    #[test]
+    fn snippet_only_whole_words_without_punctuation_between() {
+        for input in [
+            "minha, assinatura",
+            "minha. assinatura",
+            "minhas assinaturas",
+        ] {
+            let m = masked(input);
+            assert!(m.snippets.is_empty(), "{input}");
+            assert!(!m.text.contains(MARK_OPEN), "{input}");
+        }
+    }
+
+    #[test]
+    fn whole_dictation_is_the_text_as_is() {
+        for input in [
+            "minha assinatura",
+            "Minha assinatura.",
+            "  minha assinatura!  ",
+        ] {
+            let m = masked(input);
+            assert!(m.is_whole_snippet(), "{input}");
+            assert_eq!(m.unmasked(), "Augusto\nfala.dev", "{input}");
+        }
+        assert!(!masked("minha assinatura ok").is_whole_snippet());
+    }
+
+    #[test]
+    fn restore_needs_every_marker_once() {
+        let m = masked("o link da agenda e minha assinatura");
+        assert_eq!(
+            m.restore("O ⟦S1⟧ e ⟦S2⟧.").as_deref(),
+            Some("O https://cal.example/augusto e Augusto\nfala.dev.")
+        );
+        for broken in [
+            "O e ⟦S2⟧.",
+            "O ⟦S1⟧ e ⟦S1⟧ ⟦S2⟧.",
+            "O ⟦S1⟧ e ⟦S2⟧ ⟦S3⟧.",
+            "O ⟦S 1⟧ e ⟦S2⟧.",
+            "O [S1] e ⟦S2⟧.",
+            "O ⟦S1 e ⟦S2⟧.",
+        ] {
+            assert_eq!(m.restore(broken), None, "{broken}");
+        }
+        // Sem snippet, o texto passa como está.
+        assert_eq!(fill("a ⟦S1⟧", &[]).as_deref(), Some("a ⟦S1⟧"));
+        // Uma expansão que traz `⟦S` não é relida.
+        assert_eq!(
+            fill("⟦S1⟧ ⟦S2⟧", &["⟦S2⟧".to_string(), "b".to_string()]).as_deref(),
+            Some("⟦S2⟧ b")
         );
     }
 

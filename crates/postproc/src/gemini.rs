@@ -8,6 +8,7 @@ use fala_secrets::ApiKey;
 use serde_json::{json, Value};
 
 use crate::prompt::{system_text, user_text};
+use crate::rules::MARK_OPEN;
 use crate::{Fallback, FormatContext, Formatter, PostprocError, INSERT_DEADLINE};
 
 /// Modelo padrão (ADR-0004).
@@ -88,7 +89,7 @@ impl Formatter for Gemini {
 
 /// O corpo inteiro: `systemInstruction`, `contents` e `generationConfig`, nada mais.
 pub(crate) fn request_body(text: &str, ctx: &FormatContext<'_>) -> Value {
-    let system = system_text(ctx.cleanup, ctx.dictionary);
+    let system = system_text(ctx.cleanup, ctx.dictionary, text.contains(MARK_OPEN));
     let user = user_text(text, ctx.app);
     json!({
         "systemInstruction": { "parts": [{ "text": system }] },

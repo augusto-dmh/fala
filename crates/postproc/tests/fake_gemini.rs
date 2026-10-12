@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use fala_core::{AppContext, Dictionary, Editor, Language, Transcript};
 use fala_postproc::{
     CleanupLevel, Fallback, Formatted, Gemini, LlmConfig, PostprocError, Postprocessor,
-    SYSTEM_PROMPT,
+    SNIPPET_INSTRUCTION, SYSTEM_PROMPT,
 };
 use fala_secrets::ApiKey;
 use serde_json::Value;
@@ -190,6 +190,125 @@ fn replacement_reaches_llm_as_written() {
     );
     let raw = requests[0].body.to_lowercase();
     assert!(!raw.contains("fala sql") && !raw.contains("fala-sql"));
+}
+
+/// 16 palavras depois das regras, com o snippet como uma.
+const SNIPPET_SPOKEN: &str =
+    "hã eu acho que a gente pode mandar o relatório amanhã cedo com minha assinatura no fim hoje";
+const SNIPPET_MASKED: &str =
+    "Eu acho que a gente pode mandar o relatório amanhã cedo com ⟦S1⟧ no fim hoje";
+const EXPANSION: &str = "Augusto Henriques\nSegredo 4815 · fala.dev";
+
+fn snippet_dictionary() -> Dictionary {
+    Dictionary::new(["Itaú"]).with_snippets([("minha assinatura", EXPANSION)])
+}
+
+#[test]
+fn snippet_reaches_the_llm_only_as_a_marker() {
+    let server = FakeServer::start(ok_after(0, "Mando o relatório com ⟦S1⟧ amanhã."));
+    let processor = Postprocessor::new(server.llm());
+    let out = processor.process(
+        transcript(SNIPPET_SPOKEN),
+        app("Slack"),
+        &snippet_dictionary(),
+    );
+    assert_eq!(out.dictation.editor, Editor::Llm);
+    assert_eq!(
+        out.dictation.final_text,
+        format!("Mando o relatório com {EXPANSION} amanhã.")
+    );
+    assert_eq!(out.snippets, [0]);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_str(&requests[0].body).unwrap();
+    assert_eq!(
+        body["systemInstruction"]["parts"][0]["text"],
+        format!(
+            "{SYSTEM_PROMPT}\n\n{}\n\n{SNIPPET_INSTRUCTION}\n\nPersonal dictionary:\n- Itaú",
+            CleanupLevel::Light.instruction()
+        )
+    );
+    assert_eq!(
+        body["contents"][0]["parts"][0]["text"],
+        format!(
+            "<app>Slack</app>\n<destination>chat</destination>\n<transcription>{SNIPPET_MASKED}</transcription>"
+        )
+    );
+    let raw = requests[0].body.to_lowercase();
+    for leak in ["augusto", "segredo", "4815", "fala.dev", "minha assinatura"] {
+        assert!(!raw.contains(leak), "{leak}");
+    }
+}
+
+#[test]
+fn snippet_without_llm_and_whole_dictation() {
+    let server = FakeServer::start(ok_after(0, "não deveria ser chamado"));
+    let processor = Postprocessor::new(server.llm());
+    let out = processor.process(
+        transcript("Minha assinatura."),
+        app("Slack"),
+        &snippet_dictionary(),
+    );
+    assert_eq!(out.dictation.final_text, EXPANSION);
+    assert_eq!(out.dictation.editor, Editor::Rules);
+    assert_eq!(out.snippets, [0]);
+
+    let off = Postprocessor::new(LlmConfig::default());
+    let out = off.process(
+        transcript(SNIPPET_SPOKEN),
+        app("Slack"),
+        &snippet_dictionary(),
+    );
+    assert_eq!(
+        out.dictation.final_text,
+        SNIPPET_MASKED.replace("⟦S1⟧", EXPANSION)
+    );
+    assert!(server.requests().is_empty());
+}
+
+#[test]
+fn altered_marker_keeps_the_rules_text() {
+    for reply in [
+        "Mando com a assinatura.",
+        "Mando ⟦S1⟧ e ⟦S1⟧.",
+        "Mando [S1].",
+    ] {
+        let server = FakeServer::start(ok_after(0, reply));
+        let out = Postprocessor::new(server.llm()).process(
+            transcript(SNIPPET_SPOKEN),
+            app("Slack"),
+            &snippet_dictionary(),
+        );
+        assert_eq!(out.dictation.editor, Editor::Rules, "{reply}");
+        assert_eq!(out.fallback, Some(Fallback::InvalidResponse), "{reply}");
+        assert_eq!(
+            out.dictation.final_text,
+            SNIPPET_MASKED.replace("⟦S1⟧", EXPANSION),
+            "{reply}"
+        );
+    }
+}
+
+#[test]
+fn late_answer_gets_the_snippet_back() {
+    for (reply, expected) in [
+        ("Tardio ⟦S1⟧.", Ok(format!("Tardio {EXPANSION}."))),
+        ("Tardio sem marcador.", Err(Fallback::InvalidResponse)),
+    ] {
+        let server = FakeServer::start(ok_after(3000, reply));
+        let processor = Postprocessor::new(server.llm());
+        let out = processor.process(
+            transcript(SNIPPET_SPOKEN),
+            app("Slack"),
+            &snippet_dictionary(),
+        );
+        assert_eq!(out.fallback, Some(Fallback::Timeout), "{reply}");
+        assert_eq!(
+            out.late_edit.expect("late edit").wait(),
+            expected,
+            "{reply}"
+        );
+    }
 }
 
 fn answer(text: &str) -> String {
