@@ -1,10 +1,12 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   commands,
   events,
   type MeetingDetail,
+  type ImportSource,
   type MeetingError,
   type MeetingKeys,
   type MeetingMode,
@@ -12,17 +14,20 @@ import {
   type MeetingStatus,
   type MeetingSummary,
   type MeetingTemplate,
+  type ProgressStage,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
+import { ImportDialog } from "./ImportDialog";
 import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
 import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
 import {
+  errorDetail,
   errorKey,
   takeConsentRequest,
   takeOpenMeetingRequest,
@@ -62,6 +67,11 @@ export function MeetingsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<MeetingError | string | null>(null);
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importStage, setImportStage] = useState<ProgressStage | null>(null);
+  // The session the running import writes, known from its first progress event.
+  const importId = useRef<string | null>(null);
+  const importRunning = useRef(false);
 
   const refresh = useCallback(async () => {
     const list = await commands.listMeetings();
@@ -93,6 +103,13 @@ export function MeetingsPage() {
       events.meetingStatus.listen((event) => setStatus(event.payload)),
       events.meetingProgress.listen((event) => {
         const { id, stage } = event.payload;
+        if (stage.stage === "importing") importId.current = id;
+        if (id === importId.current) {
+          if (stage.stage === "importing" || stage.stage === "retaining")
+            setImportStage(stage);
+          if (stage.stage === "done" || stage.stage === "failed")
+            setImporting(false);
+        }
         if (stage.stage === "transcribing") setTranscribing(id);
         if (stage.stage === "done" || stage.stage === "failed") {
           setTranscribing((current) => (current === id ? null : current));
@@ -197,6 +214,41 @@ export function MeetingsPage() {
     await refresh();
   };
 
+  const importSource = async (source: ImportSource) => {
+    if (importRunning.current) return;
+    importRunning.current = true;
+    importId.current = null;
+    setError(null);
+    setImportStage(null);
+    setImporting(true);
+    const result = await commands.importMeeting(source);
+    importRunning.current = false;
+    // `busy`: an import started before this page mounted is still running; its progress
+    // events keep the line and Cancel on screen until it ends.
+    const busy = result.status === "error" && result.error.kind === "busy";
+    if (!busy) setImporting(false);
+    await refresh();
+    if (result.status === "ok") await open(result.data);
+    else if (result.error.kind !== "cancelled" && !busy) setError(result.error);
+  };
+
+  // A file dropped on the window while the page is open is imported, one at a time, and
+  // never behind the consent notice, where the import line is hidden.
+  const onDrop = useRef<(path: string) => void>(() => {});
+  useEffect(() => {
+    onDrop.current = (path) => {
+      if (!askConsent) void importSource({ kind: "file", value: path });
+    };
+  });
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const [path] = event.payload.paths;
+      if (path) onDrop.current(path);
+    });
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+
   const copy = async (id: string) => {
     const result = await commands.meetingMarkdown(id);
     if (result.status === "ok") await copyToClipboard(result.data);
@@ -250,6 +302,14 @@ export function MeetingsPage() {
             onExtend={() => void act(commands.extendMeetingCap)}
           />
         )}
+        {!askConsent && (
+          <ImportDialog
+            importing={importing}
+            stage={importStage}
+            onImport={(source) => void importSource(source)}
+            onCancel={() => void commands.cancelMeetingImport()}
+          />
+        )}
         {live && (
           <div className="p-4">
             <AnnotationsField
@@ -264,7 +324,7 @@ export function MeetingsPage() {
         )}
         {error !== null && (
           <p role="alert" className="p-4 text-sm text-red-500">
-            {t(errorKey(error))}
+            {t(errorKey(error), { detail: errorDetail(error) })}
           </p>
         )}
       </SettingsGroup>

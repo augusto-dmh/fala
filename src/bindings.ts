@@ -1210,6 +1210,26 @@ async cancelMeetingTranscription() : Promise<Result<null, MeetingError>> {
 }
 },
 /**
+ * "Import": a file or the audio of a URL becomes a new session; returns its id once the audio
+ * is retained. Progress comes as `MeetingProgress` events.
+ */
+async importMeeting(source: ImportSource) : Promise<Result<string, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_meeting", { source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelMeetingImport() : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_meeting_import") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown.
  */
 async generateMeetingNotes(id: string, templateId: string) : Promise<Result<string, MeetingError>> {
@@ -1564,7 +1584,11 @@ export type CallPromptKind =
 /**
  * What the card shows.
  */
-export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; countdown_ms: number }
+export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; 
+/**
+ * The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
+ */
+web_name: string | null; countdown_ms: number }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
@@ -1635,6 +1659,10 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+/**
+ * What "Import" received: a path from the file dialog or a typed `http(s)://` URL.
+ */
+export type ImportSource = { kind: "file"; value: string } | { kind: "url"; value: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1679,7 +1707,31 @@ export type MeetingError = { kind: "consent_required" } | { kind: "already_activ
 /**
  * A transcription or a notes generation is already running.
  */
-{ kind: "busy" } | { kind: "unknown_template" } | { kind: "notes"; detail: string }
+{ kind: "busy" } | { kind: "unknown_template" } | { kind: "notes"; detail: string } | 
+/**
+ * `ffmpeg`, `ffprobe` or `yt-dlp` is not on the PATH.
+ */
+{ kind: "tool_missing"; detail: string } | 
+/**
+ * Only `http://` and `https://` URLs are imported.
+ */
+{ kind: "invalid_url" } | 
+/**
+ * `yt-dlp` did not download the URL; the page suggests downloading and importing the file.
+ */
+{ kind: "download"; detail: string } | 
+/**
+ * The file could not be turned into audio; the detail is the tool's last line or the path.
+ */
+{ kind: "import"; detail: string } | 
+/**
+ * The imported file has no audio track.
+ */
+{ kind: "import_no_audio" } | 
+/**
+ * The imported source is longer than `fala_media::MAX_DURATION`.
+ */
+{ kind: "import_too_long" }
 /**
  * Which keys exist in the keyring; never the keys themselves.
  */
@@ -1697,7 +1749,7 @@ channel: string; person: number | null;
  */
 name?: string | null; t0_ms: number; t1_ms: number; text: string }
 /**
- * The two capture modes the panel offers (part 1 of F2).
+ * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
 export type MeetingMode = 
 /**
@@ -1707,7 +1759,11 @@ export type MeetingMode =
 /**
  * Everyone in the room: the mic is diarized too.
  */
-"in_person"
+"in_person" | 
+/**
+ * What the computer plays (a class, a video): no mic, diarized system channel.
+ */
+"system_only"
 /**
  * An output the "Meeting sound" selector offers.
  */
@@ -1821,6 +1877,11 @@ export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type ProgressStage = 
+/**
+ * An import: `phase` is `download` (bytes `done` of `total`, 0 when unknown) or `convert`
+ * (milliseconds of audio).
+ */
+{ stage: "importing"; phase: string; done: number; total: number } | 
 /**
  * The working WAV becomes the two Opus files.
  */
