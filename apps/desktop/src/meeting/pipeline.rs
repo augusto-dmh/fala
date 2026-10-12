@@ -216,6 +216,16 @@ pub(crate) fn notes_segments(
         .collect()
 }
 
+/// The applied names that may go to the notes LLM: a name with `@` may be an e-mail, which never
+/// goes out (ADR-0016), so that person stays "Person N" there. The transcript and the local
+/// Markdown keep the name as typed.
+pub(crate) fn outgoing_names(names: HashMap<u32, String>) -> HashMap<u32, String> {
+    names
+        .into_iter()
+        .filter(|(_, name)| !name.contains('@'))
+        .collect()
+}
+
 /// The ElevenLabs key, from the keyring only.
 pub(crate) fn scribe_key(store: &dyn SecretStore) -> Result<ApiKey, MeetingError> {
     store
@@ -553,7 +563,7 @@ impl MeetingManager {
                 &store.meeting_segments(id)?,
                 &settings,
                 store.meeting_participants(id)?,
-                &speaker_names(store, id)?,
+                &outgoing_names(speaker_names(store, id)?),
                 template,
             );
             Ok((input, record.transcribed_at))
@@ -804,5 +814,29 @@ mod tests {
             Err(MeetingError::UnknownTemplate)
         );
         assert!(templates().iter().any(|t| t.id == "um-a-um"));
+    }
+
+    #[test]
+    fn typed_name_with_at_never_goes_out() {
+        let segments = vec![MeetingSegment {
+            seq: 1,
+            channel: SegmentChannel::System,
+            speaker: SegmentSpeaker::Person(2),
+            t0_ms: 0,
+            t1_ms: 900,
+            text: "oi".into(),
+        }];
+        let names = HashMap::from([(1, "Bruno".to_string()), (2, "ana@empresa.com".to_string())]);
+        // "Copy Markdown" keeps the name as typed; the notes LLM gets "Person 2".
+        assert_eq!(
+            notes_segments(&segments, &names)[0].speaker,
+            fala_notes::Speaker::Named("ana@empresa.com".into())
+        );
+        let outgoing = outgoing_names(names);
+        assert_eq!(outgoing, HashMap::from([(1, "Bruno".to_string())]));
+        assert_eq!(
+            notes_segments(&segments, &outgoing)[0].speaker,
+            fala_notes::Speaker::Person(2)
+        );
     }
 }

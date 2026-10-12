@@ -193,3 +193,63 @@ fn transcribing_again_forgets_names() {
         .unwrap();
     assert!(store.meeting_speakers(id).unwrap().is_empty());
 }
+
+#[test]
+fn typed_name_replaces_the_suggestion_and_can_be_erased() {
+    let e = env("people_typed_name");
+    let mut store = e.open();
+    let id = meeting(&store, 1, "Planejamento");
+    store
+        .save_speaker_suggestions(
+            id,
+            &[(1, suggestion("Ana", "x")), (2, suggestion("Bruno", "y"))],
+        )
+        .unwrap();
+
+    store
+        .set_meeting_speaker_name(id, 2, Some("Bruno Lima"))
+        .unwrap();
+    store
+        .set_meeting_speaker_name(id, 3, Some("Carla"))
+        .unwrap();
+    assert_eq!(
+        store.meeting_speakers(id).unwrap(),
+        [
+            MeetingSpeaker {
+                person: 1,
+                name: None,
+                suggestion: Some(suggestion("Ana", "x")),
+            },
+            MeetingSpeaker {
+                person: 2,
+                name: Some("Bruno Lima".to_string()),
+                suggestion: None,
+            },
+            MeetingSpeaker {
+                person: 3,
+                name: Some("Carla".to_string()),
+                suggestion: None,
+            },
+        ]
+    );
+
+    // Apagar o nome devolve "Pessoa N": a linha sem nome nem sugestão some.
+    store.set_meeting_speaker_name(id, 3, None).unwrap();
+    store.set_meeting_speaker_name(id, 1, None).unwrap();
+    assert_eq!(
+        store
+            .meeting_speakers(id)
+            .unwrap()
+            .iter()
+            .map(|s| s.person)
+            .collect::<Vec<_>>(),
+        [2]
+    );
+
+    let missing = SessionId::from_parts(1, 1);
+    assert!(matches!(
+        store.set_meeting_speaker_name(missing, 1, Some("Ana")),
+        Err(StorageError::NotFound(_))
+    ));
+    assert!(store.set_meeting_speaker_name(id, 0, Some("Ana")).is_err());
+}
