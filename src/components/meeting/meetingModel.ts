@@ -1,4 +1,10 @@
-import type { MeetingError, MeetingLine, MeetingSummary } from "@/bindings";
+import type {
+  MeetingDetail,
+  MeetingError,
+  MeetingLine,
+  MeetingSummary,
+  ProgressStage,
+} from "@/bindings";
 
 /** `mm:ss`, or `h:mm:ss` from one hour on. */
 export function clock(ms: number): string {
@@ -31,10 +37,46 @@ export function errorKey(error: MeetingError | string | undefined): string {
     case "busy":
     case "unknown_template":
     case "notes":
+    case "notes_edited":
+    case "tool_missing":
+    case "invalid_url":
+    case "download":
+    case "import":
+    case "import_no_audio":
+    case "import_too_long":
       return `meeting.errors.${kind}`;
     default:
       return "meeting.errors.generic";
   }
+}
+
+/** The `{{detail}}` an error key may show: the tool name, or the tail of the tool's message. */
+export function errorDetail(error: MeetingError | string | null): string {
+  return typeof error === "object" && error && "detail" in error
+    ? String(error.detail)
+    : "";
+}
+
+/** What "Import" accepts as a URL: `http://` or `https://` with a host, nothing else. */
+export function isHttpUrl(text: string): boolean {
+  return /^https?:\/\/[^\s/?#]+\S*$/i.test(text.trim());
+}
+
+/** The line shown while an import runs, from its last progress event. */
+export function importLine(stage: ProgressStage | null, t: Translate): string {
+  if (stage?.stage === "retaining") return t("meeting.import.saving");
+  if (stage?.stage !== "importing") return t("meeting.import.starting");
+  const percent =
+    stage.total > 0
+      ? Math.min(100, Math.floor((stage.done * 100) / stage.total))
+      : null;
+  if (stage.phase === "convert")
+    return t("meeting.import.converting", { percent: percent ?? 0 });
+  return percent === null
+    ? t("meeting.import.downloadingBytes", {
+        mb: (stage.done / (1024 * 1024)).toFixed(1),
+      })
+    : t("meeting.import.downloading", { percent });
 }
 
 /** `YYYY-MM-DD HH:MM` in the offset the session was recorded in. */
@@ -87,4 +129,31 @@ export function takeConsentRequest(): boolean {
   const requested = consentRequested;
   consentRequested = false;
   return requested;
+}
+
+/**
+ * Generating again with the template of the notes the person edited replaces the edits: ask
+ * first. Another template is a new version they asked for (Granola asks the same way).
+ */
+export function needsConfirmation(
+  detail: Pick<MeetingDetail, "notes_edited" | "notes_template">,
+  templateId: string,
+): boolean {
+  return detail.notes_edited && detail.notes_template === templateId;
+}
+
+/**
+ * Set by the app when a click on the meeting pill asked for the session being recorded, so the
+ * page opens it even if it mounts after the event.
+ */
+let openRequested: string | null = null;
+
+export function requestOpenMeeting(id: string): void {
+  openRequested = id;
+}
+
+export function takeOpenMeetingRequest(): string | null {
+  const id = openRequested;
+  openRequested = null;
+  return id;
 }

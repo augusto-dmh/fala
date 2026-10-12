@@ -1,18 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+use crate::Snippet;
+
 /// O dicionário pessoal: termos (a grafia certa de um nome) e pares "falado → escrito".
 ///
 /// Os termos ficam normalizados: sem espaço nas pontas, sem vazios e sem duplicatas que só
 /// diferem em maiúsculas (fica a primeira grafia, na ordem recebida). O escrito de cada par
 /// também é termo, porque é o que o LLM recebe; o falado nunca é. Desserializar passa pela mesma
 /// normalização de `Dictionary::new` e `with_replacements`, e um JSON sem `replacements` carrega
-/// sem pares.
+/// sem pares. Os snippets ficam fora de `terms()` e do JSON: nem o gatilho nem a expansão vão
+/// ao LLM.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(from = "DictionaryRaw")]
 pub struct Dictionary {
     terms: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     replacements: Vec<Replacement>,
+    #[serde(skip)]
+    snippets: Vec<Snippet>,
 }
 
 /// Um par "falado → escrito": quando o ditado tem `spoken`, o texto final tem `written`.
@@ -83,6 +88,30 @@ impl Dictionary {
         self
     }
 
+    /// Acrescenta snippets, na ordem recebida. O que `Snippet::new` recusa some; gatilho
+    /// repetido (sem caixa) fica com o primeiro.
+    pub fn with_snippets<I, T, E>(mut self, snippets: I) -> Self
+    where
+        I: IntoIterator<Item = (T, E)>,
+        T: AsRef<str>,
+        E: AsRef<str>,
+    {
+        for (trigger, expansion) in snippets {
+            let Some(snippet) = Snippet::new(trigger, expansion) else {
+                continue;
+            };
+            let key = snippet.trigger().to_lowercase();
+            if !self
+                .snippets
+                .iter()
+                .any(|known| known.trigger().to_lowercase() == key)
+            {
+                self.snippets.push(snippet);
+            }
+        }
+        self
+    }
+
     fn push_term(&mut self, term: &str) {
         let term = term.trim();
         let key = term.to_lowercase();
@@ -100,6 +129,11 @@ impl Dictionary {
         &self.replacements
     }
 
+    pub fn snippets(&self) -> &[Snippet] {
+        &self.snippets
+    }
+
+    /// Sem termos: o prompt do LLM fica sem o bloco do dicionário.
     pub fn is_empty(&self) -> bool {
         self.terms.is_empty()
     }
@@ -182,6 +216,14 @@ mod tests {
             json,
             r#"{"terms":["ADR","by the way"],"replacements":[{"spoken":"btw","written":"by the way"}]}"#
         );
+        // Os snippets nunca entram nos termos nem no JSON.
+        let with_snippet = dictionary.clone().with_snippets([
+            ("minha assinatura", "Augusto"),
+            ("MINHA  Assinatura", "outro"),
+        ]);
+        assert_eq!(with_snippet.snippets().len(), 1);
+        assert_eq!(with_snippet.terms(), dictionary.terms());
+        assert_eq!(serde_json::to_string(&with_snippet).unwrap(), json);
         let back: Dictionary = serde_json::from_str(&json).unwrap();
         assert_eq!(back, dictionary);
         let raw = r#"{"terms":[],"replacements":[{"spoken":" ","written":"x"},{"spoken":"a b","written":"AB"}]}"#;

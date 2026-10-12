@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
+use crate::meeting::import::ImportSource;
 use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
     MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary, MeetingTemplate,
@@ -129,18 +130,44 @@ pub async fn cancel_meeting_transcription(meetings: Meetings<'_>) -> Result<(), 
     Ok(())
 }
 
-/// Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown.
+/// "Import": a file or the audio of a URL becomes a new session; returns its id once the audio
+/// is retained. Progress comes as `MeetingProgress` events.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_meeting(
+    meetings: Meetings<'_>,
+    source: ImportSource,
+) -> Result<String, MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.import(source))
+        .await
+        .map_err(|e| MeetingError::Import(e.to_string()))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cancel_meeting_import(meetings: Meetings<'_>) -> Result<(), MeetingError> {
+    meetings.cancel_import();
+    Ok(())
+}
+
+/// Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown. Notes
+/// edited by hand, regenerated with the same template, return `notes_edited` unless
+/// `replace_edited` (the confirmation click).
 #[tauri::command]
 #[specta::specta]
 pub async fn generate_meeting_notes(
     meetings: Meetings<'_>,
     id: String,
     template_id: String,
+    replace_edited: bool,
 ) -> Result<String, MeetingError> {
     let manager = meetings.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.generate_notes(&id, &template_id))
-        .await
-        .map_err(|e| MeetingError::Notes(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.generate_notes(&id, &template_id, replace_edited)
+    })
+    .await
+    .map_err(|e| MeetingError::Notes(e.to_string()))?
 }
 
 /// The retained audio around a transcript line, as WAV bytes in a binary IPC response (no
@@ -216,6 +243,16 @@ pub fn change_notes_language_setting(
     Ok(())
 }
 
+/// "Generate notes when it ends": the notes follow the transcript of a stop.
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_auto_notes_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_auto_notes = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// The dictionary as Scribe `keyterms` (ADR-0005).
 #[tauri::command]
 #[specta::specta]
@@ -256,6 +293,40 @@ pub async fn apply_speaker_suggestion(
     person: u32,
 ) -> Result<MeetingPeople, MeetingError> {
     meetings.apply_speaker_suggestion(&id, person)
+}
+
+/// The name typed for "Person N"; blank gives the label back.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_speaker_name(
+    meetings: Meetings<'_>,
+    id: String,
+    person: u32,
+    name: String,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.set_speaker_name(&id, person, &name)
+}
+
+/// The notes as edited in the page.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_meeting_notes(
+    meetings: Meetings<'_>,
+    id: String,
+    markdown: String,
+) -> Result<(), MeetingError> {
+    meetings.save_edited_notes(&id, &markdown)
+}
+
+/// The template for the next notes, picked before or during the recording.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_template(
+    meetings: Meetings<'_>,
+    id: String,
+    template_id: String,
+) -> Result<(), MeetingError> {
+    meetings.set_template(&id, &template_id)
 }
 
 /// Recordings the last run left without an end: "Recover the recording from 14:02 (12 min)?".

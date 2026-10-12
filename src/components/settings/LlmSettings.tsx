@@ -6,13 +6,14 @@ import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
+import { AppStyles } from "./AppStyles";
 import { CleanupLevelCards } from "./CleanupLevelCards";
 import { DEFAULT_CLEANUP_LEVEL } from "./cleanupLevelModel";
 
 const GEMINI_PROVIDER_ID = "gemini";
 
-/** The automatic dictation LLM: on/off, how much it rewrites, the Gemini key and the apps
- *  where it stays off. */
+/** The automatic dictation LLM: on/off, how much it rewrites, the Gemini key, the apps where it
+ *  stays off and the writing style of each app. */
 export const LlmSettings: React.FC = React.memo(() => {
   const { t } = useTranslation();
   const {
@@ -139,6 +140,7 @@ export const LlmSettings: React.FC = React.memo(() => {
           ))}
         </div>
       )}
+      <AppStyles />
     </>
   );
 });

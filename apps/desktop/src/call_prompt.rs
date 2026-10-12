@@ -62,6 +62,8 @@ pub struct CallPromptPayload {
     pub kind: CallPromptKind,
     pub app_id: String,
     pub app_name: String,
+    /// The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
+    pub web_name: Option<String>,
     pub countdown_ms: u32,
     /// The session a "Gravou por engano?" is about.
     pub session_id: Option<String>,
@@ -71,14 +73,15 @@ pub struct CallPromptPayload {
 
 impl CallPromptPayload {
     fn from_prompt(prompt: CallPrompt) -> Self {
-        let (kind, app) = match prompt {
-            CallPrompt::OfferRecording { app } => (CallPromptKind::Offer, app),
-            CallPrompt::AskStop { app } => (CallPromptKind::AskStop, app),
+        let (kind, app, web) = match prompt {
+            CallPrompt::OfferRecording { app, web } => (CallPromptKind::Offer, app, web),
+            CallPrompt::AskStop { app, web } => (CallPromptKind::AskStop, app, web),
         };
         Self {
             kind,
             app_id: app.id.to_string(),
             app_name: app.name.to_string(),
+            web_name: web.map(|web| web.name.to_string()),
             countdown_ms: COUNTDOWN.as_millis() as u32,
             session_id: None,
             seconds: None,
@@ -91,6 +94,7 @@ impl CallPromptPayload {
             kind,
             app_id: String::new(),
             app_name: String::new(),
+            web_name: None,
             countdown_ms: u32::try_from(countdown.as_millis()).unwrap_or(u32::MAX),
             session_id: None,
             seconds: None,
@@ -499,6 +503,7 @@ mod tests {
             kind,
             app_id: "teams".into(),
             app_name: "Teams".into(),
+            web_name: None,
             countdown_ms: 20_000,
             session_id: None,
             seconds: None,
@@ -673,9 +678,45 @@ mod tests {
     #[test]
     fn answer_payload_names_the_app() {
         let teams = CallApp::by_id("teams").unwrap();
-        let payload = CallPromptPayload::from_prompt(CallPrompt::OfferRecording { app: teams });
+        let payload = CallPromptPayload::from_prompt(CallPrompt::OfferRecording {
+            app: teams,
+            web: None,
+        });
         assert_eq!(payload, card(CallPromptKind::Offer));
-        let payload = CallPromptPayload::from_prompt(CallPrompt::AskStop { app: teams });
+        let payload = CallPromptPayload::from_prompt(CallPrompt::AskStop {
+            app: teams,
+            web: None,
+        });
         assert_eq!(payload.kind, CallPromptKind::AskStop);
+    }
+
+    #[test]
+    fn answer_payload_names_the_meeting_in_the_browser() {
+        let edge = CallApp::by_id("edge").unwrap();
+        let meet = fala_meeting::web_call(["Meet - abc-defg-hij - Microsoft Edge"]);
+        for prompt in [
+            CallPrompt::OfferRecording {
+                app: edge,
+                web: meet,
+            },
+            CallPrompt::AskStop {
+                app: edge,
+                web: meet,
+            },
+        ] {
+            let payload = CallPromptPayload::from_prompt(prompt);
+            assert_eq!(payload.app_id, "edge");
+            assert_eq!(payload.app_name, "Edge");
+            assert_eq!(payload.web_name.as_deref(), Some("Google Meet"));
+        }
+        // [Não avisar] still mutes the browser, not the meeting site.
+        let offer = CallPromptPayload::from_prompt(CallPrompt::OfferRecording {
+            app: edge,
+            web: meet,
+        });
+        assert_eq!(
+            answer_action(Some(&offer), CallPromptAnswer::MuteApp),
+            Some(AnswerAction::Mute("edge".into()))
+        );
     }
 }

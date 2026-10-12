@@ -601,6 +601,9 @@ pub struct AppSettings {
     /// Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
     #[serde(default)]
     pub dictionary_replacements: Vec<crate::dictionary::DictionaryReplacement>,
+    /// Snippets: a trigger of two words or more as `spoken`, the text it inserts as `written`.
+    #[serde(default)]
+    pub dictionary_snippets: Vec<crate::dictionary::DictionaryReplacement>,
     /// What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
     #[serde(default)]
     pub notes_profile: String,
@@ -609,6 +612,10 @@ pub struct AppSettings {
     /// Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
     #[serde(default = "default_meeting_keyterms")]
     pub meeting_keyterms: bool,
+    /// After the transcript of a stop, the notes follow without a click (never for a local-only
+    /// session, nor for a short call).
+    #[serde(default = "default_meeting_auto_notes")]
+    pub meeting_auto_notes: bool,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -715,6 +722,12 @@ pub struct AppSettings {
     /// How much the LLM rewrites a dictation. An unknown stored value is salvaged to `Light`.
     #[serde(default)]
     pub cleanup_level: CleanupLevel,
+    /// The user's writing styles; four come ready.
+    #[serde(default = "crate::app_styles::default_writing_styles")]
+    pub writing_styles: Vec<crate::app_styles::WritingStyle>,
+    /// App -> style; an app without one keeps the prompt without a style.
+    #[serde(default)]
+    pub app_styles: Vec<crate::app_styles::AppStyle>,
     /// When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
     /// RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
     #[serde(default)]
@@ -886,6 +899,10 @@ fn default_app_language() -> String {
 }
 
 fn default_meeting_keyterms() -> bool {
+    true
+}
+
+fn default_meeting_auto_notes() -> bool {
     true
 }
 
@@ -1222,9 +1239,11 @@ pub fn get_default_settings() -> AppSettings {
         log_level: default_log_level(),
         custom_words: Vec::new(),
         dictionary_replacements: Vec::new(),
+        dictionary_snippets: Vec::new(),
         notes_profile: String::new(),
         notes_language: NotesLanguage::default(),
         meeting_keyterms: default_meeting_keyterms(),
+        meeting_auto_notes: default_meeting_auto_notes(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
@@ -1268,6 +1287,8 @@ pub fn get_default_settings() -> AppSettings {
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
         cleanup_level: CleanupLevel::default(),
+        writing_styles: crate::app_styles::default_writing_styles(),
+        app_styles: Vec::new(),
         meeting_consent_accepted_at: None,
         meeting_output_device: None,
         call_prompt_enabled: default_call_prompt_enabled(),
@@ -1779,6 +1800,7 @@ mod tests {
         // The dictionary pairs are a new field: the terms load as stored, with no pairs.
         assert_eq!(settings.custom_words, ["Fala", "cjpais"]);
         assert!(settings.dictionary_replacements.is_empty());
+        assert!(settings.dictionary_snippets.is_empty());
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
         // Without an exact device, the retired generic GPU choice becomes Auto.

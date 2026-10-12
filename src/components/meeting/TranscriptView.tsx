@@ -1,6 +1,9 @@
 import { Play, Square } from "lucide-react";
+import { useRef, useState } from "react";
 import type { MeetingLine } from "@/bindings";
+import { Input } from "../ui/Input";
 import { clock, speakerOf, type Translate } from "./meetingModel";
+import { highlight } from "./transcriptSearch";
 
 export interface PlayButtonProps {
   playing: boolean;
@@ -28,6 +31,68 @@ export function PlayButton(props: PlayButtonProps) {
   );
 }
 
+export interface SpeakerNameProps {
+  line: MeetingLine;
+  /** Absent: the label is plain text. */
+  onRename?: (person: number, name: string) => void;
+  t: Translate;
+}
+
+/**
+ * The speaker of a turn. For "Person N", a click opens a field: Enter or leaving it applies the
+ * name to the whole session, Escape keeps it, an empty field gives "Person N" back.
+ */
+export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
+  const [typed, setTyped] = useState<string | null>(null);
+  // Enter closes the field, and a blur may follow as it unmounts: one rename per edit.
+  const open = useRef(false);
+  const person = line.person;
+  if (person === null || !onRename) return <>{speakerOf(line, t)}</>;
+  const current = line.name ?? "";
+  const label = t("meeting.speaker.person", { n: person });
+  if (typed === null) {
+    return (
+      <button
+        type="button"
+        className="cursor-pointer rounded underline decoration-dotted underline-offset-2 hover:text-text focus-visible:focus-ring"
+        title={t("meeting.rename.hint", { person: label })}
+        onClick={() => {
+          open.current = true;
+          setTyped(current);
+        }}
+      >
+        {speakerOf(line, t)}
+      </button>
+    );
+  }
+  const close = (save: boolean) => {
+    if (!open.current) return;
+    open.current = false;
+    setTyped(null);
+    // The app collapses spaces the same way: an edit that changes nothing is not a rename.
+    if (save && typed.trim().replace(/\s+/g, " ") !== current) {
+      onRename(person, typed);
+    }
+  };
+  return (
+    <Input
+      variant="compact"
+      autoFocus
+      aria-label={t("meeting.rename.label", { person: label })}
+      placeholder={label}
+      value={typed}
+      onChange={(event) => setTyped(event.target.value)}
+      onBlur={() => close(true)}
+      onKeyDown={(event) => {
+        // Enter that confirms an IME composition is not the end of the name.
+        if (event.key === "Enter" && !event.nativeEvent.isComposing)
+          close(true);
+        if (event.key === "Escape") close(false);
+      }}
+    />
+  );
+}
+
 /** The DOM id of a segment bubble, the target of a source's `mm:ss`. */
 export const segmentAnchor = (seq: number) => `segment-${seq}`;
 
@@ -39,6 +104,10 @@ export interface TranscriptViewProps {
   /** `seq` the note sources last pointed to. */
   highlighted: number | null;
   onPlay: (line: MeetingLine) => void;
+  /** The search in the transcript: matches are marked. */
+  query?: string;
+  /** A name typed for "Person N"; absent, the labels are plain text. */
+  onRename?: (person: number, name: string) => void;
   t: Translate;
 }
 
@@ -52,7 +121,11 @@ export function TranscriptView(props: TranscriptViewProps) {
     <ol className="space-y-1">
       {lines.map((line, index) => {
         const me = line.person === null;
-        const turn = index === 0 || lines[index - 1].person !== line.person;
+        // Search results are far apart: each one keeps its speaker and time.
+        const turn =
+          index === 0 ||
+          (props.query ?? "").trim() !== "" ||
+          lines[index - 1].person !== line.person;
         const highlighted = props.highlighted === line.seq;
         return (
           <li
@@ -63,7 +136,8 @@ export function TranscriptView(props: TranscriptViewProps) {
           >
             {turn && (
               <span className="px-1 text-caption text-text-2">
-                {speakerOf(line, t)} · {clock(line.t0_ms)}
+                <SpeakerName line={line} onRename={props.onRename} t={t} /> ·{" "}
+                {clock(line.t0_ms)}
               </span>
             )}
             <div
@@ -75,7 +149,17 @@ export function TranscriptView(props: TranscriptViewProps) {
                 onClick={() => props.onPlay(line)}
                 t={t}
               />
-              <span>{line.text}</span>
+              <span>
+                {highlight(line.text, props.query ?? "").map((piece, i) =>
+                  piece.hit ? (
+                    <mark key={i} className="rounded bg-accent/30 text-text">
+                      {piece.text}
+                    </mark>
+                  ) : (
+                    piece.text
+                  ),
+                )}
+              </span>
             </div>
           </li>
         );

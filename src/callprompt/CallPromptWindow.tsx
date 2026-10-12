@@ -10,6 +10,7 @@ import {
   CALL_PROMPT_ANSWERS,
   CALL_PROMPT_TEXT,
   CallPromptCard,
+  titleKey,
 } from "./CallPromptCard";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
@@ -91,7 +92,10 @@ export function CallPromptWindow() {
   return (
     <CallPromptCard
       kind={prompt.kind}
-      title={t(`callPrompt.${text}.title`, { app })}
+      title={t(titleKey(prompt.kind, prompt.web_name), {
+        app,
+        web: prompt.web_name,
+      })}
       body={t(bodyKey, bodyOptions)}
       actions={CALL_PROMPT_ANSWERS[prompt.kind].map((value, index) => ({
         answer: value,

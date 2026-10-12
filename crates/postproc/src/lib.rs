@@ -2,9 +2,10 @@
 //!
 //! Trait `Formatter`: regras determinísticas pt-BR (`Rules`) e o Gemini (`Gemini`) acima de 15
 //! palavras. O LLM recebe só o texto, o nome do app e o dicionário; nunca áudio, tela ou campo
-//! ativo (ADR-0004). O nível de limpeza e o destino (derivado do nome do app) só mudam o texto
-//! do prompt. O `Postprocessor` espera o LLM por 2 s; depois disso fica o texto das
+//! ativo (ADR-0004). O nível de limpeza, o destino (derivado do nome do app) e o estilo que o
+//! usuário escolheu para o app só mudam o texto do prompt. O `Postprocessor` espera o LLM por 2 s; depois disso fica o texto das
 //! regras, e a resposta que chegar até o prazo tardio vira uma `LateEdit` para "aplicar edição".
+//! Os snippets chegam ao LLM como marcadores opacos e voltam ao texto depois (`Masked`).
 
 mod destination;
 mod gemini;
@@ -20,8 +21,10 @@ use fala_secrets::ApiKey;
 
 pub use destination::{destination_for, Destination};
 pub use gemini::{Gemini, DEFAULT_BASE_URL, DEFAULT_MODEL};
-pub use prompt::{CleanupLevel, UnknownCleanupLevel, SYSTEM_PROMPT};
-pub use rules::Rules;
+pub use prompt::{
+    CleanupLevel, UnknownCleanupLevel, SNIPPET_INSTRUCTION, STYLE_INSTRUCTION, SYSTEM_PROMPT,
+};
+pub use rules::{Masked, Rules};
 
 /// Quanto o texto espera pelo LLM antes de ser inserido com as regras (ADR-0004).
 pub const INSERT_DEADLINE: Duration = Duration::from_secs(2);
@@ -38,6 +41,8 @@ pub struct FormatContext<'a> {
     pub language: &'a Language,
     /// Quanto o LLM mexe no texto; as regras ignoram.
     pub cleanup: CleanupLevel,
+    /// A instrução do estilo do app, escrita pelo usuário; `None` mantém o prompt sem estilo.
+    pub style: Option<&'a str>,
 }
 
 /// Transforma texto ditado em texto final.
@@ -100,6 +105,8 @@ pub struct Formatted {
     /// `Dictionary::replacements()`, um por ocorrência. Valem com ou sem o LLM, que recebe o
     /// texto já trocado.
     pub replaced: Vec<usize>,
+    /// Os snippets aplicados, como índices em `Dictionary::snippets()`, um por ocorrência.
+    pub snippets: Vec<usize>,
 }
 
 type LlmResult = Result<String, Fallback>;
@@ -109,6 +116,8 @@ type LlmResult = Result<String, Fallback>;
 pub struct LateEdit {
     rx: mpsc::Receiver<LlmResult>,
     deadline: Instant,
+    /// As expansões dos marcadores que o LLM recebeu; vazio sem snippet.
+    expansions: Vec<String>,
 }
 
 impl LateEdit {
@@ -121,14 +130,28 @@ impl LateEdit {
         Self {
             rx,
             deadline: Instant::now(),
+            expansions: Vec::new(),
         }
+    }
+
+    /// A resposta com os snippets de volta; marcador alterado vira resposta inválida.
+    fn unmask(&self, result: LlmResult) -> LlmResult {
+        if self.expansions.is_empty() {
+            return result;
+        }
+        result.and_then(|text| {
+            rules::fill(&text, &self.expansions).ok_or_else(|| {
+                log::debug!("LLM alterou o marcador de um snippet; resposta tardia descartada");
+                Fallback::InvalidResponse
+            })
+        })
     }
 
     /// Bloqueia até a resposta chegar ou o prazo tardio passar.
     pub fn wait(self) -> LlmResult {
         let remaining = self.deadline.saturating_duration_since(Instant::now()) + Self::MARGIN;
         match self.rx.recv_timeout(remaining) {
-            Ok(result) => result,
+            Ok(result) => self.unmask(result),
             Err(mpsc::RecvTimeoutError::Timeout) => Err(Fallback::Timeout),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(Fallback::Network),
         }
@@ -137,7 +160,7 @@ impl LateEdit {
     /// A resposta, se já chegou, sem bloquear.
     pub fn try_get(&self) -> Option<LlmResult> {
         match self.rx.try_recv() {
-            Ok(result) => Some(result),
+            Ok(result) => Some(self.unmask(result)),
             Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => Some(Err(Fallback::Network)),
         }
@@ -151,6 +174,8 @@ pub struct Postprocessor {
     llm: LlmConfig,
     late_deadline: Duration,
     cleanup: CleanupLevel,
+    /// App em minúsculas e a instrução do seu estilo.
+    app_styles: Vec<(String, String)>,
 }
 
 impl Postprocessor {
@@ -160,7 +185,38 @@ impl Postprocessor {
             llm,
             late_deadline: DEFAULT_LATE_DEADLINE,
             cleanup: CleanupLevel::default(),
+            app_styles: Vec::new(),
         }
+    }
+
+    /// Os estilos por app: o nome do app, comparado sem caixa, e a instrução que vai no fim do
+    /// prompt. O primeiro par de um app vale; instrução vazia não entra. App fora da lista fica
+    /// sem estilo.
+    pub fn with_app_styles<A, I>(mut self, styles: impl IntoIterator<Item = (A, I)>) -> Self
+    where
+        A: AsRef<str>,
+        I: AsRef<str>,
+    {
+        self.app_styles = styles
+            .into_iter()
+            .map(|(app, instruction)| {
+                (
+                    app.as_ref().trim().to_lowercase(),
+                    instruction.as_ref().trim().to_string(),
+                )
+            })
+            .filter(|(app, instruction)| !app.is_empty() && !instruction.is_empty())
+            .collect();
+        self
+    }
+
+    /// A instrução do estilo do app, se ele tem um.
+    fn style_for(&self, app: &AppContext) -> Option<&str> {
+        let name = app.app_name.as_deref()?.trim().to_lowercase();
+        self.app_styles
+            .iter()
+            .find(|(app, _)| *app == name)
+            .map(|(_, instruction)| instruction.as_str())
     }
 
     /// Troca o nível de limpeza pedido ao LLM (padrão `Light`).
@@ -182,28 +238,49 @@ impl Postprocessor {
     }
 
     pub fn process(&self, raw: Transcript, app: AppContext, dictionary: &Dictionary) -> Formatted {
+        let style = self.style_for(&app);
         let ctx = FormatContext {
             app: &app,
             dictionary,
             language: &raw.language,
             cleanup: self.cleanup,
+            style,
         };
-        let (rules_text, replaced) = self.rules.format_with_hits(&raw.text, &ctx);
+        let masked = self.rules.mask(&raw.text, &ctx);
         let mut formatted = Formatted {
             dictation: Dictation {
-                final_text: rules_text,
+                final_text: masked.unmasked(),
                 editor: Editor::Rules,
                 raw,
                 app,
             },
             fallback: None,
             late_edit: None,
-            replaced,
+            replaced: masked.replaced.clone(),
+            snippets: masked.snippets.clone(),
         };
-        let Some(gemini) = self.llm_for(&formatted.dictation) else {
+        // Um ditado que é só o gatilho entra como a expansão está, sem LLM.
+        if masked.is_whole_snippet() {
+            return formatted;
+        }
+        let Some(gemini) = self.llm_for(&formatted.dictation, &masked.text) else {
             return formatted;
         };
-        match self.ask(gemini, &formatted.dictation, dictionary) {
+        let answer = self
+            .ask(
+                gemini,
+                &formatted.dictation,
+                &masked.text,
+                dictionary,
+                style,
+            )
+            .and_then(|text| {
+                masked.restore(&text).ok_or_else(|| {
+                    log::debug!("LLM alterou o marcador de um snippet; fica o texto das regras");
+                    (Fallback::InvalidResponse, None)
+                })
+            });
+        match answer {
             Ok(text) => {
                 formatted.dictation.final_text = text;
                 formatted.dictation.editor = Editor::Llm;
@@ -211,14 +288,18 @@ impl Postprocessor {
             Err((fallback, late_edit)) => {
                 log::debug!("LLM não usado: {fallback}");
                 formatted.fallback = Some(fallback);
-                formatted.late_edit = late_edit;
+                formatted.late_edit = late_edit.map(|late| LateEdit {
+                    expansions: masked.expansions().to_vec(),
+                    ..late
+                });
             }
         }
         formatted
     }
 
-    /// O cliente, quando as quatro condições do LLM valem para este ditado.
-    fn llm_for(&self, dictation: &Dictation) -> Option<&Gemini> {
+    /// O cliente, quando as quatro condições do LLM valem para este ditado. As palavras são as do
+    /// texto que o LLM receberia, com cada snippet como um marcador.
+    fn llm_for(&self, dictation: &Dictation, masked: &str) -> Option<&Gemini> {
         if !self.llm.enabled {
             return None;
         }
@@ -233,7 +314,7 @@ impl Postprocessor {
                 return None;
             }
         }
-        let words = dictation.final_text.split_whitespace().count();
+        let words = masked.split_whitespace().count();
         (words > LLM_MIN_WORDS_EXCLUSIVE).then_some(gemini)
     }
 
@@ -242,16 +323,19 @@ impl Postprocessor {
         &self,
         gemini: &Gemini,
         dictation: &Dictation,
+        text: &str,
         dictionary: &Dictionary,
+        style: Option<&str>,
     ) -> Result<String, (Fallback, Option<LateEdit>)> {
         let started = Instant::now();
         let (tx, rx) = mpsc::channel();
         let gemini = gemini.clone();
-        let text = dictation.final_text.clone();
+        let text = text.to_string();
         let app = dictation.app.clone();
         let dictionary = dictionary.clone();
         let language = dictation.raw.language;
         let cleanup = self.cleanup;
+        let style = style.map(str::to_string);
         let late_deadline = self.late_deadline;
         thread::spawn(move || {
             let ctx = FormatContext {
@@ -259,6 +343,7 @@ impl Postprocessor {
                 dictionary: &dictionary,
                 language: &language,
                 cleanup,
+                style: style.as_deref(),
             };
             let _ = tx.send(gemini.call(&text, &ctx, late_deadline));
         });
@@ -274,6 +359,7 @@ impl Postprocessor {
                 Some(LateEdit {
                     rx,
                     deadline: started + late_deadline,
+                    expansions: Vec::new(),
                 }),
             )),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err((Fallback::Network, None)),

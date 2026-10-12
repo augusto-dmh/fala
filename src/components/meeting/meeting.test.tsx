@@ -140,6 +140,8 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   ],
   notes_md: "## Notas · Reunião geral",
   notes_template: "geral",
+  notes_edited: false,
+  notes_running: false,
   audio_available: true,
   ...over,
 });
@@ -318,7 +320,10 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   for (const kind of Object.keys(pt.meeting.errors)) {
     assert.ok(en.meeting.errors[kind], `errors.${kind} em en`);
   }
-  assert.ok(page.includes("{t(errorKey(error))}"), "o erro aparece traduzido");
+  assert.ok(
+    page.includes("{t(errorKey(error), { detail: errorDetail(error) })}"),
+    "o erro aparece traduzido",
+  );
   ok("C36-error");
 
   const busy = view(detail(), { transcribing: true, generating: true });
@@ -326,8 +331,10 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     busy.includes("meeting.view.transcribing") &&
       busy.includes("meeting.view.cancel"),
   );
-  assert.ok(busy.includes("meeting.view.generating"));
-  assert.equal((busy.match(/disabled=""/g) ?? []).length, 2, busy);
+  // Com anotações, "Aprimorando suas notas" (sem elas, "Escrevendo notas").
+  assert.ok(busy.includes("meeting.view.enhancing"));
+  // Transcrever, gerar e editar a nota.
+  assert.equal((busy.match(/disabled=""/g) ?? []).length, 3, busy);
   assert.ok(!view(detail()).includes("meeting.view.cancel"));
   ok("C36-busy");
 

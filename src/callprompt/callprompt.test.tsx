@@ -4,7 +4,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CALL_PROMPT_ANSWERS, CallPromptCard } from "./CallPromptCard";
+import {
+  CALL_PROMPT_ANSWERS,
+  CallPromptCard,
+  titleKey,
+} from "./CallPromptCard";
 import { mistakeBody } from "./CallPromptWindow";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
@@ -159,3 +163,30 @@ assert.equal(
   "Parece uma chamada no {{app}}",
 );
 console.log("C15 keys ok");
+
+// A meeting in a browser names the site and the browser ("Google Meet no Edge").
+assert.equal(titleKey("offer", null), "callPrompt.offer.title");
+assert.equal(titleKey("ask_stop", null), "callPrompt.askStop.title");
+assert.equal(titleKey("offer", "Google Meet"), "callPrompt.offer.titleWeb");
+assert.equal(
+  titleKey("ask_stop", "Google Meet"),
+  "callPrompt.askStop.titleWeb",
+);
+for (const { lang, json } of locales) {
+  for (const key of [
+    "callPrompt.offer.titleWeb",
+    "callPrompt.askStop.titleWeb",
+  ]) {
+    const text = lookup(json, key) as string;
+    assert.match(text, /\{\{app\}\}/, `${lang} ${key}`);
+    assert.match(text, /\{\{web\}\}/, `${lang} ${key}`);
+  }
+}
+const ptOffer = lookup(locales[0].json, "callPrompt.offer.titleWeb") as string;
+assert.equal(
+  ptOffer.replace("{{web}}", "Google Meet").replace("{{app}}", "Edge"),
+  "Parece uma chamada do Google Meet no Edge",
+);
+assert.match(windowSource, /titleKey\(prompt\.kind, prompt\.web_name\)/);
+assert.match(rustSource, /pub web_name: Option<String>/);
+console.log("meeting-detection-polish web title ok");

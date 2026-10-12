@@ -41,6 +41,16 @@ export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
   nothing_recorded: "nothingRecorded",
 };
 
+/** The title key: a meeting in a browser names both ("Google Meet no Edge"); the cards about
+ *  the meeting itself name no app. */
+export function titleKey(kind: CallPromptKind, webName: string | null): string {
+  if (kind === "offer" || kind === "ask_stop") {
+    const card = CALL_PROMPT_TEXT[kind];
+    return webName ? `callPrompt.${card}.titleWeb` : `callPrompt.${card}.title`;
+  }
+  return `callPrompt.${CALL_PROMPT_TEXT[kind]}.title`;
+}
+
 /** The card in the 404×104 prompt window: the pill's black, a bar on the left, two lines,
  *  the buttons and the countdown line along the bottom. */
 export function CallPromptCard({

@@ -4,7 +4,7 @@
 //! what "Copiar" copies on the home screen. Pasting goes through `utils::paste`, the same path
 //! a dictation takes (per-app chord, reliable paste when on, auto-submit, clipboard handling).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use log::{debug, error, info};
@@ -42,13 +42,18 @@ pub fn text_of(entry: &HistoryEntry) -> Option<&str> {
     (!text.trim().is_empty()).then_some(text.as_str())
 }
 
-/// What `paste_last` pastes: nothing while a dictation is in flight (it is not interrupted),
-/// nothing without history, otherwise the newest entry's text.
-fn to_paste(busy: bool, latest: Option<&HistoryEntry>) -> Option<&str> {
+/// What `paste_last` pastes: nothing while a dictation is in flight (it is not interrupted);
+/// the text whose paste failed while the pill offers it ("cola de novo"), which may have no
+/// history entry; otherwise the newest entry's text.
+fn to_paste<'a>(
+    busy: bool,
+    failed: Option<&'a str>,
+    latest: Option<&'a HistoryEntry>,
+) -> Option<&'a str> {
     if busy {
         return None;
     }
-    latest.and_then(text_of)
+    failed.or_else(|| latest.and_then(text_of))
 }
 
 fn latest_entry(app: &AppHandle) -> Option<HistoryEntry> {
@@ -80,14 +85,58 @@ pub fn copy_last(app: &AppHandle) {
     }
 }
 
+/// The text of the paste that failed, while the pill says so: a click on it copies the text.
+/// Only in memory, and dropped when that pill ends or another state replaces it.
+static FAILED_PASTE: Mutex<Option<String>> = Mutex::new(None);
+
+fn failed_paste() -> MutexGuard<'static, Option<String>> {
+    FAILED_PASTE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+pub fn remember_failed_paste(text: String) {
+    *failed_paste() = Some(text);
+}
+
+pub fn forget_failed_paste() {
+    failed_paste().take();
+}
+
+/// A click on the pill that says the paste failed: puts that text on the clipboard, where the
+/// user asked for it. `false` when there is nothing to copy or the clipboard refused it.
+#[tauri::command]
+#[specta::specta]
+pub fn copy_failed_paste(app: AppHandle) -> bool {
+    let Some(text) = failed_paste().clone() else {
+        debug!("copy_failed_paste: no failed paste to copy");
+        return false;
+    };
+    match app.clipboard().write_text(text) {
+        Ok(()) => {
+            info!("Copied the dictation that failed to paste");
+            true
+        }
+        Err(err) => {
+            error!("Failed to copy the dictation that failed to paste: {}", err);
+            false
+        }
+    }
+}
+
 /// Pastes the last dictation into the app in focus. Ignored while a dictation is in flight.
 /// `from_tray` gives focus back to the app the tray menu took it from first (Windows).
 pub fn paste_last(app: &AppHandle, from_tray: bool) {
     let busy = app
         .try_state::<TranscriptionCoordinator>()
         .is_some_and(|c| c.is_busy());
-    let entry = if busy { None } else { latest_entry(app) };
-    let Some(text) = to_paste(busy, entry.as_ref()).map(str::to_owned) else {
+    let failed = failed_paste().clone();
+    let entry = if busy || failed.is_some() {
+        None
+    } else {
+        latest_entry(app)
+    };
+    let Some(text) = to_paste(busy, failed.as_deref(), entry.as_ref()).map(str::to_owned) else {
         debug!("paste_last: nothing pasted (dictation in progress: {busy})");
         return;
     };
@@ -109,13 +158,16 @@ pub fn paste_last(app: &AppHandle, from_tray: bool) {
 
         let ah = app.clone();
         let scheduled =
-            app.run_on_main_thread(move || match crate::utils::paste(text, ah.clone()) {
-                Ok(()) => info!("Pasted the last dictation"),
-                Err(e) => {
-                    error!("Failed to paste the last dictation: {}", e);
-                    let _ = ah.emit("paste-error", ());
-                }
-            });
+            app.run_on_main_thread(
+                move || match crate::utils::paste(text.clone(), ah.clone()) {
+                    Ok(()) => info!("Pasted the last dictation"),
+                    Err(e) => {
+                        error!("Failed to paste the last dictation: {}", e);
+                        let _ = ah.emit("paste-error", ());
+                        crate::overlay::show_paste_failed(&ah, text);
+                    }
+                },
+            );
         if let Err(e) = scheduled {
             error!("Failed to run the paste on the main thread: {:?}", e);
         }
@@ -192,7 +244,7 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::{text_of, to_paste};
+    use super::{failed_paste, forget_failed_paste, remember_failed_paste, text_of, to_paste};
     use crate::managers::history::HistoryEntry;
     use crate::managers::history_dictations::{HistoryDictation, HistoryEditor, HistoryShowing};
 
@@ -250,9 +302,30 @@ mod tests {
     #[test]
     fn paste_is_ignored_while_busy_and_without_history() {
         let latest = with_dictation("bruto", "Final.", HistoryShowing::Final);
-        assert_eq!(to_paste(false, Some(&latest)), Some("Final."));
-        assert_eq!(to_paste(true, Some(&latest)), None);
-        assert_eq!(to_paste(false, None), None);
-        assert_eq!(to_paste(true, None), None);
+        assert_eq!(to_paste(false, None, Some(&latest)), Some("Final."));
+        assert_eq!(to_paste(true, None, Some(&latest)), None);
+        assert_eq!(to_paste(false, None, None), None);
+        assert_eq!(to_paste(true, None, None), None);
+        // While the pill says a paste failed, its text, even without a history entry.
+        assert_eq!(
+            to_paste(false, Some("falhou"), Some(&latest)),
+            Some("falhou")
+        );
+        assert_eq!(to_paste(false, Some("falhou"), None), Some("falhou"));
+        assert_eq!(to_paste(true, Some("falhou"), Some(&latest)), None);
+    }
+
+    #[test]
+    fn failed_paste_is_kept_until_the_pill_ends() {
+        remember_failed_paste("primeiro".to_string());
+        remember_failed_paste("ação de amanhã".to_string());
+        assert_eq!(failed_paste().as_deref(), Some("ação de amanhã"));
+        forget_failed_paste();
+        assert_eq!(*failed_paste(), None);
+        // Both paste paths hand the text to the pill when the paste fails.
+        let source = include_str!("last_dictation.rs");
+        let source = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
+        let failed = &source[source.find("Failed to paste the last dictation").unwrap()..];
+        assert!(failed.contains("crate::overlay::show_paste_failed(&ah, text)"));
     }
 }
