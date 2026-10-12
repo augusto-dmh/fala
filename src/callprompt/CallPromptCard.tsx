@@ -23,10 +23,20 @@ export interface CallPromptCardProps {
 export const CALL_PROMPT_ANSWERS: Record<CallPromptKind, CallPromptAnswer[]> = {
   offer: ["record", "not_now", "mute_app"],
   ask_stop: ["stop", "keep_recording"],
+  quit: ["stop_and_quit", "cancel"],
 };
 
-/** The title key: a meeting in a browser names both ("Google Meet no Edge"). */
+/** The `callPrompt.*` group with the title and body of each card. */
+export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
+  offer: "offer",
+  ask_stop: "askStop",
+  quit: "quit",
+};
+
+/** The title key: a meeting in a browser names both ("Google Meet no Edge"); the quit card
+ *  names no app. */
 export function titleKey(kind: CallPromptKind, webName: string | null) {
+  if (kind === "quit") return "callPrompt.quit.title" as const;
   const card = kind === "offer" ? "offer" : "askStop";
   return webName
     ? (`callPrompt.${card}.titleWeb` as const)

@@ -34,3 +34,23 @@ Proof: `cargo test -p fala --lib settings` e leitura de `MeetingManager::start`
 **C7** - manual: no app de debug portátil, apagar uma sessão e conferir que `audio/<id>/` sumiu;
 Configurações → Geral → Reuniões mostra "Áudio das reuniões" e "Limite de gravação"
 Proof: manual (Windows, app de debug portátil)
+
+## S2 — recuperar a órfã, sair gravando (PR 2)
+
+**C8** - Recuperar fecha só sessão começada e sem fim, com `stop_reason` nulo
+Proof: `cargo test -p fala-storage --test meetings recover_meeting_ends_only_an_unfinished_session`
+
+**C9** - Órfã = começada, sem fim e com `recording.wav`; um WAV morto (cabeçalho do último
+flush, meio segundo depois dele) recupera o que o cabeçalho anuncia e vira Opus com essas
+amostras: perde ≤ 1 s; recuperar duas vezes recusa
+Proof: `cargo test -p fala --lib meeting::recovery`
+
+**C10** - Sair gravando ou pausado pergunta; [Parar e sair] para e sai; [Cancelar] e o fim da
+contagem não saem; o banner diz "Recuperar gravação de 14:02 (12 min)?"
+Proof: `cargo test -p fala --lib quit` (`quitting_while_recording_asks`,
+`answer_maps_each_quit_button`);
+`bun src/components/meeting/lifecycle.test.tsx`; `bun src/callprompt/callprompt.test.tsx`
+
+**C11** - manual: gravar ~1 min, `taskkill /F /IM fala.exe`, reabrir, Recuperar; a duração perde
+≤ ~1 s e `mic.opus`/`sys.opus` aparecem; sair pela bandeja gravando mostra o cartão
+Proof: manual (Windows, app de debug portátil)
