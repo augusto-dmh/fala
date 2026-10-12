@@ -1264,6 +1264,29 @@ async cancelMeetingImport() : Promise<Result<null, MeetingError>> {
 }
 },
 /**
+ * "Granola history": reads and checks the export at `path` (a CSV or a `.zip`); saves nothing.
+ */
+async previewGranolaImport(path: string) : Promise<Result<GranolaPreview, GranolaImportError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_granola_import", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Imports the export at `path`, one meeting at a time; `cancel_meeting_import` stops it.
+ * Progress comes as `GranolaProgress` events.
+ */
+async runGranolaImport(path: string) : Promise<Result<GranolaImported, GranolaImportError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("run_granola_import", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown. Notes
  * edited by hand, regenerated with the same template, return `notes_edited` unless
  * `replace_edited` (the confirmation click).
@@ -1581,12 +1604,14 @@ async changeCallPromptMutedAppsSetting(apps: string[]) : Promise<Result<string[]
 
 
 export const events = __makeEvents__<{
+granolaProgress: GranolaProgress,
 historyUpdatePayload: HistoryUpdatePayload,
 meetingProgress: MeetingProgress,
 meetingStatus: MeetingStatus,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent
 }>({
+granolaProgress: "granola-progress",
 historyUpdatePayload: "history-update-payload",
 meetingProgress: "meeting-progress",
 meetingStatus: "meeting-status",
@@ -1835,6 +1860,72 @@ export type EngineType =
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 /**
+ * Why a Granola import stopped, serialized as `{"kind": "...", "detail": ...}` like
+ * `MeetingError`, so the dialog picks the sentence.
+ */
+export type GranolaImportError = { kind: "empty" } | { kind: "not_utf_8" } | { kind: "file_too_large" } | { kind: "too_many_rows" } | 
+/**
+ * The required columns that are missing, comma separated.
+ */
+{ kind: "missing_columns"; detail: string } | { kind: "no_csv_in_zip" } | { kind: "zip_mismatch" } | 
+/**
+ * The file could not be opened or parsed; the detail is the reader's message.
+ */
+{ kind: "unreadable"; detail: string } | 
+/**
+ * Another import (a file, a URL or Granola) is running.
+ */
+{ kind: "busy" } | 
+/**
+ * Cancelled: the meetings saved before the click stay.
+ */
+{ kind: "cancelled" } | { kind: "storage"; detail: string }
+/**
+ * How the import ended.
+ */
+export type GranolaImported = { created: number; 
+/**
+ * Meetings imported before, rewritten with the file's content.
+ */
+updated: number; rejected: number }
+/**
+ * What the file holds, before anything is saved.
+ */
+export type GranolaPreview = { meetings: number; 
+/**
+ * RFC 3339 of the oldest and the newest meeting; `None` without meetings.
+ */
+first: string | null; last: string | null; 
+/**
+ * Rows replaced by a later row with the same id.
+ */
+duplicates: number; rejected: GranolaRejected[] }
+/**
+ * "Importing `done` of `total`".
+ */
+export type GranolaProgress = { done: number; total: number }
+export type GranolaRejected = { 
+/**
+ * The CSV inside the `.zip`, if the file was one.
+ */
+file: string | null; 
+/**
+ * The spreadsheet row (the header is row 1).
+ */
+line: number; reason: GranolaRejection }
+/**
+ * Why a row was left out.
+ */
+export type GranolaRejection = { kind: "missing_id" } | 
+/**
+ * The `document_created` text.
+ */
+{ kind: "invalid_date"; detail: string } | 
+/**
+ * The column over its size cap.
+ */
+{ kind: "cell_too_large"; detail: string }
+/**
  * O item de `fala.sqlite` ligado a uma linha do histórico.
  */
 export type HistoryDictation = { raw_text: string; final_text: string; editor: HistoryEditor; showing: HistoryShowing; app_name: string | null }
@@ -2071,7 +2162,11 @@ created_at: string;
 /**
  * `None` while the session is a draft that never recorded.
  */
-started_at: string | null; ended_at: string | null; recorded_ms: number; audio_retained: boolean; transcribed: boolean; has_notes: boolean }
+started_at: string | null; ended_at: string | null; recorded_ms: number; audio_retained: boolean; transcribed: boolean; has_notes: boolean; 
+/**
+ * Where the session was imported from (`granola`); absent for the rest.
+ */
+imported_from?: string | null }
 export type MeetingTemplate = { id: string; name: string; 
 /**
  * What the notes are for; the pickers search it with the name.

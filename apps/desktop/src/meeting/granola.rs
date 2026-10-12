@@ -302,7 +302,7 @@ mod tests {
 
         let at = now_local();
         let mut seen = Vec::new();
-        let mut run = |store: &mut Store, seen: &mut Vec<(u32, u32)>| {
+        let run = |store: &mut Store, seen: &mut Vec<(u32, u32)>| {
             import_rows(
                 &export,
                 &CancelToken::new(),
