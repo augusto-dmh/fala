@@ -164,6 +164,13 @@ export function MeetingsPage() {
       }),
       // The page is open: the app does not leave a request for the next mount.
       listen("meeting-consent-required", () => setAskConsent(true)),
+      // A card's [Discard] or an empty recording: the session is gone.
+      listen<string>("meeting-deleted", (event) => {
+        setSelected((current) =>
+          current?.summary.id === event.payload ? null : current,
+        );
+        void refresh();
+      }),
       listen<string | null>("open-meeting", (event) => {
         if (event.payload) void open(event.payload);
       }),

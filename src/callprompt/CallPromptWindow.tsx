@@ -16,6 +16,21 @@ import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const TICK_MS = 100;
 
+/** The body key: a short recording and an almost silent long one ask for different reasons. */
+export function mistakeBody(
+  text: string,
+  seconds: number | null,
+): [string, Record<string, unknown>] {
+  if (text !== "mistake" || seconds === null)
+    return [`callPrompt.${text}.body`, {}];
+  return seconds < 30
+    ? ["callPrompt.mistake.short", { seconds }]
+    : [
+        "callPrompt.mistake.quiet",
+        { minutes: Math.max(1, Math.round(seconds / 60)) },
+      ];
+}
+
 /** The prompt window: shows the card the backend sends and reports the answer. */
 export function CallPromptWindow() {
   const { t } = useTranslation();
@@ -59,6 +74,7 @@ export function CallPromptWindow() {
   if (!prompt) return null;
   const app = prompt.app_name;
   const text = CALL_PROMPT_TEXT[prompt.kind];
+  const [bodyKey, bodyOptions] = mistakeBody(text, prompt.seconds);
   const labels: Record<CallPromptAnswer, string> = {
     record: t("callPrompt.record"),
     not_now: t("callPrompt.notNow"),
@@ -67,6 +83,10 @@ export function CallPromptWindow() {
     keep_recording: t("callPrompt.keepRecording"),
     stop_and_quit: t("callPrompt.stopAndQuit"),
     cancel: t("callPrompt.cancel"),
+    record_again: t("callPrompt.recordAgain"),
+    dismiss: t("callPrompt.dismiss"),
+    keep: t("callPrompt.keep"),
+    discard: t("callPrompt.discard"),
     expired: "",
   };
   return (
@@ -76,7 +96,7 @@ export function CallPromptWindow() {
         app,
         web: prompt.web_name,
       })}
-      body={t(`callPrompt.${text}.body`)}
+      body={t(bodyKey, bodyOptions)}
       actions={CALL_PROMPT_ANSWERS[prompt.kind].map((value, index) => ({
         answer: value,
         label: labels[value],
