@@ -77,6 +77,7 @@ impl CallPromptPayload {
             kind: CallPromptKind::Quit,
             app_id: String::new(),
             app_name: String::new(),
+            web_name: None,
             countdown_ms: COUNTDOWN.as_millis() as u32,
         }
     }
