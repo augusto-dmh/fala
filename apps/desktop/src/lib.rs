@@ -242,6 +242,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(meeting_manager.clone());
+    // The meeting audio retention runs now and once a day.
+    meeting::MeetingManager::spawn_upkeep(app_handle);
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -915,6 +917,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::save_meeting_notes,
             commands::meeting::set_meeting_template,
             commands::meeting::change_meeting_auto_notes_setting,
+            commands::meeting::delete_meeting,
+            commands::meeting::change_meeting_retention_setting,
+            commands::meeting::change_meeting_cap_setting,
             call_prompt::call_prompt_current,
             call_prompt::answer_call_prompt,
             call_prompt::call_prompt_apps,

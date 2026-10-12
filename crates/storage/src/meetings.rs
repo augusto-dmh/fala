@@ -347,6 +347,26 @@ impl Store {
         )
     }
 
+    /// O áudio retido da sessão foi apagado (retenção): `audio_retained` volta a falso.
+    pub fn clear_meeting_audio_retained(&self, id: SessionId) -> Result<(), StorageError> {
+        self.update(
+            id,
+            "UPDATE meetings SET audio_retained = 0 WHERE id = ?1",
+            params![id.to_string()],
+        )
+    }
+
+    /// Apaga a sessão e, em cascata, trechos, participantes e nomes de falantes. Irreversível.
+    pub fn delete_meeting(&self, id: SessionId) -> Result<(), StorageError> {
+        self.update(
+            id,
+            "DELETE FROM meetings WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        log::debug!("reunião {id} apagada");
+        Ok(())
+    }
+
     /// Substitui as anotações da sessão pelo texto inteiro.
     pub fn save_meeting_annotations(&self, id: SessionId, text: &str) -> Result<(), StorageError> {
         self.update(
