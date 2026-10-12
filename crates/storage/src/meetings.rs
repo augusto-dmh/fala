@@ -120,7 +120,7 @@ pub(crate) fn mode_str(mode: SessionMode) -> &'static str {
     }
 }
 
-fn parse_mode(s: &str) -> Option<SessionMode> {
+pub(crate) fn parse_mode(s: &str) -> Option<SessionMode> {
     Some(match s {
         "meeting" => SessionMode::Meeting,
         "in_person" => SessionMode::InPerson,
@@ -138,7 +138,7 @@ pub(crate) fn reason_str(reason: StopReason) -> &'static str {
     }
 }
 
-fn parse_reason(s: &str) -> Option<StopReason> {
+pub(crate) fn parse_reason(s: &str) -> Option<StopReason> {
     Some(match s {
         "user" => StopReason::User,
         "silence" => StopReason::Silence,
@@ -225,7 +225,7 @@ fn read_segment(row: &Row<'_>) -> rusqlite::Result<MeetingSegment> {
     })
 }
 
-fn ms(value: u64) -> i64 {
+pub(crate) fn ms(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
 

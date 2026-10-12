@@ -25,3 +25,17 @@ Plan: `.specs/features/mcp-meetings/plan.md`. Todos em `apps/cli/tests/mcp.rs`
 - **C7** sem `fala.sqlite`, lista vazia e o arquivo não é criado: `meetings_without_db_list_empty`
 - **C8** sem rede: `cargo tree -p fala-mcp -e normal` sem `hyper`, `reqwest`, `rustls`,
   `native-tls`, `oauth2` ou `tauri`
+
+## Fatia 2
+
+- **C9** `get_transcript_segment` pagina pelo `seq` (`from_segment`/`max_segments`, 200, até
+  500), traz `transcribed_at` para o cliente notar uma retranscrição entre páginas, com o
+  nome aplicado de `person_N`, `next_from_segment` nulo no fim e teto de 30.000 caracteres por
+  página (um trecho sempre sai); argumento inválido = `-32602`; "só local" = não encontrada:
+  `transcript_pages_by_segment_and_by_size`
+- **C10** `resources/list` traz até 20 `fala://meeting/<id>` depois dos ditados, pelo início, e
+  uma falha nas reuniões não esconde os ditados; `resources/read` devolve o mesmo JSON do
+  `get_meeting`; "só local" e rascunho = não encontrada; com reuniões desligadas, nem o template
+  nem a lista têm reunião e a leitura recusa (`templates_list_has_dictation_and_meeting_templates`):
+  `meeting_resources_list_and_read_like_get_meeting`, `meetings_are_off_until_their_own_key_is_true`
+- **C11** C4 e C6 valem também para a transcrição e as resources

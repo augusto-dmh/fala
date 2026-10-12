@@ -26,3 +26,23 @@ pequeno); `source()` repete o mapeamento do storage de propósito, como lista fe
 
 Não testado: cliente MCP real (`claude mcp add`), para não mexer na config do Augusto, e reuniões
 reais.
+
+## Fatia 2
+
+Branch `feat/mcp-meetings-2`, sobre a fatia 1.
+
+| Check | Evidência |
+| --- | --- |
+| C9 | `transcript_pages_by_segment_and_by_size` ok: 3 trechos em páginas de 2, `from_segment` 3 e 9, três trechos de 20.000 caracteres em três páginas |
+| C10 | `meeting_resources_list_and_read_like_get_meeting` e `meetings_are_off_until_their_own_key_is_true` ok |
+| C11 | `meeting_responses_never_carry_audio_or_paths` e `meeting_storage_failure_is_opaque_error` ok com a transcrição e as resources |
+
+`cargo test -p fala-cli --test mcp`: 45 passed. `cargo clippy -p fala-cli -p fala-mcp
+--all-targets -- -D warnings` limpo.
+
+Revisão `code-review high` da fatia: 9 achados. Corrigidos: a página da transcrição não dizia
+qual transcrição era (agora `transcribed_at`); uma falha nas reuniões derrubava o `resources/list`
+inteiro; a página andava pela posição e não pelo `seq`; o template de reunião aparecia com
+reuniões desligadas; a visibilidade e a leitura usavam duas travas; filtro de nomes e ordenação
+duplicados. Mantidos: ler todos os trechos por página e contar carregando os trechos pedem
+consultas novas no `fala-storage`.
