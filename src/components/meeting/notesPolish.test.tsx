@@ -170,7 +170,9 @@ const lines: MeetingLine[] = [
   const html = renderToStaticMarkup(
     <MeetingView
       detail={detail}
-      templates={[{ id: "geral", name: "Reunião geral" }]}
+      templates={[
+        { id: "geral", name: "Reunião geral", purpose: "", source: "builtin" },
+      ]}
       recording={false}
       transcribing={false}
       generating={false}
@@ -187,7 +189,7 @@ const lines: MeetingLine[] = [
   // Uma edição feita aqui conta antes do recarregar trazer `notes_edited`.
   assert.match(
     viewSource,
-    /const edited = detail\.notes_edited \|\| editedHere;\s*if \(needsConfirmation\(\{ \.\.\.detail, notes_edited: edited \}, templateId\)\) \{\s*setConfirming\(true\);\s*\} else \{\s*props\.onGenerate\(templateId, false\);/,
+    /const edited = detail\.notes_edited \|\| editedHere;\s*if \(needsConfirmation\(\{ \.\.\.detail, notes_edited: edited \}, picked\)\) \{\s*setConfirming\(true\);\s*\} else \{\s*props\.onGenerate\(picked, false\);/,
   );
   // "Gerar de novo" da confirmação fica desligado como o "Gerar notas".
   assert.equal(
@@ -207,7 +209,7 @@ const lines: MeetingLine[] = [
   // mesma regra.
   assert.equal(viewSource.match(/onClick=\{generate\}/g)?.length, 3);
   assert.equal(
-    viewSource.match(/props\.onGenerate\(templateId, true\)/g)?.length,
+    viewSource.match(/props\.onGenerate\(picked, true\)/g)?.length,
     1,
   );
   assert.match(

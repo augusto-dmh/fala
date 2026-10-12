@@ -161,8 +161,8 @@ const panel = (s: MeetingStatus) =>
       onStop={noop}
       onExtend={noop}
       templates={[
-        { id: "geral", name: "Reunião geral" },
-        { id: "um-a-um", name: "1:1" },
+        { id: "geral", name: "Reunião geral", purpose: "", source: "builtin" },
+        { id: "um-a-um", name: "1:1", purpose: "", source: "builtin" },
       ]}
       template="um-a-um"
       onTemplateChange={noop}
@@ -222,8 +222,8 @@ const view = (d: MeetingDetail, over: Record<string, unknown> = {}) =>
     <MeetingView
       detail={d}
       templates={[
-        { id: "geral", name: "Reunião geral" },
-        { id: "um-a-um", name: "1:1" },
+        { id: "geral", name: "Reunião geral", purpose: "", source: "builtin" },
+        { id: "um-a-um", name: "1:1", purpose: "", source: "builtin" },
       ]}
       recording={false}
       transcribing={false}

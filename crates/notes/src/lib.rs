@@ -24,7 +24,10 @@ pub use input::{Channel, NotesInput, Segment, Speaker, PROFILE_MAX_CHARS};
 pub use key::{ApiKey, KeySource};
 pub use payload::NotesPayload;
 pub use render::{render_transcript, Notes, SpeakerSuggestion, GENERATED_MARKER};
-pub use template::{builtin_templates, Section, Template, TEMPLATE_SCHEMA};
+pub use template::{
+    builtin_templates, duplicate_builtin, ensure_templates_dir, load_user_templates, Section,
+    Template, TemplateLoadError, TEMPLATES_README, TEMPLATE_SCHEMA,
+};
 
 /// Erros de `fala-notes`. Nenhuma variante carrega a transcrição, as anotações, o corpo de uma
 /// resposta do provedor nem a chave.
@@ -36,6 +39,8 @@ pub enum NotesError {
     EmptySession,
     #[error("template inválido: {0}")]
     InvalidTemplate(String),
+    #[error("pasta de templates: {0}")]
+    TemplateFolder(String),
     #[error("sem chave da API de notas no keyring")]
     MissingKey,
     #[error("o cofre de chaves falhou")]

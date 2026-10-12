@@ -1254,6 +1254,20 @@
         "description": "Ao parar, depois da transcrição, as notas são escritas sem clique (a partir de 3 minutos e de uma transcrição longa; nunca numa sessão só local)."
       }
     },
+    "templates": {
+      "title": "Templates de notas",
+      "description": "Os seus são arquivos .json numa pasta do Fala, editados em qualquer editor de texto. O Fala relê a pasta quando você volta para ele.",
+      "folder": "Pasta dos seus templates",
+      "folderDescription": "Um arquivo por template; o LEIAME.txt da pasta explica os campos.",
+      "open": "Abrir a pasta",
+      "duplicate": "Duplicar para editar",
+      "builtinOne": "Embutido",
+      "userOne": "Seu",
+      "builtin": "Embutidos",
+      "user": "Seus templates",
+      "search": "Buscar template",
+      "folderError": "Não consegui usar a pasta de templates: {{detail}}"
+    },
     "key": {
       "label": "Chave da ElevenLabs para transcrever:",
       "placeholder": "cole a chave",
