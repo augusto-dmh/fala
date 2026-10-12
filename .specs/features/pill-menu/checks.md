@@ -13,7 +13,7 @@ só código de produção (antes de `mod tests`) e falham quando o alvo some.
 **C1** - `PILL_MENU` tem os itens e separadores na ordem do AC 1; cada id que o menu acrescenta tem braço no handler da bandeja em `lib.rs` (`paste_last_transcript`, `PILL_HIDE_HOUR_ID` → `snooze_idle`, `PILL_SETTINGS_ID`, idioma e microfone por prefixo); `hide_pill_hour` sai das locales pt e en (AC 1, 3)
 Proof: `cargo test -p fala --lib tray::tests::pill_menu_items_and_their_handlers`
 
-**C2** - `open_pill_menu` só age com `Shown::Idle | Shown::IdleHover`, chama `remember_foreground` antes de `popup_menu` e `return_focus_from` depois; `return_focus_from` só age se a pílula é a janela em primeiro plano (AC 2, 4)
+**C2** - `open_pill_menu` só age com `Shown::Idle | Shown::IdleHover`, chama `remember_foreground` antes de `popup_menu` e `return_focus_from` depois, e fecha o cartão do hover se o cursor saiu da pílula durante o menu; `return_focus_from` só age se a pílula é a janela em primeiro plano (AC 2, 4)
 Proof: `cargo test -p fala --lib overlay::tests::snooze_hides_only_the_idle_pill_for_an_hour`
 
 **C3** - `IDLE_SNOOZE` é 1 h; `is_snoozed` é verdadeiro só antes do fim; o timer único (`SNOOZE_TIMER_RUNNING`) dorme até o fim, acordando ao menos a cada minuto (`snooze_wait`), e então chama `refresh_idle`; `current_rest` trata a pílula adiada como não querida, então a reunião mantém seu estado e o repouso esconde (`idle_refresh` → `Hide`); `snooze_idle` chama `refresh_idle` agora e depois do timer; o toggle chama `end_idle_snooze` antes de `apply_idle_setting` (AC 5)
