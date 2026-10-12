@@ -216,7 +216,10 @@ fn reindex_reports_counts() {
     d.delete_db();
     let o = d.run(&["reindex"]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-    assert_eq!(stdout(&o), "2 ditados reindexados, 0 arquivos ignorados\n");
+    assert_eq!(
+        stdout(&o),
+        "2 ditados e 0 reuniões reindexados, 0 arquivos ignorados\n"
+    );
 
     let day = d.md_files()[0].parent().unwrap().to_path_buf();
     let bad = day.join("quebrado.md");
@@ -224,7 +227,10 @@ fn reindex_reports_counts() {
     d.delete_db();
     let o = d.run(&["reindex"]);
     assert_eq!(o.status.code(), Some(1), "{}", stderr(&o));
-    assert_eq!(stdout(&o), "2 ditados reindexados, 1 arquivos ignorados\n");
+    assert_eq!(
+        stdout(&o),
+        "2 ditados e 0 reuniões reindexados, 1 arquivos ignorados\n"
+    );
     assert!(
         stderr(&o).contains(&format!("{}: ", bad.display())),
         "{}",
@@ -232,6 +238,54 @@ fn reindex_reports_counts() {
     );
     let o = d.run(&["history", "search", ""]);
     assert_eq!(stdout(&o).lines().count(), 4);
+}
+
+#[test]
+fn reindex_rebuilds_meetings_from_reunioes() {
+    let d = Dirs::new("reindex_rebuilds_meetings_from_reunioes");
+    let id = fala_meeting::SessionId::from_parts(1_727_000_000_000, 7);
+    let at = chrono::DateTime::parse_from_rfc3339("2026-10-02T14:00:00-03:00").unwrap();
+    {
+        let mut store = fala_storage::Store::open(&d.db(), &d.data.join("notas")).unwrap();
+        store
+            .create_meeting(&fala_storage::NewMeeting {
+                id,
+                title: "Revisão".to_string(),
+                mode: fala_meeting::SessionMode::Meeting,
+                local_only: false,
+                created_at: at,
+            })
+            .unwrap();
+        let segment = fala_storage::MeetingSegment {
+            seq: 0,
+            channel: fala_storage::SegmentChannel::Mic,
+            speaker: fala_storage::SegmentSpeaker::Me,
+            t0_ms: 0,
+            t1_ms: 900,
+            text: "Começando.".to_string(),
+        };
+        store
+            .replace_meeting_segments(id, vec![segment], at)
+            .unwrap();
+    }
+    let md = d
+        .data
+        .join("notas")
+        .join("Reuniões")
+        .join("2026-10-02 Revisão.md");
+    assert!(md.is_file());
+    d.delete_db();
+
+    // Sem `Ditados/`: só as reuniões.
+    let o = d.run(&["reindex"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(
+        stdout(&o),
+        "0 ditados e 1 reuniões reindexados, 0 arquivos ignorados\n"
+    );
+    let store = fala_storage::Store::open(&d.db(), &d.data.join("notas")).unwrap();
+    assert_eq!(store.meeting(id).unwrap().title, "Revisão");
+    assert_eq!(store.meeting_segments(id).unwrap()[0].text, "Começando.");
 }
 
 #[test]

@@ -1073,7 +1073,28 @@
       "body": "Quitting Fala stops the recording."
     },
     "stopAndQuit": "Stop and quit",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "stillRecording": {
+      "title": "Still recording?",
+      "body": "Nothing was heard in the last 14 minutes. The recording stops in 1 minute."
+    },
+    "silenceStopped": {
+      "title": "The recording stopped",
+      "body": "There were 15 minutes of silence. What was recorded is saved."
+    },
+    "mistake": {
+      "title": "Recorded by mistake?",
+      "short": "It was only {{seconds}} s. Nothing was transcribed yet.",
+      "quiet": "Almost nothing was said in {{minutes}} min. Nothing was transcribed yet."
+    },
+    "nothingRecorded": {
+      "title": "Nothing was recorded",
+      "body": "The recording ended without audio and was discarded."
+    },
+    "recordAgain": "Record again",
+    "dismiss": "Close",
+    "keep": "Keep",
+    "discard": "Discard"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
