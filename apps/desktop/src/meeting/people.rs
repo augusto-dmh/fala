@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use fala_meeting::SessionId;
-use fala_storage::Store;
+use fala_storage::{SegmentSpeaker, Store};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -41,16 +41,20 @@ pub(crate) fn speaker_names(
         .collect())
 }
 
+/// A typed name with its spaces collapsed, cut to [`NAME_MAX_CHARS`]; `None` when blank.
+fn clean_name(name: &str) -> Option<String> {
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    let name: String = name.chars().take(NAME_MAX_CHARS).collect();
+    let name = name.trim_end().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
 /// The typed names, trimmed, without blanks, capped in count and length. E-mails are stored as
 /// typed; `fala-notes` keeps them out of the payload.
 fn clean_participants(names: Vec<String>) -> Vec<String> {
     names
-        .into_iter()
-        .map(|name| {
-            let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
-            name.chars().take(NAME_MAX_CHARS).collect::<String>()
-        })
-        .filter(|name| !name.is_empty())
+        .iter()
+        .filter_map(|name| clean_name(name))
         .take(MAX_PARTICIPANTS)
         .collect()
 }
@@ -91,6 +95,30 @@ impl MeetingManager {
         })
     }
 
+    /// The name typed for "Person N" in the transcript; a blank one gives "Person N" back. It
+    /// holds for the whole session: transcript, next notes and Markdown.
+    pub fn set_speaker_name(
+        &self,
+        id: &str,
+        person: u32,
+        name: &str,
+    ) -> Result<MeetingPeople, MeetingError> {
+        let id = parse_id(id)?;
+        let name = clean_name(name);
+        self.with_store(|store| {
+            let speaks = store
+                .meeting_segments(id)?
+                .iter()
+                .any(|segment| segment.speaker == SegmentSpeaker::Person(person));
+            if !speaks {
+                return Err(MeetingError::NotFound);
+            }
+            store.set_meeting_speaker_name(id, person, name.as_deref())?;
+            log::debug!("meeting {id}: person {person} named {name:?}");
+            people(store, id)
+        })
+    }
+
     /// The click on "apply": "Person N" takes the suggested name in the transcript and in the
     /// next notes generation.
     pub fn apply_speaker_suggestion(
@@ -123,5 +151,22 @@ mod tests {
         assert_eq!(clean[0], "Ana Souza");
         assert_eq!(clean[1].chars().count(), NAME_MAX_CHARS);
         assert_eq!(clean.len(), MAX_PARTICIPANTS);
+    }
+
+    #[test]
+    fn blank_name_gives_the_label_back() {
+        assert_eq!(
+            clean_name(
+                "  Bruno 
+ Lima "
+            ),
+            Some("Bruno Lima".to_string())
+        );
+        assert_eq!(clean_name(" 	 "), None);
+        let long = format!("{} x", "a".repeat(NAME_MAX_CHARS - 1));
+        assert_eq!(
+            clean_name(&long).map(|n| n.chars().count()),
+            Some(NAME_MAX_CHARS - 1)
+        );
     }
 }

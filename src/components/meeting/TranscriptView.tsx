@@ -1,5 +1,7 @@
 import { Play, Square } from "lucide-react";
+import { useRef, useState } from "react";
 import type { MeetingLine } from "@/bindings";
+import { Input } from "../ui/Input";
 import { clock, speakerOf, type Translate } from "./meetingModel";
 
 export interface PlayButtonProps {
@@ -28,6 +30,62 @@ export function PlayButton(props: PlayButtonProps) {
   );
 }
 
+export interface SpeakerNameProps {
+  line: MeetingLine;
+  /** Absent: the label is plain text. */
+  onRename?: (person: number, name: string) => void;
+  t: Translate;
+}
+
+/**
+ * The speaker of a turn. For "Person N", a click opens a field: Enter or leaving it applies the
+ * name to the whole session, Escape keeps it, an empty field gives "Person N" back.
+ */
+export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
+  const [typed, setTyped] = useState<string | null>(null);
+  // Enter closes the field, and a blur may follow as it unmounts: one rename per edit.
+  const open = useRef(false);
+  const person = line.person;
+  if (person === null || !onRename) return <>{speakerOf(line, t)}</>;
+  const label = t("meeting.speaker.person", { n: person });
+  if (typed === null) {
+    return (
+      <button
+        type="button"
+        className="cursor-pointer rounded underline decoration-dotted underline-offset-2 hover:text-text focus-visible:focus-ring"
+        title={t("meeting.rename.hint", { person: label })}
+        onClick={() => {
+          open.current = true;
+          setTyped(line.name ?? "");
+        }}
+      >
+        {speakerOf(line, t)}
+      </button>
+    );
+  }
+  const close = (save: boolean) => {
+    if (!open.current) return;
+    open.current = false;
+    setTyped(null);
+    if (save && typed.trim() !== (line.name ?? "")) onRename(person, typed);
+  };
+  return (
+    <Input
+      variant="compact"
+      autoFocus
+      aria-label={t("meeting.rename.label", { person: label })}
+      placeholder={label}
+      value={typed}
+      onChange={(event) => setTyped(event.target.value)}
+      onBlur={() => close(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") close(true);
+        if (event.key === "Escape") close(false);
+      }}
+    />
+  );
+}
+
 /** The DOM id of a segment bubble, the target of a source's `mm:ss`. */
 export const segmentAnchor = (seq: number) => `segment-${seq}`;
 
@@ -39,6 +97,8 @@ export interface TranscriptViewProps {
   /** `seq` the note sources last pointed to. */
   highlighted: number | null;
   onPlay: (line: MeetingLine) => void;
+  /** A name typed for "Person N"; absent, the labels are plain text. */
+  onRename?: (person: number, name: string) => void;
   t: Translate;
 }
 
@@ -63,7 +123,8 @@ export function TranscriptView(props: TranscriptViewProps) {
           >
             {turn && (
               <span className="px-1 text-caption text-text-2">
-                {speakerOf(line, t)} · {clock(line.t0_ms)}
+                <SpeakerName line={line} onRename={props.onRename} t={t} /> ·{" "}
+                {clock(line.t0_ms)}
               </span>
             )}
             <div

@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  MeetingDetail,
-  MeetingError,
-  MeetingLine,
-  MeetingTemplate,
+import {
+  commands,
+  type MeetingDetail,
+  type MeetingError,
+  type MeetingLine,
+  type MeetingTemplate,
 } from "@/bindings";
 import { Button } from "../ui/Button";
 import { AnnotationsField } from "./AnnotationsField";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
-import { errorKey, titleOf } from "./meetingModel";
+import { NotesEditor } from "./NotesEditor";
+import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
@@ -25,9 +27,10 @@ export interface MeetingViewProps {
   onRecordDraft: () => void;
   onTranscribe: () => void;
   onCancelTranscription: () => void;
-  onGenerate: (templateId: string) => void;
+  /** `replaceEdited`: the person confirmed discarding the notes they edited. */
+  onGenerate: (templateId: string, replaceEdited: boolean) => void;
   onCopy: () => void;
-  /** A suggested name was applied: reload the transcript. */
+  /** A name was applied or typed, or the notes were edited: reload the session. */
   onNamesChanged?: () => void;
 }
 
@@ -42,6 +45,11 @@ export function MeetingView(props: MeetingViewProps) {
   const [playing, setPlaying] = useState<number | null>(null);
   const [clipError, setClipError] = useState<MeetingError | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [nameError, setNameError] = useState<MeetingError | null>(null);
+  // A name changed in a session that already has notes: offer to write them again.
+  const [offerRegenerate, setOfferRegenerate] = useState(false);
   const player = useMemo(() => new ClipPlayer(setPlaying), []);
   // One clip at a time, and none left playing after leaving the session.
   useEffect(() => () => player.stop(), [player, detail.summary.id]);
@@ -66,6 +74,23 @@ export function MeetingView(props: MeetingViewProps) {
     player
       .play(detail.summary.id, line.seq, line.t0_ms, line.t1_ms)
       .catch((error: MeetingError) => setClipError(error));
+  };
+  const rename = async (person: number, name: string) => {
+    const result = await commands.setMeetingSpeakerName(
+      detail.summary.id,
+      person,
+      name,
+    );
+    setNameError(result.status === "error" ? result.error : null);
+    if (result.status === "ok" && detail.notes_md !== null) {
+      setOfferRegenerate(true);
+    }
+    props.onNamesChanged?.();
+  };
+  const generate = () => {
+    setOfferRegenerate(false);
+    if (needsConfirmation(detail, templateId)) setConfirming(true);
+    else props.onGenerate(templateId, false);
   };
   const reveal = (seq: number) => {
     setHighlighted(seq);
@@ -129,8 +154,8 @@ export function MeetingView(props: MeetingViewProps) {
             </select>
             <Button
               variant="secondary"
-              disabled={props.recording || props.generating}
-              onClick={() => props.onGenerate(templateId)}
+              disabled={props.recording || props.generating || editing}
+              onClick={generate}
             >
               {props.generating
                 ? t("meeting.view.generating")
@@ -140,6 +165,54 @@ export function MeetingView(props: MeetingViewProps) {
               {t("meeting.view.copy")}
             </Button>
           </div>
+          {offerRegenerate && !confirming && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.rename.regenerate")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={props.recording || props.generating || editing}
+                onClick={generate}
+              >
+                {t("meeting.notesEdit.regenerate")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setOfferRegenerate(false)}
+              >
+                {t("meeting.rename.dismiss")}
+              </Button>
+            </div>
+          )}
+          {confirming && (
+            <div
+              role="alertdialog"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.notesEdit.confirm")}</span>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setConfirming(false);
+                  props.onGenerate(templateId, true);
+                }}
+              >
+                {t("meeting.notesEdit.regenerate")}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirming(false)}
+              >
+                {t("meeting.view.cancel")}
+              </Button>
+            </div>
+          )}
           <section className="space-y-1">
             <h4 className="text-sm font-semibold">
               {t("meeting.view.transcript")}
@@ -158,12 +231,18 @@ export function MeetingView(props: MeetingViewProps) {
                     {t(errorKey(clipError))}
                   </p>
                 )}
+                {nameError !== null && (
+                  <p role="alert" className="text-caption text-danger">
+                    {t(errorKey(nameError))}
+                  </p>
+                )}
                 <TranscriptView
                   lines={detail.lines}
                   audioAvailable={detail.audio_available}
                   playing={playing}
                   highlighted={highlighted}
                   onPlay={play}
+                  onRename={(person, name) => void rename(person, name)}
                   t={t}
                 />
               </>
@@ -171,18 +250,44 @@ export function MeetingView(props: MeetingViewProps) {
           </section>
           {notes !== null && (
             <section className="space-y-1">
-              <h4 className="text-sm font-semibold">
-                {t("meeting.view.notes")}
-              </h4>
-              <NotesView
-                notes={notes}
-                segments={segments}
-                audioAvailable={detail.audio_available}
-                playing={playing}
-                onPlay={play}
-                onReveal={reveal}
-                t={t}
-              />
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold">
+                  {t("meeting.view.notes")}
+                </h4>
+                {!editing && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={props.generating}
+                    onClick={() => {
+                      setConfirming(false);
+                      setEditing(true);
+                    }}
+                  >
+                    {t("meeting.notesEdit.edit")}
+                  </Button>
+                )}
+              </div>
+              {editing && detail.notes_md !== null ? (
+                <NotesEditor
+                  id={detail.summary.id}
+                  markdown={detail.notes_md}
+                  onDone={() => {
+                    setEditing(false);
+                    props.onNamesChanged?.();
+                  }}
+                />
+              ) : (
+                <NotesView
+                  notes={notes}
+                  segments={segments}
+                  audioAvailable={detail.audio_available}
+                  playing={playing}
+                  onPlay={play}
+                  onReveal={reveal}
+                  t={t}
+                />
+              )}
             </section>
           )}
         </>

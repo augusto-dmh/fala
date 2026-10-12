@@ -128,18 +128,23 @@ pub async fn cancel_meeting_transcription(meetings: Meetings<'_>) -> Result<(), 
     Ok(())
 }
 
-/// Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown.
+/// Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown. Notes
+/// edited by hand, regenerated with the same template, return `notes_edited` unless
+/// `replace_edited` (the confirmation click).
 #[tauri::command]
 #[specta::specta]
 pub async fn generate_meeting_notes(
     meetings: Meetings<'_>,
     id: String,
     template_id: String,
+    replace_edited: bool,
 ) -> Result<String, MeetingError> {
     let manager = meetings.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.generate_notes(&id, &template_id))
-        .await
-        .map_err(|e| MeetingError::Notes(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.generate_notes(&id, &template_id, replace_edited)
+    })
+    .await
+    .map_err(|e| MeetingError::Notes(e.to_string()))?
 }
 
 /// The retained audio around a transcript line, as WAV bytes in a binary IPC response (no
@@ -255,4 +260,27 @@ pub async fn apply_speaker_suggestion(
     person: u32,
 ) -> Result<MeetingPeople, MeetingError> {
     meetings.apply_speaker_suggestion(&id, person)
+}
+
+/// The name typed for "Person N"; blank gives the label back.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_speaker_name(
+    meetings: Meetings<'_>,
+    id: String,
+    person: u32,
+    name: String,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.set_speaker_name(&id, person, &name)
+}
+
+/// The notes as edited in the page.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_meeting_notes(
+    meetings: Meetings<'_>,
+    id: String,
+    markdown: String,
+) -> Result<(), MeetingError> {
+    meetings.save_edited_notes(&id, &markdown)
 }

@@ -7,10 +7,10 @@ use chrono::{DateTime, FixedOffset};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
-use crate::meeting_people;
 use crate::meetings::SCHEMA_2;
 use crate::metrics::{self, DictationMetrics, MetricsSummary};
 use crate::mirror::{self, DITADOS};
+use crate::{meeting_notes, meeting_people};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
 /// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
@@ -103,6 +103,7 @@ impl Store {
         }
         metrics::apply_schema(&conn)?;
         conn.execute_batch(meeting_people::SCHEMA)?;
+        conn.execute_batch(meeting_notes::SCHEMA)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),

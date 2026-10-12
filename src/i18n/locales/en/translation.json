@@ -1085,6 +1085,14 @@
       "notes": "Notes",
       "notesAbove": "Recording now: this meeting's notes are in the field above."
     },
+    "notesEdit": {
+      "edit": "Edit",
+      "label": "Notes text",
+      "hint": "A line you change becomes yours: it loses the AI colour and its sources.",
+      "done": "Done",
+      "confirm": "You've edited these notes. Generating them again replaces your edits, and this can't be undone.",
+      "regenerate": "Generate again"
+    },
     "source": {
       "open": "See where this line came from",
       "title": "Source",
@@ -1098,6 +1106,12 @@
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"
+    },
+    "rename": {
+      "hint": "Click to name {{person}} for the whole meeting",
+      "label": "Name of {{person}}",
+      "regenerate": "Name changed. Generate the notes again?",
+      "dismiss": "Not now"
     },
     "people": {
       "participants": "Who was there",
@@ -1150,6 +1164,7 @@
       "busy": "A transcription or notes generation is already running.",
       "unknown_template": "Unknown template.",
       "notes": "Notes generation failed. Try again.",
+      "notes_edited": "These notes were edited. Confirm before generating again.",
       "generic": "Something went wrong. See the log."
     }
   }

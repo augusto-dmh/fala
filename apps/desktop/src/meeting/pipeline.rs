@@ -17,7 +17,9 @@ use fala_core::{Dictionary, Language};
 use fala_meeting::SessionId;
 use fala_notes::{builtin_templates, generate_notes, Claude, NotesError, NotesInput, Template};
 use fala_secrets::{ApiKey, SecretStore};
-use fala_storage::{MeetingRecord, MeetingSegment, NameSuggestion, SegmentChannel, SegmentSpeaker};
+use fala_storage::{
+    MeetingRecord, MeetingSegment, NameSuggestion, SegmentChannel, SegmentSpeaker, Store,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
@@ -72,6 +74,8 @@ pub struct MeetingDetail {
     pub lines: Vec<MeetingLine>,
     pub notes_md: Option<String>,
     pub notes_template: Option<String>,
+    /// The notes were edited by hand since they were generated.
+    pub notes_edited: bool,
     /// Both retained Opus files are on disk, so a transcript line can be played.
     pub audio_available: bool,
 }
@@ -197,7 +201,9 @@ pub(crate) fn notes_segments(
             },
             speaker: match segment.speaker {
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
-                SegmentSpeaker::Person(n) => match names.get(&n) {
+                // A name with `@` may be an e-mail, which never goes out (ADR-0016).
+                SegmentSpeaker::Person(n) => match names.get(&n).filter(|name| !name.contains('@'))
+                {
                     Some(name) => fala_notes::Speaker::Named(name.clone()),
                     None => fala_notes::Speaker::Person(n),
                 },
@@ -285,6 +291,24 @@ pub(crate) fn notes_input(
         transcript: notes_segments(segments, names),
         local_only: record.local_only,
     }
+}
+
+/// Regenerating with the same template discards the edits: once edited by hand, only after the
+/// confirmation. Another template is a new version the person asked for, as in Granola.
+pub(crate) fn guard_edited_notes(
+    store: &Store,
+    id: SessionId,
+    template_id: &str,
+    replace_edited: bool,
+) -> Result<(), MeetingError> {
+    if replace_edited {
+        return Ok(());
+    }
+    let same_template = store.meeting(id)?.notes_template.as_deref() == Some(template_id);
+    if same_template && store.meeting_notes_edited(id)? {
+        return Err(MeetingError::NotesEdited);
+    }
+    Ok(())
 }
 
 impl From<NotesError> for MeetingError {
@@ -400,6 +424,7 @@ impl MeetingManager {
                 lines,
                 notes_md: record.notes_md,
                 notes_template: record.notes_template,
+                notes_edited: store.meeting_notes_edited(id)?,
                 audio_available,
             })
         })
@@ -514,6 +539,18 @@ impl MeetingManager {
         })
     }
 
+    /// The notes as edited in the page; regenerating them now asks first.
+    pub fn save_edited_notes(&self, id: &str, markdown: &str) -> Result<(), MeetingError> {
+        let id = parse_id(id)?;
+        self.with_store(|store| {
+            Ok(store.save_edited_meeting_notes(
+                id,
+                markdown,
+                chrono::Local::now().fixed_offset(),
+            )?)
+        })
+    }
+
     /// Cancels the transcription in flight, if any; it returns `cancelled` within a second.
     pub fn cancel_transcription(&self) {
         let work = self.work.lock().unwrap_or_else(|e| e.into_inner());
@@ -523,10 +560,18 @@ impl MeetingManager {
         }
     }
 
-    /// Generates the notes with a built-in template and stores the Markdown (ADR-0016).
-    pub fn generate_notes(&self, id: &str, template_id: &str) -> Result<String, MeetingError> {
+    /// Generates the notes with a built-in template and stores the Markdown (ADR-0016). Notes
+    /// edited by hand are only replaced by the same template with `replace_edited`, the click on
+    /// the confirmation.
+    pub fn generate_notes(
+        &self,
+        id: &str,
+        template_id: &str,
+        replace_edited: bool,
+    ) -> Result<String, MeetingError> {
         let id = parse_id(id)?;
         let template = find_template(template_id)?;
+        self.with_store(|store| guard_edited_notes(store, id, template_id, replace_edited))?;
         {
             let mut work = self.work.lock().unwrap_or_else(|e| e.into_inner());
             if work.notes.is_some() {
@@ -797,5 +842,60 @@ mod tests {
             Err(MeetingError::UnknownTemplate)
         );
         assert!(templates().iter().any(|t| t.id == "um-a-um"));
+    }
+
+    #[test]
+    fn typed_name_with_at_never_goes_out() {
+        let segments = vec![MeetingSegment {
+            seq: 1,
+            channel: SegmentChannel::System,
+            speaker: SegmentSpeaker::Person(2),
+            t0_ms: 0,
+            t1_ms: 900,
+            text: "oi".into(),
+        }];
+        let names = HashMap::from([(2, "ana@empresa.com".to_string())]);
+        assert_eq!(
+            notes_segments(&segments, &names)[0].speaker,
+            fala_notes::Speaker::Person(2)
+        );
+    }
+
+    #[test]
+    fn edited_notes_are_regenerated_only_after_the_confirmation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("fala.sqlite"), dir.path()).unwrap();
+        let offset = FixedOffset::west_opt(3 * 3600).unwrap();
+        let now = offset.with_ymd_and_hms(2026, 10, 2, 14, 0, 0).unwrap();
+        let id = SessionId::from_parts(1_727_000_000_000, 1);
+        store
+            .create_meeting(&fala_storage::NewMeeting {
+                id,
+                title: String::new(),
+                mode: SessionMode::Meeting,
+                local_only: false,
+                created_at: now,
+            })
+            .unwrap();
+        assert_eq!(guard_edited_notes(&store, id, "geral", false), Ok(()));
+        store.save_meeting_notes(id, "geral", "- gerada").unwrap();
+        assert_eq!(guard_edited_notes(&store, id, "geral", false), Ok(()));
+        store.save_edited_meeting_notes(id, "- minha", now).unwrap();
+        assert_eq!(
+            guard_edited_notes(&store, id, "geral", false),
+            Err(MeetingError::NotesEdited)
+        );
+        assert_eq!(guard_edited_notes(&store, id, "geral", true), Ok(()));
+        // Another template is a new version, not a regeneration: no question.
+        assert_eq!(guard_edited_notes(&store, id, "um-a-um", false), Ok(()));
+        let missing = SessionId::from_parts(1, 1);
+        assert_eq!(
+            guard_edited_notes(&store, missing, "geral", false),
+            Err(MeetingError::NotFound)
+        );
+        assert_eq!(
+            serde_json::to_value(MeetingError::NotesEdited).unwrap(),
+            serde_json::json!({ "kind": "notes_edited" })
+        );
     }
 }

@@ -135,6 +135,8 @@ pub enum MeetingError {
     Busy,
     UnknownTemplate,
     Notes(String),
+    /// The notes were edited by hand: regenerating needs the user's confirmation.
+    NotesEdited,
 }
 
 impl std::fmt::Display for MeetingError {

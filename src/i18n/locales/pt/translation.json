@@ -1085,6 +1085,14 @@
       "notes": "Notas",
       "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
     },
+    "notesEdit": {
+      "edit": "Editar",
+      "label": "Texto das notas",
+      "hint": "A linha que você muda passa a ser sua: perde a cor de IA e as fontes.",
+      "done": "Concluir",
+      "confirm": "Você editou estas notas. Gerar de novo substitui as suas edições, e isso não pode ser desfeito.",
+      "regenerate": "Gerar de novo"
+    },
     "source": {
       "open": "Ver de onde veio esta linha",
       "title": "Fonte",
@@ -1098,6 +1106,12 @@
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
+    },
+    "rename": {
+      "hint": "Clique para dar um nome a {{person}} na reunião toda",
+      "label": "Nome de {{person}}",
+      "regenerate": "Nome trocado. Gerar as notas de novo?",
+      "dismiss": "Agora não"
     },
     "people": {
       "participants": "Quem estava",
@@ -1150,6 +1164,7 @@
       "busy": "Já há uma transcrição ou geração de notas em andamento.",
       "unknown_template": "Template desconhecido.",
       "notes": "A geração de notas falhou. Tente de novo.",
+      "notes_edited": "A nota foi editada. Confirme antes de gerar de novo.",
       "generic": "Algo deu errado. Veja o log."
     }
   }
