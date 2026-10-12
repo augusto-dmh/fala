@@ -141,6 +141,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   notes_md: "## Notas · Reunião geral",
   notes_template: "geral",
   notes_edited: false,
+  notes_running: false,
   audio_available: true,
   ...over,
 });
@@ -330,7 +331,8 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     busy.includes("meeting.view.transcribing") &&
       busy.includes("meeting.view.cancel"),
   );
-  assert.ok(busy.includes("meeting.view.generating"));
+  // Com anotações, "Aprimorando suas notas" (sem elas, "Escrevendo notas").
+  assert.ok(busy.includes("meeting.view.enhancing"));
   // Transcrever, gerar e editar a nota.
   assert.equal((busy.match(/disabled=""/g) ?? []).length, 3, busy);
   assert.ok(!view(detail()).includes("meeting.view.cancel"));

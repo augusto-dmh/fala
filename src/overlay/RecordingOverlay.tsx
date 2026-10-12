@@ -8,7 +8,7 @@ import "./IdlePill.css";
 import { Notice } from "./Notice";
 import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
-import { CallOutputCard, MeetingPill } from "./MeetingPill";
+import { CallOutputCard, ConsentCard, MeetingPill } from "./MeetingPill";
 import { IdlePill } from "./IdlePill";
 import { PasteFailedPill } from "./PasteFailedPill";
 import {
@@ -19,6 +19,7 @@ import {
   pasteFailedHint,
   pasteFailedTimeout,
   pasteLastShortcut,
+  showsConsentChip,
   showsDoubleTapHint,
   showsModelLoading,
   toPillMode,
@@ -590,6 +591,11 @@ const RecordingOverlay: React.FC = () => {
               switchLabel={t("overlay.recordFrom")}
               onSwitch={() => void commands.switchMeetingOutput(callOutput)}
             />
+            {meetingPill}
+          </div>
+        ) : showsConsentChip(meetingMs) ? (
+          <div className="ov-stack">
+            <ConsentCard text={t("overlay.meetingConsent")} />
             {meetingPill}
           </div>
         ) : (

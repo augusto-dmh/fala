@@ -1410,6 +1410,28 @@ async saveMeetingNotes(id: string, markdown: string) : Promise<Result<null, Meet
 }
 },
 /**
+ * The template for the next notes, picked before or during the recording.
+ */
+async setMeetingTemplate(id: string, templateId: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_template", { id, templateId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Generate notes when it ends": the notes follow the transcript of a stop.
+ */
+async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_notes_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The card the prompt window should show now, for a window that just loaded.
  */
 async callPromptCurrent() : Promise<CallPromptPayload | null> {
@@ -1533,7 +1555,12 @@ notes_profile?: string; notes_language?: NotesLanguage;
 /**
  * Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
  */
-meeting_keyterms?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+meeting_keyterms?: boolean; 
+/**
+ * After the transcript of a stop, the notes follow without a click (never for a local-only
+ * session, nor for a short call).
+ */
+meeting_auto_notes?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
 /**
  * Pause the media playing on the PC while dictating; off by default.
  */
@@ -1727,6 +1754,11 @@ annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_templa
  * The notes were edited by hand since they were generated.
  */
 notes_edited: boolean; 
+/**
+ * Its notes are being written now (a click, or the stop's chain): a page that opens later
+ * still shows it.
+ */
+notes_running: boolean; 
 /**
  * Both retained Opus files are on disk, so a transcript line can be played.
  */

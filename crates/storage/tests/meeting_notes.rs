@@ -90,3 +90,27 @@ fn mark_goes_with_the_meeting() {
         .unwrap();
     assert_eq!(left, 0);
 }
+
+#[test]
+fn template_is_picked_only_before_the_notes() {
+    let e = env("notes_template_pick");
+    let store = e.open();
+    let id = meeting(&store, 1);
+    assert!(store.set_meeting_template(id, "um-a-um").unwrap());
+    assert_eq!(
+        store.meeting(id).unwrap().notes_template.as_deref(),
+        Some("um-a-um")
+    );
+    store.save_meeting_notes(id, "um-a-um", "- gerada").unwrap();
+    // With notes, the column says which template wrote them: a pick does not change it.
+    assert!(!store.set_meeting_template(id, "geral").unwrap());
+    assert_eq!(
+        store.meeting(id).unwrap().notes_template.as_deref(),
+        Some("um-a-um")
+    );
+    let missing = SessionId::from_parts(1, 1);
+    assert!(matches!(
+        store.set_meeting_template(missing, "geral"),
+        Err(StorageError::NotFound(_))
+    ));
+}

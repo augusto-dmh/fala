@@ -1008,6 +1008,7 @@
     "meetingPaused": "Reunião pausada",
     "callElsewhere": "O som da call está saindo por {{device}}",
     "recordFrom": "Gravar deste dispositivo",
+    "meetingConsent": "Grave só com o consentimento de quem participa.",
     "pasteFailed": {
       "title": "Não deu para colar.",
       "retry": "{{keys}} cola de novo · clique para copiar",
@@ -1081,6 +1082,7 @@
       "outputFrom": "Som de {{device}}",
       "callElsewhere": "O som da call está saindo por {{device}}.",
       "recordFrom": "Gravar deste dispositivo",
+      "consentChip": "Grave só com o consentimento de quem participa.",
       "systemOnly": "Só o som do computador (aula, vídeo)"
     },
     "import": {
@@ -1118,12 +1120,19 @@
       "cancel": "Cancelar",
       "template": "Template das notas",
       "generate": "Gerar notas",
-      "generating": "Gerando notas…",
       "copy": "Copiar Markdown",
       "transcript": "Transcrição",
       "noTranscript": "Ainda sem transcrição.",
       "notes": "Notas",
-      "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
+      "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima.",
+      "search": "Buscar na transcrição",
+      "found_one": "{{count}} trecho",
+      "found_other": "{{count}} trechos",
+      "copyTranscript": "Copiar transcrição",
+      "writing": "Escrevendo notas…",
+      "enhancing": "Aprimorando suas notas…",
+      "notesFailed": "Não deu para gerar as notas. Suas anotações e o áudio estão salvos.",
+      "retry": "Tentar de novo"
     },
     "notesEdit": {
       "edit": "Editar",
@@ -1180,6 +1189,10 @@
       "keyterms": {
         "title": "Dicionário na transcrição",
         "description": "Manda os termos do seu dicionário à ElevenLabs para acertar a grafia. Custa cerca de US$ 0,05 a mais por hora."
+      },
+      "autoNotes": {
+        "title": "Gerar notas ao terminar",
+        "description": "Ao parar, depois da transcrição, as notas são escritas sem clique (a partir de 3 minutos e de uma transcrição longa; nunca numa sessão só local)."
       }
     },
     "key": {
@@ -1213,6 +1226,11 @@
       "import_no_audio": "Esse arquivo não tem trilha de áudio.",
       "import_too_long": "Esse arquivo passa de 12 horas, o limite da importação.",
       "generic": "Algo deu errado. Veja o log."
+    },
+    "notice": {
+      "copy": "Copiar aviso",
+      "copied": "Aviso copiado",
+      "text": "Estou gravando esta reunião para transcrever e fazer minhas notas. Se preferir que eu não grave, me avise."
     }
   }
 }
