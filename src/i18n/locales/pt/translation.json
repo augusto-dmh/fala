@@ -885,7 +885,7 @@
         "channels": {
           "dictation": {
             "name": "Ditado",
-            "sends": "Nunca o áudio. Só o texto ditado, o nome do app e o seu dicionário, com a IA ligada e a chave salva, acima de 15 palavras e fora dos apps sem IA.",
+            "sends": "Nunca o áudio. Só o texto ditado, o nome do app, o seu dicionário e a instrução do estilo do app, se houver, com a IA ligada e a chave salva, acima de 15 palavras e fora dos apps sem IA.",
             "destination": "Google (Gemini), pela sua chave"
           },
           "experimentalPostProcess": {

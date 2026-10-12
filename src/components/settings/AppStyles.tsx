@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WritingStyle } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
@@ -12,19 +12,23 @@ import { newStyleId, setAppStyle } from "./appStylesModel";
 /** One style, edited in place and saved when a field loses focus. */
 const StyleRow: React.FC<{
   style: WritingStyle;
-  disabled: boolean;
   onSave: (style: WritingStyle) => void;
   onRemove: () => void;
-}> = ({ style, disabled, onSave, onRemove }) => {
+}> = ({ style, onSave, onRemove }) => {
   const { t } = useTranslation();
   const [name, setName] = useState(style.name);
   const [instruction, setInstruction] = useState(style.instruction);
-  // A blank name keeps the stored one; the instruction is saved either way.
+  // Show what is stored: trimmed by the backend, or rolled back after an error.
+  useEffect(() => {
+    setName(style.name);
+    setInstruction(style.instruction);
+  }, [style.name, style.instruction]);
+  // Saved trimmed, as the backend stores it; a blank name keeps the stored one.
   const save = () => {
     const next = {
       ...style,
-      name: name.trim() ? name : style.name,
-      instruction,
+      name: name.trim() || style.name,
+      instruction: instruction.trim(),
     };
     setName(next.name);
     if (next.name !== style.name || next.instruction !== style.instruction) {
@@ -47,7 +51,6 @@ const StyleRow: React.FC<{
           variant="secondary"
           size="sm"
           onClick={onRemove}
-          disabled={disabled}
           aria-label={t("settings.llm.styles.remove", { name: style.name })}
         >
           {t("settings.llm.styles.removeShort")}
@@ -75,17 +78,24 @@ export const AppStyles: React.FC = () => {
   const mappings = getSetting("app_styles") ?? [];
   const [newApp, setNewApp] = useState("");
   const [newStyle, setNewStyle] = useState<string | null>(null);
-  const busy = isUpdating("writing_styles") || isUpdating("app_styles");
+  // Only the mapping controls wait for a save: a blur that saves a style must not swallow the
+  // click that caused it.
+  const busy = isUpdating("app_styles");
   const options = styles.map((style) => ({
     value: style.id,
     label: style.name,
   }));
-  const nameOf = (id: string) => styles.find((s) => s.id === id)?.name ?? id;
+  // A removed style takes its apps with it, so neither is shown while the backend answers.
+  const selected = styles.some((s) => s.id === newStyle) ? newStyle : null;
+  const shown = mappings.flatMap((m) => {
+    const style = styles.find((s) => s.id === m.style);
+    return style ? [{ app: m.app, name: style.name }] : [];
+  });
 
   const handleMap = () => {
-    if (!newApp.trim() || !newStyle) return;
+    if (!newApp.trim() || !selected) return;
     // The backend reduces the entry to the app name.
-    updateSetting("app_styles", setAppStyle(mappings, newApp, newStyle));
+    updateSetting("app_styles", setAppStyle(mappings, newApp, selected));
     setNewApp("");
   };
 
@@ -109,7 +119,7 @@ export const AppStyles: React.FC = () => {
           />
           <Select
             className="min-w-36"
-            value={newStyle}
+            value={selected}
             options={options}
             onChange={setNewStyle}
             placeholder={t("settings.llm.appStyles.stylePlaceholder")}
@@ -117,7 +127,7 @@ export const AppStyles: React.FC = () => {
           />
           <Button
             onClick={handleMap}
-            disabled={!newApp.trim() || !newStyle || busy}
+            disabled={!newApp.trim() || !selected || busy}
             variant="primary"
             size="md"
           >
@@ -125,9 +135,9 @@ export const AppStyles: React.FC = () => {
           </Button>
         </div>
       </SettingContainer>
-      {mappings.length > 0 && (
+      {shown.length > 0 && (
         <div className="px-4 p-2 flex flex-wrap gap-1">
-          {mappings.map((m) => (
+          {shown.map((m) => (
             <Button
               key={m.app}
               onClick={() =>
@@ -143,7 +153,7 @@ export const AppStyles: React.FC = () => {
             >
               {t("settings.llm.appStyles.mapping", {
                 app: m.app,
-                style: nameOf(m.style),
+                style: m.name,
               })}
             </Button>
           ))}
@@ -161,7 +171,6 @@ export const AppStyles: React.FC = () => {
             <StyleRow
               key={style.id}
               style={style}
-              disabled={busy}
               onSave={(edited) =>
                 updateSetting(
                   "writing_styles",
@@ -181,7 +190,6 @@ export const AppStyles: React.FC = () => {
           className="mt-2 self-start"
           variant="secondary"
           size="md"
-          disabled={busy}
           onClick={() =>
             updateSetting("writing_styles", [
               ...styles,

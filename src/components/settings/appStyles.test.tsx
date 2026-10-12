@@ -43,7 +43,8 @@ const style = (id: string, name: string, instruction = ""): WritingStyle => ({
 }
 ok("C5");
 
-// C6: the page shows each style with its instruction and each mapping by the style's name.
+// C6: the page shows each style with its instruction and each mapping by the style's name; a
+// mapping to a removed style is not shown.
 {
   const i18n = createInstance();
   void i18n.use(initReactI18next).init({
@@ -59,7 +60,10 @@ ok("C5");
         style("email", "E-mail", "Cordial e em parágrafos."),
         style("mine", "Meu estilo", "Assine Augusto."),
       ],
-      app_styles: [{ app: "chrome", style: "mine" }],
+      app_styles: [
+        { app: "chrome", style: "mine" },
+        { app: "slack", style: "gone" },
+      ],
     } as unknown as AppSettings,
   });
   const html = renderToStaticMarkup(
@@ -68,6 +72,7 @@ ok("C5");
     </I18nextProvider>,
   );
   assert.equal(html.match(/<li /g)?.length, 2, "one row per style");
+  assert.ok(!html.includes("slack"), "a mapping to a removed style is hidden");
   for (const piece of [
     'value="E-mail"',
     "Cordial e em parágrafos.",

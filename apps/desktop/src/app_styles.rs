@@ -77,8 +77,9 @@ pub(crate) fn instructions(settings: &AppSettings) -> Vec<(String, String)> {
 }
 
 /// Trims names and instructions, drops styles without a name and gives an empty or repeated id a
-/// fresh `style-N`.
+/// fresh `style-N` that no style given uses, so a later style keeps its id and its apps.
 fn normalize_styles(styles: Vec<WritingStyle>) -> Vec<WritingStyle> {
+    let given: Vec<String> = styles.iter().map(|s| s.id.trim().to_string()).collect();
     let mut kept: Vec<WritingStyle> = Vec::new();
     for style in styles {
         let name = style.name.trim().to_string();
@@ -89,7 +90,9 @@ fn normalize_styles(styles: Vec<WritingStyle>) -> Vec<WritingStyle> {
         if id.is_empty() || kept.iter().any(|k| k.id == id) {
             id = (1..)
                 .map(|n| format!("style-{n}"))
-                .find(|candidate| !kept.iter().any(|k| k.id == *candidate))
+                .find(|candidate| {
+                    !given.contains(candidate) && !kept.iter().any(|k| k.id == *candidate)
+                })
                 .unwrap_or_default();
         }
         kept.push(WritingStyle {
@@ -200,13 +203,15 @@ mod tests {
             style("", "Sem id", "x"),
             style("a", "Id repetido", "y"),
             style("b", "   ", "sem nome"),
+            style("style-1", "Já tinha", "z"),
         ]);
         assert_eq!(
             styles,
             [
                 style("a", "Formal", "Use você."),
-                style("style-1", "Sem id", "x"),
-                style("style-2", "Id repetido", "y"),
+                style("style-2", "Sem id", "x"),
+                style("style-3", "Id repetido", "y"),
+                style("style-1", "Já tinha", "z"),
             ]
         );
     }

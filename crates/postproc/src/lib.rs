@@ -238,12 +238,13 @@ impl Postprocessor {
     }
 
     pub fn process(&self, raw: Transcript, app: AppContext, dictionary: &Dictionary) -> Formatted {
+        let style = self.style_for(&app);
         let ctx = FormatContext {
             app: &app,
             dictionary,
             language: &raw.language,
             cleanup: self.cleanup,
-            style: self.style_for(&app),
+            style,
         };
         let masked = self.rules.mask(&raw.text, &ctx);
         let mut formatted = Formatted {
@@ -266,7 +267,13 @@ impl Postprocessor {
             return formatted;
         };
         let answer = self
-            .ask(gemini, &formatted.dictation, &masked.text, dictionary)
+            .ask(
+                gemini,
+                &formatted.dictation,
+                &masked.text,
+                dictionary,
+                style,
+            )
             .and_then(|text| {
                 masked.restore(&text).ok_or_else(|| {
                     log::debug!("LLM alterou o marcador de um snippet; fica o texto das regras");
@@ -318,6 +325,7 @@ impl Postprocessor {
         dictation: &Dictation,
         text: &str,
         dictionary: &Dictionary,
+        style: Option<&str>,
     ) -> Result<String, (Fallback, Option<LateEdit>)> {
         let started = Instant::now();
         let (tx, rx) = mpsc::channel();
@@ -327,7 +335,7 @@ impl Postprocessor {
         let dictionary = dictionary.clone();
         let language = dictation.raw.language;
         let cleanup = self.cleanup;
-        let style = self.style_for(&app).map(str::to_string);
+        let style = style.map(str::to_string);
         let late_deadline = self.late_deadline;
         thread::spawn(move || {
             let ctx = FormatContext {

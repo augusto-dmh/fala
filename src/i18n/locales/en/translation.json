@@ -868,7 +868,7 @@
         "channels": {
           "dictation": {
             "name": "Dictation",
-            "sends": "Never the audio. Only the dictated text, the app name and your dictionary, with AI on and a key saved, above 15 words and outside the apps without AI.",
+            "sends": "Never the audio. Only the dictated text, the app name, your dictionary and the instruction of the app's style, if any, with AI on and a key saved, above 15 words and outside the apps without AI.",
             "destination": "Google (Gemini), with your key"
           },
           "experimentalPostProcess": {

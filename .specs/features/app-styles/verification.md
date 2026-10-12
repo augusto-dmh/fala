@@ -23,3 +23,14 @@ comandos e dos dois tipos.
   curto. Fica para o mantenedor.
 - A tela aberta no app: o render foi provado só por `renderToStaticMarkup`; foco, blur e o
   `Select` não foram clicados.
+
+## Revisão (`code-review high`)
+
+Corrigidos: o painel de privacidade passa a citar a instrução do estilo; `style-N` novo não toma
+o id de um estilo que vem depois; a linha de estilo ressincroniza com o que foi guardado e salva
+aparado; o blur que salva não desabilita os botões no meio do clique; o estilo escolhido que foi
+removido não habilita "Adicionar"; mapeamento de estilo removido não aparece; `ask` usa o estilo
+que `process` resolveu. Mantidos, com o porquê no PR: a instrução do estilo no payload (o
+invariante pedido é "só ganha a instrução do estilo"), nomes prontos em pt-BR (dado do usuário),
+remover sem confirmação (como as outras listas da tela), normalização do nome do app no
+frontend (só para trocar no lugar; o backend é a fonte).
