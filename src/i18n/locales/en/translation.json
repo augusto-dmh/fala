@@ -903,7 +903,7 @@
           },
           "mcp": {
             "name": "History for assistants (MCP)",
-            "sends": "Dictations not made in the apps without AI, read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
+            "sends": "Dictations not made in the apps without AI and, with meetings = true, meetings that are not local-only (never the audio), read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
             "destination": "The local assistant you set up, which may send them to its own provider"
           },
           "telemetry": {
