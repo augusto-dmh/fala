@@ -34,10 +34,15 @@ pub fn check_url(url: &str) -> Result<(), MediaError> {
 }
 
 /// Baixa só a melhor trilha de áudio (ou o melhor arquivo, sem trilha separada) como
-/// `<dir>/source.<ext>`, sem playlist, e imprime o título e o caminho final.
+/// `<dir>/source.<ext>`, só o primeiro item de uma playlist, e imprime em UTF-8 o título e o
+/// caminho final.
 pub(crate) fn ytdlp_args(url: &str, dir: &Path) -> Vec<OsString> {
     let mut args: Vec<OsString> = [
         "--no-playlist",
+        "--playlist-items",
+        "1",
+        "--encoding",
+        "utf-8",
         "--format",
         "bestaudio/best",
         "--no-simulate",

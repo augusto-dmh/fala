@@ -80,7 +80,10 @@ fn serve(body: Vec<u8>, slow: bool) -> (String, Receiver<Instant>) {
             thread::spawn(move || answer(stream, &body, slow, &closed));
         }
     });
-    (format!("http://127.0.0.1:{port}/tom.wav"), closed_rx)
+    (
+        format!("http://127.0.0.1:{port}/aula%20de%20f%C3%ADsica.wav"),
+        closed_rx,
+    )
 }
 
 fn answer(mut stream: TcpStream, body: &[u8], slow: bool, closed: &mpsc::Sender<Instant>) {
@@ -178,7 +181,8 @@ fn url_downloads_and_imports() {
         &mut |p| progress.push(p),
     )
     .unwrap();
-    assert_eq!(got.title, "tom");
+    // Título acentuado: o stdout do yt-dlp chega em UTF-8.
+    assert_eq!(got.title, "aula de física");
     assert!(got.path.starts_with(dir.join("baixado")));
     assert!(got.path.is_file());
     assert!(!progress.is_empty());

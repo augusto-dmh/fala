@@ -278,10 +278,15 @@ fn supervise(
 
     let (sender, lines) = mpsc::channel();
     if let Some(stdout) = child.stdout.take() {
+        // Linhas em bytes, decodificadas com perda: um título em outra codificação não encerra a
+        // leitura.
         thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else { break };
-                if sender.send(line).is_err() {
+            let mut reader = BufReader::new(stdout);
+            let mut line = Vec::new();
+            while reader.read_until(b'\n', &mut line).is_ok_and(|n| n > 0) {
+                let text = String::from_utf8_lossy(&line).trim_end().to_owned();
+                line.clear();
+                if sender.send(text).is_err() {
                     break;
                 }
             }
@@ -483,6 +488,9 @@ mod tests {
         assert_eq!(args[n - 2], "--");
         assert_eq!(args[n - 1], url);
         assert!(args.contains(&"--no-playlist".to_owned()));
+        // Uma URL de playlist ou canal baixa só o primeiro item.
+        assert!(has_pair(&args, "--playlist-items", "1"));
+        assert!(has_pair(&args, "--encoding", "utf-8"));
         assert!(has_pair(&args, "--format", "bestaudio/best"));
         assert!(has_pair(&args, "--paths", "/sessao/baixado"));
         assert!(has_pair(&args, "--output", "source.%(ext)s"));
