@@ -13,7 +13,7 @@ import {
   type MeetingOutputs,
   type MeetingStatus,
   type MeetingSummary,
-  type MeetingTemplate,
+  type MeetingTemplates,
   type ProgressStage,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
@@ -26,6 +26,7 @@ import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
 import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
+import { TemplatesSettings } from "./TemplatesSettings";
 import {
   errorDetail,
   errorKey,
@@ -64,7 +65,11 @@ export function MeetingsPage() {
   const [sessions, setSessions] = useState<MeetingSummary[]>([]);
   const [selected, setSelected] = useState<MeetingDetail | null>(null);
   const [live, setLive] = useState<MeetingDetail | null>(null);
-  const [templates, setTemplates] = useState<MeetingTemplate[]>([]);
+  const [catalog, setCatalog] = useState<MeetingTemplates>({
+    templates: [],
+    errors: [],
+  });
+  const templates = catalog.templates;
   const [keys, setKeys] = useState<MeetingKeys | null>(null);
   const [mode, setMode] = useState<MeetingMode>("meeting");
   const [title, setTitle] = useState("");
@@ -95,13 +100,22 @@ export function MeetingsPage() {
     else setError(result.error);
   }, []);
 
+  // The templates folder is read again on mount and whenever the app gets the focus back:
+  // the person edits the JSON in another app (no file watcher).
+  useEffect(() => {
+    const load = () =>
+      void commands
+        .meetingTemplates()
+        .then((r) => r.status === "ok" && setCatalog(r.data));
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, []);
+
   useEffect(() => {
     void commands
       .meetingStatus()
       .then((r) => r.status === "ok" && setStatus(r.data));
-    void commands
-      .meetingTemplates()
-      .then((r) => r.status === "ok" && setTemplates(r.data));
     void commands
       .meetingKeys()
       .then((r) => r.status === "ok" && setKeys(r.data));
@@ -403,6 +417,7 @@ export function MeetingsPage() {
         </SettingsGroup>
       )}
       <NotesContextSettings />
+      <TemplatesSettings catalog={catalog} onChange={setCatalog} />
     </div>
   );
 }

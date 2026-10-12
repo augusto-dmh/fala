@@ -11,6 +11,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { clock } from "./meetingModel";
+import { TemplateSelect } from "./TemplateSelect";
 
 export interface RecorderPanelProps {
   status: MeetingStatus;
@@ -173,19 +174,11 @@ export function RecorderPanel(props: RecorderPanelProps) {
         </Button>
         <CopyNoticeButton />
         {props.templates && props.onTemplateChange && (
-          <select
-            aria-label={t("meeting.view.template")}
-            title={t("meeting.view.template")}
-            className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
+          <TemplateSelect
+            templates={props.templates}
             value={props.template ?? props.templates[0]?.id ?? ""}
-            onChange={(event) => props.onTemplateChange?.(event.target.value)}
-          >
-            {props.templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
-              </option>
-            ))}
-          </select>
+            onChange={props.onTemplateChange}
+          />
         )}
       </div>
       {showsConsentChip(status.recorded_ms) && (

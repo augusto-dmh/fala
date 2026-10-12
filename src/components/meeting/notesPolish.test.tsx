@@ -170,7 +170,9 @@ const lines: MeetingLine[] = [
   const html = renderToStaticMarkup(
     <MeetingView
       detail={detail}
-      templates={[{ id: "geral", name: "Reunião geral" }]}
+      templates={[
+        { id: "geral", name: "Reunião geral", purpose: "", source: "builtin" },
+      ]}
       recording={false}
       transcribing={false}
       generating={false}

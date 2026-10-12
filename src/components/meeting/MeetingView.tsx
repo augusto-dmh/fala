@@ -17,6 +17,7 @@ import { NotesEditor } from "./NotesEditor";
 import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
+import { TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
 import { searchLines, transcriptText } from "./transcriptSearch";
 
@@ -132,18 +133,11 @@ export function MeetingView(props: MeetingViewProps) {
     }
   };
   const templateSelect = (
-    <select
-      aria-label={t("meeting.view.template")}
-      className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
+    <TemplateSelect
+      templates={props.templates}
       value={templateId}
-      onChange={(event) => pickTemplate(event.target.value)}
-    >
-      {props.templates.map((template) => (
-        <option key={template.id} value={template.id}>
-          {template.name}
-        </option>
-      ))}
-    </select>
+      onChange={pickTemplate}
+    />
   );
   const generatingLabel = detail.annotations.trim()
     ? t("meeting.view.enhancing")

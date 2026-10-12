@@ -1195,6 +1195,20 @@
         "description": "When you stop, after the transcript, the notes are written without a click (from 3 minutes and a long transcript on; never for a local-only session)."
       }
     },
+    "templates": {
+      "title": "Notes templates",
+      "description": "Yours are .json files in a Fala folder, edited in any text editor. Fala reads the folder again when you come back to it.",
+      "folder": "Your templates folder",
+      "folderDescription": "One file per template; the folder's LEIAME.txt explains the fields.",
+      "open": "Open the folder",
+      "duplicate": "Duplicate to edit",
+      "builtinOne": "Built-in",
+      "userOne": "Yours",
+      "builtin": "Built-in",
+      "user": "Your templates",
+      "search": "Search templates",
+      "folderError": "Could not use the templates folder: {{detail}}"
+    },
     "key": {
       "label": "ElevenLabs key to transcribe:",
       "placeholder": "paste the key",
