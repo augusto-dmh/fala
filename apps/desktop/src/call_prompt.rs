@@ -32,6 +32,8 @@ const TOP_INSET: f64 = 4.0;
 pub const COUNTDOWN: Duration = Duration::from_secs(20);
 /// The card goes away after this even if the pointer stayed on it.
 const MAX_ON_SCREEN: Duration = Duration::from_secs(120);
+/// "Gravou por engano?" stays a minute.
+const MISTAKE_COUNTDOWN: Duration = Duration::from_secs(60);
 /// Event with the [`CallPromptPayload`], sent to the prompt window.
 const PROMPT_EVENT: &str = "call-prompt";
 
@@ -44,6 +46,14 @@ pub enum CallPromptKind {
     AskStop,
     /// "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
     Quit,
+    /// "Ainda está gravando?" a minute before the stop for silence: [Continuar] [Parar].
+    StillRecording,
+    /// "Parou depois de 15 min de silêncio" with [Gravar de novo] [Fechar].
+    SilenceStopped,
+    /// "Gravou por engano?" after a short or almost silent stop: [Manter] [Descartar].
+    Mistake,
+    /// "Nada foi gravado": the empty session is already gone.
+    NothingRecorded,
 }
 
 /// What the card shows.
@@ -55,6 +65,10 @@ pub struct CallPromptPayload {
     /// The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
     pub web_name: Option<String>,
     pub countdown_ms: u32,
+    /// The session a "Gravou por engano?" is about.
+    pub session_id: Option<String>,
+    /// Seconds recorded, for "Gravou por engano?".
+    pub seconds: Option<u32>,
 }
 
 impl CallPromptPayload {
@@ -69,17 +83,26 @@ impl CallPromptPayload {
             app_name: app.name.to_string(),
             web_name: web.map(|web| web.name.to_string()),
             countdown_ms: COUNTDOWN.as_millis() as u32,
+            session_id: None,
+            seconds: None,
+        }
+    }
+
+    /// A card about the meeting, not a call app.
+    fn meeting(kind: CallPromptKind, countdown: Duration) -> Self {
+        Self {
+            kind,
+            app_id: String::new(),
+            app_name: String::new(),
+            web_name: None,
+            countdown_ms: u32::try_from(countdown.as_millis()).unwrap_or(u32::MAX),
+            session_id: None,
+            seconds: None,
         }
     }
 
     fn quit() -> Self {
-        Self {
-            kind: CallPromptKind::Quit,
-            app_id: String::new(),
-            app_name: String::new(),
-            web_name: None,
-            countdown_ms: COUNTDOWN.as_millis() as u32,
-        }
+        Self::meeting(CallPromptKind::Quit, COUNTDOWN)
     }
 }
 
@@ -94,6 +117,10 @@ pub enum CallPromptAnswer {
     KeepRecording,
     StopAndQuit,
     Cancel,
+    RecordAgain,
+    Dismiss,
+    Keep,
+    Discard,
     Expired,
 }
 
@@ -104,6 +131,9 @@ pub(crate) enum AnswerAction {
     Record,
     Stop,
     StopAndQuit,
+    KeepRecording,
+    Keep(String),
+    Discard(String),
     Mute(String),
     Close,
 }
@@ -125,6 +155,26 @@ pub(crate) fn answer_action(
         (CallPromptKind::Quit, A::StopAndQuit) => Some(AnswerAction::StopAndQuit),
         // Nobody answering never quits: the recording goes on.
         (CallPromptKind::Quit, A::Cancel | A::Expired) => Some(AnswerAction::Close),
+        (CallPromptKind::StillRecording, A::KeepRecording) => Some(AnswerAction::KeepRecording),
+        (CallPromptKind::StillRecording, A::Stop) => Some(AnswerAction::Stop),
+        // Running out: the session itself stops at 15 min of silence; the card only closes.
+        (CallPromptKind::StillRecording, A::Expired) => Some(AnswerAction::Close),
+        // Recording again is the explicit start path, consent first (ADR-0005).
+        (CallPromptKind::SilenceStopped, A::RecordAgain) => Some(AnswerAction::Record),
+        (
+            CallPromptKind::SilenceStopped | CallPromptKind::NothingRecorded,
+            A::Dismiss | A::Expired,
+        ) => Some(AnswerAction::Close),
+        (CallPromptKind::Mistake, A::Keep | A::Discard) => {
+            let id = current.session_id.clone()?;
+            Some(if answer == A::Keep {
+                AnswerAction::Keep(id)
+            } else {
+                AnswerAction::Discard(id)
+            })
+        }
+        // Nobody answering keeps the recording, but sends nothing to the transcription.
+        (CallPromptKind::Mistake, A::Expired) => Some(AnswerAction::Close),
         _ => None,
     }
 }
@@ -225,6 +275,47 @@ pub fn show(app: &AppHandle, prompt: CallPrompt) {
     show_payload(app, CallPromptPayload::from_prompt(prompt));
 }
 
+/// "Still recording?" with the time left before the stop for silence.
+pub fn show_still_recording(app: &AppHandle, remaining: Duration) {
+    if current().is_some_and(|c| c.kind == CallPromptKind::Quit) {
+        return;
+    }
+    let remaining = remaining.max(Duration::from_secs(1));
+    show_payload(
+        app,
+        CallPromptPayload::meeting(CallPromptKind::StillRecording, remaining),
+    );
+}
+
+/// Takes "Still recording?" off the screen once the session stops, however it stops.
+pub fn hide_still_recording(app: &AppHandle) {
+    if current().is_some_and(|c| c.kind == CallPromptKind::StillRecording) {
+        hide(app);
+    }
+}
+
+pub fn show_silence_stopped(app: &AppHandle) {
+    show_payload(
+        app,
+        CallPromptPayload::meeting(CallPromptKind::SilenceStopped, COUNTDOWN),
+    );
+}
+
+/// "Recorded by mistake?" about `id`, for a minute (Wispr's 60 s).
+pub fn show_mistake(app: &AppHandle, id: fala_meeting::SessionId, seconds: u32) {
+    let mut payload = CallPromptPayload::meeting(CallPromptKind::Mistake, MISTAKE_COUNTDOWN);
+    payload.session_id = Some(id.to_string());
+    payload.seconds = Some(seconds);
+    show_payload(app, payload);
+}
+
+pub fn show_nothing_recorded(app: &AppHandle) {
+    show_payload(
+        app,
+        CallPromptPayload::meeting(CallPromptKind::NothingRecorded, COUNTDOWN),
+    );
+}
+
 /// "Stop the recording? Quitting Fala stops it." for the tray's "Quit".
 pub fn show_quit(app: &AppHandle) {
     show_payload(app, CallPromptPayload::quit());
@@ -232,6 +323,7 @@ pub fn show_quit(app: &AppHandle) {
 
 fn show_payload(app: &AppHandle, payload: CallPromptPayload) {
     let quit = payload.kind == CallPromptKind::Quit;
+    let still_recording = payload.kind == CallPromptKind::StillRecording;
     set_current(Some(payload.clone()));
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let handle = app.clone();
@@ -248,7 +340,14 @@ fn show_payload(app: &AppHandle, payload: CallPromptPayload) {
             return;
         };
         place(&handle, &window);
-        let _ = window.show();
+        let shown = window.show().is_ok();
+        // Silence may stop the recording only once this card was really on screen.
+        if shown && still_recording {
+            if let Some(meetings) = handle.try_state::<Arc<MeetingManager>>() {
+                let meetings = Arc::clone(&meetings);
+                std::thread::spawn(move || meetings.silence_warning_shown());
+            }
+        }
         let _ = window.set_always_on_top(true);
         // A window created just now has no listener yet; it asks `call_prompt_current`.
         let _ = handle.emit_to(LABEL, PROMPT_EVENT, payload);
@@ -314,6 +413,27 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 let meetings = Arc::clone(&meetings);
                 tauri::async_runtime::spawn_blocking(move || meetings.stop_and_quit());
+            }
+        }
+        AnswerAction::KeepRecording => {
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                meetings.keep_recording().map_err(|e| e.to_string())?;
+            }
+        }
+        AnswerAction::Keep(id) => {
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                let meetings = Arc::clone(&meetings);
+                tauri::async_runtime::spawn_blocking(move || meetings.keep_after_mistake(&id));
+            }
+        }
+        AnswerAction::Discard(id) => {
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                let meetings = Arc::clone(&meetings);
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(e) = meetings.delete(&id) {
+                        log::warn!("meeting {id}: not discarded: {e}");
+                    }
+                });
             }
         }
         AnswerAction::Mute(id) => {
@@ -385,6 +505,8 @@ mod tests {
             app_name: "Teams".into(),
             web_name: None,
             countdown_ms: 20_000,
+            session_id: None,
+            seconds: None,
         }
     }
 
@@ -464,6 +586,65 @@ mod tests {
     }
 
     #[test]
+    fn answer_maps_each_meeting_card() {
+        use CallPromptAnswer as A;
+        use CallPromptKind as K;
+        let still = CallPromptPayload::meeting(K::StillRecording, Duration::from_secs(60));
+        assert_eq!(still.countdown_ms, 60_000);
+        assert_eq!(
+            answer_action(Some(&still), A::KeepRecording),
+            Some(AnswerAction::KeepRecording)
+        );
+        assert_eq!(
+            answer_action(Some(&still), A::Stop),
+            Some(AnswerAction::Stop)
+        );
+        assert_eq!(
+            answer_action(Some(&still), A::Expired),
+            Some(AnswerAction::Close)
+        );
+
+        let stopped = CallPromptPayload::meeting(K::SilenceStopped, COUNTDOWN);
+        assert_eq!(
+            answer_action(Some(&stopped), A::RecordAgain),
+            Some(AnswerAction::Record)
+        );
+        for close in [A::Dismiss, A::Expired] {
+            assert_eq!(
+                answer_action(Some(&stopped), close),
+                Some(AnswerAction::Close)
+            );
+        }
+
+        let mut mistake = CallPromptPayload::meeting(K::Mistake, MISTAKE_COUNTDOWN);
+        mistake.session_id = Some("01K".into());
+        assert_eq!(
+            answer_action(Some(&mistake), A::Discard),
+            Some(AnswerAction::Discard("01K".into()))
+        );
+        assert_eq!(
+            answer_action(Some(&mistake), A::Keep),
+            Some(AnswerAction::Keep("01K".into()))
+        );
+        // Running out keeps the session: nothing is deleted without the click.
+        assert_eq!(
+            answer_action(Some(&mistake), A::Expired),
+            Some(AnswerAction::Close)
+        );
+        mistake.session_id = None;
+        assert_eq!(answer_action(Some(&mistake), A::Discard), None);
+
+        let nothing = CallPromptPayload::meeting(K::NothingRecorded, COUNTDOWN);
+        assert_eq!(
+            answer_action(Some(&nothing), A::Dismiss),
+            Some(AnswerAction::Close)
+        );
+        for stale in [A::Record, A::Stop, A::Discard] {
+            assert_eq!(answer_action(Some(&nothing), stale), None);
+        }
+    }
+
+    #[test]
     fn answer_without_a_card_does_nothing() {
         use CallPromptAnswer as A;
         for answer in [
@@ -474,6 +655,10 @@ mod tests {
             A::KeepRecording,
             A::StopAndQuit,
             A::Cancel,
+            A::RecordAgain,
+            A::Dismiss,
+            A::Keep,
+            A::Discard,
             A::Expired,
         ] {
             assert_eq!(answer_action(None, answer), None);

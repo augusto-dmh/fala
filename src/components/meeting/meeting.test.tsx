@@ -104,8 +104,8 @@ const summary = (over: Partial<MeetingSummary> = {}): MeetingSummary => ({
 });
 
 const templates: MeetingTemplate[] = [
-  { id: "geral", name: "Reunião geral" },
-  { id: "um-a-um", name: "1:1" },
+  { id: "geral", name: "Reunião geral", purpose: "", source: "builtin" },
+  { id: "um-a-um", name: "1:1", purpose: "", source: "builtin" },
 ];
 
 const view = (detail: MeetingDetail, over: Record<string, unknown> = {}) =>
