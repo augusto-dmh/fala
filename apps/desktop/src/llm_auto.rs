@@ -141,10 +141,9 @@ pub(crate) fn format_with_late_edit(
                 language: &dictation.raw.language,
                 cleanup: CleanupLevel::default(),
             };
-            let (text, refixed_hits) =
-                Rules::default().format_with_hits(&fuzzy.apply(dictation.raw.text.clone()), &ctx);
-            hits = refixed_hits;
-            Some(text)
+            let masked = Rules::default().mask(&fuzzy.apply(dictation.raw.text.clone()), &ctx);
+            hits = masked.replaced.clone();
+            Some(masked.unmasked())
         }
         _ => None,
     };

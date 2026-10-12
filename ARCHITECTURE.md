@@ -24,7 +24,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/inject` | `fala-inject` | inserção no app ativo: trait `Injector` e `platform_injector` (clipboard + acorde com restore; Windows por `arboard` e `enigo`, Linux `Unsupported` até a fase 3), o acorde por app (`is_terminal`, `PasteChord::for_app`: Shift+Insert em terminal) e o app em primeiro plano (`foreground_app`) |
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID), modos, o aviso de canal mudo (`MuteWatch`) e o detector de call (`CallDetector`: exe → app, "Gravar?" e "Parar?", só pergunta) |
-| `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |
+| `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH, e de URL pelo `yt-dlp` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |
 | `crates/mcp` | `fala-mcp` | servidor MCP local (stdio, só leitura, desligado sem `mcp.toml`) sobre o histórico do `storage`, servido por `fala-cli mcp` (ADR-0010, proposta) |
 | `crates/notes` | `fala-notes` | notas de reunião: payload enumerado da ADR-0016, trait `NotesLlm` com o cliente Claude, Markdown humano × gerado com ponteiros, templates |
 | `crates/retention` | `fala-retention` | áudio de reunião retido: WAV de trabalho para `audio/<id>/mic.opus` e `sys.opus` (Ogg Opus mono 24 kbps, libopus), validação antes de apagar o WAV, política de retenção (ADR-0014) |

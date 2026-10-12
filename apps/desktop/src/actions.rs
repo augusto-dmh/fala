@@ -1230,9 +1230,12 @@ impl ShortcutAction for TranscribeAction {
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
                                 ah.run_on_main_thread(move || {
+                                    // Kept for the pill when the paste fails: a click copies it.
+                                    let mut not_pasted = None;
                                     let delivered = deliver_unless_cancelled(
                                         || rm_for_paste.was_cancelled_since(cancel_generation),
-                                        || match utils::paste(final_text, ah_clone.clone()) {
+                                        || match utils::paste(final_text.clone(), ah_clone.clone())
+                                        {
                                             Ok(()) => debug!(
                                                 "Text pasted successfully in {:?}",
                                                 paste_time.elapsed()
@@ -1241,6 +1244,7 @@ impl ShortcutAction for TranscribeAction {
                                                 paste_failed.store(true, Ordering::Release);
                                                 error!("Failed to paste transcription: {}", e);
                                                 let _ = ah_clone.emit("paste-error", ());
+                                                not_pasted = Some(final_text);
                                             }
                                         },
                                         save_history,
@@ -1248,7 +1252,13 @@ impl ShortcutAction for TranscribeAction {
                                     if !delivered {
                                         debug!("Transcription operation cancelled before paste");
                                     }
-                                    utils::hide_recording_overlay(&ah_clone);
+                                    // A failed paste keeps the pill up to say so; otherwise it hides.
+                                    let kept = not_pasted.is_some_and(|text| {
+                                        utils::show_paste_failed(&ah_clone, text)
+                                    });
+                                    if !kept {
+                                        utils::hide_recording_overlay(&ah_clone);
+                                    }
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
                                 })
                                 .unwrap_or_else(|e| {
@@ -1418,6 +1428,27 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn failed_paste_keeps_the_pill_up_to_say_so() {
+        let source = include_str!("actions.rs");
+        let source = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
+        let failed = &source[source.find("Failed to paste transcription").unwrap()..];
+        let failed = &failed[..failed.find("set_tray_state").unwrap()];
+        // The main window still hears `paste-error` (toast); the pill gets the text instead of
+        // the hide, which runs only when nothing failed.
+        let emit = failed.find("emit(\"paste-error\", ())").unwrap();
+        let kept = failed.find("not_pasted = Some(final_text)").unwrap();
+        let show = failed
+            .find("utils::show_paste_failed(&ah_clone, text)")
+            .unwrap();
+        let hide = failed
+            .find("utils::hide_recording_overlay(&ah_clone)")
+            .unwrap();
+        assert!(emit < kept && kept < show && show < hide, "{failed}");
+        // The hide runs when nothing failed, or when the pill could not take the overlay.
+        assert!(failed.contains("if !kept {"), "{failed}");
+    }
 
     #[test]
     fn legacy_keeps_the_fuzzy_while_llm_is_configured() {

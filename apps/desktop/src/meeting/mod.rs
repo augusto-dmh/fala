@@ -13,6 +13,7 @@
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
+pub(crate) mod import;
 pub(crate) mod lifecycle;
 pub(crate) mod output;
 pub(crate) mod people;
@@ -49,7 +50,7 @@ pub(crate) const WORK_WAV: &str = "recording.wav";
 /// accepted: the window opens on the Meetings page with the notice instead of recording.
 pub(crate) const CONSENT_REQUIRED_EVENT: &str = "meeting-consent-required";
 
-/// The two capture modes the panel offers (part 1 of F2).
+/// The capture modes the panel offers (part 1 of F2, and "system only" of F7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingMode {
@@ -57,6 +58,8 @@ pub enum MeetingMode {
     Meeting,
     /// Everyone in the room: the mic is diarized too.
     InPerson,
+    /// What the computer plays (a class, a video): no mic, diarized system channel.
+    SystemOnly,
 }
 
 impl MeetingMode {
@@ -64,6 +67,7 @@ impl MeetingMode {
         match self {
             MeetingMode::Meeting => SessionMode::Meeting,
             MeetingMode::InPerson => SessionMode::InPerson,
+            MeetingMode::SystemOnly => SessionMode::SystemOnly,
         }
     }
 }
@@ -136,6 +140,18 @@ pub enum MeetingError {
     Busy,
     UnknownTemplate,
     Notes(String),
+    /// `ffmpeg`, `ffprobe` or `yt-dlp` is not on the PATH.
+    ToolMissing(String),
+    /// Only `http://` and `https://` URLs are imported.
+    InvalidUrl,
+    /// `yt-dlp` did not download the URL; the page suggests downloading and importing the file.
+    Download(String),
+    /// The file could not be turned into audio; the detail is the tool's last line or the path.
+    Import(String),
+    /// The imported file has no audio track.
+    ImportNoAudio,
+    /// The imported source is longer than `fala_media::MAX_DURATION`.
+    ImportTooLong,
 }
 
 impl std::fmt::Display for MeetingError {
@@ -144,7 +160,10 @@ impl std::fmt::Display for MeetingError {
             MeetingError::AudioDevice(detail)
             | MeetingError::Storage(detail)
             | MeetingError::Transcription(detail)
-            | MeetingError::Notes(detail) => {
+            | MeetingError::Notes(detail)
+            | MeetingError::ToolMissing(detail)
+            | MeetingError::Download(detail)
+            | MeetingError::Import(detail) => {
                 write!(f, "{self:?}: {detail}")
             }
             other => write!(f, "{other:?}"),
@@ -348,6 +367,8 @@ pub struct MeetingManager {
     work: Mutex<pipeline::Work>,
     /// Held for the whole WAV → Opus conversion, and while audio is deleted.
     retaining: Mutex<()>,
+    /// The import in flight, one at a time.
+    importing: Mutex<Option<fala_media::CancelToken>>,
 }
 
 impl MeetingManager {
@@ -372,6 +393,7 @@ impl MeetingManager {
             keys: Arc::new(fala_secrets::KeyringStore),
             work: Mutex::new(pipeline::Work::default()),
             retaining: Mutex::new(()),
+            importing: Mutex::new(None),
         })
     }
 
@@ -508,7 +530,8 @@ impl MeetingManager {
                             manager.on_report(report);
                         }
                     };
-                    match recorder::spawn(system.clone(), dir.join(WORK_WAV), sink) {
+                    let with_mic = mode.session_mode().has_mic();
+                    match recorder::spawn(system.clone(), with_mic, dir.join(WORK_WAV), sink) {
                         Ok(tx) => {
                             control = Some(tx);
                             self.feedback(&Effect::StartCapture);
@@ -793,7 +816,12 @@ impl MeetingManager {
             inner.processing.retain(|p| *p != id);
             self.publish(&mut inner);
         }
-        // With the key in the keyring, the transcript follows the stop without another click.
+        self.transcribe_if_keyed(id);
+    }
+
+    /// With the key in the keyring, the transcript follows a stop or an import without another
+    /// click.
+    fn transcribe_if_keyed(&self, id: SessionId) {
         if pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
             if let Err(e) = self.transcribe(&id.to_string()) {
                 log::warn!("meeting {id}: automatic transcription failed: {e}");
@@ -915,6 +943,20 @@ mod tests {
         assert_eq!(
             serde_json::to_value(MeetingError::AudioDevice("sem mic".into())).unwrap(),
             serde_json::json!({ "kind": "audio_device", "detail": "sem mic" })
+        );
+    }
+
+    #[test]
+    fn system_only_opens_no_mic() {
+        // `start` opens the mic only when the session mode has one.
+        let mode = MeetingMode::SystemOnly.session_mode();
+        assert_eq!(mode, SessionMode::SystemOnly);
+        assert!(!mode.has_mic());
+        assert!(MeetingMode::Meeting.session_mode().has_mic());
+        assert!(MeetingMode::InPerson.session_mode().has_mic());
+        assert_eq!(
+            serde_json::to_value(MeetingMode::SystemOnly).unwrap(),
+            serde_json::json!("system_only")
         );
     }
 

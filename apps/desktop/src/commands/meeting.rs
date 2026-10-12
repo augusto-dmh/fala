@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 
+use crate::meeting::import::ImportSource;
 use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
     MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary, MeetingTemplate,
@@ -125,6 +126,27 @@ pub async fn transcribe_meeting(
 #[specta::specta]
 pub async fn cancel_meeting_transcription(meetings: Meetings<'_>) -> Result<(), MeetingError> {
     meetings.cancel_transcription();
+    Ok(())
+}
+
+/// "Import": a file or the audio of a URL becomes a new session; returns its id once the audio
+/// is retained. Progress comes as `MeetingProgress` events.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_meeting(
+    meetings: Meetings<'_>,
+    source: ImportSource,
+) -> Result<String, MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.import(source))
+        .await
+        .map_err(|e| MeetingError::Import(e.to_string()))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cancel_meeting_import(meetings: Meetings<'_>) -> Result<(), MeetingError> {
+    meetings.cancel_import();
     Ok(())
 }
 
@@ -255,6 +277,18 @@ pub async fn apply_speaker_suggestion(
     person: u32,
 ) -> Result<MeetingPeople, MeetingError> {
     meetings.apply_speaker_suggestion(&id, person)
+}
+
+/// The name typed for "Person N"; blank gives the label back.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_speaker_name(
+    meetings: Meetings<'_>,
+    id: String,
+    person: u32,
+    name: String,
+) -> Result<MeetingPeople, MeetingError> {
+    meetings.set_speaker_name(&id, person, &name)
 }
 
 /// "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
