@@ -2,7 +2,8 @@
 // padrão de dois toques (`.specs/features/shortcut-gestures/checks.md`, C24) e do estado âmbar
 // do limite de sessão (`.specs/features/session-limit/checks.md`, C18) e do estado de carga do
 // modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`) e da pílula em repouso
-// (`.specs/features/pill-idle/checks.md`, C6 a C9).
+// (`.specs/features/pill-idle/checks.md`, C6 a C9) e da falha de cola e do clique na reunião
+// (`.specs/features/pill-polish/checks.md`, C3 a C5).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,7 +21,19 @@ import {
 } from "./pillModel";
 import { MeetingPill } from "./MeetingPill";
 import { IdlePill, type IdlePillProps } from "./IdlePill";
-import { idleKeys, showsDoubleTapHint } from "./pillModel";
+import {
+  PASTE_FAILED_MS,
+  idleKeys,
+  pasteFailedHint,
+  pasteFailedTimeout,
+  pasteLastShortcut,
+  showsDoubleTapHint,
+} from "./pillModel";
+import { PasteFailedPill } from "./PasteFailedPill";
+import {
+  requestOpenMeeting,
+  takeOpenMeetingRequest,
+} from "../components/meeting/meetingModel";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -644,6 +657,173 @@ const idleCss = read("./IdlePill.css");
   assert.equal(label, "Mostrar a pílula em repouso");
   assert.ok(description);
   ok("pill-idle C9");
+}
+
+// pill-polish C3 - falha de cola: a pílula diz o que houve, o atalho de colar o último (ou só o
+// clique) e "Copiado" depois do clique; fica 5 s, parada enquanto o mouse está em cima.
+{
+  assert.equal(toPillMode("paste_failed"), null);
+  assert.equal(PASTE_FAILED_MS, 5000);
+  assert.equal(pasteFailedTimeout(false), 5000);
+  assert.equal(pasteFailedTimeout(true), null);
+  assert.equal(pasteLastShortcut("ctrl+shift+v"), "Ctrl + Shift + V");
+  assert.equal(pasteLastShortcut(""), null);
+  assert.equal(pasteLastShortcut(undefined), null);
+  assert.deepEqual(pasteFailedHint(false, "Ctrl + Shift + V"), {
+    key: "overlay.pasteFailed.retry",
+    keys: "Ctrl + Shift + V",
+  });
+  assert.deepEqual(pasteFailedHint(false, null), {
+    key: "overlay.pasteFailed.click",
+  });
+  assert.deepEqual(pasteFailedHint(true, "Ctrl + Shift + V"), {
+    key: "overlay.pasteFailed.copied",
+  });
+
+  const pt = locale("pt").overlay.pasteFailed;
+  const en = locale("en").overlay.pasteFailed;
+  assert.equal(pt.title, "Não deu para colar.");
+  assert.equal(pt.retry, "{{keys}} cola de novo · clique para copiar");
+  assert.equal(pt.click, "Clique para copiar");
+  assert.equal(pt.copied, "Copiado");
+  assert.ok(pt.label && en.label && en.title && en.retry.includes("{{keys}}"));
+  assert.equal(en.copied, "Copied");
+
+  const onCopy = () => {};
+  const hovers: boolean[] = [];
+  const props = {
+    title: pt.title,
+    hint: pt.retry.replace("{{keys}}", "Ctrl + Shift + V"),
+    label: pt.label,
+    onCopy,
+    onHover: (on: boolean) => hovers.push(on),
+  };
+  const html = renderToStaticMarkup(<PasteFailedPill {...props} />);
+  assert.equal(
+    text(html),
+    "Não deu para colar.Ctrl + Shift + V cola de novo · clique para copiar",
+  );
+  assert.ok(classes(html).includes("paste_failed"), html);
+  assert.ok(html.includes('role="button"'), html);
+  assert.ok(html.includes(`aria-label="${pt.label}"`), html);
+  // ADR-0017: the warning tone the notices already use, no new colour.
+  assert.ok(html.includes('class="fnotice-dot warn"'), html);
+  const noticeCss = read("./Notice.css");
+  for (const selector of [".fnotice.paste_failed", ".fnotice-hint"]) {
+    assert.ok(!/#[0-9a-f]{3,6}\b/i.test(rule(noticeCss, selector)), selector);
+  }
+  // The whole card copies, and the pointer on the card (not the window) stops the timer.
+  const card = PasteFailedPill(props);
+  assert.equal(card.props.onClick, onCopy);
+  card.props.onMouseEnter();
+  card.props.onMouseLeave();
+  assert.deepEqual(hovers, [true, false]);
+  ok("pill-polish C3");
+}
+
+// pill-polish C4 - o overlay liga o estado: lê o atalho, para o timer no hover, encerra pelo
+// comando e copia pelo clique; a janela principal continua com o toast.
+{
+  const at = overlaySource.indexOf('if (state === "paste_failed") {');
+  assert.ok(at > 0, "sem o ramo paste_failed");
+  const branch = overlaySource.slice(at, overlaySource.indexOf("\n  }\n", at));
+  assert.ok(branch.includes("onHover={setPasteHover}"), branch);
+  assert.ok(!branch.includes("onMouseEnter"), "o hover é do cartão");
+  assert.ok(branch.includes("pasteFailedHint(pasteCopied, pasteLastKeys)"));
+  assert.ok(
+    /commands\s*\.copyFailedPaste\(\)\s*\.then\(\(copied\) => copied && setPasteCopied\(true\)\)/.test(
+      branch,
+    ),
+    branch,
+  );
+  const timer = overlaySource.match(
+    /useEffect\(\(\) => \{\s*if \(state !== "paste_failed" \|\| !isVisible \|\| pasteGeneration === null\)\s*return;([\s\S]*?)\}, \[state, isVisible, pasteHover, pasteGeneration\]\);/,
+  );
+  assert.ok(timer, "sem o timer do paste_failed");
+  assert.ok(timer[1].includes("pasteFailedTimeout(pasteHover)"), timer[1]);
+  assert.ok(
+    timer[1].includes("commands.endPasteFailed(pasteGeneration)"),
+    timer[1],
+  );
+  // Each failure names its show, so a second one restarts the timer.
+  assert.ok(
+    /listen<\{ generation: number \}>\(\s*"paste-failed",\s*\(event\) => \{\s*setPasteCopied\(false\);\s*setPasteGeneration\(event\.payload\.generation\);/.test(
+      overlaySource,
+    ),
+    "o overlay precisa ouvir paste-failed",
+  );
+  assert.ok(
+    overlaySource.includes(
+      'if (state !== "paste_failed") setPasteHover(false);',
+    ),
+  );
+  assert.ok(
+    overlaySource.includes(
+      "pasteLastShortcut(\n                settings.data.bindings?.paste_last?.current_binding,",
+    ),
+    "o atalho de colar o último precisa vir das settings",
+  );
+  // The paste_failed branch comes before the idle one, after the hidden return.
+  assert.ok(
+    overlaySource.indexOf("if (!isVisible) return null;") < at &&
+      at < overlaySource.indexOf('if (state === "idle") {'),
+  );
+  assert.match(
+    read("../App.tsx"),
+    /listen\("paste-error", \(\) => \{\s*toast\.error/,
+  );
+  ok("pill-polish C4");
+}
+
+// pill-polish C5 - clique na pílula de reunião abre a sessão gravando na janela principal.
+{
+  const onOpen = () => {};
+  const pill = MeetingPill({
+    paused: false,
+    recordedMs: 0,
+    muted: false,
+    label: "reunião",
+    onOpen,
+  });
+  assert.equal(pill.props.onClick, onOpen);
+  assert.equal(pill.props.role, "status");
+  has(rule(css, ".fpill.meeting"), "cursor: pointer", ".fpill.meeting");
+  assert.equal(
+    (css.match(/(?:^|\n)\.fpill\.meeting \{/g) ?? []).length,
+    1,
+    "uma regra .fpill.meeting só",
+  );
+  const meeting = overlaySource.slice(
+    overlaySource.indexOf(
+      'if (state === "meeting" || state === "meeting_paused")',
+    ),
+  );
+  assert.ok(
+    meeting.includes("onOpen={() => void commands.openMeetingFromPill()}"),
+  );
+  // The mic switch stays on its own button, outside the pill.
+  assert.ok(
+    meeting.includes("onSwitch={() => void commands.switchMeetingOutput"),
+  );
+
+  requestOpenMeeting("m-1");
+  assert.equal(takeOpenMeetingRequest(), "m-1");
+  assert.equal(takeOpenMeetingRequest(), null);
+  const app = read("../App.tsx");
+  assert.match(
+    app,
+    /listen<string \| null>\("open-meeting", \(event\) => \{\s*if \(sectionRef\.current !== "meetings"\) \{\s*if \(event\.payload\) requestOpenMeeting\(event\.payload\);\s*setDestination\("meetings"\);/,
+  );
+  const page = read("../components/meeting/MeetingsPage.tsx");
+  assert.match(
+    page,
+    /const requested = takeOpenMeetingRequest\(\);\s*if \(requested\) void open\(requested\);/,
+  );
+  assert.match(
+    page,
+    /listen<string \| null>\("open-meeting", \(event\) => \{\s*if \(event\.payload\) void open\(event\.payload\);/,
+  );
+  ok("pill-polish C5");
 }
 
 console.log("pill: all assertions passed");

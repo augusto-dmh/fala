@@ -130,6 +130,31 @@ impl Store {
         Ok(())
     }
 
+    /// O nome digitado para "Pessoa `person`" (`None` apaga o nome e a pessoa volta a "Pessoa
+    /// N"). A sugestão pendente dessa pessoa some: quem já tem nome não recebe sugestão.
+    pub fn set_meeting_speaker_name(
+        &mut self,
+        id: SessionId,
+        person: u32,
+        name: Option<&str>,
+    ) -> Result<(), StorageError> {
+        self.meeting(id)?;
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO meeting_speakers (meeting_id, person, name) VALUES (?1, ?2, ?3)
+             ON CONFLICT (meeting_id, person) DO UPDATE
+             SET name = excluded.name, suggested_name = NULL, suggested_reason = NULL",
+            params![id.to_string(), person, name],
+        )?;
+        tx.execute(
+            "DELETE FROM meeting_speakers
+             WHERE meeting_id = ?1 AND name IS NULL AND suggested_name IS NULL",
+            [id.to_string()],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// O clique em "aplicar": o nome sugerido vira o nome de "Pessoa `person`" e a sugestão some.
     /// Sem sugestão pendente, devolve [`StorageError::NotFound`].
     pub fn apply_speaker_suggestion(

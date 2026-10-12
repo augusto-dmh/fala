@@ -1007,7 +1007,14 @@
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada",
     "callElsewhere": "O som da call está saindo por {{device}}",
-    "recordFrom": "Gravar deste dispositivo"
+    "recordFrom": "Gravar deste dispositivo",
+    "pasteFailed": {
+      "title": "Não deu para colar.",
+      "retry": "{{keys}} cola de novo · clique para copiar",
+      "click": "Clique para copiar",
+      "copied": "Copiado",
+      "label": "Não deu para colar. Clique para copiar o texto."
+    }
   },
   "callPrompt": {
     "offer": {
@@ -1073,7 +1080,24 @@
       "outputDefault": "Saída padrão ({{name}})",
       "outputFrom": "Som de {{device}}",
       "callElsewhere": "O som da call está saindo por {{device}}.",
-      "recordFrom": "Gravar deste dispositivo"
+      "recordFrom": "Gravar deste dispositivo",
+      "systemOnly": "Só o som do computador (aula, vídeo)"
+    },
+    "import": {
+      "open": "Importar arquivo ou link",
+      "file": "Escolher arquivo…",
+      "media": "Áudio e vídeo",
+      "anyFile": "Todos os arquivos",
+      "urlPlaceholder": "https://… (YouTube ou outro site)",
+      "url": "Importar link",
+      "close": "Fechar",
+      "hint": "Ou arraste um arquivo para esta página. Usa o ffmpeg e o yt-dlp instalados no computador; o áudio entra como uma reunião, sem microfone.",
+      "starting": "Preparando a importação…",
+      "downloading": "Baixando o áudio… {{percent}}%",
+      "downloadingBytes": "Baixando o áudio… {{mb}} MB",
+      "converting": "Convertendo o áudio… {{percent}}%",
+      "saving": "Salvando o áudio…",
+      "cancel": "Cancelar"
     },
     "annotations": {
       "placeholder": "Digite suas anotações. Elas são salvas sozinhas."
@@ -1114,6 +1138,13 @@
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
+    },
+    "rename": {
+      "hint": "Clique para dar um nome a {{person}} na reunião toda",
+      "label": "Nome de {{person}}",
+      "regenerate": "Nome trocado. Gerar as notas de novo?",
+      "generate": "Gerar de novo",
+      "dismiss": "Agora não"
     },
     "people": {
       "participants": "Quem estava",
@@ -1166,6 +1197,12 @@
       "busy": "Já há uma transcrição ou geração de notas em andamento.",
       "unknown_template": "Template desconhecido.",
       "notes": "A geração de notas falhou. Tente de novo.",
+      "tool_missing": "O {{detail}} não está instalado ou não está no PATH. Instale-o e abra o Fala de novo.",
+      "invalid_url": "Use um link que comece com http:// ou https://.",
+      "download": "Não consegui baixar esse link. Baixe o vídeo pelo navegador e importe o arquivo. ({{detail}})",
+      "import": "Não consegui importar esse arquivo: {{detail}}",
+      "import_no_audio": "Esse arquivo não tem trilha de áudio.",
+      "import_too_long": "Esse arquivo passa de 12 horas, o limite da importação.",
       "generic": "Algo deu errado. Veja o log."
     }
   }
