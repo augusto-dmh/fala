@@ -35,3 +35,21 @@ Proof: leitura de `MeetingManager::spawn_upkeep` + manual (app de debug portáti
 **C8** - manual: abrir `Reuniões/` no Obsidian e clicar num ponteiro `01:05` da nota pula para o
 trecho
 Proof: manual (Windows, Obsidian; precisa de nota gerada)
+
+## S2 — `reindex` de reuniões (PR 2)
+
+**C9** - Round-trip da ADR-0006: sessão com notas, anotações, falante renomeado, nota editada e
+pausa (45 min de relógio, 30 gravados) e um rascunho sem título → apagar o banco →
+`reindex_meetings` → mesmas linhas, e os `.md` iguais byte a byte, nenhum reescrito
+Proof: `cargo test -p fala-storage --test meeting_mirror round_trip_through_reindex_is_identical`
+e `--lib meeting_mirror` (render → parse → render idêntico; arquivo inconsistente recusado)
+
+**C10** - O `reindex` só acrescenta sessões que faltam: o que o banco tem (inclusive sugestão de
+nome pendente) não muda nem com um `.md` desatualizado; `.md` inválido entra no relatório; com id
+repetido vale o arquivo com o nome do título; a sessão apagada não volta
+Proof: `cargo test -p fala-storage --test meeting_mirror reindex_` e
+`deleting_a_meeting_deletes_its_md`
+
+**C11** - `fala-cli reindex` reconstrói ditados e reuniões e diz quantos de cada; só com
+`Reuniões/` também roda; sem nenhuma das duas pastas sai com 2
+Proof: `cargo test -p fala-cli --test history reindex_`

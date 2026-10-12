@@ -1070,7 +1070,28 @@
       "body": "Fechar o Fala para a gravação."
     },
     "stopAndQuit": "Parar e sair",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "stillRecording": {
+      "title": "Ainda está gravando?",
+      "body": "Nada foi ouvido nos últimos 14 minutos. A gravação para em 1 minuto."
+    },
+    "silenceStopped": {
+      "title": "A gravação parou",
+      "body": "Foram 15 minutos de silêncio. O que já foi gravado está salvo."
+    },
+    "mistake": {
+      "title": "Gravou por engano?",
+      "short": "Foram só {{seconds}} s. Nada foi transcrito ainda.",
+      "quiet": "Quase nada foi dito em {{minutes}} min. Nada foi transcrito ainda."
+    },
+    "nothingRecorded": {
+      "title": "Nada foi gravado",
+      "body": "A gravação terminou sem áudio e foi descartada."
+    },
+    "recordAgain": "Gravar de novo",
+    "dismiss": "Fechar",
+    "keep": "Manter",
+    "discard": "Descartar"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
