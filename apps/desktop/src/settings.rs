@@ -729,10 +729,21 @@ pub struct AppSettings {
     /// "Não avisar nestes apps": `fala_meeting::CallApp` ids.
     #[serde(default)]
     pub call_prompt_muted_apps: Vec<String>,
+    /// Days after a meeting ends when its retained audio is deleted (1 to 3650). `None` keeps
+    /// it, the default (ADR-0005).
+    #[serde(default)]
+    pub meeting_audio_retention_days: Option<u16>,
+    /// The recording cap of a meeting in hours, 1 to 8.
+    #[serde(default = "default_meeting_cap_hours")]
+    pub meeting_cap_hours: u8,
 }
 
 fn default_call_prompt_enabled() -> bool {
     true
+}
+
+fn default_meeting_cap_hours() -> u8 {
+    fala_meeting::RecordingCap::DEFAULT_HOURS
 }
 
 fn default_model() -> String {
@@ -1261,6 +1272,8 @@ pub fn get_default_settings() -> AppSettings {
         meeting_output_device: None,
         call_prompt_enabled: default_call_prompt_enabled(),
         call_prompt_muted_apps: Vec::new(),
+        meeting_audio_retention_days: None,
+        meeting_cap_hours: default_meeting_cap_hours(),
     }
 }
 
@@ -1628,6 +1641,23 @@ mod tests {
             assert!(!settings.pause_media_while_recording);
             assert!(settings.pause_media_on_meeting);
         }
+    }
+
+    #[test]
+    fn meeting_audio_is_kept_and_capped_at_three_hours_by_default() {
+        let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        let fresh = get_default_settings();
+        for settings in [stored, fresh] {
+            assert_eq!(settings.meeting_audio_retention_days, None);
+            assert_eq!(settings.meeting_cap_hours, 3);
+        }
+        let chosen: AppSettings = serde_json::from_value(serde_json::json!({
+            "meeting_audio_retention_days": 30,
+            "meeting_cap_hours": 8,
+        }))
+        .unwrap();
+        assert_eq!(chosen.meeting_audio_retention_days, Some(30));
+        assert_eq!(chosen.meeting_cap_hours, 8);
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to

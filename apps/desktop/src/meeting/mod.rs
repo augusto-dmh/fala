@@ -13,6 +13,7 @@
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
+pub(crate) mod lifecycle;
 pub(crate) mod output;
 pub(crate) mod people;
 pub(crate) mod pipeline;
@@ -331,8 +332,8 @@ struct Active {
 #[derive(Default)]
 struct Inner {
     active: Option<Active>,
-    /// Sessions whose audio is being retained.
-    processing: usize,
+    /// Stopped sessions still being finished (end saved, audio retained).
+    processing: Vec<SessionId>,
     status: MeetingStatus,
 }
 
@@ -345,7 +346,7 @@ pub struct MeetingManager {
     keys: Arc<dyn fala_secrets::SecretStore>,
     /// The transcription or notes generation in flight, one at a time.
     work: Mutex<pipeline::Work>,
-    /// Held for the whole WAV → Opus conversion.
+    /// Held for the whole WAV → Opus conversion, and while audio is deleted.
     retaining: Mutex<()>,
 }
 
@@ -396,6 +397,13 @@ impl MeetingManager {
 
     pub fn status(&self) -> MeetingStatus {
         self.lock().status.clone()
+    }
+
+    /// The session records, or stopped and is still being finished.
+    pub(crate) fn is_live(&self, id: SessionId) -> bool {
+        let inner = self.lock();
+        inner.active.as_ref().is_some_and(|a| a.session.id() == id)
+            || inner.processing.contains(&id)
     }
 
     /// Records that the third-party notice was accepted, once; returns the stored date.
@@ -476,7 +484,7 @@ impl MeetingManager {
             mode: mode.session_mode(),
             title: title.to_string(),
             local_only: false,
-            cap: RecordingCap::default(),
+            cap: RecordingCap::from_hours(settings.meeting_cap_hours).unwrap_or_default(),
         });
         let effects = session.apply(
             millis(now),
@@ -755,7 +763,7 @@ impl MeetingManager {
         let id = active.session.id();
         let reason = stop_reason(active.session.state());
         let recorded_ms = inner.status.recorded_ms;
-        inner.processing += 1;
+        inner.processing.push(id);
         let app = self.app.clone();
         let dir = self.session_dir(id);
         log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms)");
@@ -768,7 +776,7 @@ impl MeetingManager {
             });
         if let Err(e) = spawned {
             log::error!("meeting {id}: processing thread did not start: {e}");
-            inner.processing -= 1;
+            inner.processing.retain(|p| *p != id);
         }
     }
 
@@ -782,7 +790,7 @@ impl MeetingManager {
         self.retain(id, dir);
         {
             let mut inner = self.lock();
-            inner.processing = inner.processing.saturating_sub(1);
+            inner.processing.retain(|p| *p != id);
             self.publish(&mut inner);
         }
         // With the key in the keyring, the transcript follows the stop without another click.
@@ -844,7 +852,7 @@ impl MeetingManager {
                 Some(active.session.id().to_string()),
                 Some(active.mode),
             ),
-            None if inner.processing > 0 => (MeetingPhase::Processing, None, None),
+            None if !inner.processing.is_empty() => (MeetingPhase::Processing, None, None),
             None => (MeetingPhase::Idle, None, None),
         };
         if state == MeetingPhase::Idle || (state == MeetingPhase::Processing && id.is_none()) {
