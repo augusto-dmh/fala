@@ -419,6 +419,23 @@
         "placeholder": "Nome do app",
         "add": "Adicionar",
         "remove": "Remover {{app}}"
+      },
+      "appStyles": {
+        "title": "Estilo por app",
+        "description": "Nesses apps, a IA também segue a instrução do estilo escolhido. Só a instrução vai junto do texto; app sem estilo fica como antes.",
+        "stylePlaceholder": "Estilo",
+        "mapping": "{{app}} → {{style}}"
+      },
+      "styles": {
+        "title": "Estilos de escrita",
+        "description": "Um nome e uma instrução em português para a IA, como \"formal, com Olá quando houver destinatário\". Salva ao sair do campo.",
+        "nameLabel": "Nome do estilo",
+        "instructionLabel": "Instrução do estilo",
+        "instructionPlaceholder": "Como o texto deve sair nesse estilo",
+        "newName": "Novo estilo",
+        "add": "Novo estilo",
+        "removeShort": "Remover",
+        "remove": "Remover o estilo {{name}}"
       }
     },
     "meetings": {

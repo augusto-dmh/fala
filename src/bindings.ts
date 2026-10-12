@@ -370,6 +370,29 @@ async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, stri
 }
 },
 /**
+ * Stores the styles and returns them as stored, with the mappings left once the styles that
+ * are gone take their apps with them.
+ */
+async updateWritingStyles(styles: WritingStyle[]) : Promise<Result<[WritingStyle[], AppStyle[]], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_writing_styles", { styles }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the app -> style mapping and returns it as stored.
+ */
+async updateAppStyles(appStyles: AppStyle[]) : Promise<Result<AppStyle[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_app_styles", { appStyles }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Temporarily unregister all bindings while the user is recording a
  * shortcut in the UI. This avoids firing actions while keys are recorded.
  */
@@ -1569,6 +1592,14 @@ llm_disabled_apps?: string[];
  */
 cleanup_level?: CleanupLevel; 
 /**
+ * The user's writing styles; four come ready.
+ */
+writing_styles?: WritingStyle[]; 
+/**
+ * App -> style; an app without one keeps the prompt without a style.
+ */
+app_styles?: AppStyle[]; 
+/**
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
  */
@@ -1586,6 +1617,10 @@ call_prompt_enabled?: boolean;
  * "Não avisar nestes apps": `fala_meeting::CallApp` ids.
  */
 call_prompt_muted_apps?: string[] }
+/**
+ * An app, as `fala_inject::app_name_from_exe_path` names it, and the id of its style.
+ */
+export type AppStyle = { app: string; style: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -2022,6 +2057,10 @@ export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
+/**
+ * A writing style. `id` ties it to the apps that use it, so renaming keeps the mapping.
+ */
+export type WritingStyle = { id: string; name: string; instruction: string }
 
 /** tauri-specta globals **/
 

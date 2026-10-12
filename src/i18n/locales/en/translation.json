@@ -419,6 +419,23 @@
         "placeholder": "App name",
         "add": "Add",
         "remove": "Remove {{app}}"
+      },
+      "appStyles": {
+        "title": "Style per app",
+        "description": "In these apps, the AI also follows the instruction of the chosen style. Only the instruction goes with the text; an app without a style stays as before.",
+        "stylePlaceholder": "Style",
+        "mapping": "{{app}} → {{style}}"
+      },
+      "styles": {
+        "title": "Writing styles",
+        "description": "A name and an instruction for the AI, such as \"formal, greet the recipient by name\". Saved when you leave the field.",
+        "nameLabel": "Style name",
+        "instructionLabel": "Style instruction",
+        "instructionPlaceholder": "How the text should come out in this style",
+        "newName": "New style",
+        "add": "New style",
+        "removeShort": "Remove",
+        "remove": "Remove the {{name}} style"
       }
     },
     "meetings": {

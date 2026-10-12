@@ -58,7 +58,8 @@ fn formatter_at(settings: &AppSettings, use_llm: bool, base_url: &str) -> AutoFo
             gemini,
             disabled_apps: settings.llm_disabled_apps.clone(),
         })
-        .with_cleanup_level(settings.cleanup_level.into()),
+        .with_cleanup_level(settings.cleanup_level.into())
+        .with_app_styles(crate::app_styles::instructions(settings)),
         dictionary: crate::dictionary::dictionary(settings),
         fuzzy: Fuzzy::deferred(settings),
     }
@@ -398,6 +399,38 @@ Personal dictionary:
         // The default store asks for the light level, as before the setting existed.
         assert!(run(&settings_with_key(), &server, SIXTEEN, app("notepad")).llm_produced);
         assert!(system_prompt(&server, levels.len()).contains(CleanupLevel::Light.instruction()));
+    }
+
+    #[test]
+    fn app_style_ends_the_llm_prompt() {
+        use crate::app_styles::AppStyle;
+        use fala_postproc::STYLE_INSTRUCTION;
+        let server = FakeGemini::ok(Duration::ZERO);
+        let mut settings = settings_with_key();
+        settings.custom_words = words(&["ChargeBee"]);
+        settings.writing_styles[1].instruction = "Formal, com \"Olá, <nome>\".".to_string();
+        settings.app_styles = vec![
+            AppStyle {
+                app: "chrome".to_string(),
+                style: "email".to_string(),
+            },
+            AppStyle {
+                app: "1password".to_string(),
+                style: "email".to_string(),
+            },
+        ];
+        for name in ["Chrome", "notepad", "1password"] {
+            run(&settings, &server, SIXTEEN, app(name));
+        }
+        // The app the LLM stays off in sends nothing, style or not.
+        assert_eq!(server.requests(), 2);
+        let styled = system_prompt(&server, 0);
+        let plain = system_prompt(&server, 1);
+        assert!(plain.ends_with("\n- ChargeBee"), "{plain}");
+        assert_eq!(
+            styled,
+            format!("{plain}\n\n{STYLE_INSTRUCTION}\nFormal, com \"Olá, <nome>\".")
+        );
     }
 
     #[test]
