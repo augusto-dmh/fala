@@ -72,3 +72,7 @@ o clique de gerar, sem estados nem erro que diga que nada se perdeu.
 5. WHEN o nome aplicado contém `@` THEN o payload SHALL rotular "Pessoa N"
 6. WHEN uma linha gerada é editada THEN ela SHALL perder o marcador e os ponteiros; as linhas iguais SHALL manter os dois
 7. The UI SHALL pedir confirmação antes de regenerar uma nota editada com o mesmo template, oferecer gerar de novo depois de um nome trocado numa sessão com notas, e toda string nova SHALL estar em pt e en
+8. WHEN um template é escolhido no rascunho ou na gravação THEN a sessão SHALL guardá-lo enquanto não tem notas, e as notas depois do parar SHALL usá-lo
+9. WHEN a gravação para com as duas chaves, o ajuste "Gerar notas ao terminar" ligado, a sessão não é "só local", tem ≥ 3 min e ≥ 2.500 caracteres de transcrição THEN as notas SHALL ser geradas sem clique, com "Escrevendo notas" (sem anotações) ou "Aprimorando suas notas" (com anotações); a falha SHALL dizer que anotações e áudio estão salvos e oferecer "Tentar de novo"
+10. WHEN uma gravação começa THEN o painel e a pílula SHALL mostrar por 5 s "Grave só com o consentimento de quem participa", e o painel SHALL oferecer "Copiar aviso" (texto pt/en que não promete que o áudio fica só no computador, ADR-0005)
+11. WHEN a pessoa busca na transcrição THEN a lista SHALL mostrar só os trechos com o termo, sem diferenciar acento nem maiúscula, com o termo marcado; "Copiar transcrição" SHALL copiar "Nome: texto" por turno

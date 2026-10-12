@@ -7,7 +7,9 @@ import {
   type MeetingLine,
   type MeetingTemplate,
 } from "@/bindings";
+import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { AnnotationsField } from "./AnnotationsField";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
@@ -16,6 +18,7 @@ import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
+import { searchLines, transcriptText } from "./transcriptSearch";
 
 export interface MeetingViewProps {
   detail: MeetingDetail;
@@ -24,6 +27,8 @@ export interface MeetingViewProps {
   recording: boolean;
   transcribing: boolean;
   generating: boolean;
+  /** The last notes generation of this session failed (a click or after the stop). */
+  notesFailed?: boolean;
   onRecordDraft: () => void;
   onTranscribe: () => void;
   onCancelTranscription: () => void;
@@ -46,6 +51,11 @@ export function MeetingView(props: MeetingViewProps) {
   const [clipError, setClipError] = useState<MeetingError | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const [nameError, setNameError] = useState<MeetingError | null>(null);
+  const [query, setQuery] = useState("");
+  const found = useMemo(
+    () => searchLines(detail.lines, query),
+    [detail.lines, query],
+  );
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   // Edited here: counts before the reload brings `notes_edited`.
@@ -109,11 +119,46 @@ export function MeetingView(props: MeetingViewProps) {
       props.onGenerate(templateId, false);
     }
   };
+  // The template stored with the session (picked in the recorder, or the one that wrote the
+  // notes) wins over the local pick when the session reloads.
+  useEffect(() => {
+    if (detail.notes_template) setTemplateId(detail.notes_template);
+  }, [detail.notes_template]);
+  // Before the notes exist, the pick goes with the session: the notes after the stop use it.
+  const pickTemplate = (id: string) => {
+    setTemplateId(id);
+    if (detail.notes_md === null) {
+      void commands.setMeetingTemplate(detail.summary.id, id);
+    }
+  };
+  const templateSelect = (
+    <select
+      aria-label={t("meeting.view.template")}
+      className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
+      value={templateId}
+      onChange={(event) => pickTemplate(event.target.value)}
+    >
+      {props.templates.map((template) => (
+        <option key={template.id} value={template.id}>
+          {template.name}
+        </option>
+      ))}
+    </select>
+  );
+  const generatingLabel = detail.annotations.trim()
+    ? t("meeting.view.enhancing")
+    : t("meeting.view.writing");
   const reveal = (seq: number) => {
     setHighlighted(seq);
-    document
-      .getElementById(segmentAnchor(seq))
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const scroll = () =>
+      document
+        .getElementById(segmentAnchor(seq))
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // A source the search hides: show the whole transcript again first.
+    if (!found.some((line) => line.seq === seq)) {
+      setQuery("");
+      requestAnimationFrame(scroll);
+    } else scroll();
   };
 
   return (
@@ -137,9 +182,12 @@ export function MeetingView(props: MeetingViewProps) {
         onNamesChanged={namesChanged}
       />
       {draft ? (
-        <Button onClick={props.onRecordDraft}>
-          {t("meeting.view.recordDraft")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={props.onRecordDraft}>
+            {t("meeting.view.recordDraft")}
+          </Button>
+          {templateSelect}
+        </div>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -157,31 +205,44 @@ export function MeetingView(props: MeetingViewProps) {
                 {t("meeting.view.cancel")}
               </Button>
             )}
-            <select
-              aria-label={t("meeting.view.template")}
-              className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
-              value={templateId}
-              onChange={(event) => setTemplateId(event.target.value)}
-            >
-              {props.templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </select>
+            {templateSelect}
             <Button
               variant="secondary"
               disabled={props.recording || props.generating || editing}
               onClick={generate}
             >
-              {props.generating
-                ? t("meeting.view.generating")
-                : t("meeting.view.generate")}
+              {props.generating ? generatingLabel : t("meeting.view.generate")}
             </Button>
             <Button variant="secondary" onClick={props.onCopy}>
               {t("meeting.view.copy")}
             </Button>
+            {detail.lines.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void copyToClipboard(transcriptText(detail.lines, t))
+                }
+              >
+                {t("meeting.view.copyTranscript")}
+              </Button>
+            )}
           </div>
+          {props.notesFailed && !props.generating && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.view.notesFailed")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={props.recording || editing}
+                onClick={generate}
+              >
+                {t("meeting.view.retry")}
+              </Button>
+            </div>
+          )}
           {offerRegenerate && !confirming && (
             <div
               role="status"
@@ -255,8 +316,24 @@ export function MeetingView(props: MeetingViewProps) {
                     {t(errorKey(nameError))}
                   </p>
                 )}
+                <div className="flex items-center gap-2">
+                  <Input
+                    variant="compact"
+                    type="search"
+                    aria-label={t("meeting.view.search")}
+                    placeholder={t("meeting.view.search")}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  {query.trim() !== "" && (
+                    <span className="text-caption text-text-2">
+                      {t("meeting.view.found", { count: found.length })}
+                    </span>
+                  )}
+                </div>
                 <TranscriptView
-                  lines={detail.lines}
+                  lines={found}
+                  query={query}
                   audioAvailable={detail.audio_available}
                   playing={playing}
                   highlighted={highlighted}

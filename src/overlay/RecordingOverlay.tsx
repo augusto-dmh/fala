@@ -8,13 +8,14 @@ import "./IdlePill.css";
 import { Notice } from "./Notice";
 import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
-import { CallOutputCard, MeetingPill } from "./MeetingPill";
+import { CallOutputCard, ConsentCard, MeetingPill } from "./MeetingPill";
 import { IdlePill } from "./IdlePill";
 import {
   SLOW_LOAD_MS,
   idleKeys,
   isHoldToTalk,
   nextModelLoadStart,
+  showsConsentChip,
   showsDoubleTapHint,
   showsModelLoading,
   toPillMode,
@@ -520,6 +521,11 @@ const RecordingOverlay: React.FC = () => {
               switchLabel={t("overlay.recordFrom")}
               onSwitch={() => void commands.switchMeetingOutput(callOutput)}
             />
+            {meetingPill}
+          </div>
+        ) : showsConsentChip(meetingMs) ? (
+          <div className="ov-stack">
+            <ConsentCard text={t("overlay.meetingConsent")} />
             {meetingPill}
           </div>
         ) : (

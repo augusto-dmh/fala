@@ -173,6 +173,15 @@ impl From<SessionError> for MeetingError {
     }
 }
 
+/// For this long after each start, the page and the pill remind that the others must agree to be
+/// recorded (Granola shows the same for 5 s on every recording); the notice of ADR-0005 stays.
+pub(crate) const CONSENT_CHIP_MS: u64 = 5_000;
+
+/// The pill shows a card over it: the call plays elsewhere, or the consent chip is on.
+pub(crate) fn meeting_card(status: &MeetingStatus) -> bool {
+    status.call_output.is_some() || status.recorded_ms < CONSENT_CHIP_MS
+}
+
 /// Who may start recording, in the order the reasons are reported.
 pub(crate) fn check_start(
     consent: Option<&str>,
@@ -657,10 +666,9 @@ impl MeetingManager {
                 inner.status.system_level = system;
                 inner.status.muted_mic = muted.mic;
                 inner.status.muted_system = muted.system;
-                if route.apply(&mut inner.status) {
-                    let card = inner.status.call_output.is_some();
-                    crate::overlay::set_meeting_card(&self.app, card);
-                }
+                route.apply(&mut inner.status);
+                // Only a change resizes the pill's window.
+                crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 self.run_effects(&mut inner, effects);
             }
             Report::SystemSwitched { name, error } => {
@@ -668,7 +676,7 @@ impl MeetingManager {
                     active.route.switched(&name);
                     inner.status.system_output = Some(name);
                     inner.status.call_output = None;
-                    crate::overlay::set_meeting_card(&self.app, false);
+                    crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 }
             }
             Report::Finalized { recorded, error } => {
@@ -787,10 +795,12 @@ impl MeetingManager {
             inner.processing = inner.processing.saturating_sub(1);
             self.publish(&mut inner);
         }
-        // With the key in the keyring, the transcript follows the stop without another click.
+        // With the key in the keyring, the transcript follows the stop without another click,
+        // and the notes follow the transcript (`auto_notes`).
         if pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
-            if let Err(e) = self.transcribe(&id.to_string()) {
-                log::warn!("meeting {id}: automatic transcription failed: {e}");
+            match self.transcribe(&id.to_string()) {
+                Ok(lines) => self.auto_notes(id, &lines),
+                Err(e) => log::warn!("meeting {id}: automatic transcription failed: {e}"),
             }
         }
     }
@@ -871,6 +881,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join(format!("{name}.sqlite")), dir.path()).unwrap();
         (dir, store)
+    }
+
+    #[test]
+    fn pill_card_for_the_call_or_the_first_seconds() {
+        let mut status = MeetingStatus::default();
+        assert!(meeting_card(&status));
+        status.recorded_ms = CONSENT_CHIP_MS - 1;
+        assert!(meeting_card(&status));
+        status.recorded_ms = CONSENT_CHIP_MS;
+        assert!(!meeting_card(&status));
+        status.call_output = Some("Fone".into());
+        assert!(meeting_card(&status));
     }
 
     #[test]

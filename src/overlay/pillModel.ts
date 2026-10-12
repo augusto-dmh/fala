@@ -154,3 +154,10 @@ export function showsModelLoading(
   if (loadStart === null) return false;
   return mode === "processing" || now - loadStart >= SLOW_LOAD_MS;
 }
+
+/** The consent chip shows for the first 5 s of recorded time (`CONSENT_CHIP_MS` in Rust). */
+export const CONSENT_CHIP_MS = 5000;
+
+export function showsConsentChip(recordedMs: number): boolean {
+  return recordedMs < CONSENT_CHIP_MS;
+}

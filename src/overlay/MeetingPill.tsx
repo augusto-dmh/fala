@@ -56,3 +56,15 @@ export function CallOutputCard({
     </div>
   );
 }
+
+/** Over the meeting pill in the first seconds of each recording: ask the others first. */
+export function ConsentCard({ text }: { text: string }) {
+  return (
+    <div className="fnotice consent" role="status">
+      <div className="fnotice-line">
+        <span className="fnotice-dot" />
+        <span className="fnotice-text">{text}</span>
+      </div>
+    </div>
+  );
+}
