@@ -905,7 +905,7 @@
           },
           "mcp": {
             "name": "Histórico para assistentes (MCP)",
-            "sends": "Ditados que não são dos apps sem IA, só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
+            "sends": "Ditados que não são dos apps sem IA e, com meetings = true, as reuniões que não são só locais (sem áudio), só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
             "destination": "O assistente local que você configurou, que pode mandá-los ao provedor dele"
           },
           "telemetry": {

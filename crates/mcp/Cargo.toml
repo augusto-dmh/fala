@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 chrono.workspace = true
 fala-core.workspace = true
+fala-meeting.workspace = true
 fala-storage.workspace = true
 log.workspace = true
 rmcp.workspace = true
