@@ -17,6 +17,36 @@ use super::{millis, parse_id, MeetingError, MeetingManager};
 const RETENTION_CHECK_EVERY: Duration = Duration::from_secs(3600);
 const RETENTION_EVERY_MS: u64 = 24 * 3600 * 1000;
 
+/// A stop shorter than this asks "Recorded by mistake?" (Fala transcribes after the stop, so it
+/// has no word count to go by, unlike Wispr's 20 words).
+pub(crate) const SHORT_RECORDING_MS: u64 = 30_000;
+/// Or one with less speech than this, wherever it falls.
+pub(crate) const LITTLE_SPEECH_MS: u64 = 5_000;
+/// A second whose louder channel reaches this RMS (≈ −40 dBFS) counts as speech.
+pub(crate) const SPEECH_RMS: f32 = 0.01;
+/// Under this, nothing was recorded at all.
+const NOTHING_MS: u64 = 1_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mistake {
+    /// No audio: discarded at once, saying "Nothing was recorded".
+    NothingRecorded,
+    /// Short or almost silent: "Recorded by mistake?" [Keep] [Discard].
+    Ask,
+}
+
+/// What a stop the person clicked looks like. A typed agenda or title is never discarded
+/// without asking.
+pub(crate) fn mistake(recorded_ms: u64, voiced_ms: u64, typed: bool) -> Option<Mistake> {
+    if recorded_ms < NOTHING_MS && !typed {
+        Some(Mistake::NothingRecorded)
+    } else if recorded_ms < SHORT_RECORDING_MS || voiced_ms < LITTLE_SPEECH_MS {
+        Some(Mistake::Ask)
+    } else {
+        None
+    }
+}
+
 /// The setting as a policy; an out-of-range number keeps the audio.
 pub(crate) fn retention_policy(days: Option<u16>) -> RetentionPolicy {
     match days {
@@ -110,8 +140,44 @@ impl MeetingManager {
             return Err(error);
         }
         self.with_store(|store| Ok(store.delete_meeting(id)?))?;
+        let _ = tauri::Emitter::emit(&self.app, super::DELETED_EVENT, id.to_string());
         self.forget_orphan(id);
         log::info!("meeting {id} deleted");
+        Ok(())
+    }
+
+    /// After a stop the person clicked: discards an empty recording, or asks about one that
+    /// looks like a mistake instead of sending it to the transcription. Returns whether it
+    /// took over (no automatic transcript).
+    pub(crate) fn handle_mistake(&self, id: SessionId, recorded_ms: u64, voiced_ms: u64) -> bool {
+        let typed = self
+            .with_store(|store| {
+                let record = store.meeting(id)?;
+                Ok(!record.title.trim().is_empty() || !record.annotations.trim().is_empty())
+            })
+            .unwrap_or(true);
+        match mistake(recorded_ms, voiced_ms, typed) {
+            None => false,
+            Some(Mistake::NothingRecorded) => {
+                if let Err(e) = self.delete(&id.to_string()) {
+                    log::warn!("meeting {id}: empty recording not discarded: {e}");
+                    return false;
+                }
+                crate::call_prompt::show_nothing_recorded(&self.app);
+                true
+            }
+            Some(Mistake::Ask) => {
+                let seconds = u32::try_from(recorded_ms / 1_000).unwrap_or(u32::MAX);
+                crate::call_prompt::show_mistake(&self.app, id, seconds);
+                true
+            }
+        }
+    }
+
+    /// [Keep] on "Recorded by mistake?": the session goes on as after any stop.
+    pub fn keep_after_mistake(&self, id: &str) -> Result<(), MeetingError> {
+        let id = parse_id(id)?;
+        self.transcribe_if_keyed(id);
         Ok(())
     }
 
@@ -287,6 +353,17 @@ mod tests {
             audio_to_delete(&records, one, day(DAY_MS), None),
             vec![recent]
         );
+    }
+
+    #[test]
+    fn a_short_or_silent_stop_looks_like_a_mistake() {
+        assert_eq!(mistake(0, 0, false), Some(Mistake::NothingRecorded));
+        // An agenda or a title typed before recording is never discarded without asking.
+        assert_eq!(mistake(0, 0, true), Some(Mistake::Ask));
+        assert_eq!(mistake(29_999, 29_999, false), Some(Mistake::Ask));
+        assert_eq!(mistake(600_000, 4_999, false), Some(Mistake::Ask));
+        assert_eq!(mistake(30_000, 5_000, false), None);
+        assert_eq!(mistake(3_600_000, 1_200_000, true), None);
     }
 
     #[test]

@@ -429,6 +429,8 @@ mod stop {
                 vec![
                     (T0, start()),
                     (at(5), silent(5)),
+                    (at(14), silent(14)),
+                    (at(14), Input::SilenceWarningShown),
                     (at(15), silent(15)),
                     (at(15), Input::CaptureFinalized),
                 ],
@@ -472,6 +474,7 @@ mod stop {
             let effects = s.apply(at(m), tick(mins(m), 0.0005, 0.0005)).unwrap();
             assert!(!effects.contains(&Effect::FinalizeCapture), "minute {m}");
         }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
         let effects = s.apply(at(15), tick(15 * MIN, 0.0005, 0.0005)).unwrap();
         assert_eq!(effects, vec![Effect::FinalizeCapture]);
         assert_eq!(
@@ -487,6 +490,7 @@ mod stop {
             s.apply(at(m), tick(mins(m), 0.5, 0.0005)).unwrap();
             assert!(matches!(s.state(), SessionState::Recording { .. }));
         }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
         s.apply(at(15), tick(15 * MIN, 0.5, 0.0005)).unwrap();
         assert_eq!(
             s.state(),
@@ -512,6 +516,7 @@ mod stop {
         s.apply(at(14), tick(14 * MIN, 0.01, 0.0)).unwrap();
         for m in 15..=28 {
             s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap();
+            s.apply(at(m), Input::SilenceWarningShown).unwrap();
             assert!(
                 matches!(s.state(), SessionState::Recording { .. }),
                 "minute {m}"
@@ -524,6 +529,99 @@ mod stop {
                 reason: StopReason::Silence
             }
         );
+    }
+}
+
+mod silence_warning {
+    use super::*;
+
+    fn silent(s: &mut MeetingSession, m: u64) -> Vec<Effect> {
+        s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap()
+    }
+
+    #[test]
+    fn warns_once_a_minute_before_and_stops_only_after_it_was_shown() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=13 {
+            assert!(silent(&mut s, m).is_empty(), "minute {m}");
+        }
+        assert_eq!(
+            silent(&mut s, 14),
+            vec![Effect::SilenceWarning { remaining: MIN }]
+        );
+        // The card never appeared: no stop at 15 min, nor later, and no second warning.
+        for m in 15..=40 {
+            assert!(silent(&mut s, m).is_empty(), "minute {m}");
+            assert!(matches!(s.state(), SessionState::Recording { .. }));
+        }
+    }
+
+    #[test]
+    fn shown_warning_then_silence_stops() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=14 {
+            silent(&mut s, m);
+        }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
+        assert_eq!(silent(&mut s, 15), vec![Effect::FinalizeCapture]);
+        assert_eq!(
+            s.state(),
+            SessionState::Stopping {
+                reason: StopReason::Silence
+            }
+        );
+    }
+
+    #[test]
+    fn keep_recording_starts_the_count_again() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=14 {
+            silent(&mut s, m);
+        }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
+        s.apply(at(14), user(UserAction::KeepRecording)).unwrap();
+        for m in 15..=27 {
+            assert!(silent(&mut s, m).is_empty(), "minute {m}");
+        }
+        // A new silent stretch warns again, a minute before its own end.
+        assert_eq!(
+            silent(&mut s, 28),
+            vec![Effect::SilenceWarning { remaining: MIN }]
+        );
+        assert!(matches!(s.state(), SessionState::Recording { .. }));
+        // "Keep recording" is a click on a live session only.
+        let mut idle = session(SessionMode::Meeting);
+        assert!(idle.apply(T0, user(UserAction::KeepRecording)).is_err());
+    }
+
+    #[test]
+    fn a_pause_forgets_the_shown_warning() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=14 {
+            silent(&mut s, m);
+        }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
+        s.apply(at(14), user(UserAction::PauseRecording)).unwrap();
+        s.apply(at(120), user(UserAction::ResumeRecording)).unwrap();
+        // Recorded time goes on from 14 min: no stop a minute later without a new warning.
+        let effects = s.apply(at(121), tick(15 * MIN, 0.0, 0.0)).unwrap();
+        assert!(effects.is_empty(), "{effects:?}");
+        assert!(matches!(s.state(), SessionState::Recording { .. }));
+    }
+
+    #[test]
+    fn sound_resets_the_warning() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=14 {
+            silent(&mut s, m);
+        }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
+        s.apply(at(15), tick(15 * MIN, 0.2, 0.0)).unwrap();
+        // Sound came back: the shown warning no longer counts.
+        for m in 16..=29 {
+            silent(&mut s, m);
+        }
+        assert!(matches!(s.state(), SessionState::Recording { .. }));
     }
 }
 

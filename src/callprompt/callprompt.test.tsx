@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CALL_PROMPT_ANSWERS, CallPromptCard } from "./CallPromptCard";
+import { mistakeBody } from "./CallPromptWindow";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const read = (path: string) =>
@@ -52,6 +53,17 @@ assert.deepEqual(CALL_PROMPT_ANSWERS.offer, ["record", "not_now", "mute_app"]);
 assert.deepEqual(CALL_PROMPT_ANSWERS.ask_stop, ["stop", "keep_recording"]);
 // Quitting while recording: [Parar e sair] first, and running out never quits (call_prompt.rs).
 assert.deepEqual(CALL_PROMPT_ANSWERS.quit, ["stop_and_quit", "cancel"]);
+// The meeting cards: keeping is always the first, safe answer.
+assert.deepEqual(CALL_PROMPT_ANSWERS.still_recording, [
+  "keep_recording",
+  "stop",
+]);
+assert.deepEqual(CALL_PROMPT_ANSWERS.mistake, ["keep", "discard"]);
+assert.deepEqual(CALL_PROMPT_ANSWERS.silence_stopped, [
+  "record_again",
+  "dismiss",
+]);
+assert.deepEqual(CALL_PROMPT_ANSWERS.nothing_recorded, ["dismiss"]);
 const html = renderToStaticMarkup(
   <CallPromptCard
     kind="offer"
@@ -74,6 +86,18 @@ assert.match(html, />nao-avisar</);
 assert.match(html, /scaleX\(0\.5\)/);
 console.log("C15 card ok");
 
+// "Recorded by mistake?" says why it asks: a short recording, or a long one almost silent.
+assert.deepEqual(mistakeBody("mistake", 12), [
+  "callPrompt.mistake.short",
+  { seconds: 12 },
+]);
+assert.deepEqual(mistakeBody("mistake", 7_200), [
+  "callPrompt.mistake.quiet",
+  { minutes: 120 },
+]);
+assert.deepEqual(mistakeBody("quit", null), ["callPrompt.quit.body", {}]);
+console.log("L4 mistake text ok");
+
 // Every key the window and the settings use exists in pt and en, with {{app}} where needed.
 const keys = [
   "callPrompt.offer.title",
@@ -89,6 +113,19 @@ const keys = [
   "callPrompt.quit.body",
   "callPrompt.stopAndQuit",
   "callPrompt.cancel",
+  "callPrompt.stillRecording.title",
+  "callPrompt.stillRecording.body",
+  "callPrompt.silenceStopped.title",
+  "callPrompt.silenceStopped.body",
+  "callPrompt.mistake.title",
+  "callPrompt.mistake.short",
+  "callPrompt.mistake.quiet",
+  "callPrompt.nothingRecorded.title",
+  "callPrompt.nothingRecorded.body",
+  "callPrompt.recordAgain",
+  "callPrompt.dismiss",
+  "callPrompt.keep",
+  "callPrompt.discard",
   "settings.meetings.title",
   "settings.meetings.callPrompt.label",
   "settings.meetings.callPrompt.description",
@@ -108,6 +145,14 @@ for (const { lang, json } of locales) {
   ]) {
     assert.match(lookup(json, key) as string, /\{\{app\}\}/, `${lang} ${key}`);
   }
+  assert.match(
+    lookup(json, "callPrompt.mistake.short") as string,
+    /\{\{seconds\}\}/,
+  );
+  assert.match(
+    lookup(json, "callPrompt.mistake.quiet") as string,
+    /\{\{minutes\}\}/,
+  );
 }
 assert.equal(
   lookup(locales[0].json, "callPrompt.offer.title"),
