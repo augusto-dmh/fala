@@ -8,20 +8,27 @@ export interface MeetingPillProps {
   muted: boolean;
   /** Translated name for screen readers. */
   label: string;
+  /** A click opens the session being recorded in the main window. */
+  onOpen?: () => void;
 }
 
-/** The meeting indicator (ADR-0005): a dot and the recorded time, visible for the whole call. */
+/**
+ * The meeting indicator (ADR-0005): a dot and the recorded time, visible for the whole call. A
+ * click opens the session in the main window.
+ */
 export function MeetingPill({
   paused,
   recordedMs,
   muted,
   label,
+  onOpen,
 }: MeetingPillProps) {
   return (
     <div
       className={`fpill meeting ${meetingTone(paused, muted)}`}
       role="status"
       aria-label={label}
+      onClick={onOpen}
     >
       <span className="dot" />
       <span className="time">{formatElapsed(recordedMs)}</span>
@@ -52,6 +59,18 @@ export function CallOutputCard({
         <button type="button" onClick={onSwitch}>
           {switchLabel}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Over the meeting pill in the first seconds of each recording: ask the others first. */
+export function ConsentCard({ text }: { text: string }) {
+  return (
+    <div className="fnotice consent" role="status">
+      <div className="fnotice-line">
+        <span className="fnotice-dot" />
+        <span className="fnotice-text">{text}</span>
       </div>
     </div>
   );

@@ -331,6 +331,17 @@ async updateDictionaryReplacements(replacements: DictionaryReplacement[]) : Prom
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Stores the snippets and returns them as stored.
+ */
+async updateDictionarySnippets(snippets: DictionaryReplacement[]) : Promise<Result<DictionaryReplacement[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_dictionary_snippets", { snippets }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeLlmEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_llm_enabled_setting", { enabled }) };
@@ -353,6 +364,29 @@ async changeLlmDisabledAppsSetting(apps: string[]) : Promise<Result<string[], st
 async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_cleanup_level_setting", { level }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the styles and returns them as stored, with the mappings left once the styles that
+ * are gone take their apps with them.
+ */
+async updateWritingStyles(styles: WritingStyle[]) : Promise<Result<[WritingStyle[], AppStyle[]], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_writing_styles", { styles }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the app -> style mapping and returns it as stored.
+ */
+async updateAppStyles(appStyles: AppStyle[]) : Promise<Result<AppStyle[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_app_styles", { appStyles }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -836,6 +870,25 @@ async setIdlePillHover(hover: boolean) : Promise<void> {
 async openHomeFromPill() : Promise<void> {
     await TAURI_INVOKE("open_home_from_pill");
 },
+/**
+ * A click on the meeting pill opens the main window on Reuniões, on the session it records.
+ */
+async openMeetingFromPill() : Promise<void> {
+    await TAURI_INVOKE("open_meeting_from_pill");
+},
+/**
+ * The pill that says the paste failed ran its time without the pointer over it.
+ */
+async endPasteFailed(generation: number) : Promise<void> {
+    await TAURI_INVOKE("end_paste_failed", { generation });
+},
+/**
+ * A click on the pill that says the paste failed: puts that text on the clipboard, where the
+ * user asked for it. `false` when there is nothing to copy or the clipboard refused it.
+ */
+async copyFailedPaste() : Promise<boolean> {
+    return await TAURI_INVOKE("copy_failed_paste");
+},
 async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };
@@ -1191,11 +1244,33 @@ async cancelMeetingTranscription() : Promise<Result<null, MeetingError>> {
 }
 },
 /**
- * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown.
+ * "Import": a file or the audio of a URL becomes a new session; returns its id once the audio
+ * is retained. Progress comes as `MeetingProgress` events.
  */
-async generateMeetingNotes(id: string, templateId: string) : Promise<Result<string, MeetingError>> {
+async importMeeting(source: ImportSource) : Promise<Result<string, MeetingError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("generate_meeting_notes", { id, templateId }) };
+    return { status: "ok", data: await TAURI_INVOKE("import_meeting", { source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelMeetingImport() : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_meeting_import") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sends the enumerated payload of ADR-0016 to the notes LLM and stores the Markdown. Notes
+ * edited by hand, regenerated with the same template, return `notes_edited` unless
+ * `replace_edited` (the confirmation click).
+ */
+async generateMeetingNotes(id: string, templateId: string, replaceEdited: boolean) : Promise<Result<string, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("generate_meeting_notes", { id, templateId, replaceEdited }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1330,6 +1405,50 @@ async setMeetingParticipants(id: string, names: string[]) : Promise<Result<Meeti
 async applySpeakerSuggestion(id: string, person: number) : Promise<Result<MeetingPeople, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("apply_speaker_suggestion", { id, person }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The name typed for "Person N"; blank gives the label back.
+ */
+async setMeetingSpeakerName(id: string, person: number, name: string) : Promise<Result<MeetingPeople, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_speaker_name", { id, person, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The notes as edited in the page.
+ */
+async saveMeetingNotes(id: string, markdown: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_meeting_notes", { id, markdown }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The template for the next notes, picked before or during the recording.
+ */
+async setMeetingTemplate(id: string, templateId: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_template", { id, templateId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Generate notes when it ends": the notes follow the transcript of a stop.
+ */
+async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_auto_notes_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1504,13 +1623,22 @@ selected_channel?: number | null; clamshell_microphone?: string | null; selected
  */
 dictionary_replacements?: DictionaryReplacement[]; 
 /**
+ * Snippets: a trigger of two words or more as `spoken`, the text it inserts as `written`.
+ */
+dictionary_snippets?: DictionaryReplacement[]; 
+/**
  * What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
  */
 notes_profile?: string; notes_language?: NotesLanguage; 
 /**
  * Sends the dictionary to ElevenLabs Scribe as `keyterms` (ADR-0005, +US$ 0.05/h).
  */
-meeting_keyterms?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+meeting_keyterms?: boolean; 
+/**
+ * After the transcript of a stop, the notes follow without a click (never for a local-only
+ * session, nor for a short call).
+ */
+meeting_auto_notes?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
 /**
  * Pause the media playing on the PC while dictating; off by default.
  */
@@ -1559,6 +1687,14 @@ llm_disabled_apps?: string[];
  */
 cleanup_level?: CleanupLevel; 
 /**
+ * The user's writing styles; four come ready.
+ */
+writing_styles?: WritingStyle[]; 
+/**
+ * App -> style; an app without one keeps the prompt without a style.
+ */
+app_styles?: AppStyle[]; 
+/**
  * When the third-party notice of a meeting recording was accepted (ADR-0005, ADR-0016),
  * RFC 3339 with the local offset in seconds. `None`: never shown, so recording waits for it.
  */
@@ -1585,6 +1721,10 @@ meeting_audio_retention_days?: number | null;
  * The recording cap of a meeting in hours, 1 to 8.
  */
 meeting_cap_hours?: number }
+/**
+ * An app, as `fala_inject::app_name_from_exe_path` names it, and the id of its style.
+ */
+export type AppStyle = { app: string; style: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1613,7 +1753,11 @@ export type CallPromptKind =
 /**
  * What the card shows.
  */
-export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; countdown_ms: number }
+export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; 
+/**
+ * The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
+ */
+web_name: string | null; countdown_ms: number }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
@@ -1631,7 +1775,8 @@ export type DictationDay = { day: string; dictations: number; words: number }
  */
 export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
 /**
- * A spoken -> written pair as stored. `uses` counts every occurrence the rules replaced.
+ * A spoken -> written pair, or a trigger -> text snippet, as stored. `uses` counts every
+ * occurrence the rules replaced.
  */
 export type DictionaryReplacement = { spoken: string; written: string; uses?: number }
 export type EngineType = 
@@ -1684,6 +1829,10 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+/**
+ * What "Import" received: a path from the file dialog or a typed `http(s)://` URL.
+ */
+export type ImportSource = { kind: "file"; value: string } | { kind: "url"; value: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1704,6 +1853,15 @@ export type MeetingDetail = { summary: MeetingSummary;
  * Notes typed before (agenda) and during the call.
  */
 annotations: string; lines: MeetingLine[]; notes_md: string | null; notes_template: string | null; 
+/**
+ * The notes were edited by hand since they were generated.
+ */
+notes_edited: boolean; 
+/**
+ * Its notes are being written now (a click, or the stop's chain): a page that opens later
+ * still shows it.
+ */
+notes_running: boolean; 
 /**
  * Both retained Opus files are on disk, so a transcript line can be played.
  */
@@ -1728,7 +1886,35 @@ export type MeetingError = { kind: "consent_required" } | { kind: "already_activ
 /**
  * A transcription or a notes generation is already running.
  */
-{ kind: "busy" } | { kind: "unknown_template" } | { kind: "notes"; detail: string }
+{ kind: "busy" } | { kind: "unknown_template" } | { kind: "notes"; detail: string } | 
+/**
+ * The notes were edited by hand: regenerating needs the user's confirmation.
+ */
+{ kind: "notes_edited" } | 
+/**
+ * `ffmpeg`, `ffprobe` or `yt-dlp` is not on the PATH.
+ */
+{ kind: "tool_missing"; detail: string } | 
+/**
+ * Only `http://` and `https://` URLs are imported.
+ */
+{ kind: "invalid_url" } | 
+/**
+ * `yt-dlp` did not download the URL; the page suggests downloading and importing the file.
+ */
+{ kind: "download"; detail: string } | 
+/**
+ * The file could not be turned into audio; the detail is the tool's last line or the path.
+ */
+{ kind: "import"; detail: string } | 
+/**
+ * The imported file has no audio track.
+ */
+{ kind: "import_no_audio" } | 
+/**
+ * The imported source is longer than `fala_media::MAX_DURATION`.
+ */
+{ kind: "import_too_long" }
 /**
  * Which keys exist in the keyring; never the keys themselves.
  */
@@ -1746,7 +1932,7 @@ channel: string; person: number | null;
  */
 name?: string | null; t0_ms: number; t1_ms: number; text: string }
 /**
- * The two capture modes the panel offers (part 1 of F2).
+ * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
 export type MeetingMode = 
 /**
@@ -1756,7 +1942,11 @@ export type MeetingMode =
 /**
  * Everyone in the room: the mic is diarized too.
  */
-"in_person"
+"in_person" | 
+/**
+ * What the computer plays (a class, a video): no mic, diarized system channel.
+ */
+"system_only"
 /**
  * A recording the process left without an end: "Recover the recording from 14:02 (12 min)?".
  */
@@ -1883,6 +2073,11 @@ export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type ProgressStage = 
 /**
+ * An import: `phase` is `download` (bytes `done` of `total`, 0 when unknown) or `convert`
+ * (milliseconds of audio).
+ */
+{ stage: "importing"; phase: string; done: number; total: number } | 
+/**
  * The working WAV becomes the two Opus files.
  */
 { stage: "retaining" } | 
@@ -1995,6 +2190,10 @@ export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
+/**
+ * A writing style. `id` ties it to the apps that use it, so renaming keeps the mapping.
+ */
+export type WritingStyle = { id: string; name: string; instruction: string }
 
 /** tauri-specta globals **/
 

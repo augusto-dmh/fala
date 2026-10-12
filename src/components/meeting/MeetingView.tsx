@@ -1,19 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  MeetingDetail,
-  MeetingError,
-  MeetingLine,
-  MeetingTemplate,
+import {
+  commands,
+  type MeetingDetail,
+  type MeetingError,
+  type MeetingLine,
+  type MeetingTemplate,
 } from "@/bindings";
+import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { AnnotationsField } from "./AnnotationsField";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
-import { errorKey, titleOf } from "./meetingModel";
+import { NotesEditor } from "./NotesEditor";
+import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
+import { searchLines, transcriptText } from "./transcriptSearch";
 
 export interface MeetingViewProps {
   detail: MeetingDetail;
@@ -22,12 +27,15 @@ export interface MeetingViewProps {
   recording: boolean;
   transcribing: boolean;
   generating: boolean;
+  /** The last notes generation of this session failed (a click or after the stop). */
+  notesFailed?: boolean;
   onRecordDraft: () => void;
   onTranscribe: () => void;
   onCancelTranscription: () => void;
-  onGenerate: (templateId: string) => void;
+  /** `replaceEdited`: the person confirmed discarding the notes they edited. */
+  onGenerate: (templateId: string, replaceEdited: boolean) => void;
   onCopy: () => void;
-  /** A suggested name was applied: reload the transcript. */
+  /** A name was applied or typed, or the notes were edited: reload the session. */
   onNamesChanged?: () => void;
 }
 
@@ -42,6 +50,18 @@ export function MeetingView(props: MeetingViewProps) {
   const [playing, setPlaying] = useState<number | null>(null);
   const [clipError, setClipError] = useState<MeetingError | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
+  const [nameError, setNameError] = useState<MeetingError | null>(null);
+  const [query, setQuery] = useState("");
+  const found = useMemo(
+    () => searchLines(detail.lines, query),
+    [detail.lines, query],
+  );
+  const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  // Edited here: counts before the reload brings `notes_edited`.
+  const [editedHere, setEditedHere] = useState(false);
+  // A name changed in a session that already has notes: offer to write them again.
+  const [offerRegenerate, setOfferRegenerate] = useState(false);
   const player = useMemo(() => new ClipPlayer(setPlaying), []);
   // One clip at a time, and none left playing after leaving the session.
   useEffect(() => () => player.stop(), [player, detail.summary.id]);
@@ -67,11 +87,78 @@ export function MeetingView(props: MeetingViewProps) {
       .play(detail.summary.id, line.seq, line.t0_ms, line.t1_ms)
       .catch((error: MeetingError) => setClipError(error));
   };
+  // A rename that ends after the session was left must not reload it over the next one.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // Notes that exist (or are being written) still have the old label: offer to write them again.
+  const namesChanged = () => {
+    if (detail.notes_md !== null || props.generating) setOfferRegenerate(true);
+    props.onNamesChanged?.();
+  };
+  const rename = async (person: number, name: string) => {
+    const result = await commands.setMeetingSpeakerName(
+      detail.summary.id,
+      person,
+      name,
+    );
+    if (!mounted.current) return;
+    setNameError(result.status === "error" ? result.error : null);
+    if (result.status === "ok") namesChanged();
+  };
+  const generate = () => {
+    setOfferRegenerate(false);
+    const edited = detail.notes_edited || editedHere;
+    if (needsConfirmation({ ...detail, notes_edited: edited }, templateId)) {
+      setConfirming(true);
+    } else {
+      props.onGenerate(templateId, false);
+    }
+  };
+  // The template stored with the session (picked in the recorder, or the one that wrote the
+  // notes) wins over the local pick when the session reloads.
+  useEffect(() => {
+    if (detail.notes_template) setTemplateId(detail.notes_template);
+  }, [detail.notes_template]);
+  // Before the notes exist, the pick goes with the session: the notes after the stop use it.
+  const pickTemplate = (id: string) => {
+    setTemplateId(id);
+    if (detail.notes_md === null) {
+      void commands.setMeetingTemplate(detail.summary.id, id);
+    }
+  };
+  const templateSelect = (
+    <select
+      aria-label={t("meeting.view.template")}
+      className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
+      value={templateId}
+      onChange={(event) => pickTemplate(event.target.value)}
+    >
+      {props.templates.map((template) => (
+        <option key={template.id} value={template.id}>
+          {template.name}
+        </option>
+      ))}
+    </select>
+  );
+  const generatingLabel = detail.annotations.trim()
+    ? t("meeting.view.enhancing")
+    : t("meeting.view.writing");
   const reveal = (seq: number) => {
     setHighlighted(seq);
-    document
-      .getElementById(segmentAnchor(seq))
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const scroll = () =>
+      document
+        .getElementById(segmentAnchor(seq))
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // A source the search hides: show the whole transcript again first.
+    if (!found.some((line) => line.seq === seq)) {
+      setQuery("");
+      requestAnimationFrame(scroll);
+    } else scroll();
   };
 
   return (
@@ -92,12 +179,15 @@ export function MeetingView(props: MeetingViewProps) {
       <MeetingPeoplePanel
         id={detail.summary.id}
         reloadOn={detail}
-        onNamesChanged={props.onNamesChanged}
+        onNamesChanged={namesChanged}
       />
       {draft ? (
-        <Button onClick={props.onRecordDraft}>
-          {t("meeting.view.recordDraft")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={props.onRecordDraft}>
+            {t("meeting.view.recordDraft")}
+          </Button>
+          {templateSelect}
+        </div>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -115,31 +205,94 @@ export function MeetingView(props: MeetingViewProps) {
                 {t("meeting.view.cancel")}
               </Button>
             )}
-            <select
-              aria-label={t("meeting.view.template")}
-              className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
-              value={templateId}
-              onChange={(event) => setTemplateId(event.target.value)}
-            >
-              {props.templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </select>
+            {templateSelect}
             <Button
               variant="secondary"
-              disabled={props.recording || props.generating}
-              onClick={() => props.onGenerate(templateId)}
+              disabled={props.recording || props.generating || editing}
+              onClick={generate}
             >
-              {props.generating
-                ? t("meeting.view.generating")
-                : t("meeting.view.generate")}
+              {props.generating ? generatingLabel : t("meeting.view.generate")}
             </Button>
             <Button variant="secondary" onClick={props.onCopy}>
               {t("meeting.view.copy")}
             </Button>
+            {detail.lines.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void copyToClipboard(transcriptText(detail.lines, t))
+                }
+              >
+                {t("meeting.view.copyTranscript")}
+              </Button>
+            )}
           </div>
+          {props.notesFailed && !props.generating && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.view.notesFailed")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={props.recording || editing}
+                onClick={generate}
+              >
+                {t("meeting.view.retry")}
+              </Button>
+            </div>
+          )}
+          {offerRegenerate && !confirming && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.rename.regenerate")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={props.recording || props.generating || editing}
+                onClick={generate}
+              >
+                {t("meeting.rename.generate")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setOfferRegenerate(false)}
+              >
+                {t("meeting.rename.dismiss")}
+              </Button>
+            </div>
+          )}
+          {confirming && (
+            <div
+              role="alertdialog"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.notesEdit.confirm")}</span>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={props.recording || props.generating || editing}
+                onClick={() => {
+                  setConfirming(false);
+                  setEditedHere(false);
+                  props.onGenerate(templateId, true);
+                }}
+              >
+                {t("meeting.notesEdit.regenerate")}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirming(false)}
+              >
+                {t("meeting.view.cancel")}
+              </Button>
+            </div>
+          )}
           <section className="space-y-1">
             <h4 className="text-sm font-semibold">
               {t("meeting.view.transcript")}
@@ -158,12 +311,39 @@ export function MeetingView(props: MeetingViewProps) {
                     {t(errorKey(clipError))}
                   </p>
                 )}
+                {nameError !== null && (
+                  <p role="alert" className="text-caption text-danger">
+                    {t(errorKey(nameError))}
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <Input
+                    variant="compact"
+                    type="search"
+                    aria-label={t("meeting.view.search")}
+                    placeholder={t("meeting.view.search")}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  {query.trim() !== "" && (
+                    <span className="text-caption text-text-2">
+                      {t("meeting.view.found", { count: found.length })}
+                    </span>
+                  )}
+                </div>
                 <TranscriptView
-                  lines={detail.lines}
+                  lines={found}
+                  query={query}
                   audioAvailable={detail.audio_available}
                   playing={playing}
                   highlighted={highlighted}
                   onPlay={play}
+                  // A new transcript renumbers "Person N" and drops the names.
+                  onRename={
+                    props.transcribing
+                      ? undefined
+                      : (person, name) => void rename(person, name)
+                  }
                   t={t}
                 />
               </>
@@ -171,18 +351,45 @@ export function MeetingView(props: MeetingViewProps) {
           </section>
           {notes !== null && (
             <section className="space-y-1">
-              <h4 className="text-sm font-semibold">
-                {t("meeting.view.notes")}
-              </h4>
-              <NotesView
-                notes={notes}
-                segments={segments}
-                audioAvailable={detail.audio_available}
-                playing={playing}
-                onPlay={play}
-                onReveal={reveal}
-                t={t}
-              />
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold">
+                  {t("meeting.view.notes")}
+                </h4>
+                {!editing && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={props.generating}
+                    onClick={() => {
+                      setConfirming(false);
+                      setEditing(true);
+                    }}
+                  >
+                    {t("meeting.notesEdit.edit")}
+                  </Button>
+                )}
+              </div>
+              {editing && detail.notes_md !== null ? (
+                <NotesEditor
+                  id={detail.summary.id}
+                  markdown={detail.notes_md}
+                  onDone={(edited) => {
+                    setEditing(false);
+                    if (edited) setEditedHere(true);
+                    props.onNamesChanged?.();
+                  }}
+                />
+              ) : (
+                <NotesView
+                  notes={notes}
+                  segments={segments}
+                  audioAvailable={detail.audio_available}
+                  playing={playing}
+                  onPlay={play}
+                  onReveal={reveal}
+                  t={t}
+                />
+              )}
             </section>
           )}
         </>

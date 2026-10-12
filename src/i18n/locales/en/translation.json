@@ -90,6 +90,20 @@
       "duplicate": "\"{{spoken}}\" already has a written form",
       "uses_one": "1 use",
       "uses_other": "{{count}} uses"
+    },
+    "snippets": {
+      "title": "Snippets",
+      "description": "Say the trigger and Fala inserts the text as it is: a signature, a calendar link, an address. The trigger needs two words or more and matches ignoring case and accents. {data}, {data_extenso} and {hora} become the date, the long date and the time of the dictation. The snippet text never goes to the formatting AI.",
+      "spokenPlaceholder": "my signature",
+      "writtenPlaceholder": "Jane Doe\nexample.com",
+      "spokenLabel": "Trigger",
+      "writtenLabel": "Inserted text",
+      "add": "Add",
+      "remove": "Remove the snippet {{spoken}}",
+      "duplicate": "\"{{spoken}}\" is already a snippet trigger",
+      "twoWords": "The trigger needs two words or more.",
+      "uses_one": "1 use",
+      "uses_other": "{{count}} uses"
     }
   },
   "settingsPage": {
@@ -405,13 +419,30 @@
         "placeholder": "App name",
         "add": "Add",
         "remove": "Remove {{app}}"
+      },
+      "appStyles": {
+        "title": "Style per app",
+        "description": "In these apps, the AI also follows the instruction of the chosen style. Only the instruction goes with the text; an app without a style stays as before.",
+        "stylePlaceholder": "Style",
+        "mapping": "{{app}} → {{style}}"
+      },
+      "styles": {
+        "title": "Writing styles",
+        "description": "A name and an instruction for the AI, such as \"formal, greet the recipient by name\". Saved when you leave the field.",
+        "nameLabel": "Style name",
+        "instructionLabel": "Style instruction",
+        "instructionPlaceholder": "How the text should come out in this style",
+        "newName": "New style",
+        "add": "New style",
+        "removeShort": "Remove",
+        "remove": "Remove the {{name}} style"
       }
     },
     "meetings": {
       "title": "Meetings",
       "callPrompt": {
         "label": "Ask when a call starts",
-        "description": "When Teams, Zoom, WhatsApp or a browser opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
+        "description": "When Teams, Zoom, WhatsApp or a meeting in the browser, like Google Meet, opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
       },
       "mutedApps": {
         "title": "Don't ask in these apps",
@@ -852,7 +883,7 @@
         "channels": {
           "dictation": {
             "name": "Dictation",
-            "sends": "Never the audio. Only the dictated text, the app name and your dictionary, with AI on and a key saved, above 15 words and outside the apps without AI.",
+            "sends": "Never the audio. Only the dictated text, the app name, your dictionary and the instruction of the app's style, if any, with AI on and a key saved, above 15 words and outside the apps without AI.",
             "destination": "Google (Gemini), with your key"
           },
           "experimentalPostProcess": {
@@ -1011,15 +1042,25 @@
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",
     "callElsewhere": "The call's sound is playing on {{device}}",
-    "recordFrom": "Record from this device"
+    "recordFrom": "Record from this device",
+    "meetingConsent": "Only record with the consent of everyone on the call.",
+    "pasteFailed": {
+      "title": "Couldn't paste it.",
+      "retry": "{{keys}} pastes it again · click to copy",
+      "click": "Click to copy",
+      "copied": "Copied",
+      "label": "Couldn't paste it. Click to copy the text."
+    }
   },
   "callPrompt": {
     "offer": {
       "title": "Looks like a call in {{app}}",
+      "titleWeb": "Looks like a {{web}} call in {{app}}",
       "body": "Record the meeting?"
     },
     "askStop": {
       "title": "{{app}} let go of the microphone",
+      "titleWeb": "{{web}} in {{app}} let go of the microphone",
       "body": "Stop recording?"
     },
     "record": "Record",
@@ -1078,7 +1119,25 @@
       "outputDefault": "Default output ({{name}})",
       "outputFrom": "Sound from {{device}}",
       "callElsewhere": "The call's sound is playing on {{device}}.",
-      "recordFrom": "Record from this device"
+      "recordFrom": "Record from this device",
+      "consentChip": "Only record with the consent of everyone on the call.",
+      "systemOnly": "Only the computer sound (class, video)"
+    },
+    "import": {
+      "open": "Import a file or link",
+      "file": "Choose file…",
+      "media": "Audio and video",
+      "anyFile": "All files",
+      "urlPlaceholder": "https://… (YouTube or another site)",
+      "url": "Import link",
+      "close": "Close",
+      "hint": "Or drop a file on this page. Uses the ffmpeg and yt-dlp installed on the computer; the audio comes in as a meeting, without a microphone.",
+      "starting": "Preparing the import…",
+      "downloading": "Downloading the audio… {{percent}}%",
+      "downloadingBytes": "Downloading the audio… {{mb}} MB",
+      "converting": "Converting the audio… {{percent}}%",
+      "saving": "Saving the audio…",
+      "cancel": "Cancel"
     },
     "annotations": {
       "placeholder": "Type your notes. They save themselves."
@@ -1099,12 +1158,27 @@
       "cancel": "Cancel",
       "template": "Notes template",
       "generate": "Generate notes",
-      "generating": "Generating notes…",
       "copy": "Copy Markdown",
       "transcript": "Transcript",
       "noTranscript": "No transcript yet.",
       "notes": "Notes",
-      "notesAbove": "Recording now: this meeting's notes are in the field above."
+      "notesAbove": "Recording now: this meeting's notes are in the field above.",
+      "search": "Search the transcript",
+      "found_one": "{{count}} match",
+      "found_other": "{{count}} matches",
+      "copyTranscript": "Copy transcript",
+      "writing": "Writing notes…",
+      "enhancing": "Enhancing your notes…",
+      "notesFailed": "Couldn't generate the notes. Your typed notes and the audio are saved.",
+      "retry": "Try again"
+    },
+    "notesEdit": {
+      "edit": "Edit",
+      "label": "Notes text",
+      "hint": "A line you change becomes yours: it loses the AI colour and its sources.",
+      "done": "Done",
+      "confirm": "You've edited these notes. Generating them again replaces your edits, and this can't be undone.",
+      "regenerate": "Generate again"
     },
     "source": {
       "open": "See where this line came from",
@@ -1119,6 +1193,13 @@
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"
+    },
+    "rename": {
+      "hint": "Click to name {{person}} for the whole meeting",
+      "label": "Name of {{person}}",
+      "regenerate": "Name changed. Generate the notes again?",
+      "generate": "Generate again",
+      "dismiss": "Not now"
     },
     "people": {
       "participants": "Who was there",
@@ -1146,6 +1227,10 @@
       "keyterms": {
         "title": "Dictionary in the transcript",
         "description": "Sends your dictionary terms to ElevenLabs to get their spelling right. Costs about US$ 0.05 more per hour."
+      },
+      "autoNotes": {
+        "title": "Generate notes when it ends",
+        "description": "When you stop, after the transcript, the notes are written without a click (from 3 minutes and a long transcript on; never for a local-only session)."
       }
     },
     "key": {
@@ -1171,7 +1256,19 @@
       "busy": "A transcription or notes generation is already running.",
       "unknown_template": "Unknown template.",
       "notes": "Notes generation failed. Try again.",
+      "notes_edited": "These notes were edited. Confirm before generating again.",
+      "tool_missing": "{{detail}} is not installed or not on the PATH. Install it and open Fala again.",
+      "invalid_url": "Use a link that starts with http:// or https://.",
+      "download": "Could not download that link. Download the video in the browser and import the file. ({{detail}})",
+      "import": "Could not import that file: {{detail}}",
+      "import_no_audio": "That file has no audio track.",
+      "import_too_long": "That file is longer than 12 hours, the import limit.",
       "generic": "Something went wrong. See the log."
+    },
+    "notice": {
+      "copy": "Copy notice",
+      "copied": "Notice copied",
+      "text": "I'm recording this meeting to transcribe it and take my notes. If you'd rather I didn't record, let me know."
     },
     "delete": {
       "action": "Delete meeting",

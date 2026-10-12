@@ -93,3 +93,43 @@ export function parseNotes(
   }
   return { blocks, annotations };
 }
+
+/** A stored note line as the person reads it: no marker, no pointers, no `^aN` anchor. */
+function visibleLine(raw: string): string {
+  const row = raw.trim();
+  if (row.endsWith(GENERATED_MARKER)) {
+    return row.slice(0, -GENERATED_MARKER.length).replace(POINTER, "").trim();
+  }
+  if (HEADING.test(row)) return row;
+  const anchor = ANCHOR.exec(row);
+  return anchor ? row.slice(0, anchor.index) : row;
+}
+
+/** The stored notes as the text the editor shows, one line per line. */
+export function editableText(markdown: string): string {
+  return markdown.split("\n").map(visibleLine).join("\n").trim();
+}
+
+/**
+ * The edited text back as notes Markdown. A line equal to a line of `base` comes back as it was
+ * stored (marker, pointers, anchor); a changed or new line is the person's text, without the
+ * marker: the AI colour is only for what the AI wrote.
+ */
+export function mergeEdit(base: string, edited: string): string {
+  const pool = new Map<string, string[]>();
+  for (const raw of base.split("\n")) {
+    const visible = visibleLine(raw);
+    if (!visible) continue;
+    pool.set(visible, [...(pool.get(visible) ?? []), raw.trim()]);
+  }
+  const lines = edited.split("\n").map((line) => {
+    const text = line.trim();
+    if (!text) return "";
+    const stored = pool.get(text)?.shift();
+    if (stored !== undefined) return stored;
+    return text.endsWith(GENERATED_MARKER)
+      ? text.slice(0, -GENERATED_MARKER.length).trim()
+      : text;
+  });
+  return `${lines.join("\n").trim()}\n`;
+}

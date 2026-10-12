@@ -12,6 +12,7 @@ export type OverlayEvent =
   | "processing"
   | "meeting"
   | "meeting_paused"
+  | "paste_failed"
   | "idle";
 
 export const PILL_BARS = 10;
@@ -33,6 +34,7 @@ export function toPillMode(event: OverlayEvent): PillMode | null {
     case "streaming":
     case "meeting":
     case "meeting_paused":
+    case "paste_failed":
     case "idle":
       return null;
   }
@@ -41,6 +43,32 @@ export function toPillMode(event: OverlayEvent): PillMode | null {
 /** The keys of a binding as the idle pill shows them, one chip each (`ctrl+meta` -> Ctrl, Meta). */
 export function idleKeys(binding: string | undefined): string[] {
   return binding ? formatKeyCombination(binding, "unknown").split(" + ") : [];
+}
+
+/** The `paste_last` binding as one label (`ctrl+shift+v` -> Ctrl + Shift + V); `null` without one. */
+export function pasteLastShortcut(binding: string | undefined): string | null {
+  return binding ? formatKeyCombination(binding, "unknown") : null;
+}
+
+/** How long the pill says a paste failed once the pointer is off it. */
+export const PASTE_FAILED_MS = 5000;
+
+/** The wait before the paste-failed pill ends: none while the pointer is over it. */
+export function pasteFailedTimeout(hover: boolean): number | null {
+  return hover ? null : PASTE_FAILED_MS;
+}
+
+/**
+ * The second line of the paste-failed pill: "Copiado" once the click copied the text, the
+ * shortcut that pastes the last dictation when there is one, and the click alone otherwise.
+ */
+export function pasteFailedHint(
+  copied: boolean,
+  shortcut: string | null,
+): { key: string; keys?: string } {
+  if (copied) return { key: "overlay.pasteFailed.copied" };
+  if (shortcut) return { key: "overlay.pasteFailed.retry", keys: shortcut };
+  return { key: "overlay.pasteFailed.click" };
 }
 
 /** The idle pill mentions the double tap only for the default activation, which has it. */
@@ -153,4 +181,11 @@ export function showsModelLoading(
 ): boolean {
   if (loadStart === null) return false;
   return mode === "processing" || now - loadStart >= SLOW_LOAD_MS;
+}
+
+/** The consent chip shows for the first 5 s of recorded time (`CONSENT_CHIP_MS` in Rust). */
+export const CONSENT_CHIP_MS = 5000;
+
+export function showsConsentChip(recordedMs: number): boolean {
+  return recordedMs < CONSENT_CHIP_MS;
 }

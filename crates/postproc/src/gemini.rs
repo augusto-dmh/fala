@@ -1,5 +1,5 @@
 //! Cliente do `generateContent` do Gemini (ADR-0004). Manda só o texto das regras, o nome do
-//! app e o dicionário; a chave vai só no header `x-goog-api-key`. O texto do prompt mora em
+//! app, o dicionário e a instrução do estilo do app; a chave vai só no header `x-goog-api-key`. O texto do prompt mora em
 //! `prompt.rs`.
 
 use std::time::Duration;
@@ -8,6 +8,7 @@ use fala_secrets::ApiKey;
 use serde_json::{json, Value};
 
 use crate::prompt::{system_text, user_text};
+use crate::rules::MARK_OPEN;
 use crate::{Fallback, FormatContext, Formatter, PostprocError, INSERT_DEADLINE};
 
 /// Modelo padrão (ADR-0004).
@@ -88,7 +89,12 @@ impl Formatter for Gemini {
 
 /// O corpo inteiro: `systemInstruction`, `contents` e `generationConfig`, nada mais.
 pub(crate) fn request_body(text: &str, ctx: &FormatContext<'_>) -> Value {
-    let system = system_text(ctx.cleanup, ctx.dictionary);
+    let system = system_text(
+        ctx.cleanup,
+        ctx.dictionary,
+        text.contains(MARK_OPEN),
+        ctx.style,
+    );
     let user = user_text(text, ctx.app);
     json!({
         "systemInstruction": { "parts": [{ "text": system }] },

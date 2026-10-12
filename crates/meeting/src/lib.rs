@@ -20,8 +20,9 @@ mod session;
 
 pub use cap::RecordingCap;
 pub use detect::{
-    identify, CallApp, CallDetector, CallPrompt, DetectContext, ASK_STOP_AFTER, CALL_APPS,
-    OFFER_DELAY, OFFER_MIN_GAP, RELEASE_DELAY,
+    identify, may_ask_stop, web_call, CallApp, CallDetector, CallHolder, CallPrompt, DetectContext,
+    WebCall, ASK_STOP_AFTER, ASK_STOP_MAX, ASK_STOP_QUIET, CALL_APPS, OFFER_DELAY, OFFER_MIN_GAP,
+    RELEASE_DELAY, WEB_CALLS,
 };
 pub use id::{SessionId, SessionMode};
 pub use mute::{MuteWatch, Muted, MUTE_WARN_AFTER};

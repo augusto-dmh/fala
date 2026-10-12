@@ -33,6 +33,16 @@ export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
   quit: "quit",
 };
 
+/** The title key: a meeting in a browser names both ("Google Meet no Edge"); the quit card
+ *  names no app. */
+export function titleKey(kind: CallPromptKind, webName: string | null) {
+  if (kind === "quit") return "callPrompt.quit.title" as const;
+  const card = kind === "offer" ? "offer" : "askStop";
+  return webName
+    ? (`callPrompt.${card}.titleWeb` as const)
+    : (`callPrompt.${card}.title` as const);
+}
+
 /** The card in the 404×104 prompt window: the pill's black, a bar on the left, two lines,
  *  the buttons and the countdown line along the bottom. */
 export function CallPromptCard({

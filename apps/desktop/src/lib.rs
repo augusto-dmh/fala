@@ -1,4 +1,5 @@
 mod actions;
+mod app_styles;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -788,9 +789,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::set_post_process_selected_prompt,
             shortcut::update_custom_words,
             dictionary::update_dictionary_replacements,
+            dictionary::update_dictionary_snippets,
             shortcut::change_llm_enabled_setting,
             shortcut::change_llm_disabled_apps_setting,
             shortcut::change_cleanup_level_setting,
+            app_styles::update_writing_styles,
+            app_styles::update_app_styles,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
@@ -850,6 +854,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             overlay::pill_overlay_ready,
             overlay::set_idle_pill_hover,
             overlay::open_home_from_pill,
+            overlay::open_meeting_from_pill,
+            overlay::end_paste_failed,
+            last_dictation::copy_failed_paste,
             commands::audio::get_available_microphones,
             commands::audio::set_selected_microphone,
             commands::audio::get_selected_microphone,
@@ -893,6 +900,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::get_meeting,
             commands::meeting::transcribe_meeting,
             commands::meeting::cancel_meeting_transcription,
+            commands::meeting::import_meeting,
+            commands::meeting::cancel_meeting_import,
             commands::meeting::generate_meeting_notes,
             commands::meeting::meeting_markdown,
             commands::meeting::meeting_templates,
@@ -907,6 +916,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_people,
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
+            commands::meeting::set_meeting_speaker_name,
+            commands::meeting::save_meeting_notes,
+            commands::meeting::set_meeting_template,
+            commands::meeting::change_meeting_auto_notes_setting,
             commands::meeting::delete_meeting,
             commands::meeting::meeting_orphans,
             commands::meeting::recover_meeting,

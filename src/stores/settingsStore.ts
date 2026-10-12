@@ -6,6 +6,8 @@ import type {
   AudioDevice,
   DictionaryReplacement,
   CleanupLevel,
+  AppStyle,
+  WritingStyle,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -151,12 +153,27 @@ const settingUpdaters: {
         : null,
     }));
   },
+  dictionary_snippets: async (value) => {
+    const result = await commands.updateDictionarySnippets(
+      value as DictionaryReplacement[],
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, dictionary_snippets: result.data }
+        : null,
+    }));
+  },
   llm_enabled: (value) => commands.changeLlmEnabledSetting(value as boolean),
   notes_profile: (value) => commands.changeNotesProfileSetting(value as string),
   notes_language: (value) =>
     commands.changeNotesLanguageSetting(value as NotesLanguage),
   meeting_keyterms: (value) =>
     commands.changeMeetingKeytermsSetting(value as boolean),
+  meeting_auto_notes: (value) =>
+    commands.changeMeetingAutoNotesSetting(value as boolean),
   llm_disabled_apps: async (value) => {
     const result = await commands.changeLlmDisabledAppsSetting(
       value as string[],
@@ -173,6 +190,30 @@ const settingUpdaters: {
   },
   cleanup_level: (value) =>
     commands.changeCleanupLevelSetting(value as CleanupLevel),
+  writing_styles: async (value) => {
+    const result = await commands.updateWritingStyles(value as WritingStyle[]);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    // A removed style takes its apps with it.
+    const [writing_styles, app_styles] = result.data;
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, writing_styles, app_styles }
+        : null,
+    }));
+  },
+  app_styles: async (value) => {
+    const result = await commands.updateAppStyles(value as AppStyle[]);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, app_styles: result.data }
+        : null,
+    }));
+  },
   word_correction_threshold: (value) =>
     commands.changeWordCorrectionThresholdSetting(value as number),
   paste_delay_ms: (value) =>
