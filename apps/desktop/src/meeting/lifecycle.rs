@@ -110,6 +110,7 @@ impl MeetingManager {
             return Err(error);
         }
         self.with_store(|store| Ok(store.delete_meeting(id)?))?;
+        self.forget_orphan(id);
         log::info!("meeting {id} deleted");
         Ok(())
     }
@@ -141,7 +142,8 @@ impl MeetingManager {
         }
     }
 
-    /// At startup, in the background: the retention runs now and then once a day.
+    /// At startup, in the background: the retention runs, the audio a previous run left as WAV
+    /// is retained (and transcribed, as after a stop), then the retention runs once a day.
     pub fn spawn_upkeep(app: &AppHandle) {
         let app = app.clone();
         let spawned = std::thread::Builder::new()
@@ -152,6 +154,7 @@ impl MeetingManager {
                 };
                 let mut last = millis(super::now_local());
                 manager.run_retention();
+                manager.retain_stopped();
                 loop {
                     std::thread::sleep(RETENTION_CHECK_EVERY);
                     let now = millis(super::now_local());

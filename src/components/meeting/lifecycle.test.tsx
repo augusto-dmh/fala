@@ -11,8 +11,10 @@ import {
   retentionOptions,
   retentionValue,
 } from "../settings/MeetingAudioSettings";
+import type { MeetingOrphan } from "@/bindings";
 import { DeleteConfirm } from "./DeleteMeeting";
 import type { Translate } from "./meetingModel";
+import { orphanMinutes, orphanTime, RecoverBanner } from "./RecoverBanner";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -89,4 +91,26 @@ const noop = () => {};
   assert.ok(confirm.includes("mais de 30 dias será apagado agora"));
   assert.equal(confirm.match(/<button/g)?.length, 2);
   ok("L2 retention options");
+}
+
+// L3: "Recover the recording from 14:02 (12 min)?" from the orphan the backend lists.
+{
+  const orphan: MeetingOrphan = {
+    id: "01K0000000000000000000000A",
+    title: "",
+    started_at: "2026-10-12T14:02:00-03:00",
+    recorded_ms: 719_400,
+  };
+  assert.equal(orphanTime(orphan), "14:02");
+  assert.equal(orphanMinutes(orphan), 12);
+  assert.equal(orphanMinutes({ ...orphan, recorded_ms: 4_000 }), 1);
+  const html = renderToStaticMarkup(
+    <RecoverBanner orphans={[orphan]} onRecover={noop} t={tr} />,
+  );
+  assert.ok(html.includes("Recuperar gravação de 14:02 (12 min)?"));
+  assert.equal(html.match(/<button/g)?.length, 1);
+  const none = <RecoverBanner orphans={[]} onRecover={noop} t={tr} />;
+  assert.equal(renderToStaticMarkup(none), "");
+  assert.match(page, /meetingOrphans\(\)/);
+  ok("L3 recover banner");
 }

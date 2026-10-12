@@ -1064,7 +1064,13 @@
     "notNow": "Agora não",
     "muteApp": "Não avisar no {{app}}",
     "stop": "Parar",
-    "keepRecording": "Continuar"
+    "keepRecording": "Continuar",
+    "quit": {
+      "title": "Parar a gravação?",
+      "body": "Fechar o Fala para a gravação."
+    },
+    "stopAndQuit": "Parar e sair",
+    "cancel": "Cancelar"
   },
   "whatsNew": {
     "title": "Novidades no Fala v{{version}}"
@@ -1270,6 +1276,11 @@
       "body": "O áudio, a transcrição, as anotações e as notas saem deste computador para sempre. Não dá para desfazer.",
       "confirm": "Apagar para sempre",
       "cancel": "Cancelar"
+    },
+    "recover": {
+      "title": "Recuperar gravação de {{time}} ({{minutes}} min)?",
+      "body": "O Fala fechou no meio desta gravação. O áudio até o último segundo está salvo.",
+      "action": "Recuperar"
     }
   }
 }

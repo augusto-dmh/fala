@@ -220,6 +220,7 @@ impl Level {
 }
 
 fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Report)) {
+    // `meeting-power-guard` keeps the PC awake for exactly the life of this loop.
     let mut clock = ActiveClock::new(Instant::now());
     let mut buffer = Vec::new();
     let (mut mic_level, mut system_level) = (Level::default(), Level::default());
