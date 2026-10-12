@@ -103,6 +103,13 @@ pub struct MeetingProgress {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "stage", rename_all = "snake_case")]
 pub enum ProgressStage {
+    /// An import: `phase` is `download` (bytes `done` of `total`, 0 when unknown) or `convert`
+    /// (milliseconds of audio).
+    Importing {
+        phase: String,
+        done: u64,
+        total: u64,
+    },
     /// The working WAV becomes the two Opus files.
     Retaining,
     /// `phase` is `uploading` (bytes `done` of `total`) or `waiting` for the provider.

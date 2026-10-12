@@ -319,7 +319,10 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   for (const kind of Object.keys(pt.meeting.errors)) {
     assert.ok(en.meeting.errors[kind], `errors.${kind} em en`);
   }
-  assert.ok(page.includes("{t(errorKey(error))}"), "o erro aparece traduzido");
+  assert.ok(
+    page.includes("{t(errorKey(error), { detail: errorDetail(error) })}"),
+    "o erro aparece traduzido",
+  );
   ok("C36-error");
 
   const busy = view(detail(), { transcribing: true, generating: true });

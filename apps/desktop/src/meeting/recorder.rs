@@ -1,6 +1,7 @@
 //! The meeting capture thread: the default mic and the chosen system output pushed into
 //! `fala_audio::MeetingRecorder`, the same loop `fala-cli meeting` runs, plus pause and the
-//! switch of the system output while recording.
+//! switch of the system output while recording. A "system only" session opens no mic: the
+//! recorder fills that channel with zeros.
 //!
 //! The streams are opened on the thread that owns them (a cpal stream is not `Send` on every
 //! host). Paused time is neither written nor counted: the recorder's clock is an [`ActiveClock`]
@@ -95,10 +96,11 @@ pub(crate) fn recorded_ms(written_frames: u64) -> u64 {
     written_frames * 1_000 / u64::from(MEETING_RATE)
 }
 
-/// Opens the default mic and the system output on a new thread and starts writing `wav`.
-/// Returns once both streams are open (or with the reason they did not open).
+/// Opens the system output and, `with_mic`, the default mic on a new thread and starts writing
+/// `wav`. Returns once the streams are open (or with the reason they did not open).
 pub(crate) fn spawn(
     system: String,
+    with_mic: bool,
     wav: PathBuf,
     on_report: impl Fn(Report) + Send + 'static,
 ) -> Result<Sender<Control>, String> {
@@ -106,7 +108,7 @@ pub(crate) fn spawn(
     let (ready_tx, ready_rx) = mpsc::channel();
     thread::Builder::new()
         .name("meeting-recorder".to_string())
-        .spawn(move || match open(&system, &wav) {
+        .spawn(move || match open(&system, with_mic, &wav) {
             Ok(capture) => {
                 let _ = ready_tx.send(Ok(()));
                 run(capture, commands, on_report);
@@ -123,7 +125,8 @@ pub(crate) fn spawn(
 }
 
 struct Capture {
-    mic: Mic,
+    /// `None` in a "system only" session.
+    mic: Option<Mic>,
     system: SystemAudio,
     recorder: MeetingRecorder,
     /// Peaks of every output, to tell "nothing plays" from "it plays elsewhere"; `None` where
@@ -131,18 +134,22 @@ struct Capture {
     meter: Option<OutputMeter>,
 }
 
-fn open(system_name: &str, wav: &Path) -> Result<Capture, String> {
+fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String> {
     if let Some(dir) = wav.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let system = SystemAudio::open(system_name).map_err(|e| e.to_string())?;
-    let mic = Mic::open(None).map_err(|e| e.to_string())?;
-    let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
-    let recorder = MeetingRecorder::new(mic.sample_rate(), system.sample_rate(), file)
+    let mic = with_mic
+        .then(|| Mic::open(None))
+        .transpose()
         .map_err(|e| e.to_string())?;
+    let mic_rate = mic.as_ref().map_or(MEETING_RATE, Mic::sample_rate);
+    let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
+    let recorder =
+        MeetingRecorder::new(mic_rate, system.sample_rate(), file).map_err(|e| e.to_string())?;
     log::info!(
         "meeting capture open: mic {}, system {system_name}",
-        mic.name()
+        mic.as_ref().map_or("none", Mic::name)
     );
     let meter = OutputMeter::start()
         .map_err(|e| log::info!("output peaks unavailable: {e}"))
@@ -245,7 +252,9 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
 
         // Drained even while paused, so the paused interval is dropped instead of written later.
         buffer.clear();
-        capture.mic.drain_into(&mut buffer);
+        if let Some(mic) = capture.mic.as_mut() {
+            mic.drain_into(&mut buffer);
+        }
         if !paused {
             mic_level.add(&buffer);
             if let Err(e) = capture.recorder.push_mic(&buffer) {

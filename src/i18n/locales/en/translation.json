@@ -411,7 +411,7 @@
       "title": "Meetings",
       "callPrompt": {
         "label": "Ask when a call starts",
-        "description": "When Teams, Zoom, WhatsApp or a browser opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
+        "description": "When Teams, Zoom, WhatsApp or a meeting in the browser, like Google Meet, opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
       },
       "mutedApps": {
         "title": "Don't ask in these apps",
@@ -996,15 +996,24 @@
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",
     "callElsewhere": "The call's sound is playing on {{device}}",
-    "recordFrom": "Record from this device"
+    "recordFrom": "Record from this device",
+    "pasteFailed": {
+      "title": "Couldn't paste it.",
+      "retry": "{{keys}} pastes it again · click to copy",
+      "click": "Click to copy",
+      "copied": "Copied",
+      "label": "Couldn't paste it. Click to copy the text."
+    }
   },
   "callPrompt": {
     "offer": {
       "title": "Looks like a call in {{app}}",
+      "titleWeb": "Looks like a {{web}} call in {{app}}",
       "body": "Record the meeting?"
     },
     "askStop": {
       "title": "{{app}} let go of the microphone",
+      "titleWeb": "{{web}} in {{app}} let go of the microphone",
       "body": "Stop recording?"
     },
     "record": "Record",
@@ -1057,7 +1066,24 @@
       "outputDefault": "Default output ({{name}})",
       "outputFrom": "Sound from {{device}}",
       "callElsewhere": "The call's sound is playing on {{device}}.",
-      "recordFrom": "Record from this device"
+      "recordFrom": "Record from this device",
+      "systemOnly": "Only the computer sound (class, video)"
+    },
+    "import": {
+      "open": "Import a file or link",
+      "file": "Choose file…",
+      "media": "Audio and video",
+      "anyFile": "All files",
+      "urlPlaceholder": "https://… (YouTube or another site)",
+      "url": "Import link",
+      "close": "Close",
+      "hint": "Or drop a file on this page. Uses the ffmpeg and yt-dlp installed on the computer; the audio comes in as a meeting, without a microphone.",
+      "starting": "Preparing the import…",
+      "downloading": "Downloading the audio… {{percent}}%",
+      "downloadingBytes": "Downloading the audio… {{mb}} MB",
+      "converting": "Converting the audio… {{percent}}%",
+      "saving": "Saving the audio…",
+      "cancel": "Cancel"
     },
     "annotations": {
       "placeholder": "Type your notes. They save themselves."
@@ -1166,6 +1192,12 @@
       "unknown_template": "Unknown template.",
       "notes": "Notes generation failed. Try again.",
       "notes_edited": "These notes were edited. Confirm before generating again.",
+      "tool_missing": "{{detail}} is not installed or not on the PATH. Install it and open Fala again.",
+      "invalid_url": "Use a link that starts with http:// or https://.",
+      "download": "Could not download that link. Download the video in the browser and import the file. ({{detail}})",
+      "import": "Could not import that file: {{detail}}",
+      "import_no_audio": "That file has no audio track.",
+      "import_too_long": "That file is longer than 12 hours, the import limit.",
       "generic": "Something went wrong. See the log."
     }
   }

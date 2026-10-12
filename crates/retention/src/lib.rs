@@ -1,7 +1,8 @@
 //! Áudio de reunião retido (fase 2, pitch `fase-2-reuniao-videos` 2.F3; ADR-0014).
 //!
 //! O WAV estéreo de trabalho (L = mic, R = sistema, 48 kHz i16) vira `audio/<id>/mic.opus` e
-//! `audio/<id>/sys.opus`, Ogg Opus mono de 24 kbps. O WAV só é apagado depois de os dois
+//! `audio/<id>/sys.opus`, Ogg Opus mono de 24 kbps; o WAV mono de uma importação vira o
+//! `sys.opus`, com o `mic.opus` em silêncio. O WAV só é apagado depois de os dois
 //! arquivos decodificarem com a contagem exata de amostras. A política de retenção decide, com
 //! o relógio do chamador, quais sessões têm o áudio vencido. `decode_range` devolve um trecho
 //! para tocar. Sem `cfg` de plataforma nem `tauri`.
@@ -27,7 +28,7 @@ pub const SYSTEM_FILE: &str = "sys.opus";
 /// Erros de `fala-retention`.
 #[derive(Debug, thiserror::Error)]
 pub enum RetentionError {
-    /// O WAV não é o de trabalho da trilha F (48 kHz, estéreo, 16 bits).
+    /// O WAV não é o de trabalho da trilha F (48 kHz, estéreo ou mono, 16 bits).
     #[error("WAV não suportado: {sample_rate} Hz, {channels} canais, {bits} bits")]
     UnsupportedWav {
         sample_rate: u32,
