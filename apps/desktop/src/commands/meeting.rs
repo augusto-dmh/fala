@@ -9,6 +9,7 @@ use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
     MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary, MeetingTemplate,
 };
+use crate::meeting::recovery::MeetingOrphan;
 use crate::meeting::{MeetingError, MeetingManager, MeetingMode, MeetingStatus};
 use crate::settings::{self, NotesLanguage};
 
@@ -255,6 +256,26 @@ pub async fn apply_speaker_suggestion(
     person: u32,
 ) -> Result<MeetingPeople, MeetingError> {
     meetings.apply_speaker_suggestion(&id, person)
+}
+
+/// Recordings the last run left without an end: "Recover the recording from 14:02 (12 min)?".
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_orphans(meetings: Meetings<'_>) -> Result<Vec<MeetingOrphan>, MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.orphans())
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// The click on "Recover"; retention and transcription follow in the background.
+#[tauri::command]
+#[specta::specta]
+pub async fn recover_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.recover(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
 }
 
 /// "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).

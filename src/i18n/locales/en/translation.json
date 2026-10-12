@@ -1026,7 +1026,13 @@
     "notNow": "Not now",
     "muteApp": "Don't ask in {{app}}",
     "stop": "Stop",
-    "keepRecording": "Keep recording"
+    "keepRecording": "Keep recording",
+    "quit": {
+      "title": "Stop the recording?",
+      "body": "Quitting Fala stops the recording."
+    },
+    "stopAndQuit": "Stop and quit",
+    "cancel": "Cancel"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
@@ -1173,6 +1179,11 @@
       "body": "The audio, transcript, typed notes and notes leave this computer for good. This cannot be undone.",
       "confirm": "Delete for good",
       "cancel": "Cancel"
+    },
+    "recover": {
+      "title": "Recover the recording from {{time}} ({{minutes}} min)?",
+      "body": "Fala closed in the middle of this recording. The audio up to the last second is saved.",
+      "action": "Recover"
     }
   }
 }

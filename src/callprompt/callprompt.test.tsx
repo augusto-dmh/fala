@@ -50,6 +50,8 @@ console.log("C15 countdown ok");
 // The card: the offer has three buttons, the stop question two; the first is primary.
 assert.deepEqual(CALL_PROMPT_ANSWERS.offer, ["record", "not_now", "mute_app"]);
 assert.deepEqual(CALL_PROMPT_ANSWERS.ask_stop, ["stop", "keep_recording"]);
+// Quitting while recording: [Parar e sair] first, and running out never quits (call_prompt.rs).
+assert.deepEqual(CALL_PROMPT_ANSWERS.quit, ["stop_and_quit", "cancel"]);
 const html = renderToStaticMarkup(
   <CallPromptCard
     kind="offer"
@@ -83,6 +85,10 @@ const keys = [
   "callPrompt.muteApp",
   "callPrompt.stop",
   "callPrompt.keepRecording",
+  "callPrompt.quit.title",
+  "callPrompt.quit.body",
+  "callPrompt.stopAndQuit",
+  "callPrompt.cancel",
   "settings.meetings.title",
   "settings.meetings.callPrompt.label",
   "settings.meetings.callPrompt.description",

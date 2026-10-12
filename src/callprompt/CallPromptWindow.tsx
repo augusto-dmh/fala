@@ -6,7 +6,11 @@ import {
   type CallPromptAnswer,
   type CallPromptPayload,
 } from "@/bindings";
-import { CALL_PROMPT_ANSWERS, CallPromptCard } from "./CallPromptCard";
+import {
+  CALL_PROMPT_ANSWERS,
+  CALL_PROMPT_TEXT,
+  CallPromptCard,
+} from "./CallPromptCard";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const TICK_MS = 100;
@@ -53,24 +57,22 @@ export function CallPromptWindow() {
 
   if (!prompt) return null;
   const app = prompt.app_name;
-  const isOffer = prompt.kind === "offer";
+  const text = CALL_PROMPT_TEXT[prompt.kind];
   const labels: Record<CallPromptAnswer, string> = {
     record: t("callPrompt.record"),
     not_now: t("callPrompt.notNow"),
     mute_app: t("callPrompt.muteApp", { app }),
     stop: t("callPrompt.stop"),
     keep_recording: t("callPrompt.keepRecording"),
+    stop_and_quit: t("callPrompt.stopAndQuit"),
+    cancel: t("callPrompt.cancel"),
     expired: "",
   };
   return (
     <CallPromptCard
       kind={prompt.kind}
-      title={
-        isOffer
-          ? t("callPrompt.offer.title", { app })
-          : t("callPrompt.askStop.title", { app })
-      }
-      body={isOffer ? t("callPrompt.offer.body") : t("callPrompt.askStop.body")}
+      title={t(`callPrompt.${text}.title`, { app })}
+      body={t(`callPrompt.${text}.body`)}
       actions={CALL_PROMPT_ANSWERS[prompt.kind].map((value, index) => ({
         answer: value,
         label: labels[value],

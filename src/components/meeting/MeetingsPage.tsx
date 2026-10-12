@@ -8,6 +8,7 @@ import {
   type MeetingError,
   type MeetingKeys,
   type MeetingMode,
+  type MeetingOrphan,
   type MeetingOutputs,
   type MeetingStatus,
   type MeetingSummary,
@@ -23,6 +24,7 @@ import { MeetingList } from "./MeetingList";
 import { MeetingView } from "./MeetingView";
 import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
+import { RecoverBanner } from "./RecoverBanner";
 import { errorKey, takeConsentRequest } from "./meetingModel";
 
 const IDLE: MeetingStatus = {
@@ -59,6 +61,8 @@ export function MeetingsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<MeetingError | string | null>(null);
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
+  const [orphans, setOrphans] = useState<MeetingOrphan[]>([]);
+  const [recovering, setRecovering] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await commands.listMeetings();
@@ -83,6 +87,9 @@ export function MeetingsPage() {
       .meetingKeys()
       .then((r) => r.status === "ok" && setKeys(r.data));
     void refresh();
+    void commands
+      .meetingOrphans()
+      .then((r) => r.status === "ok" && setOrphans(r.data));
     const unlisteners = [
       events.meetingStatus.listen((event) => setStatus(event.payload)),
       events.meetingProgress.listen((event) => {
@@ -203,11 +210,26 @@ export function MeetingsPage() {
     } else setError(result.error);
   };
 
+  const recover = async (id: string) => {
+    setError(null);
+    setRecovering(id);
+    const result = await commands.recoverMeeting(id);
+    setRecovering(null);
+    if (result.status === "error") {
+      setError(result.error);
+      return;
+    }
+    setOrphans((current) => current.filter((o) => o.id !== id));
+    await refresh();
+    await open(id);
+  };
+
   const remove = async (id: string) => {
     setError(null);
     const result = await commands.deleteMeeting(id);
     if (result.status === "ok") {
       setSelected((current) => (current?.summary.id === id ? null : current));
+      setOrphans((current) => current.filter((o) => o.id !== id));
     } else setError(result.error);
     await refresh();
   };
@@ -221,6 +243,12 @@ export function MeetingsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("meeting.title")}>
+        <RecoverBanner
+          orphans={orphans}
+          busy={recovering !== null}
+          onRecover={(id) => void recover(id)}
+          t={t}
+        />
         {askConsent ? (
           <ConsentNotice
             onAccept={async () => {

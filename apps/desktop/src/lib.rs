@@ -241,7 +241,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(meeting_manager.clone());
-    // The meeting audio retention runs now and once a day.
+    // Audio a previous run left as WAV becomes Opus; the retention runs now and once a day.
     meeting::MeetingManager::spawn_upkeep(app_handle);
     app_handle.manage(tray::TrayState::new());
 
@@ -362,7 +362,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 cancel_current_operation(app);
             }
             "quit" => {
-                app.exit(0);
+                // With a meeting recording, the card asks "Stop the recording?" first.
+                if !meeting::ask_before_quit(app) {
+                    app.exit(0);
+                }
             }
             // Explicit clicks only: the tray items are one of the two ways a meeting records
             // (ADR-0005).
@@ -905,6 +908,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
             commands::meeting::delete_meeting,
+            commands::meeting::meeting_orphans,
+            commands::meeting::recover_meeting,
             commands::meeting::change_meeting_retention_setting,
             commands::meeting::change_meeting_cap_setting,
             call_prompt::call_prompt_current,

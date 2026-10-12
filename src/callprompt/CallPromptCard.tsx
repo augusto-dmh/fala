@@ -23,6 +23,14 @@ export interface CallPromptCardProps {
 export const CALL_PROMPT_ANSWERS: Record<CallPromptKind, CallPromptAnswer[]> = {
   offer: ["record", "not_now", "mute_app"],
   ask_stop: ["stop", "keep_recording"],
+  quit: ["stop_and_quit", "cancel"],
+};
+
+/** The `callPrompt.*` group with the title and body of each card. */
+export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
+  offer: "offer",
+  ask_stop: "askStop",
+  quit: "quit",
 };
 
 /** The card in the 404×104 prompt window: the pill's black, a bar on the left, two lines,
