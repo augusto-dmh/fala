@@ -16,11 +16,17 @@ import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const TICK_MS = 100;
 
-/** The body key: a short recording and an almost silent long one ask for different reasons. */
+/** The body key: a short recording and an almost silent long one ask for different reasons;
+ *  the wake card says how long the PC slept. */
 export function mistakeBody(
   text: string,
   seconds: number | null,
 ): [string, Record<string, unknown>] {
+  if (text === "woke" && seconds !== null)
+    return [
+      "callPrompt.woke.body",
+      { minutes: Math.max(1, Math.round(seconds / 60)) },
+    ];
   if (text !== "mistake" || seconds === null)
     return [`callPrompt.${text}.body`, {}];
   return seconds < 30

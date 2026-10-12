@@ -100,6 +100,15 @@ assert.deepEqual(mistakeBody("mistake", 7_200), [
   { minutes: 120 },
 ]);
 assert.deepEqual(mistakeBody("quit", null), ["callPrompt.quit.body", {}]);
+assert.deepEqual(mistakeBody("woke", 20), [
+  "callPrompt.woke.body",
+  { minutes: 1 },
+]);
+assert.deepEqual(mistakeBody("woke", 720), [
+  "callPrompt.woke.body",
+  { minutes: 12 },
+]);
+assert.deepEqual(CALL_PROMPT_ANSWERS.woke, ["dismiss"]);
 console.log("L4 mistake text ok");
 
 // Every key the window and the settings use exists in pt and en, with {{app}} where needed.

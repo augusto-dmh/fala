@@ -1,6 +1,6 @@
 import { Play, Square } from "lucide-react";
-import { useRef, useState } from "react";
-import type { MeetingLine } from "@/bindings";
+import { Fragment, useRef, useState } from "react";
+import type { MeetingLine, MeetingSleep } from "@/bindings";
 import { Input } from "../ui/Input";
 import { clock, speakerOf, type Translate } from "./meetingModel";
 import { highlight } from "./transcriptSearch";
@@ -96,8 +96,34 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
 /** The DOM id of a segment bubble, the target of a source's `mm:ss`. */
 export const segmentAnchor = (seq: number) => `segment-${seq}`;
 
+/** Where each sleep of the PC goes: before the first line spoken after it (by index), or after
+ *  the last line (`lines.length`). */
+export function sleepMarks(
+  lines: MeetingLine[],
+  sleeps: MeetingSleep[],
+): Map<number, MeetingSleep[]> {
+  const marks = new Map<number, MeetingSleep[]>();
+  for (const sleep of sleeps) {
+    const next = lines.findIndex((line) => line.t0_ms >= sleep.at_ms);
+    const index = next === -1 ? lines.length : next;
+    marks.set(index, [...(marks.get(index) ?? []), sleep]);
+  }
+  return marks;
+}
+
+function SleepMark({ sleep, t }: { sleep: MeetingSleep; t: Translate }) {
+  const minutes = Math.max(1, Math.round(sleep.slept_ms / 60_000));
+  return (
+    <li role="separator" className="py-2 text-center text-caption text-text-2">
+      {t("meeting.view.slept", { minutes })}
+    </li>
+  );
+}
+
 export interface TranscriptViewProps {
   lines: MeetingLine[];
+  /** Where the PC slept during the recording; not shown in a search. */
+  sleeps?: MeetingSleep[];
   audioAvailable: boolean;
   /** `seq` of the segment playing, if any. */
   playing: number | null;
@@ -117,6 +143,12 @@ export interface TranscriptViewProps {
  */
 export function TranscriptView(props: TranscriptViewProps) {
   const { lines, t } = props;
+  const searching = (props.query ?? "").trim() !== "";
+  const marks = searching ? new Map() : sleepMarks(lines, props.sleeps ?? []);
+  const marksAt = (index: number) =>
+    (marks.get(index) ?? []).map((sleep: MeetingSleep) => (
+      <SleepMark key={`sleep-${sleep.at_ms}`} sleep={sleep} t={t} />
+    ));
   return (
     <ol className="space-y-1">
       {lines.map((line, index) => {
@@ -128,42 +160,45 @@ export function TranscriptView(props: TranscriptViewProps) {
           lines[index - 1].person !== line.person;
         const highlighted = props.highlighted === line.seq;
         return (
-          <li
-            key={line.seq}
-            id={segmentAnchor(line.seq)}
-            data-speaker={me ? "me" : "them"}
-            className={`flex flex-col ${me ? "items-end" : "items-start"} ${turn && index > 0 ? "pt-2" : ""}`}
-          >
-            {turn && (
-              <span className="px-1 text-caption text-text-2">
-                <SpeakerName line={line} onRename={props.onRename} t={t} /> ·{" "}
-                {clock(line.t0_ms)}
-              </span>
-            )}
-            <div
-              className={`flex max-w-[85%] items-start gap-1 rounded-lg px-2 py-1 text-sm text-text ${me ? "flex-row-reverse bg-me/15" : "bg-them/15"} ${highlighted ? "ring-2 ring-accent" : ""}`}
+          <Fragment key={line.seq}>
+            {marksAt(index)}
+            <li
+              id={segmentAnchor(line.seq)}
+              data-speaker={me ? "me" : "them"}
+              className={`flex flex-col ${me ? "items-end" : "items-start"} ${turn && index > 0 ? "pt-2" : ""}`}
             >
-              <PlayButton
-                playing={props.playing === line.seq}
-                audioAvailable={props.audioAvailable}
-                onClick={() => props.onPlay(line)}
-                t={t}
-              />
-              <span>
-                {highlight(line.text, props.query ?? "").map((piece, i) =>
-                  piece.hit ? (
-                    <mark key={i} className="rounded bg-accent/30 text-text">
-                      {piece.text}
-                    </mark>
-                  ) : (
-                    piece.text
-                  ),
-                )}
-              </span>
-            </div>
-          </li>
+              {turn && (
+                <span className="px-1 text-caption text-text-2">
+                  <SpeakerName line={line} onRename={props.onRename} t={t} /> ·{" "}
+                  {clock(line.t0_ms)}
+                </span>
+              )}
+              <div
+                className={`flex max-w-[85%] items-start gap-1 rounded-lg px-2 py-1 text-sm text-text ${me ? "flex-row-reverse bg-me/15" : "bg-them/15"} ${highlighted ? "ring-2 ring-accent" : ""}`}
+              >
+                <PlayButton
+                  playing={props.playing === line.seq}
+                  audioAvailable={props.audioAvailable}
+                  onClick={() => props.onPlay(line)}
+                  t={t}
+                />
+                <span>
+                  {highlight(line.text, props.query ?? "").map((piece, i) =>
+                    piece.hit ? (
+                      <mark key={i} className="rounded bg-accent/30 text-text">
+                        {piece.text}
+                      </mark>
+                    ) : (
+                      piece.text
+                    ),
+                  )}
+                </span>
+              </div>
+            </li>
+          </Fragment>
         );
       })}
+      {marksAt(lines.length)}
     </ol>
   );
 }

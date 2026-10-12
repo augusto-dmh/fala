@@ -1803,7 +1803,11 @@ export type CallPromptKind =
 /**
  * "Nada foi gravado": the empty session is already gone.
  */
-"nothing_recorded"
+"nothing_recorded" | 
+/**
+ * "A gravação continuou depois da suspensão" with how long the PC slept: [Fechar].
+ */
+"woke"
 /**
  * What the card shows.
  */
@@ -1817,7 +1821,7 @@ web_name: string | null; countdown_ms: number;
  */
 session_id: string | null; 
 /**
- * Seconds recorded, for "Gravou por engano?".
+ * Seconds recorded, for "Gravou por engano?"; seconds asleep, for the wake card.
  */
 seconds: number | null }
 /**
@@ -1927,7 +1931,11 @@ notes_running: boolean;
 /**
  * Both retained Opus files are on disk, so a transcript line can be played.
  */
-audio_available: boolean }
+audio_available: boolean; 
+/**
+ * Where the PC slept during the recording, for the transcript's markers.
+ */
+sleeps?: MeetingSleep[] }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.
@@ -2042,6 +2050,11 @@ export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" |
  * Where the processing of a session is, at least once a second while the transcript runs.
  */
 export type MeetingProgress = { id: string; stage: ProgressStage }
+export type MeetingSleep = { 
+/**
+ * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
+ */
+at_ms: number; slept_ms: number }
 /**
  * What the UI shows about the current recording; emitted on every change and at 4 Hz while
  * recording.
