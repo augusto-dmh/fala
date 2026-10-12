@@ -601,6 +601,9 @@ pub struct AppSettings {
     /// Spoken -> written pairs of the personal dictionary; `custom_words` keeps the terms.
     #[serde(default)]
     pub dictionary_replacements: Vec<crate::dictionary::DictionaryReplacement>,
+    /// Snippets: a trigger of two words or more as `spoken`, the text it inserts as `written`.
+    #[serde(default)]
+    pub dictionary_snippets: Vec<crate::dictionary::DictionaryReplacement>,
     /// What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
     #[serde(default)]
     pub notes_profile: String,
@@ -1211,6 +1214,7 @@ pub fn get_default_settings() -> AppSettings {
         log_level: default_log_level(),
         custom_words: Vec::new(),
         dictionary_replacements: Vec::new(),
+        dictionary_snippets: Vec::new(),
         notes_profile: String::new(),
         notes_language: NotesLanguage::default(),
         meeting_keyterms: default_meeting_keyterms(),
@@ -1749,6 +1753,7 @@ mod tests {
         // The dictionary pairs are a new field: the terms load as stored, with no pairs.
         assert_eq!(settings.custom_words, ["Fala", "cjpais"]);
         assert!(settings.dictionary_replacements.is_empty());
+        assert!(settings.dictionary_snippets.is_empty());
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
         // Without an exact device, the retired generic GPU choice becomes Auto.

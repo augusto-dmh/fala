@@ -331,6 +331,17 @@ async updateDictionaryReplacements(replacements: DictionaryReplacement[]) : Prom
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Stores the snippets and returns them as stored.
+ */
+async updateDictionarySnippets(snippets: DictionaryReplacement[]) : Promise<Result<DictionaryReplacement[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_dictionary_snippets", { snippets }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeLlmEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_llm_enabled_setting", { enabled }) };
@@ -1499,6 +1510,10 @@ selected_channel?: number | null; clamshell_microphone?: string | null; selected
  */
 dictionary_replacements?: DictionaryReplacement[]; 
 /**
+ * Snippets: a trigger of two words or more as `spoken`, the text it inserts as `written`.
+ */
+dictionary_snippets?: DictionaryReplacement[]; 
+/**
  * What the meeting notes LLM is told about the user (ADR-0016), at most 300 characters.
  */
 notes_profile?: string; notes_language?: NotesLanguage; 
@@ -1617,7 +1632,8 @@ export type DictationDay = { day: string; dictations: number; words: number }
  */
 export type DictationStats = { days: number; dictations: number; words: number; llm_attempts: number; fallbacks: number; per_day: DictationDay[]; e2e: LatencyPercentiles; e2e_llm: LatencyPercentiles; asr: LatencyPercentiles; llm: LatencyPercentiles; paste: LatencyPercentiles; speech: LatencyPercentiles }
 /**
- * A spoken -> written pair as stored. `uses` counts every occurrence the rules replaced.
+ * A spoken -> written pair, or a trigger -> text snippet, as stored. `uses` counts every
+ * occurrence the rules replaced.
  */
 export type DictionaryReplacement = { spoken: string; written: string; uses?: number }
 export type EngineType = 

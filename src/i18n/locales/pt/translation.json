@@ -90,6 +90,20 @@
       "duplicate": "\"{{spoken}}\" já tem uma forma escrita",
       "uses_one": "1 uso",
       "uses_other": "{{count}} usos"
+    },
+    "snippets": {
+      "title": "Snippets",
+      "description": "Diga o gatilho e o Fala insere o texto, como está: assinatura, link da agenda, endereço. O gatilho precisa de duas palavras ou mais e vale sem diferenciar maiúsculas nem acentos. {data}, {data_extenso} e {hora} viram a data e a hora do ditado. O texto do snippet nunca vai para a IA de formatação.",
+      "spokenPlaceholder": "minha assinatura",
+      "writtenPlaceholder": "Augusto Henriques\nfala.dev",
+      "spokenLabel": "Gatilho",
+      "writtenLabel": "Texto inserido",
+      "add": "Adicionar",
+      "remove": "Remover o snippet {{spoken}}",
+      "duplicate": "\"{{spoken}}\" já é gatilho de um snippet",
+      "twoWords": "O gatilho precisa de duas palavras ou mais.",
+      "uses_one": "1 uso",
+      "uses_other": "{{count}} usos"
     }
   },
   "settingsPage": {
