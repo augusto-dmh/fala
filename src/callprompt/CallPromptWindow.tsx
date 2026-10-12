@@ -6,7 +6,11 @@ import {
   type CallPromptAnswer,
   type CallPromptPayload,
 } from "@/bindings";
-import { CALL_PROMPT_ANSWERS, CallPromptCard } from "./CallPromptCard";
+import {
+  CALL_PROMPT_ANSWERS,
+  CallPromptCard,
+  titleKey,
+} from "./CallPromptCard";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const TICK_MS = 100;
@@ -65,11 +69,10 @@ export function CallPromptWindow() {
   return (
     <CallPromptCard
       kind={prompt.kind}
-      title={
-        isOffer
-          ? t("callPrompt.offer.title", { app })
-          : t("callPrompt.askStop.title", { app })
-      }
+      title={t(titleKey(prompt.kind, prompt.web_name), {
+        app,
+        web: prompt.web_name,
+      })}
       body={isOffer ? t("callPrompt.offer.body") : t("callPrompt.askStop.body")}
       actions={CALL_PROMPT_ANSWERS[prompt.kind].map((value, index) => ({
         answer: value,
