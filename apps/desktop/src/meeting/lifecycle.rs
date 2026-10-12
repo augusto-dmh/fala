@@ -115,10 +115,14 @@ impl MeetingManager {
         Ok(())
     }
 
-    /// Writes the `.md` of each meeting that is missing or differs from `fala.sqlite`
-    /// (ADR-0006): sessions saved before the mirror, and writes that failed. The store is taken
-    /// once per meeting, so the page's commands are not held for the whole run.
+    /// Rebuilds the search index if it misses a session, then writes the `.md` of each meeting
+    /// that is missing or differs from `fala.sqlite` (ADR-0006): sessions saved before the
+    /// mirror, and writes that failed. The store is taken once per meeting for the files, so the
+    /// page's commands are not held for the whole run.
     pub fn sync_mirrors(&self) {
+        if let Err(e) = self.with_store(|store| Ok(store.index_meetings_for_search()?)) {
+            log::warn!("meeting search index was not rebuilt: {e}");
+        }
         let ids = match self.with_store(|store| Ok(store.meetings()?)) {
             Ok(meetings) => meetings.into_iter().map(|m| m.id),
             Err(e) => {

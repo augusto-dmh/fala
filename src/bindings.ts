@@ -1215,6 +1215,17 @@ async listMeetings() : Promise<Result<MeetingSummary[], MeetingError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Sessions whose title, notes or transcript match `query`, newest first.
+ */
+async searchMeetings(query: string) : Promise<Result<MeetingSearchHit[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_meetings", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMeeting(id: string) : Promise<Result<MeetingDetail, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_meeting", { id }) };
@@ -1980,6 +1991,14 @@ export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" |
  * Where the processing of a session is, at least once a second while the transcript runs.
  */
 export type MeetingProgress = { id: string; stage: ProgressStage }
+/**
+ * A session the search found.
+ */
+export type MeetingSearchHit = { id: string; 
+/**
+ * The matching excerpt; each found term sits between `\u{2}` and `\u{3}`.
+ */
+snippet: string }
 /**
  * What the UI shows about the current recording; emitted on every change and at 4 Hz while
  * recording.

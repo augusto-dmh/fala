@@ -53,3 +53,14 @@ Proof: `cargo test -p fala-storage --test meeting_mirror reindex_` e
 **C11** - `fala-cli reindex` reconstrói ditados e reuniões e diz quantos de cada; só com
 `Reuniões/` também roda; sem nenhuma das duas pastas sai com 2
 Proof: `cargo test -p fala-cli --test history reindex_`
+
+## S3 — busca nas reuniões (PR 3)
+
+**C12** - Busca sem acento e por prefixo acha título, anotações, notas e trechos, a mais nova
+primeiro, todos os termos obrigatórios, sintaxe do FTS5 como texto; mudança, transcrição nova e
+apagar chegam ao índice; índice com falta é reconstruído na abertura; sessão do `reindex` é achada
+Proof: `cargo test -p fala-storage --test meeting_search`
+
+**C13** - A página Reuniões tem a caixa de busca; a lista mostra só as achadas, na ordem da busca,
+com o trecho e o termo marcado (texto, nunca HTML); sem resultado, "Nenhuma reunião encontrada."
+Proof: `bun src/components/meeting/search.test.tsx` + manual (app de debug portátil)

@@ -1147,7 +1147,9 @@
       "empty": "No meetings yet. Record one, or create one without recording to write the agenda.",
       "draft": "draft",
       "transcribed": "transcribed",
-      "notes": "with notes"
+      "notes": "with notes",
+      "search": "Search titles, notes and transcripts",
+      "noResults": "No meetings found."
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",
