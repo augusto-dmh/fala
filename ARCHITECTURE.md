@@ -25,7 +25,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 | `crates/storage` | `fala-storage` | SQLite (FTS5) mais o espelho Markdown |
 | `crates/meeting` | `fala-meeting` | sessão de reunião: máquina de estados (início só por ação explícita, indicador obrigatório, pausa, suspensão, teto), `SessionId` (ULID), modos, o aviso de canal mudo (`MuteWatch`) e o detector de call (`CallDetector`: exe → app, "Gravar?" e "Parar?", só pergunta) |
 | `crates/media` | `fala-media` | importação de arquivo de áudio ou vídeo pelo `ffmpeg`/`ffprobe` do PATH, e de URL pelo `yt-dlp` do PATH: WAV mono 48 kHz para a sessão de importação, com progresso e cancelamento |
-| `crates/mcp` | `fala-mcp` | servidor MCP local (stdio, só leitura, desligado sem `mcp.toml`) sobre o histórico do `storage`, servido por `fala-cli mcp` (ADR-0010, proposta) |
+| `crates/mcp` | `fala-mcp` | servidor MCP local (stdio, só leitura, desligado sem `mcp.toml`) sobre os ditados e, com `meetings = true`, as reuniões do `storage`, servido por `fala-cli mcp` (ADR-0010, proposta) |
 | `crates/notes` | `fala-notes` | notas de reunião: payload enumerado da ADR-0016, trait `NotesLlm` com o cliente Claude, Markdown humano × gerado com ponteiros, templates |
 | `crates/retention` | `fala-retention` | áudio de reunião retido: WAV de trabalho para `audio/<id>/mic.opus` e `sys.opus` (Ogg Opus mono 24 kbps, libopus), validação antes de apagar o WAV, política de retenção (ADR-0014) |
 | `apps/desktop` | `fala` (lib `fala_app_lib`) | casca Tauri 2: tray, pill, janelas, comandos e eventos |
