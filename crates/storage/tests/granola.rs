@@ -18,7 +18,7 @@ const HEADER: &str =
 
 fn csv(title: &str) -> String {
     format!(
-        "{HEADER}g-1,{title},Acme,2025-03-14 10:30:00 BST,\"### Próximos passos\n- Ana manda o contrato\",\"pauta: preço\",\"Me: Bom dia.\nAna: Bom dia, vamos ao preço?\"\n\
+        "{HEADER}g-1,{title},Acme,2025-03-14 10:30:00 BST,\"### Próximos passos\n- Ana manda o contrato\",\"pauta: preço\",\"Me: Bom dia.\nAna: Bom dia, vamos ao preço?\nAna: Começo pelo contrato.\"\n\
          g-2,,Acme,2025-03-15T09:00:00Z,,,\n"
     )
 }
@@ -60,7 +60,7 @@ fn an_imported_meeting_is_a_finished_session_without_audio() {
         m.notes_md.as_deref(),
         Some(
             "### Próximos passos <!-- fala:ia -->\n- Ana manda o contrato <!-- fala:ia -->\n\n\
-             _Importado do Granola em 02/10/2026._"
+             _Importado do Granola em 2026-10-02._"
         )
     );
     assert!(m.transcribed_at.is_some());
@@ -85,14 +85,21 @@ fn an_imported_meeting_is_a_finished_session_without_audio() {
                 0,
                 "Bom dia, vamos ao preço?"
             ),
+            (
+                3,
+                SegmentChannel::System,
+                SegmentSpeaker::Person(1),
+                0,
+                "Começo pelo contrato."
+            ),
         ]
     );
     let speakers = store.meeting_speakers(m.id).unwrap();
     assert_eq!(speakers[0].name.as_deref(), Some("Ana"));
 
-    // Sem título, sem resumo e sem transcrição: título com a data, sem notas e sem trechos.
+    // Sem título, sem resumo e sem transcrição: a UI dá o título no idioma dela.
     let empty = meetings.iter().find(|e| e.id != m.id).unwrap();
-    assert_eq!(empty.title, "Reunião do Granola de 15/03/2025");
+    assert_eq!(empty.title, "");
     assert_eq!(empty.notes_md, None);
     assert_eq!(empty.transcribed_at, None);
 
@@ -115,15 +122,28 @@ fn importing_again_updates_instead_of_duplicating() {
     let mut store = env.open();
     import_all(&mut store, &path);
     let first: Vec<_> = store.meetings().unwrap().iter().map(|m| m.id).collect();
-    let id = store
-        .meetings()
-        .unwrap()
-        .into_iter()
-        .find(|m| m.title == "Primeiro título")
-        .unwrap()
-        .id;
+    let find = |store: &Store, title: &str| {
+        store
+            .meetings()
+            .unwrap()
+            .into_iter()
+            .find(|m| m.title == title)
+            .unwrap()
+            .id
+    };
+    let id = find(&store, "Primeiro título");
+    let untitled = find(&store, "");
+
+    // O que a pessoa muda no Fala sobrevive a importar de novo.
+    store.set_meeting_title(untitled, "Meu título").unwrap();
+    store
+        .save_meeting_annotations(untitled, "minhas anotações")
+        .unwrap();
     store
         .save_edited_meeting_notes(id, "editada", at(22, 0, 0))
+        .unwrap();
+    store
+        .set_meeting_speaker_name(id, 1, Some("Ana Souza"))
         .unwrap();
 
     std::fs::write(&path, csv("Título revisado")).unwrap();
@@ -135,10 +155,18 @@ fn importing_again_updates_instead_of_duplicating() {
     assert_eq!(again.iter().map(|m| m.id).collect::<Vec<_>>(), first);
     let m = store.meeting(id).unwrap();
     assert_eq!(m.title, "Título revisado");
-    assert!(m.notes_md.unwrap().contains("Ana manda o contrato"));
-    assert!(!store.meeting_notes_edited(id).unwrap());
-    assert_eq!(store.meeting_segments(id).unwrap().len(), 2);
-    assert_eq!(store.meeting_speakers(id).unwrap().len(), 1);
+    assert_eq!(m.notes_md.as_deref(), Some("editada"));
+    assert!(store.meeting_notes_edited(id).unwrap());
+    assert_eq!(store.meeting_segments(id).unwrap().len(), 3);
+    let speakers = store.meeting_speakers(id).unwrap();
+    assert_eq!(speakers.len(), 1);
+    assert_eq!(speakers[0].name.as_deref(), Some("Ana Souza"));
+    let kept = store.meeting(untitled).unwrap();
+    assert_eq!(kept.title, "Meu título");
+    assert_eq!(kept.annotations, "minhas anotações");
+    let sources = store.meeting_import_sources().unwrap();
+    assert_eq!(sources.len(), 2);
+    assert_eq!(sources.get(&id).map(String::as_str), Some(GRANOLA));
     let names: Vec<String> = std::fs::read_dir(env.notes.join("Reuniões"))
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())

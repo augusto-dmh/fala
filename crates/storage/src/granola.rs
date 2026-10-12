@@ -136,6 +136,8 @@ pub fn parse_granola_zip(bytes: &[u8]) -> Result<GranolaExport, GranolaError> {
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| GranolaError::Zip(e.to_string()))?;
     let mut tables: Vec<Table> = Vec::new();
     let mut rows = 0;
+    // O teto vale para o descomprimido somado: o tamanho que o `.zip` declara não é prova.
+    let mut bytes_read: u64 = 0;
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
@@ -152,8 +154,11 @@ pub fn parse_granola_zip(bytes: &[u8]) -> Result<GranolaExport, GranolaError> {
             return Err(GranolaError::FileTooLarge);
         }
         let mut csv = Vec::new();
-        entry.take(MAX_FILE_BYTES + 1).read_to_end(&mut csv)?;
-        if csv.len() as u64 > MAX_FILE_BYTES {
+        entry
+            .take(MAX_FILE_BYTES + 1 - bytes_read)
+            .read_to_end(&mut csv)?;
+        bytes_read += csv.len() as u64;
+        if bytes_read > MAX_FILE_BYTES {
             return Err(GranolaError::FileTooLarge);
         }
         let table = parse_table(&csv, Some(&name))?;
@@ -356,6 +361,14 @@ const ZONES: [(&str, i32); 30] = [
     ("NZDT", 780),
 ];
 
+/// Com o offset colado na hora (`+01`, `+0100`, `+01:00`), que o RFC 3339 do chrono não aceita.
+const ATTACHED: [&str; 4] = [
+    "%Y-%m-%dT%H:%M:%S%.f%#z",
+    "%Y-%m-%d %H:%M:%S%.f%#z",
+    "%Y-%m-%dT%H:%M%#z",
+    "%Y-%m-%d %H:%M%#z",
+];
+
 const NAIVE: [&str; 4] = [
     "%Y-%m-%dT%H:%M:%S%.f",
     "%Y-%m-%d %H:%M:%S%.f",
@@ -364,10 +377,21 @@ const NAIVE: [&str; 4] = [
 ];
 
 /// `document_created`: ISO 8601 com offset ou `Z`, ou data e hora seguidas de uma sigla de fuso
-/// (`2025-03-14 10:30:00 BST`) ou de um offset (`+01:00`). Sem fuso, vale UTC; só a data, meia-noite.
+/// (`2025-03-14 10:30:00 BST`) ou de um offset, separado ou colado (`+01:00`, `+0100`, `+01`).
+/// Sem fuso, vale UTC; só a data, meia-noite.
 pub(crate) fn parse_date(text: &str) -> Option<DateTime<FixedOffset>> {
     let text = text.trim();
     if let Ok(at) = DateTime::parse_from_rfc3339(text) {
+        return Some(at);
+    }
+    let zulu = match text.strip_suffix(['Z', 'z']) {
+        Some(rest) => format!("{rest}+00:00"),
+        None => text.to_string(),
+    };
+    if let Some(at) = ATTACHED
+        .iter()
+        .find_map(|format| DateTime::parse_from_str(&zulu, format).ok())
+    {
         return Some(at);
     }
     let (rest, offset) = match text.rsplit_once(' ') {
@@ -392,7 +416,7 @@ fn utc() -> FixedOffset {
     Utc.fix()
 }
 
-/// `BST`, `CEST`, `+01:00`, `-0300` ou `Z`.
+/// `BST`, `CEST`, `+01:00`, `-0300`, `+01` ou `Z`.
 fn zone_offset(zone: &str) -> Option<FixedOffset> {
     if zone.eq_ignore_ascii_case("z") {
         return Some(utc());
@@ -409,11 +433,15 @@ fn zone_offset(zone: &str) -> Option<FixedOffset> {
         _ => return None,
     };
     let digits: String = zone[1..].chars().filter(|c| *c != ':').collect();
-    if digits.len() != 4 || !digits.chars().all(|c| c.is_ascii_digit()) {
+    if !matches!(digits.len(), 2 | 4) || !digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
     let hours: i32 = digits[..2].parse().ok()?;
-    let minutes: i32 = digits[2..].parse().ok()?;
+    let minutes: i32 = digits
+        .get(2..)
+        .filter(|m| !m.is_empty())
+        .map_or(Ok(0), str::parse)
+        .ok()?;
     FixedOffset::east_opt(sign * (hours * 3_600 + minutes * 60))
 }
 
@@ -483,6 +511,22 @@ mod tests {
         assert_eq!(
             parse_date("2025-07-01 09:15:00+05:30"),
             Some(at("2025-07-01T09:15:00+05:30"))
+        );
+        assert_eq!(
+            parse_date("2025-07-01 09:15:00.123+00"),
+            Some(at("2025-07-01T09:15:00.123Z"))
+        );
+        assert_eq!(
+            parse_date("2025-07-01 09:15:00+0100"),
+            Some(at("2025-07-01T09:15:00+01:00"))
+        );
+        assert_eq!(
+            parse_date("2025-07-01T09:15Z"),
+            Some(at("2025-07-01T09:15:00Z"))
+        );
+        assert_eq!(
+            parse_date("2025-07-01 09:15:00 +01"),
+            Some(at("2025-07-01T09:15:00+01:00"))
         );
         assert_eq!(
             parse_date("2025-07-01 09:15:00"),
