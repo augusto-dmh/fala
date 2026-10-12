@@ -10,6 +10,11 @@ pub const OFFER_MIN_GAP: Duration = Duration::from_secs(2 * 60);
 pub const RELEASE_DELAY: Duration = Duration::from_secs(2);
 /// Duração gravada mínima para perguntar "Parar a gravação?" quando o app larga o mic.
 pub const ASK_STOP_AFTER: Duration = Duration::from_secs(3 * 60);
+/// Depois de um "Parar a gravação?", tempo sem perguntar de novo (o `restopSuppressionWindowMs`
+/// do Wispr).
+pub const ASK_STOP_QUIET: Duration = Duration::from_secs(3 * 60);
+/// Máximo de "Parar a gravação?" por gravação (o `restopMaxPerSession` do Wispr).
+pub const ASK_STOP_MAX: usize = 2;
 
 /// Um app de call reconhecido pelo exe que captura o mic.
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -19,17 +24,27 @@ pub struct CallApp {
     /// Nome mostrado no aviso.
     pub name: &'static str,
     exes: &'static [&'static str],
+    /// Navegador: com o mic, só é call quando uma janela mostra uma reunião ([`web_call`]); o
+    /// modo de voz de um site ou um teste de mic não é.
+    browser: bool,
 }
 
 macro_rules! apps {
-    ($($id:literal, $name:literal, [$($exe:literal),+ $(,)?];)+) => {
-        &[$(CallApp { id: $id, name: $name, exes: &[$($exe),+] }),+]
+    (@browser browser) => { true };
+    (@browser) => { false };
+    ($($id:literal, $name:literal, [$($exe:literal),+ $(,)?] $($browser:ident)?;)+) => {
+        &[$(CallApp {
+            id: $id,
+            name: $name,
+            exes: &[$($exe),+],
+            browser: apps!(@browser $($browser)?),
+        }),+]
     };
 }
 
 /// Os apps reconhecidos, da lista do Granola (`research/19` § 1.3), sem o próprio Fala. Os
-/// navegadores entram porque o Meet e as calls web capturam pelo processo do navegador, e não
-/// dá para saber qual aba.
+/// navegadores (marcados `browser`) entram porque o Meet e as calls web capturam pelo processo
+/// do navegador; eles só contam como call com um [`WebCall`] no título de uma janela.
 pub const CALL_APPS: &[CallApp] = apps! {
     "teams", "Teams", ["ms-teams.exe", "ms-teams_modulehost.exe", "msteamsvdi.exe", "teams.exe"];
     "zoom", "Zoom", ["zoom.exe"];
@@ -46,16 +61,16 @@ pub const CALL_APPS: &[CallApp] = apps! {
     "gather", "Gather", ["gather.exe"];
     "clickup", "ClickUp", ["clickup.exe"];
     "lark", "Lark", ["lark.exe", "feishu.exe"];
-    "edge", "Edge", ["msedge.exe"];
-    "chrome", "Chrome", ["chrome.exe"];
-    "firefox", "Firefox", ["firefox.exe"];
-    "brave", "Brave", ["brave.exe"];
-    "arc", "Arc", ["arc.exe"];
-    "dia", "Dia", ["dia.exe"];
-    "vivaldi", "Vivaldi", ["vivaldi.exe"];
-    "opera", "Opera", ["opera.exe"];
-    "zen", "Zen", ["zen.exe"];
-    "comet", "Comet", ["comet.exe"];
+    "edge", "Edge", ["msedge.exe"] browser;
+    "chrome", "Chrome", ["chrome.exe"] browser;
+    "firefox", "Firefox", ["firefox.exe"] browser;
+    "brave", "Brave", ["brave.exe"] browser;
+    "arc", "Arc", ["arc.exe"] browser;
+    "dia", "Dia", ["dia.exe"] browser;
+    "vivaldi", "Vivaldi", ["vivaldi.exe"] browser;
+    "opera", "Opera", ["opera.exe"] browser;
+    "zen", "Zen", ["zen.exe"] browser;
+    "comet", "Comet", ["comet.exe"] browser;
 };
 
 /// Processos que capturam em nome de quem os abriu: o app é o ancestral (o Teams novo e o
@@ -69,6 +84,16 @@ impl CallApp {
     /// O app pelo id guardado nas configurações.
     pub fn by_id(id: &str) -> Option<&'static CallApp> {
         CALL_APPS.iter().find(|app| app.id == id)
+    }
+
+    /// Os exes do app, em minúsculas.
+    pub fn exes(&self) -> &'static [&'static str] {
+        self.exes
+    }
+
+    /// Um navegador: só é call com uma reunião no título de uma janela.
+    pub fn is_browser(&self) -> bool {
+        self.browser
     }
 }
 
@@ -98,13 +123,125 @@ pub fn identify<'a>(
     None
 }
 
+/// Uma call na web, reconhecida pelo título de uma janela do navegador.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct WebCall {
+    /// Nome mostrado no aviso ("Google Meet no Edge").
+    pub name: &'static str,
+    /// Começos de título ("Meet - abc-defg-hij - Microsoft Edge").
+    prefixes: &'static [&'static str],
+    /// Palavras inteiras em qualquer ponto do título, com a caixa exata.
+    words: &'static [&'static str],
+}
+
+/// As calls web reconhecidas, dos hosts de conferência do Wispr (`research/notes/23-wispr.md`
+/// § 3), pelo nome que o site põe no título. O Meet se chama "Meet - <código>" ou
+/// "Meet – <nome>", e "Meet" sozinho é palavra comum demais para valer em qualquer ponto.
+pub const WEB_CALLS: &[WebCall] = &[
+    WebCall {
+        name: "Google Meet",
+        prefixes: &["Meet - ", "Meet – ", "Meet — "],
+        words: &["Google Meet"],
+    },
+    WebCall {
+        name: "Microsoft Teams",
+        prefixes: &[],
+        words: &["Microsoft Teams"],
+    },
+    WebCall {
+        name: "Zoom",
+        prefixes: &[],
+        words: &["Zoom"],
+    },
+    WebCall {
+        name: "Webex",
+        prefixes: &[],
+        words: &["Webex"],
+    },
+    WebCall {
+        name: "Whereby",
+        prefixes: &[],
+        words: &["Whereby"],
+    },
+    WebCall {
+        name: "Jitsi",
+        prefixes: &[],
+        words: &["Jitsi"],
+    },
+    WebCall {
+        name: "Discord",
+        prefixes: &[],
+        words: &["Discord"],
+    },
+    WebCall {
+        name: "Slack",
+        prefixes: &[],
+        words: &["Huddle"],
+    },
+];
+
+/// `word` aparece em `title` sem letra ou dígito colado dos lados.
+fn has_word(title: &str, word: &str) -> bool {
+    title.match_indices(word).any(|(at, _)| {
+        let before = title[..at].chars().next_back();
+        let after = title[at + word.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+impl WebCall {
+    fn matches(&self, title: &str) -> bool {
+        self.prefixes.iter().any(|p| title.starts_with(p))
+            || self.words.iter().any(|w| has_word(title, w))
+    }
+}
+
+/// A call web que um dos títulos de janela do navegador mostra, se houver.
+///
+/// Os títulos são contexto local (ADR-0012): servem só para esta decisão, e nem o título nem
+/// parte dele sai daqui.
+pub fn web_call<'a>(titles: impl IntoIterator<Item = &'a str>) -> Option<&'static WebCall> {
+    titles
+        .into_iter()
+        .find_map(|title| WEB_CALLS.iter().find(|call| call.matches(title)))
+}
+
+/// Um app de call com o mic numa leitura e, para navegador, a reunião que uma janela mostra.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CallHolder {
+    pub app: &'static CallApp,
+    pub web: Option<&'static WebCall>,
+}
+
+impl From<&'static CallApp> for CallHolder {
+    fn from(app: &'static CallApp) -> Self {
+        Self { app, web: None }
+    }
+}
+
+/// Se cabe mais um "Parar a gravação?" nesta gravação, dados os instantes das perguntas já
+/// feitas: no máximo [`ASK_STOP_MAX`], e nenhuma a menos de [`ASK_STOP_QUIET`] da anterior.
+pub fn may_ask_stop(asked: &[UnixMillis], now: UnixMillis) -> bool {
+    asked.len() < ASK_STOP_MAX
+        && asked
+            .last()
+            .is_none_or(|&last| elapsed(last, now) >= ASK_STOP_QUIET)
+}
+
 /// O que o detector pede à UI. Só pergunta: nenhuma variante grava, retoma ou para (ADR-0005).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallPrompt {
     /// "Parece uma chamada no <app>. Gravar reunião?" com [Gravar] [Agora não] [Não avisar].
-    OfferRecording { app: &'static CallApp },
+    /// `web` é a reunião do navegador ("Google Meet no Edge").
+    OfferRecording {
+        app: &'static CallApp,
+        web: Option<&'static WebCall>,
+    },
     /// "O <app> largou o microfone. Parar a gravação?"; sem resposta, a gravação continua.
-    AskStop { app: &'static CallApp },
+    AskStop {
+        app: &'static CallApp,
+        web: Option<&'static WebCall>,
+    },
 }
 
 /// O que o detector precisa saber do resto do app a cada leitura.
@@ -121,10 +258,26 @@ pub struct DetectContext<'a> {
 #[derive(Debug, Clone)]
 struct Hold {
     app: &'static CallApp,
+    /// A última reunião vista num título durante esta posse; fica mesmo se a aba muda.
+    web: Option<&'static WebCall>,
     since: UnixMillis,
     /// Já avisou (ou decidiu não avisar) por esta posse do mic.
     settled: bool,
     gone_since: Option<UnixMillis>,
+}
+
+impl Hold {
+    /// Um app de call, ou um navegador que mostrou uma reunião durante esta posse.
+    fn is_call(&self) -> bool {
+        !self.app.is_browser() || self.web.is_some()
+    }
+
+    fn holder(&self) -> CallHolder {
+        CallHolder {
+            app: self.app,
+            web: self.web,
+        }
+    }
 }
 
 /// Detector de call: recebe, a cada leitura, os apps de call que capturam o mic e devolve no
@@ -134,13 +287,16 @@ struct Hold {
 /// (sumir por menos de [`RELEASE_DELAY`] não é outra posse), [`OFFER_DELAY`] de espera,
 /// [`OFFER_MIN_GAP`] entre avisos, nada durante uma gravação, nada para app silenciado. Quando
 /// os apps vistos durante a gravação largam o mic depois de [`ASK_STOP_AFTER`] gravados, pede
-/// a pergunta "parar?" uma vez.
+/// a pergunta "parar?", no ritmo de [`may_ask_stop`]. Um navegador só conta como call depois
+/// de mostrar uma reunião ([`CallHolder::web`]).
 #[derive(Debug, Clone, Default)]
 pub struct CallDetector {
     holds: Vec<Hold>,
     last_offer: Option<UnixMillis>,
     /// O app de call visto com o mic durante a gravação atual.
-    recording_app: Option<&'static CallApp>,
+    recording_app: Option<CallHolder>,
+    /// Quando o "parar?" foi pedido nesta gravação.
+    asked_stop: Vec<UnixMillis>,
 }
 
 fn elapsed(from: UnixMillis, now: UnixMillis) -> Duration {
@@ -152,47 +308,55 @@ impl CallDetector {
         Self::default()
     }
 
-    /// Os apps que seguram o mic agora, já confirmados (sem os que sumiram há pouco).
-    pub fn holding(&self) -> impl Iterator<Item = &'static CallApp> + '_ {
+    /// As calls com o mic agora (sem as que sumiram há pouco, nem navegador sem reunião).
+    pub fn holding(&self) -> impl Iterator<Item = CallHolder> + '_ {
         self.holds
             .iter()
-            .filter(|h| h.gone_since.is_none())
-            .map(|h| h.app)
+            .filter(|h| h.gone_since.is_none() && h.is_call())
+            .map(Hold::holder)
     }
 
     /// Uma leitura no instante `now`: os apps de call com sessão de captura ativa.
     pub fn observe(
         &mut self,
         now: UnixMillis,
-        present: &[&'static CallApp],
+        present: &[CallHolder],
         ctx: DetectContext<'_>,
     ) -> Option<CallPrompt> {
         self.update_holds(now, present);
         match ctx.recording {
-            Some(recorded) => self.while_recording(recorded),
+            Some(recorded) => self.while_recording(now, recorded),
             None => {
                 self.recording_app = None;
+                self.asked_stop.clear();
                 self.offer(now, ctx)
             }
         }
     }
 
-    fn update_holds(&mut self, now: UnixMillis, present: &[&'static CallApp]) {
+    fn update_holds(&mut self, now: UnixMillis, present: &[CallHolder]) {
         for hold in &mut self.holds {
-            if present.contains(&hold.app) {
-                hold.gone_since = None;
-            } else if hold.gone_since.is_none() {
-                hold.gone_since = Some(now);
+            match present.iter().find(|seen| seen.app == hold.app) {
+                Some(seen) => {
+                    hold.gone_since = None;
+                    if seen.web.is_some() {
+                        hold.web = seen.web;
+                    }
+                }
+                None => {
+                    hold.gone_since.get_or_insert(now);
+                }
             }
         }
         self.holds.retain(|hold| {
             hold.gone_since
                 .is_none_or(|gone| elapsed(gone, now) < RELEASE_DELAY)
         });
-        for &app in present {
-            if !self.holds.iter().any(|hold| hold.app == app) {
+        for seen in present {
+            if !self.holds.iter().any(|hold| hold.app == seen.app) {
                 self.holds.push(Hold {
-                    app,
+                    app: seen.app,
+                    web: seen.web,
                     since: now,
                     settled: false,
                     gone_since: None,
@@ -201,29 +365,41 @@ impl CallDetector {
         }
     }
 
-    fn while_recording(&mut self, recorded: Duration) -> Option<CallPrompt> {
-        // Durante a gravação não há aviso, nem depois dela pela mesma posse do mic.
-        for hold in &mut self.holds {
+    fn while_recording(&mut self, now: UnixMillis, recorded: Duration) -> Option<CallPrompt> {
+        // Durante a gravação não há aviso, nem depois dela pela mesma posse do mic. Um navegador
+        // ainda sem reunião fica em aberto: se mostrar uma depois da gravação, avisa.
+        for hold in self.holds.iter_mut().filter(|hold| hold.is_call()) {
             hold.settled = true;
             if hold.gone_since.is_none() {
-                self.recording_app = Some(hold.app);
+                self.recording_app = Some(hold.holder());
             }
         }
-        let app = self.recording_app?;
-        if !self.holds.is_empty() {
+        let holder = self.recording_app?;
+        if self.holds.iter().any(Hold::is_call) {
             return None;
         }
         // Todos os apps de call largaram o mic (há pelo menos RELEASE_DELAY).
         self.recording_app = None;
-        (recorded >= ASK_STOP_AFTER).then_some(CallPrompt::AskStop { app })
+        if recorded < ASK_STOP_AFTER || !may_ask_stop(&self.asked_stop, now) {
+            return None;
+        }
+        self.asked_stop.push(now);
+        Some(CallPrompt::AskStop {
+            app: holder.app,
+            web: holder.web,
+        })
     }
 
     fn offer(&mut self, now: UnixMillis, ctx: DetectContext<'_>) -> Option<CallPrompt> {
         let gap_open = self
             .last_offer
             .is_none_or(|last| elapsed(last, now) >= OFFER_MIN_GAP);
+        // Um navegador sem reunião fica em aberto: avisa se uma janela passar a mostrá-la.
         let hold = self.holds.iter_mut().find(|hold| {
-            !hold.settled && hold.gone_since.is_none() && elapsed(hold.since, now) >= OFFER_DELAY
+            !hold.settled
+                && hold.gone_since.is_none()
+                && hold.is_call()
+                && elapsed(hold.since, now) >= OFFER_DELAY
         })?;
         hold.settled = true;
         let muted = ctx.muted.iter().any(|id| id == hold.app.id);
@@ -231,7 +407,10 @@ impl CallDetector {
             return None;
         }
         self.last_offer = Some(now);
-        Some(CallPrompt::OfferRecording { app: hold.app })
+        Some(CallPrompt::OfferRecording {
+            app: hold.app,
+            web: hold.web,
+        })
     }
 }
 
@@ -257,5 +436,31 @@ mod tests {
         for fala in FALA_EXES {
             assert!(CALL_APPS.iter().all(|a| !a.exes.contains(fala)));
         }
+    }
+
+    #[test]
+    fn browsers_are_marked() {
+        let browsers: Vec<&str> = CALL_APPS
+            .iter()
+            .filter(|app| app.is_browser())
+            .map(|app| app.id)
+            .collect();
+        assert_eq!(
+            browsers,
+            [
+                "edge", "chrome", "firefox", "brave", "arc", "dia", "vivaldi", "opera", "zen",
+                "comet"
+            ]
+        );
+    }
+
+    #[test]
+    fn words_need_a_boundary() {
+        assert!(has_word("Zoom Meeting", "Zoom"));
+        assert!(has_word("(2) Zoom", "Zoom"));
+        assert!(has_word("Huddle: #geral – Slack", "Huddle"));
+        assert!(!has_word("Zoomer - YouTube", "Zoom"));
+        assert!(!has_word("ZoomZoom", "Zoom"));
+        assert!(!has_word("Discordância", "Discord"));
     }
 }
