@@ -1759,7 +1759,7 @@ export type CallAppInfo = { id: string; name: string }
 /**
  * The person's answer, or the countdown running out.
  */
-export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "expired"
+export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "record_again" | "dismiss" | "keep" | "discard" | "expired"
 export type CallPromptKind = 
 /**
  * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
@@ -1772,7 +1772,23 @@ export type CallPromptKind =
 /**
  * "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
  */
-"quit"
+"quit" | 
+/**
+ * "Ainda está gravando?" a minute before the stop for silence: [Continuar] [Parar].
+ */
+"still_recording" | 
+/**
+ * "Parou depois de 15 min de silêncio" with [Gravar de novo] [Fechar].
+ */
+"silence_stopped" | 
+/**
+ * "Gravou por engano?" after a short or almost silent stop: [Manter] [Descartar].
+ */
+"mistake" | 
+/**
+ * "Nada foi gravado": the empty session is already gone.
+ */
+"nothing_recorded"
 /**
  * What the card shows.
  */
@@ -1780,7 +1796,15 @@ export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name
 /**
  * The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
  */
-web_name: string | null; countdown_ms: number }
+web_name: string | null; countdown_ms: number; 
+/**
+ * The session a "Gravou por engano?" is about.
+ */
+session_id: string | null; 
+/**
+ * Seconds recorded, for "Gravou por engano?".
+ */
+seconds: number | null }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.
