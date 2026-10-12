@@ -48,6 +48,8 @@ export function MeetingView(props: MeetingViewProps) {
   const [nameError, setNameError] = useState<MeetingError | null>(null);
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Edited here: counts before the reload brings `notes_edited`.
+  const [editedHere, setEditedHere] = useState(false);
   // A name changed in a session that already has notes: offer to write them again.
   const [offerRegenerate, setOfferRegenerate] = useState(false);
   const player = useMemo(() => new ClipPlayer(setPlaying), []);
@@ -100,8 +102,12 @@ export function MeetingView(props: MeetingViewProps) {
   };
   const generate = () => {
     setOfferRegenerate(false);
-    if (needsConfirmation(detail, templateId)) setConfirming(true);
-    else props.onGenerate(templateId, false);
+    const edited = detail.notes_edited || editedHere;
+    if (needsConfirmation({ ...detail, notes_edited: edited }, templateId)) {
+      setConfirming(true);
+    } else {
+      props.onGenerate(templateId, false);
+    }
   };
   const reveal = (seq: number) => {
     setHighlighted(seq);
@@ -208,8 +214,10 @@ export function MeetingView(props: MeetingViewProps) {
               <Button
                 variant="danger"
                 size="sm"
+                disabled={props.recording || props.generating || editing}
                 onClick={() => {
                   setConfirming(false);
+                  setEditedHere(false);
                   props.onGenerate(templateId, true);
                 }}
               >
@@ -288,8 +296,9 @@ export function MeetingView(props: MeetingViewProps) {
                 <NotesEditor
                   id={detail.summary.id}
                   markdown={detail.notes_md}
-                  onDone={() => {
+                  onDone={(edited) => {
                     setEditing(false);
+                    if (edited) setEditedHere(true);
                     props.onNamesChanged?.();
                   }}
                 />

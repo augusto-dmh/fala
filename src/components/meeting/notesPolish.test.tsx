@@ -183,9 +183,17 @@ const lines: MeetingLine[] = [
   assert.ok(html.includes("meeting.notesEdit.edit"), html);
   // A confirmação só aparece depois do clique em "Gerar notas".
   assert.ok(!html.includes("meeting.notesEdit.confirm"), html);
+  // Uma edição feita aqui conta antes do recarregar trazer `notes_edited`.
   assert.match(
     viewSource,
-    /if \(needsConfirmation\(detail, templateId\)\) setConfirming\(true\);\s*else props\.onGenerate\(templateId, false\);/,
+    /const edited = detail\.notes_edited \|\| editedHere;\s*if \(needsConfirmation\(\{ \.\.\.detail, notes_edited: edited \}, templateId\)\) \{\s*setConfirming\(true\);\s*\} else \{\s*props\.onGenerate\(templateId, false\);/,
+  );
+  // "Gerar de novo" da confirmação fica desligado como o "Gerar notas".
+  assert.equal(
+    viewSource.match(
+      /disabled=\{props\.recording \|\| props\.generating \|\| editing\}/g,
+    )?.length,
+    3,
   );
   // Só o mesmo template pergunta; outro template é uma versão nova (como no Granola).
   assert.equal(needsConfirmation(detail, "geral"), true);

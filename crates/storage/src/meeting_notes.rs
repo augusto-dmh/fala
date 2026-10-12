@@ -46,17 +46,32 @@ impl Store {
         Ok(())
     }
 
-    /// Se a nota da sessão foi editada depois da última geração.
+    /// Se a nota da sessão foi editada depois da última geração (sessão inexistente: `false`).
     pub fn meeting_notes_edited(&self, id: SessionId) -> Result<bool, StorageError> {
-        self.meeting(id)?;
+        Ok(self.meeting_notes_edited_at(id)?.is_some())
+    }
+
+    /// Quando a nota foi editada pela última vez desde a última geração.
+    pub fn meeting_notes_edited_at(
+        &self,
+        id: SessionId,
+    ) -> Result<Option<DateTime<FixedOffset>>, StorageError> {
         Ok(self
             .conn
             .query_row(
-                "SELECT 1 FROM meeting_note_edits WHERE meeting_id = ?1",
+                "SELECT edited_at FROM meeting_note_edits WHERE meeting_id = ?1",
                 [id.to_string()],
-                |_| Ok(()),
+                |row| {
+                    let at: String = row.get(0)?;
+                    DateTime::parse_from_rfc3339(&at).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            format!("edited_at inválido {at:?}: {e}").into(),
+                        )
+                    })
+                },
             )
-            .optional()?
-            .is_some())
+            .optional()?)
     }
 }

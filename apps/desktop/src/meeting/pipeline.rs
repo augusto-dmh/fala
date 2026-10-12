@@ -301,6 +301,17 @@ pub(crate) fn notes_input(
     }
 }
 
+/// The notes were edited after `started`, the moment a generation began: its result must not
+/// replace an edit nobody confirmed. Stored times have whole seconds, so the start is cut to the
+/// second (an edit in that same second counts as during).
+pub(crate) fn edited_since(
+    edited_at: Option<DateTime<FixedOffset>>,
+    started: DateTime<FixedOffset>,
+) -> bool {
+    let started = started.timestamp();
+    edited_at.is_some_and(|at| at.timestamp() >= started)
+}
+
 /// Regenerating with the same template discards the edits: once edited by hand, only after the
 /// confirmation. Another template is a new version the person asked for, as in Granola.
 pub(crate) fn guard_edited_notes(
@@ -605,6 +616,7 @@ impl MeetingManager {
             Ok((input, record.transcribed_at))
         })?;
         self.progress(id, ProgressStage::Notes);
+        let started = chrono::Local::now().fixed_offset();
         let claude = Claude::new(Arc::new(KeyringKeys(Arc::clone(&self.keys))));
         let notes = match generate_notes(&input, &claude) {
             Ok(notes) => notes,
@@ -631,7 +643,22 @@ impl MeetingManager {
                 (s.person, suggestion)
             })
             .collect();
-        self.with_store(|store| Ok(store.save_meeting_notes(id, template_id, &notes.markdown)?))?;
+        let saved = self.with_store(|store| {
+            // Edited while the LLM wrote (the page lets the person edit again): keep the edit.
+            if edited_since(store.meeting_notes_edited_at(id)?, started) {
+                return Err(MeetingError::NotesEdited);
+            }
+            Ok(store.save_meeting_notes(id, template_id, &notes.markdown)?)
+        });
+        if let Err(error) = saved {
+            self.progress(
+                id,
+                ProgressStage::Failed {
+                    error: error.clone(),
+                },
+            );
+            return Err(error);
+        }
         // A transcription that finished meanwhile renumbered "Person N": these suggestions point
         // at the old numbers. The notes are saved either way.
         let saved = self.with_store(|store| {
@@ -908,6 +935,14 @@ mod tests {
             guard_edited_notes(&store, missing, "geral", false),
             Err(MeetingError::NotFound)
         );
+        let edited = store.meeting_notes_edited_at(id).unwrap();
+        assert!(edited_since(edited, now));
+        assert!(edited_since(
+            edited,
+            now + chrono::Duration::milliseconds(900)
+        ));
+        assert!(!edited_since(edited, now + chrono::Duration::seconds(1)));
+        assert!(!edited_since(None, now));
         assert_eq!(
             serde_json::to_value(MeetingError::NotesEdited).unwrap(),
             serde_json::json!({ "kind": "notes_edited" })

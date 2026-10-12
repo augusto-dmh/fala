@@ -11,8 +11,8 @@ export interface NotesEditorProps {
   id: string;
   /** The stored notes when editing started: unchanged lines keep their sources. */
   markdown: string;
-  /** "Done": the last change is stored; reload the session. */
-  onDone: () => void;
+  /** "Done": the last change is stored (`edited`: at least one); reload the session. */
+  onDone: (edited: boolean) => void;
 }
 
 /** The notes as plain text, saved within two seconds like the typed notes. */
@@ -20,17 +20,21 @@ export function NotesEditor({ id, markdown, onDone }: NotesEditorProps) {
   const { t } = useTranslation();
   const [base] = useState(markdown);
   const [text, setText] = useState(() => editableText(markdown));
-  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  // One save at a time, in order: an older text never lands after a newer one.
+  const saving = useRef<Promise<boolean>>(Promise.resolve(true));
+  const edited = useRef(false);
   const saver = useRef<AnnotationSaver | null>(null);
   const [error, setError] = useState<MeetingError | null>(null);
 
   useEffect(() => {
     const current = new AnnotationSaver((value) => {
-      saving.current = commands
-        .saveMeetingNotes(id, mergeEdit(base, value))
-        .then((result) =>
-          setError(result.status === "error" ? result.error : null),
-        );
+      edited.current = true;
+      saving.current = saving.current
+        .then(() => commands.saveMeetingNotes(id, mergeEdit(base, value)))
+        .then((result) => {
+          setError(result.status === "error" ? result.error : null);
+          return result.status === "ok";
+        });
     }, editableText(base));
     saver.current = current;
     return () => current.flush();
@@ -38,8 +42,8 @@ export function NotesEditor({ id, markdown, onDone }: NotesEditorProps) {
 
   const done = async () => {
     saver.current?.flush();
-    await saving.current;
-    onDone();
+    // A failed save keeps the editor open with the error and the text.
+    if (await saving.current) onDone(edited.current);
   };
 
   return (

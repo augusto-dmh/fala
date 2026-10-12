@@ -364,11 +364,13 @@ impl Store {
         markdown: &str,
     ) -> Result<(), StorageError> {
         let tx = self.conn.unchecked_transaction()?;
-        self.update(
-            id,
+        let changed = tx.execute(
             "UPDATE meetings SET notes_template = ?2, notes_md = ?3 WHERE id = ?1",
             params![id.to_string(), template, markdown],
         )?;
+        if changed == 0 {
+            return Err(StorageError::NotFound(id.to_string()));
+        }
         tx.execute(
             "DELETE FROM meeting_note_edits WHERE meeting_id = ?1",
             [id.to_string()],

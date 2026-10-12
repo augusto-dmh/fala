@@ -47,6 +47,10 @@ fn edit_marks_the_notes_and_a_generation_clears_the_mark() {
     store
         .save_edited_meeting_notes(id, "- minha versão final", at(15, 1, 0))
         .unwrap();
+    assert_eq!(
+        store.meeting_notes_edited_at(id).unwrap(),
+        Some(at(15, 1, 0))
+    );
     let record = store.meeting(id).unwrap();
     assert_eq!(record.notes_md.as_deref(), Some("- minha versão final"));
     assert_eq!(record.notes_template.as_deref(), Some("geral"));
@@ -63,10 +67,7 @@ fn edit_marks_the_notes_and_a_generation_clears_the_mark() {
     assert!(!store.meeting_notes_edited(id).unwrap());
 
     let missing = SessionId::from_parts(1, 1);
-    assert!(matches!(
-        store.meeting_notes_edited(missing),
-        Err(StorageError::NotFound(_))
-    ));
+    assert!(!store.meeting_notes_edited(missing).unwrap());
 }
 
 #[test]
