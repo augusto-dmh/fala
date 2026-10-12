@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Context};
 use clap::{Args, Subcommand, ValueEnum};
 use fala_core::{AppContext, Dictation, Editor, Language, Transcript};
-use fala_storage::{DictationRecord, MetricsSummary, Percentiles, Store};
+use fala_storage::{DictationRecord, MetricsSummary, Percentiles, ReindexReport, Store};
 
 /// A pasta do identifier do `tauri.conf.json`, a mesma `app_data_dir` do desktop.
 pub(crate) const APP_DIR: &str = "br.com.augusto.fala";
@@ -176,32 +176,43 @@ pub fn run(args: HistoryArgs) -> Result<(), Failure> {
     Ok(())
 }
 
-/// `fala-cli reindex`: reconstrói `fala.sqlite` a partir de `<notes-dir>/Ditados/`.
+/// `fala-cli reindex`: reconstrói `fala.sqlite` a partir de `<notes-dir>/Ditados/` e
+/// `<notes-dir>/Reuniões/`. Sem `Ditados/`, os ditados do banco ficam como estão; das reuniões,
+/// entram as que faltam no banco (`Store::reindex_meetings`).
 pub fn reindex(dirs: DirArgs) -> Result<(), Failure> {
     let paths = resolve(&dirs, dirs::data_dir())?;
     let ditados = paths.notes.join("Ditados");
-    if !ditados.is_dir() {
-        return Err(input(anyhow!("{} não existe", ditados.display())));
+    let reunioes = paths.notes.join("Reuniões");
+    if !ditados.is_dir() && !reunioes.is_dir() {
+        return Err(input(anyhow!(
+            "nem {} nem {} existem",
+            ditados.display(),
+            reunioes.display()
+        )));
     }
     let mut store = Store::open(&paths.db, &paths.notes)
         .with_context(|| format!("abrir {}", paths.db.display()))
         .map_err(failed)?;
-    let report = store.reindex().map_err(|e| failed(e.into()))?;
-    for skip in &report.skipped {
+    let dictations = if ditados.is_dir() {
+        store.reindex().map_err(|e| failed(e.into()))?
+    } else {
+        ReindexReport::default()
+    };
+    let meetings = store.reindex_meetings().map_err(|e| failed(e.into()))?;
+    let skipped = dictations.skipped.len() + meetings.skipped.len();
+    for skip in dictations.skipped.iter().chain(&meetings.skipped) {
         log::warn!("{}: {}", skip.path.display(), skip.reason);
     }
     println!(
-        "{} ditados reindexados, {} arquivos ignorados",
-        report.indexed,
-        report.skipped.len()
+        "{} ditados e {} reuniões reindexados, {skipped} arquivos ignorados",
+        dictations.indexed, meetings.indexed,
     );
-    if report.skipped.is_empty() {
+    if skipped == 0 {
         Ok(())
     } else {
         Err(failed(anyhow!(
-            "{} arquivos ignorados em {}",
-            report.skipped.len(),
-            ditados.display()
+            "{skipped} arquivos ignorados em {}",
+            paths.notes.display()
         )))
     }
 }
