@@ -18,7 +18,8 @@
     "recordMeeting": "Record meeting",
     "pauseMeeting": "Pause meeting",
     "resumeMeeting": "Resume meeting",
-    "stopMeeting": "Stop meeting"
+    "stopMeeting": "Stop meeting",
+    "hidePillHour": "Hide for 1 hour"
   },
   "rail": {
     "navigation": "Main navigation",

@@ -865,6 +865,14 @@ async setIdlePillHover(hover: boolean) : Promise<void> {
     await TAURI_INVOKE("set_idle_pill_hover", { hover });
 },
 /**
+ * A right click on the idle pill opens its menu at the cursor (`tray::build_pill_menu`); the
+ * tray's menu handler in `lib.rs` runs the item. Async so the menu inputs are read off the main
+ * thread, like the tray's.
+ */
+async openPillMenu() : Promise<void> {
+    await TAURI_INVOKE("open_pill_menu");
+},
+/**
  * A click on the idle pill opens the main window on Início.
  */
 async openHomeFromPill() : Promise<void> {

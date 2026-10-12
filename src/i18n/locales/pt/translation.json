@@ -18,7 +18,8 @@
     "recordMeeting": "Gravar reunião",
     "pauseMeeting": "Pausar reunião",
     "resumeMeeting": "Retomar reunião",
-    "stopMeeting": "Parar reunião"
+    "stopMeeting": "Parar reunião",
+    "hidePillHour": "Ocultar por 1 hora"
   },
   "rail": {
     "navigation": "Navegação principal",
