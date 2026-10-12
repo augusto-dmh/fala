@@ -8,11 +8,14 @@
 //! O schema 2 acrescenta as reuniões (`meetings`, `meeting_segments`), sem mexer nos ditados;
 //! `meeting_participants` e `meeting_speakers` (quem estava, nomes aplicados e sugestões) entram
 //! sem subir a versão, como as métricas; `meeting_note_edits` (a nota editada à mão) também.
+//! Cada reunião tem o seu `.md` em `Reuniões/`, reescrito depois de toda mudança; o nome em uso
+//! fica em `meeting_files`, também aditiva, e `Store::reindex_meetings` reconstrói as reuniões.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
 //! `Store::metrics_summary`.
 
+mod meeting_mirror;
 mod meeting_notes;
 mod meeting_people;
 mod meetings;
@@ -115,6 +118,15 @@ pub enum StorageError {
     /// A linha foi gravada no banco, mas o `.md` não.
     #[error("ditado {id} gravado no banco, mas o espelho {path} falhou: {source}")]
     Mirror {
+        id: String,
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A reunião mudou no banco, mas o `.md` dela não acompanhou. A mensagem não leva o caminho,
+    /// que tem o título.
+    #[error("reunião {id} mudou no banco, mas o espelho falhou: {source}")]
+    MeetingMirror {
         id: String,
         path: PathBuf,
         #[source]

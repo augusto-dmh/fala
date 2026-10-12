@@ -4,8 +4,8 @@
 //! Uma sessão nasce como rascunho (`started_at` nulo: título e pauta, sem áudio) e passa a
 //! gravada no clique de "Gravar" (ADR-0005); um rascunho nunca grava sozinho.
 //!
-//! Só SQLite por enquanto: o espelho `.md` da reunião e o FTS das transcrições são da F5
-//! (`meeting-storage`), por migração aditiva.
+//! Toda mudança de uma sessão reescreve o `.md` dela em `Reuniões/` depois do commit
+//! (`meeting_mirror`).
 
 use chrono::{DateTime, FixedOffset, SecondsFormat};
 use fala_meeting::{SessionId, SessionMode, StopReason};
@@ -111,7 +111,7 @@ pub struct MeetingSegment {
     pub text: String,
 }
 
-fn mode_str(mode: SessionMode) -> &'static str {
+pub(crate) fn mode_str(mode: SessionMode) -> &'static str {
     match mode {
         SessionMode::Meeting => "meeting",
         SessionMode::InPerson => "in_person",
@@ -130,7 +130,7 @@ fn parse_mode(s: &str) -> Option<SessionMode> {
     })
 }
 
-fn reason_str(reason: StopReason) -> &'static str {
+pub(crate) fn reason_str(reason: StopReason) -> &'static str {
     match reason {
         StopReason::User => "user",
         StopReason::Silence => "silence",
@@ -147,14 +147,14 @@ fn parse_reason(s: &str) -> Option<StopReason> {
     })
 }
 
-fn channel_str(channel: SegmentChannel) -> &'static str {
+pub(crate) fn channel_str(channel: SegmentChannel) -> &'static str {
     match channel {
         SegmentChannel::Mic => "mic",
         SegmentChannel::System => "system",
     }
 }
 
-fn rfc3339(at: &DateTime<FixedOffset>) -> String {
+pub(crate) fn rfc3339(at: &DateTime<FixedOffset>) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
@@ -245,6 +245,7 @@ impl Store {
             ],
         )?;
         log::debug!("reunião {} criada como rascunho", meeting.id);
+        self.mirror_meeting(meeting.id);
         Ok(())
     }
 
@@ -271,6 +272,7 @@ impl Store {
             self.meeting(id)?;
             return Err(StorageError::MeetingAlreadyStarted(id.to_string()));
         }
+        self.mirror_meeting(id);
         Ok(())
     }
 
@@ -294,6 +296,9 @@ impl Store {
             "UPDATE meetings SET title = ?2 WHERE id = ?1 AND trim(title) = ''",
             params![id.to_string(), title],
         )?;
+        if changed > 0 {
+            self.mirror_meeting(id);
+        }
         Ok(changed > 0)
     }
 
@@ -373,13 +378,20 @@ impl Store {
         )
     }
 
-    /// Apaga a sessão e, em cascata, trechos, participantes e nomes de falantes. Irreversível.
+    /// Apaga a sessão e, em cascata, trechos, participantes e nomes de falantes, e o `.md` dela.
+    /// Irreversível.
+    ///
+    /// O `.md` sai dentro da transação, antes do commit: se ele não sai (arquivo preso), nada
+    /// muda e volta [`StorageError::MeetingMirror`], porque um `.md` órfão traria a sessão de
+    /// volta num `reindex`. Se o commit falhar depois, a próxima sincronização o escreve de novo.
     pub fn delete_meeting(&self, id: SessionId) -> Result<(), StorageError> {
-        self.update(
-            id,
-            "DELETE FROM meetings WHERE id = ?1",
-            params![id.to_string()],
-        )?;
+        let file = self.meeting_file(id)?;
+        let tx = self.conn.unchecked_transaction()?;
+        if tx.execute("DELETE FROM meetings WHERE id = ?1", [id.to_string()])? == 0 {
+            return Err(StorageError::NotFound(id.to_string()));
+        }
+        self.remove_meeting_mirror(id, file)?;
+        tx.commit()?;
         log::debug!("reunião {id} apagada");
         Ok(())
     }
@@ -405,6 +417,9 @@ impl Store {
             "UPDATE meetings SET notes_template = ?2 WHERE id = ?1 AND notes_md IS NULL",
             params![id.to_string(), template],
         )?;
+        if changed > 0 {
+            self.mirror_meeting(id);
+        }
         Ok(changed > 0)
     }
 
@@ -428,6 +443,7 @@ impl Store {
             [id.to_string()],
         )?;
         tx.commit()?;
+        self.mirror_meeting(id);
         Ok(())
     }
 
@@ -477,6 +493,7 @@ impl Store {
         }
         tx.commit()?;
         log::debug!("reunião {id}: {} trechos gravados", segments.len());
+        self.mirror_meeting(id);
         Ok(())
     }
 
@@ -501,6 +518,7 @@ impl Store {
         if self.conn.execute(sql, params)? == 0 {
             return Err(StorageError::NotFound(id.to_string()));
         }
+        self.mirror_meeting(id);
         Ok(())
     }
 }
