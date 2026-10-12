@@ -411,7 +411,7 @@
       "title": "Meetings",
       "callPrompt": {
         "label": "Ask when a call starts",
-        "description": "When Teams, Zoom, WhatsApp or a browser opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
+        "description": "When Teams, Zoom, WhatsApp or a meeting in the browser, like Google Meet, opens the microphone, Fala asks whether you want to record. It never records without your click, and asks whether to stop when the app lets go of the microphone."
       },
       "mutedApps": {
         "title": "Don't ask in these apps",
@@ -1001,10 +1001,12 @@
   "callPrompt": {
     "offer": {
       "title": "Looks like a call in {{app}}",
+      "titleWeb": "Looks like a {{web}} call in {{app}}",
       "body": "Record the meeting?"
     },
     "askStop": {
       "title": "{{app}} let go of the microphone",
+      "titleWeb": "{{web}} in {{app}} let go of the microphone",
       "body": "Stop recording?"
     },
     "record": "Record",

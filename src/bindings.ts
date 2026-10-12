@@ -1565,7 +1565,11 @@ export type CallPromptKind =
 /**
  * What the card shows.
  */
-export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; countdown_ms: number }
+export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name: string; 
+/**
+ * The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
+ */
+web_name: string | null; countdown_ms: number }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.

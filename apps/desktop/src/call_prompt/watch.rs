@@ -2,12 +2,18 @@
 //!
 //! Read only: `fala_audio::platform_activity` lists capture sessions and opens no stream. With
 //! "Avisar quando uma chamada começar" off the OS is not read at all.
+//!
+//! A browser with the mic only counts as a call when one of its windows shows a meeting
+//! (`fala_meeting::web_call`). Window titles are local context (ADR-0012): read here, matched
+//! and dropped, never stored, sent or logged.
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use fala_audio::AudioError;
-use fala_meeting::{identify, CallApp, CallDetector, DetectContext, UnixMillis};
+use fala_meeting::{
+    identify, web_call, CallDetector, CallHolder, CallPrompt, DetectContext, UnixMillis,
+};
 use tauri::{AppHandle, Manager};
 
 use crate::meeting::{MeetingManager, MeetingPhase, MeetingStatus};
@@ -57,7 +63,7 @@ fn run(app: AppHandle) {
     let own = own_exe();
     let mut detector = CallDetector::new();
     let mut failing = false;
-    let mut last: Vec<&'static str> = Vec::new();
+    let mut last: Vec<(&'static str, Option<&'static str>)> = Vec::new();
     loop {
         std::thread::sleep(POLL);
         let settings = settings::get_settings(&app);
@@ -82,15 +88,32 @@ fn run(app: AppHandle) {
                 continue;
             }
         };
-        let mut apps: Vec<&'static CallApp> = Vec::new();
+        let mut apps: Vec<CallHolder> = Vec::new();
         for holder in &holders {
-            if let Some(app) = identify(holder.chain(), &own) {
-                if !apps.contains(&app) {
-                    apps.push(app);
-                }
+            let Some(app) = identify(holder.chain(), &own) else {
+                continue;
+            };
+            if apps.iter().any(|seen| seen.app == app) {
+                continue;
             }
+            // The detector keeps the meeting for the whole hold: read the titles until it has one.
+            let known = detector
+                .holding()
+                .find(|held| held.app == app)
+                .and_then(|held| held.web);
+            let web = match known {
+                Some(web) => Some(web),
+                None if app.is_browser() => {
+                    web_call(window_titles(app.exes()).iter().map(String::as_str))
+                }
+                None => None,
+            };
+            apps.push(CallHolder { app, web });
         }
-        let ids: Vec<&'static str> = apps.iter().map(|a| a.id).collect();
+        let ids: Vec<(&'static str, Option<&'static str>)> = apps
+            .iter()
+            .map(|a| (a.app.id, a.web.map(|web| web.name)))
+            .collect();
         if ids != last {
             log::debug!("call apps holding the mic: {ids:?}");
             last = ids;
@@ -108,10 +131,100 @@ fn run(app: AppHandle) {
             recording,
         };
         if let Some(prompt) = detector.observe(now(), &apps, ctx) {
-            log::info!("call prompt: {prompt:?}");
+            let (kind, holder) = match prompt {
+                CallPrompt::OfferRecording { app, web } => ("offer", CallHolder { app, web }),
+                CallPrompt::AskStop { app, web } => ("ask stop", CallHolder { app, web }),
+            };
+            log::info!(
+                "call prompt: {kind} for {} {:?}",
+                holder.app.id,
+                holder.web.map(|web| web.name)
+            );
             super::show(&app, prompt);
         }
     }
+}
+
+/// The titles of the visible top-level windows whose process runs one of `exes` (lowercase).
+/// Only for `web_call`: the caller drops them right after the match.
+#[cfg(windows)]
+fn window_titles(exes: &[&str]) -> Vec<String> {
+    use std::collections::HashMap;
+
+    use windows::core::{BOOL, PWSTR};
+    use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+        IsWindowVisible,
+    };
+
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        // SAFETY: `lparam` is the `Vec` below, alive for the whole `EnumWindows` call.
+        let windows = unsafe { &mut *(lparam.0 as *mut Vec<(u32, HWND)>) };
+        if unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            let mut pid = 0u32;
+            unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+            windows.push((pid, hwnd));
+        }
+        BOOL(1)
+    }
+
+    /// Lowercase exe name of `pid`, without the path.
+    fn exe_name(pid: u32) -> Option<String> {
+        let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let queried = unsafe {
+            QueryFullProcessImageNameW(
+                process,
+                PROCESS_NAME_WIN32,
+                PWSTR(buf.as_mut_ptr()),
+                &mut len,
+            )
+        };
+        let _ = unsafe { CloseHandle(process) };
+        queried.ok()?;
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        let name = path.rsplit(['\\', '/']).next()?;
+        Some(name.to_lowercase())
+    }
+
+    let mut windows: Vec<(u32, HWND)> = Vec::new();
+    // SAFETY: `collect` only writes to `windows`, which outlives the call.
+    if let Err(e) = unsafe { EnumWindows(Some(collect), LPARAM(&mut windows as *mut _ as isize)) } {
+        log::debug!("call detection: EnumWindows failed: {e}");
+        return Vec::new();
+    }
+    let mut ours: HashMap<u32, bool> = HashMap::new();
+    let mut titles = Vec::new();
+    for (pid, hwnd) in windows {
+        let is_ours = *ours
+            .entry(pid)
+            .or_insert_with(|| exe_name(pid).is_some_and(|exe| exes.contains(&exe.as_str())));
+        if !is_ours {
+            continue;
+        }
+        let len = unsafe { GetWindowTextLengthW(hwnd) };
+        if len <= 0 {
+            continue;
+        }
+        let mut buf = vec![0u16; len as usize + 1];
+        let copied = unsafe { GetWindowTextW(hwnd, &mut buf) };
+        if copied > 0 {
+            titles.push(String::from_utf16_lossy(&buf[..copied as usize]));
+        }
+    }
+    titles
+}
+
+/// Off Windows there is no reader yet: a browser never counts as a call.
+#[cfg(not(windows))]
+fn window_titles(_exes: &[&str]) -> Vec<String> {
+    Vec::new()
 }
 
 #[cfg(test)]

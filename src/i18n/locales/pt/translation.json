@@ -411,7 +411,7 @@
       "title": "Reuniões",
       "callPrompt": {
         "label": "Avisar quando uma chamada começar",
-        "description": "Quando o Teams, o Zoom, o WhatsApp ou um navegador abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique, e pergunta se deve parar quando o app larga o microfone."
+        "description": "Quando o Teams, o Zoom, o WhatsApp ou uma reunião no navegador, como o Google Meet, abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique, e pergunta se deve parar quando o app larga o microfone."
       },
       "mutedApps": {
         "title": "Não avisar nestes apps",
@@ -998,10 +998,12 @@
   "callPrompt": {
     "offer": {
       "title": "Parece uma chamada no {{app}}",
+      "titleWeb": "Parece uma chamada do {{web}} no {{app}}",
       "body": "Gravar reunião?"
     },
     "askStop": {
       "title": "{{app}} largou o microfone",
+      "titleWeb": "{{web}} no {{app}} largou o microfone",
       "body": "Parar a gravação?"
     },
     "record": "Gravar",
