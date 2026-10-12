@@ -1,7 +1,8 @@
 //! O texto do prompt do LLM (ADR-0012: o prompt é só texto). O prompt fixo é em inglês porque
 //! 91 % dos ditados medidos são em inglês e o modelo não pode puxar o texto para o português; os
-//! gatilhos em português aparecem literais. O nível de limpeza vem logo depois do prompt fixo e o
-//! dicionário por último, para o prefixo estável servir ao cache implícito do Gemini.
+//! gatilhos em português aparecem literais. O nível de limpeza vem logo depois do prompt fixo, depois o
+//! dicionário e, por último, o estilo do app, que é o que mais muda entre ditados: o prefixo estável
+//! serve ao cache implícito do Gemini.
 
 use std::fmt;
 use std::str::FromStr;
@@ -144,9 +145,20 @@ pub const SNIPPET_INSTRUCTION: &str = "Placeholders: each ⟦S1⟧, ⟦S2⟧ and
 text the speaker inserts. Keep every placeholder exactly once, unchanged, at its place in the \
 sentence.";
 
-/// O `systemInstruction`: o prompt fixo, o nível, a linha dos marcadores quando o texto os tem e
-/// o dicionário.
-pub(crate) fn system_text(cleanup: CleanupLevel, dictionary: &Dictionary, masked: bool) -> String {
+/// O que antecede a instrução do estilo que o usuário escolheu para o app. A instrução é texto do
+/// usuário, em geral em pt-BR, e não pode puxar o ditado para a língua dela.
+pub const STYLE_INSTRUCTION: &str = "Writing style the user chose for this app. It takes \
+precedence over the destination style. It may be written in another language than the \
+dictation: never translate the text because of it.";
+
+/// O `systemInstruction`: o prompt fixo, o nível, a linha dos marcadores quando o texto os tem, o
+/// dicionário e a instrução do estilo do app, quando há.
+pub(crate) fn system_text(
+    cleanup: CleanupLevel,
+    dictionary: &Dictionary,
+    masked: bool,
+    style: Option<&str>,
+) -> String {
     let mut system = format!("{SYSTEM_PROMPT}\n\n{}", cleanup.instruction());
     if masked {
         system.push_str("\n\n");
@@ -158,6 +170,12 @@ pub(crate) fn system_text(cleanup: CleanupLevel, dictionary: &Dictionary, masked
             system.push_str("\n- ");
             system.push_str(term);
         }
+    }
+    if let Some(style) = style {
+        system.push_str("\n\n");
+        system.push_str(STYLE_INSTRUCTION);
+        system.push('\n');
+        system.push_str(style);
     }
     system
 }
