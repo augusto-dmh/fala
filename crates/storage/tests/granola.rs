@@ -1,4 +1,5 @@
-//! O export do Granola lido do disco.
+//! O export do Granola lido do disco e importado como reuniões: sessão `import` sem áudio, notas
+//! marcadas como IA, trechos sem tempo, e importar de novo não duplica (`meeting_imports`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -6,8 +7,11 @@ mod common;
 
 use std::io::Write;
 
-use common::env;
-use fala_storage::read_granola_export;
+use common::{at, env};
+use fala_meeting::SessionMode;
+use fala_storage::{
+    read_granola_export, ImportOutcome, SegmentChannel, SegmentSpeaker, Store, GRANOLA,
+};
 
 const HEADER: &str =
     "document_id,document_title,workspace_name,document_created,summary,notes,transcript\n";
@@ -17,6 +21,137 @@ fn csv(title: &str) -> String {
         "{HEADER}g-1,{title},Acme,2025-03-14 10:30:00 BST,\"### Próximos passos\n- Ana manda o contrato\",\"pauta: preço\",\"Me: Bom dia.\nAna: Bom dia, vamos ao preço?\"\n\
          g-2,,Acme,2025-03-15T09:00:00Z,,,\n"
     )
+}
+
+fn import_all(store: &mut Store, path: &std::path::Path) -> Vec<ImportOutcome> {
+    let export = read_granola_export(path).unwrap();
+    export
+        .meetings
+        .iter()
+        .map(|m| store.import_granola_meeting(m, at(21, 0, 0)).unwrap().1)
+        .collect()
+}
+
+#[test]
+fn an_imported_meeting_is_a_finished_session_without_audio() {
+    let env = env("granola-import");
+    let path = env.dir.join("granola.csv");
+    std::fs::write(&path, csv("Preço com a Acme")).unwrap();
+    let mut store = env.open();
+    assert_eq!(
+        import_all(&mut store, &path),
+        [ImportOutcome::Created, ImportOutcome::Created]
+    );
+
+    let meetings = store.meetings().unwrap();
+    assert_eq!(meetings.len(), 2);
+    let m = meetings
+        .iter()
+        .find(|m| m.title == "Preço com a Acme")
+        .unwrap();
+    assert_eq!(m.mode, SessionMode::Import);
+    assert!(!m.audio_retained);
+    assert_eq!(m.recorded_ms, 0);
+    assert_eq!(m.created_at.to_rfc3339(), "2025-03-14T10:30:00+01:00");
+    assert_eq!(m.started_at, Some(m.created_at));
+    assert_eq!(m.ended_at, Some(m.created_at));
+    assert_eq!(m.annotations, "pauta: preço");
+    assert_eq!(
+        m.notes_md.as_deref(),
+        Some(
+            "### Próximos passos <!-- fala:ia -->\n- Ana manda o contrato <!-- fala:ia -->\n\n\
+             _Importado do Granola em 02/10/2026._"
+        )
+    );
+    assert!(m.transcribed_at.is_some());
+    assert_eq!(
+        store.meeting_import_source(m.id).unwrap().as_deref(),
+        Some(GRANOLA)
+    );
+
+    let segments = store.meeting_segments(m.id).unwrap();
+    let shape: Vec<_> = segments
+        .iter()
+        .map(|s| (s.seq, s.channel, s.speaker, s.t0_ms, s.text.as_str()))
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            (1, SegmentChannel::Mic, SegmentSpeaker::Me, 0, "Bom dia."),
+            (
+                2,
+                SegmentChannel::System,
+                SegmentSpeaker::Person(1),
+                0,
+                "Bom dia, vamos ao preço?"
+            ),
+        ]
+    );
+    let speakers = store.meeting_speakers(m.id).unwrap();
+    assert_eq!(speakers[0].name.as_deref(), Some("Ana"));
+
+    // Sem título, sem resumo e sem transcrição: título com a data, sem notas e sem trechos.
+    let empty = meetings.iter().find(|e| e.id != m.id).unwrap();
+    assert_eq!(empty.title, "Reunião do Granola de 15/03/2025");
+    assert_eq!(empty.notes_md, None);
+    assert_eq!(empty.transcribed_at, None);
+
+    // O `.md` de cada sessão sai como o de qualquer reunião.
+    let files: Vec<String> = std::fs::read_dir(env.notes.join("Reuniões"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        files.contains(&"2025-03-14 Preço com a Acme.md".to_string()),
+        "{files:?}"
+    );
+}
+
+#[test]
+fn importing_again_updates_instead_of_duplicating() {
+    let env = env("granola-again");
+    let path = env.dir.join("granola.csv");
+    std::fs::write(&path, csv("Primeiro título")).unwrap();
+    let mut store = env.open();
+    import_all(&mut store, &path);
+    let first: Vec<_> = store.meetings().unwrap().iter().map(|m| m.id).collect();
+    let id = store
+        .meetings()
+        .unwrap()
+        .into_iter()
+        .find(|m| m.title == "Primeiro título")
+        .unwrap()
+        .id;
+    store
+        .save_edited_meeting_notes(id, "editada", at(22, 0, 0))
+        .unwrap();
+
+    std::fs::write(&path, csv("Título revisado")).unwrap();
+    assert_eq!(
+        import_all(&mut store, &path),
+        [ImportOutcome::Updated, ImportOutcome::Updated]
+    );
+    let again = store.meetings().unwrap();
+    assert_eq!(again.iter().map(|m| m.id).collect::<Vec<_>>(), first);
+    let m = store.meeting(id).unwrap();
+    assert_eq!(m.title, "Título revisado");
+    assert!(m.notes_md.unwrap().contains("Ana manda o contrato"));
+    assert!(!store.meeting_notes_edited(id).unwrap());
+    assert_eq!(store.meeting_segments(id).unwrap().len(), 2);
+    assert_eq!(store.meeting_speakers(id).unwrap().len(), 1);
+    let names: Vec<String> = std::fs::read_dir(env.notes.join("Reuniões"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+
+    // Apagada no Fala, a reunião volta numa importação nova, com outra sessão.
+    store.delete_meeting(id).unwrap();
+    assert_eq!(
+        import_all(&mut store, &path),
+        [ImportOutcome::Created, ImportOutcome::Updated]
+    );
+    assert_eq!(store.meetings().unwrap().len(), 2);
 }
 
 #[test]

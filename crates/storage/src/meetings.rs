@@ -158,7 +158,7 @@ pub(crate) fn rfc3339(at: &DateTime<FixedOffset>) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
-fn bad(idx: usize, what: String) -> rusqlite::Error {
+pub(crate) fn bad(idx: usize, what: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, what.into())
 }
 
