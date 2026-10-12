@@ -2034,6 +2034,7 @@ dependencies = [
  "fala-core",
  "fala-mcp",
  "fala-media",
+ "fala-meeting",
  "fala-postproc",
  "fala-secrets",
  "fala-storage",
@@ -2085,6 +2086,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fala-core",
+ "fala-meeting",
  "fala-storage",
  "log",
  "rmcp",
@@ -2169,6 +2171,7 @@ dependencies = [
  "chrono",
  "fala-core",
  "fala-meeting",
+ "fala-notes",
  "log",
  "rusqlite",
  "serde",

@@ -18,5 +18,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 
+[dev-dependencies]
+# Só o teste de que o corpo do espelho é o `note_document`; não entra na árvore de produção.
+fala-notes.workspace = true
+
 [lints]
 workspace = true

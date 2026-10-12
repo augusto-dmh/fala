@@ -64,18 +64,20 @@ pub(crate) fn write(
     record: &DictationRecord,
 ) -> Result<(), (PathBuf, std::io::Error)> {
     let path = path_for(notes_dir, record);
+    write_atomic(&path, &render(record)).map_err(|e| (path, e))
+}
+
+/// Escreve `content` em `path` por `<path>.tmp` + rename, criando a pasta.
+pub(crate) fn write_atomic(path: &Path, content: &str) -> std::io::Result<()> {
     let tmp = PathBuf::from(format!("{}.tmp", path.display()));
-    let result = (|| {
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        let mut file = fs::File::create(&tmp)?;
-        file.write_all(render(record).as_bytes())?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&tmp, &path)
-    })();
-    result.map_err(|e| (path, e))
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let mut file = fs::File::create(&tmp)?;
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&tmp, path)
 }
 
 /// Lê um `.md` de volta; o `Err` é o motivo legível para o `ReindexReport`.

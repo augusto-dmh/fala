@@ -181,6 +181,28 @@ impl MeetingManager {
         Ok(())
     }
 
+    /// Writes the `.md` of each meeting that is missing or differs from `fala.sqlite`
+    /// (ADR-0006): sessions saved before the mirror, and writes that failed. The store is taken
+    /// once per meeting, so the page's commands are not held for the whole run.
+    pub fn sync_mirrors(&self) {
+        let ids = match self.with_store(|store| Ok(store.meetings()?)) {
+            Ok(meetings) => meetings.into_iter().map(|m| m.id),
+            Err(e) => {
+                log::warn!("meeting mirror sync did not run: {e}");
+                return;
+            }
+        };
+        let written = ids
+            .filter(|id| {
+                self.with_store(|store| Ok(store.sync_meeting_mirror(*id)))
+                    .unwrap_or(false)
+            })
+            .count();
+        if written > 0 {
+            log::info!("meeting mirror: {written} files written");
+        }
+    }
+
     /// Deletes the retained audio the retention setting says is due now.
     pub fn run_retention(&self) {
         let days = crate::settings::get_settings(&self.app).meeting_audio_retention_days;
@@ -208,8 +230,9 @@ impl MeetingManager {
         }
     }
 
-    /// At startup, in the background: the retention runs, the audio a previous run left as WAV
-    /// is retained (and transcribed, as after a stop), then the retention runs once a day.
+    /// At startup, in the background: the mirror catches up, the retention runs, the audio a
+    /// previous run left as WAV is retained (and transcribed, as after a stop), then the retention
+    /// runs once a day.
     pub fn spawn_upkeep(app: &AppHandle) {
         let app = app.clone();
         let spawned = std::thread::Builder::new()
@@ -218,6 +241,7 @@ impl MeetingManager {
                 let Some(manager) = app.try_state::<Arc<MeetingManager>>() else {
                     return;
                 };
+                manager.sync_mirrors();
                 let mut last = millis(super::now_local());
                 manager.run_retention();
                 manager.retain_stopped();
