@@ -90,6 +90,20 @@
       "duplicate": "\"{{spoken}}\" already has a written form",
       "uses_one": "1 use",
       "uses_other": "{{count}} uses"
+    },
+    "snippets": {
+      "title": "Snippets",
+      "description": "Say the trigger and Fala inserts the text as it is: a signature, a calendar link, an address. The trigger needs two words or more and matches ignoring case and accents. {data}, {data_extenso} and {hora} become the date, the long date and the time of the dictation. The snippet text never goes to the formatting AI.",
+      "spokenPlaceholder": "my signature",
+      "writtenPlaceholder": "Jane Doe\nexample.com",
+      "spokenLabel": "Trigger",
+      "writtenLabel": "Inserted text",
+      "add": "Add",
+      "remove": "Remove the snippet {{spoken}}",
+      "duplicate": "\"{{spoken}}\" is already a snippet trigger",
+      "twoWords": "The trigger needs two words or more.",
+      "uses_one": "1 use",
+      "uses_other": "{{count}} uses"
     }
   },
   "settingsPage": {

@@ -4,8 +4,9 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use chrono::{Datelike, Timelike};
 use clap::Args;
-use fala_core::{AppContext, Dictionary, Editor, Language, Transcript};
+use fala_core::{render_snippet, AppContext, Dictionary, Editor, Language, Moment, Transcript};
 use fala_postproc::{Gemini, LlmConfig, Postprocessor, DEFAULT_BASE_URL, DEFAULT_MODEL};
 use fala_secrets::{SecretError, SecretStore};
 
@@ -26,7 +27,8 @@ pub struct FormatArgs {
     /// Idioma do ditado: pt-BR ou en.
     #[arg(long, default_value = "pt-BR")]
     lang: String,
-    /// Arquivo do dicionário pessoal, um termo por linha; `falado -> escrito` é um par.
+    /// Arquivo do dicionário pessoal, um termo por linha; `falado -> escrito` é um par e
+    /// `gatilho => texto` um snippet (`\n` no texto é quebra de linha).
     #[arg(long)]
     dictionary: Option<PathBuf>,
     /// App onde o LLM fica desligado (repetível; compara sem caixa).
@@ -101,12 +103,27 @@ pub fn run(
 
 /// O cliente com a chave `gemini` do keyring, ou o código de saída: 1 keyring indisponível,
 /// 2 sem chave. A mensagem vai para o `stderr`; a chave nunca.
-/// Um termo por linha; uma linha com ` -> ` é um par "falado → escrito".
+/// Um termo por linha; uma linha com ` -> ` é um par "falado → escrito" e uma com ` => ` um
+/// snippet, com as variáveis resolvidas agora.
 fn parse_dictionary(content: &str) -> Dictionary {
+    let (snippets, rest): (Vec<&str>, Vec<&str>) =
+        content.lines().partition(|line| line.contains(" => "));
     let (pairs, terms): (Vec<&str>, Vec<&str>) =
-        content.lines().partition(|line| line.contains(" -> "));
+        rest.into_iter().partition(|line| line.contains(" -> "));
+    let now = chrono::Local::now();
+    let at = Moment {
+        year: now.year(),
+        month: now.month(),
+        day: now.day(),
+        hour: now.hour(),
+        minute: now.minute(),
+    };
     Dictionary::new(terms)
         .with_replacements(pairs.into_iter().filter_map(|line| line.split_once(" -> ")))
+        .with_snippets(snippets.into_iter().filter_map(|line| {
+            let (trigger, text) = line.split_once(" => ")?;
+            Some((trigger, render_snippet(&text.replace("\\n", "\n"), at)))
+        }))
 }
 
 pub(crate) fn gemini_from_store(
@@ -206,15 +223,22 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("fala-cli-format-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let dict = dir.join("dicionario.txt");
-        std::fs::write(&dict, "ChargeBee\nfala sql -> Fala.sqlite\n").unwrap();
+        std::fs::write(
+            &dict,
+            "ChargeBee\nfala sql -> Fala.sqlite\nminha assinatura => Augusto\\nfala.dev\n",
+        )
+        .unwrap();
         let out = format(
             &MemoryStore::default(),
             &["--dictionary", dict.to_str().unwrap()],
-            "hã eu eu eu acho que a charge bee e o fala sql",
+            "hã eu eu eu acho que a charge bee e o fala sql, minha assinatura",
         );
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(out.code, 0);
-        assert_eq!(out.stdout, "Eu acho que a ChargeBee e o Fala.sqlite\n");
+        assert_eq!(
+            out.stdout,
+            "Eu acho que a ChargeBee e o Fala.sqlite, Augusto\nfala.dev\n"
+        );
         assert!(out.stderr.contains("editor: regras"), "{}", out.stderr);
     }
 
