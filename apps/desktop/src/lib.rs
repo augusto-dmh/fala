@@ -912,6 +912,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
             commands::meeting::set_meeting_speaker_name,
+            commands::meeting::save_meeting_notes,
             call_prompt::call_prompt_current,
             call_prompt::answer_call_prompt,
             call_prompt::call_prompt_apps,

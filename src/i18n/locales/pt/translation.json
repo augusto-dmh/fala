@@ -1142,6 +1142,14 @@
       "notes": "Notas",
       "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima."
     },
+    "notesEdit": {
+      "edit": "Editar",
+      "label": "Texto das notas",
+      "hint": "A linha que você muda passa a ser sua: perde a cor de IA e as fontes.",
+      "done": "Concluir",
+      "confirm": "Você editou estas notas. Gerar de novo substitui as suas edições, e isso não pode ser desfeito.",
+      "regenerate": "Gerar de novo"
+    },
     "source": {
       "open": "Ver de onde veio esta linha",
       "title": "Fonte",
@@ -1214,6 +1222,7 @@
       "busy": "Já há uma transcrição ou geração de notas em andamento.",
       "unknown_template": "Template desconhecido.",
       "notes": "A geração de notas falhou. Tente de novo.",
+      "notes_edited": "A nota foi editada. Confirme antes de gerar de novo.",
       "tool_missing": "O {{detail}} não está instalado ou não está no PATH. Instale-o e abra o Fala de novo.",
       "invalid_url": "Use um link que comece com http:// ou https://.",
       "download": "Não consegui baixar esse link. Baixe o vídeo pelo navegador e importe o arquivo. ({{detail}})",
