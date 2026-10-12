@@ -1,18 +1,21 @@
 //! Importação de mídia: um arquivo local de áudio ou vídeo vira o WAV que uma sessão do modo
-//! "importação" entrega ao pipeline da reunião (design doc §3.4 item 5).
+//! "importação" entrega ao pipeline da reunião (design doc §3.4 item 5); uma URL vira esse
+//! arquivo antes, pelo [`download`].
 //!
-//! Usa o `ffmpeg` e o `ffprobe` do PATH; nada é baixado (decisão D3 do pitch da fase 2, opção c).
+//! Usa o `ffmpeg`, o `ffprobe` e o `yt-dlp` do PATH; nenhuma ferramenta é baixada (decisão D3
+//! do pitch da fase 2, opção c).
 //! A saída é WAV PCM s16le, mono, 48 kHz, o formato por canal do gravador de reunião e a entrada
 //! do Opus retido (ADR-0005). `crates/meeting` chama [`import`] numa thread, com o destino dentro
 //! da pasta da sessão, e repassa cada [`Progress`] como evento. Sem `cfg` de plataforma (ADR-0007).
 
 mod ffmpeg;
 mod tools;
+mod ytdlp;
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
@@ -20,7 +23,8 @@ use std::thread;
 use std::time::Duration;
 
 pub use ffmpeg::{CHANNELS, SAMPLE_RATE_HZ};
-pub use tools::Tools;
+pub use tools::{ProcessHooks, Tools};
+pub use ytdlp::{check_url, DownloadProgress};
 
 /// Maior duração importável: 12 h a 96 000 bytes/s cabem nos 4 GiB de um WAV.
 pub const MAX_DURATION: Duration = Duration::from_secs(12 * 3600);
@@ -31,8 +35,12 @@ const CANCEL_POLL: Duration = Duration::from_millis(50);
 /// Erros da importação. Nenhum caminho previsível termina em panic.
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
-    #[error("`{tool}` não está no PATH; instale o ffmpeg (que traz o ffprobe) e deixe-o no PATH")]
+    #[error("`{tool}` não está no PATH; instale-o e deixe-o no PATH (o ffmpeg traz o ffprobe)")]
     ToolNotFound { tool: &'static str },
+    #[error("só URLs http:// ou https:// são aceitas: {0}")]
+    InvalidUrl(String),
+    #[error("o yt-dlp não baixou a URL (status {code:?}): {detail}")]
+    Download { code: Option<i32>, detail: String },
     #[error("arquivo não encontrado: {}", .0.display())]
     InputNotFound(PathBuf),
     #[error("a saída já existe e não será sobrescrita: {}", .0.display())]
@@ -78,6 +86,13 @@ impl CancelToken {
 pub struct Progress {
     pub processed: Duration,
     pub total: Option<Duration>,
+}
+
+/// O arquivo que o [`download`] deixou no disco e o título que a página tinha.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Downloaded {
+    pub path: PathBuf,
+    pub title: String,
 }
 
 /// O WAV importado, com o que o cabeçalho escrito diz.
@@ -145,13 +160,56 @@ pub fn import(
     converted
 }
 
+/// Baixa o áudio de `url` para dentro de `dir` com o `yt-dlp`, para depois passar ao [`import`].
+///
+/// Recusa o que não é `http(s)://` antes de iniciar processo. O cancelamento para o yt-dlp pelo
+/// `stop` dos [`ProcessHooks`]; o que ele deixou em `dir` fica para quem chama apagar.
+pub fn download(
+    tools: &Tools,
+    url: &str,
+    dir: &Path,
+    cancel: &CancelToken,
+    on_progress: &mut dyn FnMut(DownloadProgress),
+) -> Result<Downloaded, MediaError> {
+    check_url(url)?;
+    let yt_dlp = tools.yt_dlp()?;
+    if cancel.is_cancelled() {
+        return Err(MediaError::Cancelled);
+    }
+    fs::create_dir_all(dir)?;
+    let args = ytdlp::ytdlp_args(url, &std::path::absolute(dir)?);
+    log::debug!("yt-dlp {args:?}");
+    let mut command = Command::new(yt_dlp);
+    command.args(&args);
+    let mut output = ytdlp::YtDlpOutput::default();
+    let (status, stderr) = supervise(tools, command, cancel, &mut |line| {
+        if let Some(progress) = output.feed(line) {
+            on_progress(progress);
+        }
+    })?;
+    let failed = |detail: String| MediaError::Download {
+        code: status.code(),
+        detail,
+    };
+    if !status.success() {
+        return Err(failed(stderr));
+    }
+    let path = output
+        .filepath
+        .filter(|path| path.is_file())
+        .ok_or_else(|| failed("o yt-dlp terminou sem deixar um arquivo".to_owned()))?;
+    Ok(Downloaded {
+        path,
+        title: output.title.unwrap_or_default(),
+    })
+}
+
 fn probe(tools: &Tools, input: &Path, source: &Path) -> Result<ffmpeg::Probe, MediaError> {
     let args = ffmpeg::ffprobe_args(source);
     log::debug!("ffprobe {args:?}");
-    let output = Command::new(tools.ffprobe())
-        .args(&args)
-        .stdin(Stdio::null())
-        .output()?;
+    let mut command = Command::new(tools.ffprobe());
+    (tools.hooks().prepare)(&mut command);
+    let output = command.args(&args).stdin(Stdio::null()).output()?;
     if !output.status.success() {
         return Err(MediaError::Unreadable {
             path: input.to_path_buf(),
@@ -176,22 +234,54 @@ fn convert(
 ) -> Result<(), MediaError> {
     let args = ffmpeg::ffmpeg_args(source, part);
     log::debug!("ffmpeg {args:?}");
-    let mut child = Command::new(tools.ffmpeg())
-        .args(&args)
+    let mut command = Command::new(tools.ffmpeg());
+    command.args(&args);
+    on_progress(Progress {
+        processed: Duration::ZERO,
+        total,
+    });
+    let mut parser = ffmpeg::ProgressParser::default();
+    let mut last = Duration::ZERO;
+    let (status, detail) = supervise(tools, command, cancel, &mut |line| {
+        if let Some(processed) = parser.feed(line) {
+            last = last.max(processed);
+            on_progress(Progress {
+                processed: last,
+                total,
+            });
+        }
+    })?;
+    if !status.success() {
+        return Err(MediaError::Ffmpeg {
+            code: status.code(),
+            detail,
+        });
+    }
+    Ok(())
+}
+
+/// Roda `command` até o fim, passando cada linha do stdout a `on_line`, e devolve o status e o
+/// final do stderr. Confere o cancelamento a cada [`CANCEL_POLL`]; cancelado, para o processo
+/// pelo `stop` dos hooks e devolve [`MediaError::Cancelled`].
+fn supervise(
+    tools: &Tools,
+    mut command: Command,
+    cancel: &CancelToken,
+    on_line: &mut dyn FnMut(&str),
+) -> Result<(ExitStatus, String), MediaError> {
+    (tools.hooks().prepare)(&mut command);
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let (sender, progress) = mpsc::channel();
+    let (sender, lines) = mpsc::channel();
     if let Some(stdout) = child.stdout.take() {
         thread::spawn(move || {
-            let mut parser = ffmpeg::ProgressParser::default();
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
-                if let Some(processed) = parser.feed(&line)
-                    && sender.send(processed).is_err()
-                {
+                if sender.send(line).is_err() {
                     break;
                 }
             }
@@ -199,50 +289,36 @@ fn convert(
     }
     let stderr = child.stderr.take().map(|mut pipe| {
         thread::spawn(move || {
-            let mut text = String::new();
-            let _ = pipe.read_to_string(&mut text);
-            text
+            let mut text = Vec::new();
+            let _ = pipe.read_to_end(&mut text);
+            String::from_utf8_lossy(&text).into_owned()
         })
     });
 
-    on_progress(Progress {
-        processed: Duration::ZERO,
-        total,
-    });
-    let mut last = Duration::ZERO;
     loop {
         if cancel.is_cancelled() {
             break;
         }
-        match progress.recv_timeout(CANCEL_POLL) {
-            Ok(processed) => {
-                last = last.max(processed);
-                on_progress(Progress {
-                    processed: last,
-                    total,
-                });
-            }
+        match lines.recv_timeout(CANCEL_POLL) {
+            Ok(line) => on_line(&line),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
     }
     if cancel.is_cancelled() {
-        let _ = child.kill();
+        (tools.hooks().stop)(&mut child);
         let _ = child.wait();
         return Err(MediaError::Cancelled);
     }
 
     let status = child.wait()?;
-    if !status.success() {
-        let text = stderr
-            .map(|handle| handle.join().unwrap_or_default())
-            .unwrap_or_default();
-        return Err(MediaError::Ffmpeg {
-            code: status.code(),
-            detail: ffmpeg::stderr_tail(&text, ffmpeg::STDERR_TAIL_BYTES),
-        });
-    }
-    Ok(())
+    let text = stderr
+        .map(|handle| handle.join().unwrap_or_default())
+        .unwrap_or_default();
+    Ok((
+        status,
+        ffmpeg::stderr_tail(&text, ffmpeg::STDERR_TAIL_BYTES),
+    ))
 }
 
 /// Renomeia o `.part` para `out` e lê o cabeçalho do WAV escrito.
@@ -274,6 +350,8 @@ mod tests {
     use crate::ffmpeg::{
         ffmpeg_args, ffprobe_args, parse_probe, stderr_tail, ProgressParser, STDERR_TAIL_BYTES,
     };
+    use crate::ytdlp::{check_url, ytdlp_args, DownloadProgress, YtDlpOutput};
+    use crate::MediaError;
 
     fn strings(args: &[OsString]) -> Vec<String> {
         args.iter()
@@ -367,5 +445,87 @@ mod tests {
         assert!(tail.len() <= 2_000);
         assert!(tail.chars().all(|c| c == 'é'));
         assert_eq!(stderr_tail("  erro\n", STDERR_TAIL_BYTES), "erro");
+    }
+
+    #[test]
+    fn only_http_and_https_urls_pass() {
+        for ok in [
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+            "HTTP://example.com",
+            "http://127.0.0.1:8080/aula.mp3",
+        ] {
+            assert!(check_url(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "ftp://example.com/a.mp3",
+            "file:///C:/aula.mp4",
+            "javascript:alert(1)",
+            "--exec calc",
+            "https://",
+            "https:///caminho",
+            "https://exemplo.com/a b",
+            "https://exemplo.com/\nx",
+            "C:\\aula.mp4",
+        ] {
+            assert!(
+                matches!(check_url(bad), Err(MediaError::InvalidUrl(ref u)) if *u == bad),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ytdlp_args_keep_the_url_as_one_last_argument() {
+        let url = "https://exemplo.com/v?a=1&b=2;rm -rf";
+        let args = strings(&ytdlp_args(url, Path::new("/sessao/baixado")));
+        let n = args.len();
+        assert_eq!(args[n - 2], "--");
+        assert_eq!(args[n - 1], url);
+        assert!(args.contains(&"--no-playlist".to_owned()));
+        assert!(has_pair(&args, "--format", "bestaudio/best"));
+        assert!(has_pair(&args, "--paths", "/sessao/baixado"));
+        assert!(has_pair(&args, "--output", "source.%(ext)s"));
+        assert!(has_pair(
+            &args,
+            "--print",
+            "after_move:filepath:%(filepath)s"
+        ));
+        // Nada de execução depois do download nem de lista de URLs vinda de arquivo.
+        assert!(!args.iter().any(|a| a == "--exec" || a == "--batch-file"));
+    }
+
+    #[test]
+    fn ytdlp_output_reads_title_path_and_progress() {
+        let mut out = YtDlpOutput::default();
+        assert_eq!(out.feed("title:Me at the zoo"), None);
+        assert_eq!(
+            out.feed("progress:1024:252182:NA"),
+            Some(DownloadProgress {
+                done_bytes: 1024,
+                total_bytes: Some(252_182),
+            })
+        );
+        assert_eq!(
+            out.feed("progress:2048:NA:300000.5"),
+            Some(DownloadProgress {
+                done_bytes: 2048,
+                total_bytes: Some(300_000),
+            })
+        );
+        assert_eq!(
+            out.feed("progress:4096:NA:NA"),
+            Some(DownloadProgress {
+                done_bytes: 4096,
+                total_bytes: None,
+            })
+        );
+        assert_eq!(out.feed("progress:NA:NA:NA"), None);
+        assert_eq!(out.feed("filepath:C:/sessão/source.webm\r"), None);
+        assert_eq!(out.title.as_deref(), Some("Me at the zoo"));
+        assert_eq!(
+            out.filepath.as_deref(),
+            Some(Path::new("C:/sessão/source.webm"))
+        );
     }
 }

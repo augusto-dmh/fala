@@ -1,16 +1,40 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
 
 use crate::MediaError;
 
-/// Caminhos do `ffmpeg` e do `ffprobe` achados no PATH.
+/// Como os processos filhos são iniciados e parados. O padrão não muda o `Command` e mata só o
+/// processo; quem roda no Windows injeta o resto (esconder o console, matar a árvore), porque
+/// este crate não tem `cfg` de plataforma (ADR-0007).
+#[derive(Debug, Clone, Copy)]
+pub struct ProcessHooks {
+    pub prepare: fn(&mut Command),
+    pub stop: fn(&mut Child),
+}
+
+impl Default for ProcessHooks {
+    fn default() -> Self {
+        Self {
+            prepare: |_| {},
+            stop: |child| {
+                let _ = child.kill();
+            },
+        }
+    }
+}
+
+/// Caminhos do `ffmpeg`, do `ffprobe` e, se houver, do `yt-dlp` achados no PATH.
 ///
-/// Nada é baixado nem embutido: a importação exige os dois no PATH por enquanto (decisão D3 do
-/// pitch da fase 2, opção c). Toda distribuição do ffmpeg traz o ffprobe junto.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Nada é baixado nem embutido: a importação exige os dois primeiros no PATH por enquanto, e a
+/// de URL também o `yt-dlp` (decisão D3 do pitch da fase 2, opção c). Toda distribuição do
+/// ffmpeg traz o ffprobe junto.
+#[derive(Debug, Clone)]
 pub struct Tools {
     ffmpeg: PathBuf,
     ffprobe: PathBuf,
+    yt_dlp: Option<PathBuf>,
+    hooks: ProcessHooks,
 }
 
 impl Tools {
@@ -25,7 +49,16 @@ impl Tools {
     pub fn locate_in(path: &OsStr) -> Result<Self, MediaError> {
         let ffmpeg = find(path, "ffmpeg").ok_or(MediaError::ToolNotFound { tool: "ffmpeg" })?;
         let ffprobe = find(path, "ffprobe").ok_or(MediaError::ToolNotFound { tool: "ffprobe" })?;
-        Ok(Self { ffmpeg, ffprobe })
+        Ok(Self {
+            ffmpeg,
+            ffprobe,
+            yt_dlp: find(path, "yt-dlp"),
+            hooks: ProcessHooks::default(),
+        })
+    }
+
+    pub fn with_hooks(self, hooks: ProcessHooks) -> Self {
+        Self { hooks, ..self }
     }
 
     pub fn ffmpeg(&self) -> &Path {
@@ -34,6 +67,17 @@ impl Tools {
 
     pub fn ffprobe(&self) -> &Path {
         &self.ffprobe
+    }
+
+    /// O `yt-dlp`, ou o erro que a importação de URL mostra sem ele.
+    pub fn yt_dlp(&self) -> Result<&Path, MediaError> {
+        self.yt_dlp
+            .as_deref()
+            .ok_or(MediaError::ToolNotFound { tool: "yt-dlp" })
+    }
+
+    pub fn hooks(&self) -> ProcessHooks {
+        self.hooks
     }
 }
 
