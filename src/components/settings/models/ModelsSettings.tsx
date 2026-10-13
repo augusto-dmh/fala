@@ -13,7 +13,9 @@ import ModelCard from "./ModelCard";
 import { SearchField } from "../../ui/SearchField";
 import { useModelStore } from "@/stores/modelStore";
 import {
-  getLanguageLabel,
+  languageName,
+  localizedLanguages,
+  matchesLanguage,
   MODEL_CAPABILITY_LANGUAGES,
   supportsLanguageCode,
 } from "@/lib/constants/languages.ts";
@@ -31,7 +33,7 @@ const isLegacyModel = (model: ModelInfo): boolean =>
   typeof model.source === "object" && "Url" in model.source;
 
 export const ModelsSettings: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [switchingModelId, setSwitchingModelId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStreaming, setFilterStreaming] = useState(false);
@@ -80,20 +82,26 @@ export const ModelsSettings: React.FC = () => {
     }
   }, [languageDropdownOpen]);
 
+  // The names change with the UI language only, not on every key of the search.
+  const namedLanguages = useMemo(
+    () => localizedLanguages(MODEL_CAPABILITY_LANGUAGES, i18n.language),
+    [i18n.language],
+  );
+
   // filtered languages for dropdown (exclude "auto")
   const filteredLanguages = useMemo(() => {
-    return MODEL_CAPABILITY_LANGUAGES.filter((lang) =>
-      lang.label.toLowerCase().includes(languageSearch.toLowerCase()),
+    return namedLanguages.filter((lang) =>
+      matchesLanguage(lang, languageSearch),
     );
-  }, [languageSearch]);
+  }, [languageSearch, namedLanguages]);
 
   // Get selected language label
   const selectedLanguageLabel = useMemo(() => {
     if (languageFilter === "all") {
       return t("settings.models.filters.allLanguages");
     }
-    return getLanguageLabel(languageFilter) || "";
-  }, [languageFilter, t]);
+    return languageName(languageFilter, i18n.language) || "";
+  }, [languageFilter, t, i18n.language]);
 
   const getModelStatus = (modelId: string): ModelCardStatus => {
     if (modelId in extractingModels) {
