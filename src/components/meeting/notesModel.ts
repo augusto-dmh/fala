@@ -17,6 +17,8 @@ export type NoteBlock =
       /** Written by the LLM; typed lines are `false`. */
       generated: boolean;
       sources: NoteSource[];
+      /** A code-block or table line: shown as written, no inline Markdown. */
+      literal?: true;
     };
 
 export interface ParsedNotes {
@@ -43,17 +45,32 @@ export function parseNotes(
   const seqs = new Set(lines.map((line) => line.seq));
   const annotations = new Map<number, string>();
   const blocks: NoteBlock[] = [];
+  let fenced = false;
 
   for (const raw of markdown.split("\n")) {
     const row = raw.trim();
     if (!row) continue;
+    // Code blocks and table rows (an imported summary keeps them as written).
+    const fence = row.startsWith("```") || row.startsWith("~~~");
+    if (fence || fenced || row.startsWith("|")) {
+      if (fence) fenced = !fenced;
+      blocks.push({
+        kind: "line",
+        text: row,
+        bullet: false,
+        generated: false,
+        sources: [],
+        literal: true,
+      });
+      continue;
+    }
     const heading = HEADING.exec(row);
     if (heading) {
-      blocks.push({
-        kind: "heading",
-        level: heading[1].length,
-        text: heading[2],
-      });
+      // An imported summary marks its headings too ("### Decisões <!-- fala:ia -->").
+      const text = heading[2].endsWith(GENERATED_MARKER)
+        ? heading[2].slice(0, -GENERATED_MARKER.length).trim()
+        : heading[2];
+      blocks.push({ kind: "heading", level: heading[1].length, text });
       continue;
     }
     const generated = row.endsWith(GENERATED_MARKER);
@@ -92,6 +109,44 @@ export function parseNotes(
     );
   }
   return { blocks, annotations };
+}
+
+/** A run of a note line: plain, **strong** or _emphasised_. */
+export interface InlinePiece {
+  text: string;
+  strong?: boolean;
+  em?: boolean;
+}
+
+// `**x**`, `*x*` and `_x_`. The markers hug their text and stand apart from words, so
+// `snake_case`, `5*3*2` and `2 ** 3` stay as typed.
+const INLINE =
+  /(?<![\p{L}\p{N}*])\*\*(?!\s)(.+?)(?<!\s)\*\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}*])\*(?![\s*])(.+?)(?<![\s*])\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?!\s)(.+?)(?<!\s)_(?![\p{L}\p{N}_])/gu;
+
+/** The inline Markdown of a line (what an imported summary uses) as runs to render. */
+export function inlinePieces(text: string): InlinePiece[] {
+  const pieces: InlinePiece[] = [];
+  let at = 0;
+  for (const match of text.matchAll(INLINE)) {
+    const start = match.index ?? 0;
+    if (start > at) pieces.push({ text: text.slice(at, start) });
+    if (match[1] !== undefined) pieces.push({ text: match[1], strong: true });
+    else pieces.push({ text: match[2] ?? match[3], em: true });
+    at = start + match[0].length;
+  }
+  if (at < text.length) pieces.push({ text: text.slice(at) });
+  return pieces;
+}
+
+/**
+ * The date of the footer the Granola import writes in pt-BR ("_Importado do Granola em
+ * 2026-10-12._", `crates/storage`), so the page can say it in the UI language; `null` for any
+ * other line.
+ */
+export function granolaImportDate(text: string): string | null {
+  return (
+    /^_Importado do Granola em (\d{4}-\d{2}-\d{2})\._$/.exec(text)?.[1] ?? null
+  );
 }
 
 /** A stored note line as the person reads it: no marker, no pointers, no `^aN` anchor. */

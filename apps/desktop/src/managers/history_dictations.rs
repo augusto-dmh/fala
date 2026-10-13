@@ -719,41 +719,94 @@ mod tests {
     }
 
     #[test]
-    fn retention_deletes_dictations_or_keeps_entry() {
+    fn retention_deletes_only_the_recordings() {
         let env = scratch();
         let store = env.store();
         let conn = history();
+        let mut wavs = Vec::new();
         let mut ids = Vec::new();
         for ts in [10, 20, 30] {
             let file = format!("fala-{ts}.wav");
-            env.wav(&file);
+            wavs.push(env.wav(&file));
             let saved = save(&conn, Some(&store), llm_entry(&file), ts);
-            ids.push(link(&conn, saved.id).unwrap());
+            ids.push(saved.id);
         }
 
-        HistoryManager::cleanup_by_count_with(&conn, Some(&store), &env.recordings, 1).unwrap();
-        assert_eq!(rows(&conn), 1);
-        assert!(not_found(&store, &ids[0]));
-        assert!(not_found(&store, &ids[1]));
-        assert!(store.get(&ids[2]).is_ok());
+        let marked = HistoryManager::cleanup_by_count_with(&conn, &env.recordings, 1).unwrap();
+        assert_eq!(marked, vec![ids[1], ids[0]]);
+        assert_eq!(rows(&conn), 3);
+        assert!(!wavs[0].exists());
+        assert!(!wavs[1].exists());
+        assert!(wavs[2].exists());
+        for id in &ids {
+            assert!(store.get(&link(&conn, *id).unwrap()).is_ok());
+        }
+        let old = HistoryManager::get_entry_by_id_with(&conn, ids[0])
+            .unwrap()
+            .unwrap();
+        assert_eq!(old.post_processed_text.as_deref(), Some("Ação de amanhã."));
+        assert!(old.audio_deleted);
+        let newest = HistoryManager::get_entry_by_id_with(&conn, ids[2])
+            .unwrap()
+            .unwrap();
+        assert!(!newest.audio_deleted);
 
-        HistoryManager::cleanup_by_time_with(&conn, Some(&store), &env.recordings, 31).unwrap();
-        assert_eq!(rows(&conn), 0);
-        assert!(not_found(&store, &ids[2]));
+        let marked = HistoryManager::cleanup_by_time_with(&conn, &env.recordings, 31).unwrap();
+        assert_eq!(marked, vec![ids[2]]);
+        assert_eq!(rows(&conn), 3);
+        assert!(!wavs[2].exists());
+        let newest = HistoryManager::get_entry_by_id_with(&conn, ids[2])
+            .unwrap()
+            .unwrap();
+        assert!(newest.audio_deleted);
+        assert!(store.get(&link(&conn, ids[2]).unwrap()).is_ok());
+    }
 
+    #[test]
+    fn retention_marks_every_row_sharing_the_wav() {
         let env = scratch();
         let store = env.store();
         let conn = history();
-        for ts in [10, 20, 30] {
-            let file = format!("fala-{ts}.wav");
-            env.wav(&file);
-            save(&conn, Some(&store), llm_entry(&file), ts);
-        }
-        env.break_store();
-        HistoryManager::cleanup_by_count_with(&conn, Some(&store), &env.recordings, 1).unwrap();
+        let wav = env.wav("fala-10.wav");
+        let older = save(&conn, Some(&store), llm_entry("fala-10.wav"), 10);
+        let newer = save(&conn, Some(&store), llm_entry("fala-10.wav"), 10);
+        env.wav("fala-20.wav");
+        save(&conn, Some(&store), llm_entry("fala-20.wav"), 20);
+
+        let mut marked = HistoryManager::cleanup_by_count_with(&conn, &env.recordings, 1).unwrap();
+        marked.sort();
+
+        assert!(!wav.exists());
+        assert_eq!(marked, vec![older.id, newer.id]);
         assert_eq!(rows(&conn), 3);
-        HistoryManager::cleanup_by_time_with(&conn, Some(&store), &env.recordings, 100).unwrap();
-        assert_eq!(rows(&conn), 3);
+    }
+
+    #[test]
+    fn retention_keeps_saved_recordings() {
+        let env = scratch();
+        let store = env.store();
+        let conn = history();
+        let starred = env.wav("fala-10.wav");
+        let saved = save(&conn, Some(&store), llm_entry("fala-10.wav"), 10);
+        conn.execute(
+            "UPDATE transcription_history SET saved = 1 WHERE id = ?1",
+            [saved.id],
+        )
+        .unwrap();
+        env.wav("fala-20.wav");
+        save(&conn, Some(&store), llm_entry("fala-20.wav"), 20);
+
+        HistoryManager::cleanup_by_count_with(&conn, &env.recordings, 0).unwrap();
+        HistoryManager::cleanup_by_time_with(&conn, &env.recordings, 100).unwrap();
+
+        assert!(starred.exists());
+        assert!(
+            !HistoryManager::get_entry_by_id_with(&conn, saved.id)
+                .unwrap()
+                .unwrap()
+                .audio_deleted
+        );
+        assert_eq!(rows(&conn), 2);
     }
 
     #[test]
