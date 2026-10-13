@@ -380,6 +380,7 @@
       "noModelsMatch": "Nenhum modelo corresponde a este filtro.",
       "yourModels": "Modelos baixados",
       "availableModels": "Disponíveis para download",
+      "otherModels": "Outros modelos ({{count}}), para outros idiomas",
       "searchPlaceholder": "Buscar modelos por nome…",
       "rescan": {
         "label": "Reescanear",
