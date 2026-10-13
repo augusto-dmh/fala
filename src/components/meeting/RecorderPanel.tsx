@@ -35,7 +35,13 @@ export interface RecorderPanelProps {
   templates?: MeetingTemplate[];
   template?: string | null;
   onTemplateChange?: (templateId: string) => void;
+  /** `false` on the meeting itself: its bar has the time, pause and stop. */
+  controls?: boolean;
 }
+
+/** A recorder warning: an amber strip, as in Granola. */
+const STRIP =
+  "flex flex-wrap items-center gap-2 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-caption";
 
 /** "Copy notice": a ready text for the call's chat, saying the meeting is being recorded. */
 export function CopyNoticeButton() {
@@ -155,31 +161,42 @@ export function RecorderPanel(props: RecorderPanelProps) {
   const paused = status.state === "paused";
   return (
     <div className="space-y-2 p-4">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-lg">{clock(status.recorded_ms)}</span>
-        <span className="text-xs">
-          {paused ? t("meeting.recorder.paused") : t("meeting.recorder.live")}
-        </span>
-        {paused ? (
-          <Button variant="secondary" onClick={props.onResume}>
-            {t("meeting.recorder.resume")}
-          </Button>
-        ) : (
-          <Button variant="secondary" onClick={props.onPause}>
-            {t("meeting.recorder.pause")}
-          </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        {props.controls !== false && (
+          <>
+            <span className="font-mono text-lg">
+              {clock(status.recorded_ms)}
+            </span>
+            <span className="text-xs">
+              {paused
+                ? t("meeting.recorder.paused")
+                : t("meeting.recorder.live")}
+            </span>
+            {paused ? (
+              <Button variant="secondary" onClick={props.onResume}>
+                {t("meeting.recorder.resume")}
+              </Button>
+            ) : (
+              <Button variant="secondary" onClick={props.onPause}>
+                {t("meeting.recorder.pause")}
+              </Button>
+            )}
+            <Button variant="danger" onClick={props.onStop}>
+              {t("meeting.recorder.stop")}
+            </Button>
+          </>
         )}
-        <Button variant="danger" onClick={props.onStop}>
-          {t("meeting.recorder.stop")}
-        </Button>
         <CopyNoticeButton />
-        {props.templates && props.onTemplateChange && (
-          <TemplateSelect
-            templates={props.templates}
-            value={shownTemplate(props.templates, props.template ?? null)}
-            onChange={props.onTemplateChange}
-          />
-        )}
+        {/* On the meeting itself the template is in its "/" menu and its bar. */}
+        {props.controls !== false &&
+          props.templates &&
+          props.onTemplateChange && (
+            <TemplateSelect
+              templates={props.templates}
+              value={shownTemplate(props.templates, props.template ?? null)}
+              onChange={props.onTemplateChange}
+            />
+          )}
       </div>
       {showsConsentChip(status.recorded_ms) && (
         <p
@@ -199,10 +216,7 @@ export function RecorderPanel(props: RecorderPanelProps) {
         </p>
       )}
       {status.call_output !== null && (
-        <p
-          role="alert"
-          className="flex items-center gap-2 text-xs text-warning"
-        >
+        <p role="alert" className={STRIP}>
           {t("meeting.recorder.callElsewhere", { device: status.call_output })}
           <Button
             size="sm"
@@ -214,17 +228,17 @@ export function RecorderPanel(props: RecorderPanelProps) {
         </p>
       )}
       {status.muted_mic && (
-        <p role="alert" className="text-xs text-warning">
+        <p role="alert" className={STRIP}>
           {t("meeting.recorder.mutedMic")}
         </p>
       )}
       {status.muted_system && (
-        <p role="alert" className="text-xs text-warning">
+        <p role="alert" className={STRIP}>
           {t("meeting.recorder.mutedSystem")}
         </p>
       )}
       {status.cap_remaining_ms !== null && (
-        <p role="alert" className="flex items-center gap-2 text-xs">
+        <p role="alert" className={STRIP}>
           {t("meeting.recorder.capWarning", {
             time: clock(status.cap_remaining_ms),
           })}
@@ -234,7 +248,7 @@ export function RecorderPanel(props: RecorderPanelProps) {
         </p>
       )}
       {status.low_disk_bytes !== null && (
-        <p role="alert" className="text-xs text-warning">
+        <p role="alert" className={STRIP}>
           {t("meeting.recorder.lowDisk", {
             mb: Math.floor(status.low_disk_bytes / (1024 * 1024)),
           })}

@@ -33,6 +33,14 @@ Proof: `bun src/components/meeting/screen.test.tsx`; `bun src/components/meeting
 **C9** - "⋯" junta copiar Markdown, copiar transcrição, participantes e apagar (com a confirmação); sugestões de nome aparecem sem abrir
 Proof: `bun src/components/meeting/screen.test.tsx`; `meeting.test.tsx`; `lifecycle.test.tsx`
 
+### S4 - barra inferior e folha da transcrição (PR 4)
+
+**C10** - a barra fixa mostra o que a sessão pode fazer: gravando, tempo, pausar/retomar e parar; parando, a linha de processamento; rascunho, gravar com o template; depois, transcrever (e cancelar) e gerar notas com o template atrás da seta; a onda abre e fecha a transcrição
+Proof: `bun src/components/meeting/bar.test.tsx`
+
+**C11** - transcrição numa folha lateral (a fonte de uma nota a abre e rola até o trecho); avisos do gravador em faixas âmbar; na reunião que grava, os controles só na barra
+Proof: `bun src/components/meeting/bar.test.tsx`; `meeting.test.tsx`; `notesPolish.test.tsx`
+
 ### Todas as fatias
 
 **C6** - strings novas em pt e en; lint, tsc, format

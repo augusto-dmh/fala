@@ -1397,6 +1397,10 @@
       "noNotes": "The notes show here once they are generated.",
       "slash": "Notes template:",
       "imported": "Imported"
+    },
+    "bar": {
+      "label": "Meeting actions",
+      "close": "Close the transcript"
     }
   }
 }

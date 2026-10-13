@@ -125,10 +125,9 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
   assert.ok(/chooseGranola[\s\S]*extensions: \["csv", "zip"\]/.test(dialog));
   assert.ok(/onGranola=\{setGranolaPath\}/.test(page));
   // Sem áudio, "Transcrever" fica desligado, e as notas dizem que não têm âncoras.
-  assert.ok(
-    /props\.transcribing \|\|[\s\S]*imported_from === "granola"\s*\}\s*onClick=\{props\.onTranscribe\}/.test(
-      view_,
-    ),
+  assert.match(
+    view_,
+    /transcribeDisabled=\{[\s\S]*?imported_from === "granola"\s*\}\s*onTranscribe=\{props\.onTranscribe\}/,
   );
   assert.ok(view_.includes('t("meeting.granola.noAnchors")'));
   assert.ok(

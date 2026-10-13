@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   commands,
@@ -21,6 +22,7 @@ import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
 import { shownTemplate, TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
+import { SessionBar, type LiveControls } from "./SessionBar";
 import { searchLines, transcriptText } from "./transcriptSearch";
 
 export interface MeetingViewProps {
@@ -43,6 +45,8 @@ export interface MeetingViewProps {
   onDelete?: () => void;
   /** Recording, transcribing or writing notes: nothing to delete yet. */
   deleteDisabled?: boolean;
+  /** This session's recording: the bar's pause and stop, or the processing line. */
+  live?: LiveControls | null;
 }
 
 export type SessionTab = "annotations" | "notes";
@@ -98,6 +102,16 @@ export function MeetingView(props: MeetingViewProps) {
     hadNotes.current = hasNotes;
   }, [hasNotes]);
   const [showPeople, setShowPeople] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // Escape closes the sheet, like the menus.
+  useEffect(() => {
+    if (!transcriptOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTranscriptOpen(false);
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [transcriptOpen]);
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (props.deleteDisabled) setDeleting(false);
@@ -173,11 +187,10 @@ export function MeetingView(props: MeetingViewProps) {
       document
         .getElementById(segmentAnchor(seq))
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    // A source the search hides: show the whole transcript again first.
-    if (!found.some((line) => line.seq === seq)) {
-      setQuery("");
-      requestAnimationFrame(scroll);
-    } else scroll();
+    // The sheet opens first, with the whole transcript when the search hides the source.
+    setTranscriptOpen(true);
+    if (!found.some((line) => line.seq === seq)) setQuery("");
+    requestAnimationFrame(scroll);
   };
 
   const tabButton = (id: SessionTab, label: string) => (
@@ -276,46 +289,9 @@ export function MeetingView(props: MeetingViewProps) {
         onNamesChanged={namesChanged}
       />
       {draft ? (
-        <>
-          {annotations}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={props.onRecordDraft}>
-              {t("meeting.view.recordDraft")}
-            </Button>
-            {templateSelect}
-          </div>
-        </>
+        annotations
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              disabled={
-                props.recording ||
-                props.transcribing ||
-                // Granola sends no audio: there is nothing to transcribe.
-                detail.summary.imported_from === "granola"
-              }
-              onClick={props.onTranscribe}
-            >
-              {props.transcribing
-                ? t("meeting.view.transcribing")
-                : t("meeting.view.transcribe")}
-            </Button>
-            {props.transcribing && (
-              <Button variant="ghost" onClick={props.onCancelTranscription}>
-                {t("meeting.view.cancel")}
-              </Button>
-            )}
-            {templateSelect}
-            <Button
-              variant="secondary"
-              disabled={props.recording || props.generating || editing}
-              onClick={generate}
-            >
-              {props.generating ? generatingLabel : t("meeting.view.generate")}
-            </Button>
-          </div>
           {props.notesFailed && !props.generating && (
             <div
               role="alert"
@@ -444,10 +420,25 @@ export function MeetingView(props: MeetingViewProps) {
               </>
             )}
           </div>
-          <section className="space-y-1">
-            <h4 className="text-sm font-semibold">
-              {t("meeting.view.transcript")}
-            </h4>
+          <aside
+            hidden={!transcriptOpen}
+            aria-label={t("meeting.view.transcript")}
+            // Under the bar (z-40), with room at the bottom so the bar never hides a line.
+            className="fixed inset-y-0 end-0 z-30 w-[min(28rem,100vw)] space-y-2 overflow-y-auto border-s border-border bg-surface-1 p-4 pb-24 shadow-xl"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-subtitle font-semibold">
+                {t("meeting.view.transcript")}
+              </h2>
+              <Button
+                variant="ghost"
+                className="px-2"
+                aria-label={t("meeting.bar.close")}
+                onClick={() => setTranscriptOpen(false)}
+              >
+                <X size={16} strokeWidth={1.5} aria-hidden="true" />
+              </Button>
+            </div>
             {detail.lines.length === 0 ? (
               <p className="text-sm">{t("meeting.view.noTranscript")}</p>
             ) : (
@@ -500,9 +491,32 @@ export function MeetingView(props: MeetingViewProps) {
                 />
               </>
             )}
-          </section>
+          </aside>
         </>
       )}
+      <SessionBar
+        draft={draft}
+        live={props.live ?? null}
+        transcriptOpen={transcriptOpen}
+        onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
+        onRecordDraft={props.onRecordDraft}
+        transcribing={props.transcribing}
+        transcribeDisabled={
+          props.recording ||
+          props.transcribing ||
+          // Granola sends no audio: there is nothing to transcribe.
+          detail.summary.imported_from === "granola"
+        }
+        onTranscribe={props.onTranscribe}
+        onCancelTranscription={props.onCancelTranscription}
+        generateLabel={
+          props.generating ? generatingLabel : t("meeting.view.generate")
+        }
+        generateDisabled={props.recording || props.generating || editing}
+        onGenerate={generate}
+        templateSelect={templateSelect}
+        t={t}
+      />
     </div>
   );
 }
