@@ -355,6 +355,7 @@ fn body_is_the_copied_note_document() {
             },
             speaker: match s.speaker {
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
+                SegmentSpeaker::Omitted => fala_notes::Speaker::Omitted,
                 SegmentSpeaker::Person(n) => names
                     .iter()
                     .find(|p| p.person == n)
@@ -398,4 +399,67 @@ fn body_is_the_copied_note_document() {
     let md = read(&e, "2026-10-02 Pauta.md");
     let body = md.splitn(3, "---\n").nth(2).unwrap();
     assert_eq!(body, fala_notes::note_document(&input, None));
+}
+
+#[test]
+fn a_dictation_marker_reaches_the_segments_and_the_md() {
+    let e = env("meeting_mirror_omitted");
+    let mut store = e.open();
+    let id = create(&store, 1, "Planejamento");
+    store
+        .start_meeting_recording(id, SessionMode::Meeting, at(14, 2, 0))
+        .unwrap();
+    // O gravador anota o ditado na hora; a transcrição vem depois do fim.
+    store.add_meeting_omission(id, 30_000, 42_500).unwrap();
+    store
+        .finish_meeting(id, at(14, 47, 0), 1_800_000, StopReason::User)
+        .unwrap();
+    // Um marcador vindo de quem transcreve não vale: só o do gravador entra.
+    let fake = fala_storage::omitted_segment(1_000, 2_000);
+    store
+        .replace_meeting_segments(
+            id,
+            vec![
+                segment(65_000, SegmentSpeaker::Person(1), "Proponho 15/11."),
+                segment(0, SegmentSpeaker::Me, "Vamos falar da data."),
+                fake,
+            ],
+            at(14, 48, 0),
+        )
+        .unwrap();
+    let segments = store.meeting_segments(id).unwrap();
+    let marker = MeetingSegment {
+        seq: 2,
+        ..fala_storage::omitted_segment(30_000, 42_500)
+    };
+    assert_eq!(segments.len(), 3, "{segments:?}");
+    assert_eq!(segments[1], marker);
+    assert_eq!(store.meeting_omissions(id).unwrap(), [(30_000, 42_500)]);
+
+    let md = read(&e, "2026-10-02 Planejamento.md");
+    for want in [
+        "- **[00:30] Eu:** [trecho de ditado omitido] ^s2\n",
+        "\ns2 mic omitted 30000 42500\n",
+    ] {
+        assert!(md.contains(want), "{want}\n---\n{md}");
+    }
+
+    // O `.md` reconstrói o marcador.
+    let before = snapshot(&store, id);
+    drop(store);
+    fs::remove_file(&e.db).unwrap();
+    let mut store = e.open();
+    store.reindex_meetings().unwrap();
+    assert_eq!(snapshot(&store, id), before);
+    // E uma transcrição nova depois do reindex ainda tem o marcador.
+    assert_eq!(store.meeting_omissions(id).unwrap(), [(30_000, 42_500)]);
+    store
+        .replace_meeting_segments(
+            id,
+            vec![segment(0, SegmentSpeaker::Me, "Oi.")],
+            at(15, 0, 0),
+        )
+        .unwrap();
+    let again = store.meeting_segments(id).unwrap();
+    assert_eq!(again[1].speaker, SegmentSpeaker::Omitted, "{again:?}");
 }

@@ -14,7 +14,12 @@ import "./IdlePill.css";
 import { Notice } from "./Notice";
 import { noticeKey, type OverlayNotice } from "./noticeModel";
 import { Pill } from "./Pill";
-import { CallOutputCard, ConsentCard, MeetingPill } from "./MeetingPill";
+import {
+  CallOutputCard,
+  ConsentCard,
+  MeetingDictationCard,
+  MeetingPill,
+} from "./MeetingPill";
 import { IdlePill } from "./IdlePill";
 import { PasteFailedPill } from "./PasteFailedPill";
 import { createPillDrag } from "./pillDrag";
@@ -92,6 +97,8 @@ const RecordingOverlay: React.FC = () => {
   const [meetingMuted, setMeetingMuted] = useState(false);
   // The output the call plays on while the system channel records zeros, if any.
   const [callOutput, setCallOutput] = useState<string | null>(null);
+  // A dictation zeroes the meeting's mic now: a card over the recording pill says so.
+  const [meetingDictation, setMeetingDictation] = useState(false);
   // The pill at rest: the cursor is over it, and the shortcut it shows on hover.
   const [idleHover, setIdleHover] = useState(false);
   const [idleKeyList, setIdleKeyList] = useState<string[]>([]);
@@ -283,6 +290,7 @@ const RecordingOverlay: React.FC = () => {
         const zero = event.payload.zero_mic || event.payload.zero_system;
         setMeetingMuted(muted || zero);
         setCallOutput(event.payload.call_output);
+        setMeetingDictation(event.payload.dictating);
       });
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
@@ -662,6 +670,11 @@ const RecordingOverlay: React.FC = () => {
       {noticeCard ? (
         <div className="ov-stack">
           {noticeCard}
+          {pill}
+        </div>
+      ) : meetingDictation && pillMode === "recording" ? (
+        <div className="ov-stack">
+          <MeetingDictationCard text={t("overlay.meetingDictation")} />
           {pill}
         </div>
       ) : (

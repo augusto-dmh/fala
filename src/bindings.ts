@@ -1894,7 +1894,11 @@ export type CallPromptKind =
 /**
  * "Nada foi gravado": the empty session is already gone.
  */
-"nothing_recorded"
+"nothing_recorded" | 
+/**
+ * "A gravação continuou depois da suspensão" with how long the PC slept: [Fechar].
+ */
+"woke"
 /**
  * What the card shows.
  */
@@ -1908,7 +1912,7 @@ web_name: string | null; countdown_ms: number;
  */
 session_id: string | null; 
 /**
- * Seconds recorded, for "Gravou por engano?".
+ * Seconds recorded, for "Gravou por engano?"; seconds asleep, for the wake card.
  */
 seconds: number | null }
 /**
@@ -2084,7 +2088,11 @@ notes_running: boolean;
 /**
  * Both retained Opus files are on disk, so a transcript line can be played.
  */
-audio_available: boolean }
+audio_available: boolean; 
+/**
+ * Where the PC slept during the recording, for the transcript's markers.
+ */
+sleeps?: MeetingSleep[] }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.
@@ -2149,7 +2157,11 @@ channel: string; person: number | null;
 /**
  * The name applied to "Person N" from a suggestion; absent when there is none.
  */
-name?: string | null; t0_ms: number; t1_ms: number; text: string }
+name?: string | null; t0_ms: number; t1_ms: number; text: string; 
+/**
+ * The line marks a span of the mic zeroed by a dictation (ADR-0015); nobody speaks in it.
+ */
+omitted?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
@@ -2207,6 +2219,11 @@ export type MeetingSearchHit = { id: string;
  * The matching excerpt; each found term sits between `\u{2}` and `\u{3}`.
  */
 snippet: string }
+export type MeetingSleep = { 
+/**
+ * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
+ */
+at_ms: number; slept_ms: number }
 /**
  * The RMS of the meeting sound since the last event, 0 to 1. `ended`: the test stopped by
  * itself after [`LIMIT`]; a stop the UI asked for sends nothing.
@@ -2240,7 +2257,11 @@ call_output: string | null;
 /**
  * A channel in digital zero for ~3 s (the pill's dot turns amber).
  */
-zero_mic: boolean; zero_system: boolean }
+zero_mic: boolean; zero_system: boolean; 
+/**
+ * A dictation is zeroing the meeting's mic channel now (ADR-0015).
+ */
+dictating: boolean }
 /**
  * A session in the list.
  */

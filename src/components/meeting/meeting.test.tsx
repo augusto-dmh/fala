@@ -21,7 +21,7 @@ import { parseNotes } from "./notesModel";
 import { RecorderPanel } from "./RecorderPanel";
 import { SessionMenuItems } from "./SessionHeader";
 import { SourcePopover } from "./SourcePopover";
-import { TranscriptView } from "./TranscriptView";
+import { sleepMarks, TranscriptView } from "./TranscriptView";
 import { ClipPlayer, type ClipDeps } from "./clipPlayer";
 import {
   clock,
@@ -67,6 +67,7 @@ const status = (over: Partial<MeetingStatus> = {}): MeetingStatus => ({
   call_output: null,
   zero_mic: false,
   zero_system: false,
+  dictating: false,
   ...over,
 });
 
@@ -637,6 +638,39 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   assert.equal((gone.match(/disabled=""/g) ?? []).length, 3);
   assert.ok(gone.includes(`title="${pt.meeting.source.noAudio}"`));
   assert.ok(chat(true, 3).includes(`aria-label="${pt.meeting.source.stop}"`));
+
+  // The PC slept: a marker before the first line spoken after it, none in a search.
+  const naps = [
+    { at_ms: 71_000, slept_ms: 720_000 },
+    { at_ms: 90_000, slept_ms: 20_000 },
+  ];
+  assert.deepEqual(
+    [...sleepMarks(lines, naps).entries()].map(([i, s]) => [i, s.length]),
+    [
+      [2, 1],
+      [3, 1],
+    ],
+  );
+  const slept = (query?: string) =>
+    renderToStaticMarkup(
+      <TranscriptView
+        lines={lines}
+        sleeps={naps}
+        query={query}
+        audioAvailable={true}
+        playing={null}
+        highlighted={null}
+        onPlay={noop}
+        t={tr}
+      />,
+    );
+  const nap = slept();
+  const mark = nap.indexOf("O computador dormiu por 12 min");
+  assert.ok(mark > nap.indexOf('id="segment-2"'));
+  assert.ok(mark < nap.indexOf('id="segment-3"'));
+  assert.ok(nap.endsWith("O computador dormiu por 1 min</li></ol>"));
+  assert.ok(!slept("sexta").includes("dormiu"));
+  ok("SP-sleep-mark");
   assert.ok(
     view(detail({ audio_available: false })).includes("meeting.source.noAudio"),
   );
@@ -709,6 +743,43 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   const lib = read("../../../apps/desktop/src/lib.rs");
   assert.ok(lib.includes('invoke.message.command() == "meeting_clip"'));
   ok("SP-player");
+}
+
+// Ditado durante a reunião (`.specs/features/dictation-during-meeting/checks.md`, C6): o trecho
+// omitido é um marcador centrado, sem bolha nem ▶, e não quebra o turno de quem fala.
+{
+  const line = (seq: number, person: number | null, omitted?: boolean) => ({
+    seq,
+    channel: person === null ? "mic" : "system",
+    person,
+    t0_ms: seq * 10_000,
+    t1_ms: seq * 10_000 + 5_000,
+    text: omitted ? "[trecho de ditado omitido]" : `fala ${seq}`,
+    ...(omitted ? { omitted } : {}),
+  });
+  const html = renderToStaticMarkup(
+    <TranscriptView
+      lines={[line(1, 1), line(2, null, true), line(3, 1), line(4, null)]}
+      audioAvailable={true}
+      playing={null}
+      highlighted={null}
+      onPlay={noop}
+      t={tr}
+    />,
+  );
+  assert.ok(html.includes('data-speaker="omitted"'), html);
+  assert.ok(html.includes(`${pt.meeting.omitted} · 00:20`), html);
+  assert.ok(!html.includes("[trecho de ditado omitido]"), html);
+  assert.equal(
+    html.split(`aria-label="${pt.meeting.source.play}"`).length - 1,
+    3,
+    "o marcador não toca nada",
+  );
+  assert.equal(en.meeting.omitted, "Dictation left out");
+  // O marcador não abre nem fecha turno: Pessoa 1 segue sem rótulo, "Eu" ganha o seu.
+  assert.equal((html.match(/Pessoa 1 · /g) ?? []).length, 1, html);
+  assert.ok(html.includes("Eu · 00:40"), html);
+  ok("dictation-during-meeting C6");
 }
 
 console.log("meeting: all assertions passed");

@@ -39,7 +39,8 @@ impl MuteWatch {
     pub fn observe(&mut self, recorded: Duration, levels: Levels) -> Muted {
         let delta = recorded.saturating_sub(self.last);
         self.last = self.last.max(recorded);
-        if self.mode.has_mic() {
+        // Um ditado zera o mic de propósito: esse intervalo não é silêncio nem som.
+        if self.mode.has_mic() && !levels.mic_omitted {
             accumulate(&mut self.mic_silent, levels.mic, delta);
         }
         accumulate(&mut self.system_silent, levels.system, delta);
@@ -73,7 +74,12 @@ mod tests {
     fn run(watch: &mut MuteWatch, from: u64, until: u64, mic: f32, system: f32) -> Muted {
         let mut muted = watch.muted();
         for s in from + 1..=until {
-            muted = watch.observe(Duration::from_secs(s), Levels { mic, system });
+            let levels = Levels {
+                mic,
+                system,
+                mic_omitted: false,
+            };
+            muted = watch.observe(Duration::from_secs(s), levels);
         }
         muted
     }
@@ -113,6 +119,23 @@ mod tests {
         assert!(run(&mut meeting, 0, 600, QUIET, LOUD).mic);
         let mut in_person = MuteWatch::new(SessionMode::InPerson);
         assert!(run(&mut in_person, 0, 120, QUIET, LOUD).mic);
+    }
+
+    #[test]
+    fn a_dictation_is_neither_silence_nor_sound_on_the_mic() {
+        let mut watch = MuteWatch::new(SessionMode::Meeting);
+        run(&mut watch, 0, 100, QUIET, LOUD);
+        // 3 min de ditado: o mic zerado não completa os 120 s nem zera a contagem.
+        for s in 101..=280 {
+            let levels = Levels {
+                mic: QUIET,
+                system: LOUD,
+                mic_omitted: true,
+            };
+            assert!(!watch.observe(Duration::from_secs(s), levels).mic, "{s} s");
+        }
+        assert!(!run(&mut watch, 280, 299, QUIET, LOUD).mic);
+        assert!(run(&mut watch, 299, 300, QUIET, LOUD).mic, "100 s + 20 s");
     }
 
     #[test]

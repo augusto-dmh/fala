@@ -170,8 +170,8 @@ function App() {
           defaultValue: t("errors.micPermissionDenied.generic"),
         });
         toast.error(t("errors.micPermissionDeniedTitle"), { description });
-      } else if (error_type === "meeting_active") {
-        toast.error(t("errors.meetingActive"));
+      } else if (error_type === "meeting_in_person") {
+        toast.error(t("errors.meetingInPerson"));
       } else if (error_type === "no_input_device") {
         toast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),

@@ -481,7 +481,7 @@
       },
       "keepAwake": {
         "label": "Impedir a suspensão enquanto grava",
-        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar."
+        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar. Se ele dormir mesmo assim, a gravação continua na mesma reunião quando ele acordar."
       },
       "saveFailed": "Não consegui salvar essa opção. Tente de novo."
     },
@@ -1020,7 +1020,7 @@
     "pasteFailedTitle": "Falha ao colar o texto",
     "pasteFailed": "Não foi possível colar o texto no aplicativo ativo.",
     "transcriptionFailedTitle": "Falha na transcrição",
-    "meetingActive": "Ditado indisponível durante a gravação de uma reunião (inclusive pausada). Pare a reunião para ditar."
+    "meetingInPerson": "Ditado indisponível durante uma reunião presencial (inclusive pausada): o mic é a reunião. Pare a reunião para ditar."
   },
   "appLanguage": {
     "title": "Idioma da Aplicação",
@@ -1061,6 +1061,7 @@
     "callElsewhere": "O som da call está saindo por {{device}}",
     "recordFrom": "Gravar deste dispositivo",
     "meetingConsent": "Grave só com o consentimento de quem participa.",
+    "meetingDictation": "Mic da reunião pausado enquanto você dita",
     "pasteFailed": {
       "title": "Não deu para colar.",
       "retry": "{{keys}} cola de novo · clique para copiar",
@@ -1107,6 +1108,10 @@
     "nothingRecorded": {
       "title": "Nada foi gravado",
       "body": "A gravação terminou sem áudio e foi descartada."
+    },
+    "woke": {
+      "title": "A gravação continuou depois da suspensão",
+      "body": "O computador dormiu por {{minutes}} min."
     },
     "recordAgain": "Gravar de novo",
     "dismiss": "Fechar",
@@ -1249,7 +1254,8 @@
       "writing": "Escrevendo notas…",
       "enhancing": "Aprimorando suas notas…",
       "notesFailed": "Não deu para gerar as notas. Suas anotações e o áudio estão salvos.",
-      "retry": "Tentar de novo"
+      "retry": "Tentar de novo",
+      "slept": "O computador dormiu por {{minutes}} min"
     },
     "notesEdit": {
       "edit": "Editar",
@@ -1269,6 +1275,7 @@
       "stop": "Parar",
       "noAudio": "O áudio desta reunião não está mais no disco."
     },
+    "omitted": "Trecho de ditado omitido",
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
