@@ -2174,11 +2174,6 @@ export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" |
  * Where the processing of a session is, at least once a second while the transcript runs.
  */
 export type MeetingProgress = { id: string; stage: ProgressStage }
-export type MeetingSleep = { 
-/**
- * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
- */
-at_ms: number; slept_ms: number }
 /**
  * A session the search found.
  */
@@ -2187,6 +2182,11 @@ export type MeetingSearchHit = { id: string;
  * The matching excerpt; each found term sits between `\u{2}` and `\u{3}`.
  */
 snippet: string }
+export type MeetingSleep = { 
+/**
+ * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
+ */
+at_ms: number; slept_ms: number }
 /**
  * What the UI shows about the current recording; emitted on every change and at 4 Hz while
  * recording.
