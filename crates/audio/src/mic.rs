@@ -1,5 +1,7 @@
-//! Microfone pelo `cpal`: mono f32 na taxa do dispositivo, num ring lock-free. O stream abre no
-//! formato nativo do dispositivo (o mix format do WASAPI) e cada amostra vira f32 no callback.
+//! Microfone pelo `cpal`: f32 na taxa do dispositivo, num ring lock-free. O stream abre no formato
+//! nativo do dispositivo (o mix format do WASAPI), cada amostra vira f32 no callback e o ring guarda
+//! os quadros inteiros, com todos os canais: `drain_into` reduz ao canal escolhido (ou à média), e
+//! o `MicHub` reduz um mesmo stream para cada consumidor (ADR-0015).
 //!
 //! Sem `cfg(target_os)`: o `cpal` escolhe o host (ALSA/PipeWire no Linux, WASAPI no Windows).
 
@@ -20,6 +22,9 @@ pub struct Mic {
     _stream: Stream,
     consumer: Consumer<f32>,
     rate: u32,
+    channels: usize,
+    channel: Option<usize>,
+    frames: Vec<f32>,
     name: String,
     dropped: Arc<AtomicU64>,
     failed: Arc<AtomicBool>,
@@ -66,42 +71,41 @@ impl Mic {
         let channels = usize::from(config.channels).max(1);
         let channel = channel.filter(|c| *c < channels);
 
-        let (producer, consumer) = RingBuffer::new(rate as usize * RING_SECONDS);
+        let (producer, consumer) = RingBuffer::new(rate as usize * channels * RING_SECONDS);
         let dropped = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicBool::new(false));
         let dropped_cb = Arc::clone(&dropped);
         let failed_cb = Arc::clone(&failed);
-        let layout = (channels, channel);
         let stream = match format {
             SampleFormat::I8 => {
-                build::<i8>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<i8>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::I16 => {
-                build::<i16>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<i16>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::I32 => {
-                build::<i32>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<i32>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::I64 => {
-                build::<i64>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<i64>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::U8 => {
-                build::<u8>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<u8>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::U16 => {
-                build::<u16>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<u16>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::U32 => {
-                build::<u32>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<u32>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::U64 => {
-                build::<u64>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<u64>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::F32 => {
-                build::<f32>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<f32>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             SampleFormat::F64 => {
-                build::<f64>(&device, &config, producer, layout, dropped_cb, failed_cb)
+                build::<f64>(&device, &config, producer, channels, dropped_cb, failed_cb)
             }
             other => Err(AudioError::UnsupportedConfig(format!(
                 "`{name}` entrega amostras em {other:?}, que o Fala não converte"
@@ -119,6 +123,9 @@ impl Mic {
             _stream: stream,
             consumer,
             rate,
+            channels,
+            channel,
+            frames: Vec::new(),
             name,
             dropped,
             failed,
@@ -133,7 +140,12 @@ impl Mic {
         &self.name
     }
 
-    /// Amostras descartadas porque o ring encheu.
+    /// Canais de cada quadro que `drain_frames` entrega.
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    /// Quadros descartados porque o ring encheu.
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
@@ -143,12 +155,36 @@ impl Mic {
         self.failed.load(Ordering::Relaxed)
     }
 
-    /// Move para `out` tudo o que o callback já entregou.
+    /// Move para `out`, em mono, tudo o que o callback já entregou.
     pub fn drain_into(&mut self, out: &mut Vec<f32>) {
-        while let Ok(x) = self.consumer.pop() {
-            out.push(x);
+        let mut frames = std::mem::take(&mut self.frames);
+        frames.clear();
+        self.drain_frames(&mut frames);
+        downmix(&frames, self.channels, self.channel, out);
+        self.frames = frames;
+    }
+
+    /// Move para `out` os quadros inteiros já entregues, intercalados (`channels` por quadro).
+    pub fn drain_frames(&mut self, out: &mut Vec<f32>) {
+        let ready = self.consumer.slots();
+        let whole = ready - ready % self.channels;
+        if let Ok(chunk) = self.consumer.read_chunk(whole) {
+            let (a, b) = chunk.as_slices();
+            out.extend_from_slice(a);
+            out.extend_from_slice(b);
+            chunk.commit_all();
         }
     }
+}
+
+/// Reduz quadros intercalados a mono: o canal `channel`, se existir, ou a média.
+pub(crate) fn downmix(frames: &[f32], channels: usize, channel: Option<usize>, out: &mut Vec<f32>) {
+    let channel = channel.filter(|c| *c < channels);
+    out.extend(
+        frames
+            .chunks_exact(channels.max(1))
+            .map(|frame| mono(frame, channel)),
+    );
 }
 
 fn find(host: &cpal::Host, needle: &str) -> Result<cpal::Device, AudioError> {
@@ -193,7 +229,7 @@ fn build<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut producer: Producer<f32>,
-    (channels, channel): (usize, Option<usize>),
+    channels: usize,
     dropped: Arc<AtomicU64>,
     failed: Arc<AtomicBool>,
 ) -> Result<Stream, AudioError>
@@ -207,8 +243,13 @@ where
             move |data: &[T], _| {
                 let mut lost = 0u64;
                 for frame in data.chunks_exact(channels) {
-                    if producer.push(mono(frame, channel)).is_err() {
+                    // Só quadros inteiros: um quadro pela metade desalinharia os canais.
+                    if producer.slots() < channels {
                         lost += 1;
+                        continue;
+                    }
+                    for &x in frame {
+                        let _ = producer.push(f32::from_sample(x));
                     }
                 }
                 if lost > 0 {
@@ -226,7 +267,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::mono;
+    use super::{downmix, mono};
 
     fn close(actual: f32, expected: f32) {
         assert!(
@@ -256,6 +297,17 @@ mod tests {
         close(mono(&[255u8], None), 127.0 / 128.0);
         close(mono(&[0.5f64, 0.5], None), 0.5);
         close(mono(&[0i16, 16_384], Some(1)), 0.5);
+    }
+
+    #[test]
+    fn downmix_reduces_whole_frames_to_one_channel_or_the_mean() {
+        let frames = [0.1f32, 0.3, 0.5, 0.7];
+        let mut out = Vec::new();
+        downmix(&frames, 2, Some(1), &mut out);
+        assert_eq!(out, [0.3, 0.7]);
+        out.clear();
+        downmix(&frames, 2, Some(2), &mut out);
+        assert!((out[0] - 0.2).abs() < 1e-6 && (out[1] - 0.6).abs() < 1e-6);
     }
 
     #[test]
