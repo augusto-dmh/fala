@@ -8,16 +8,19 @@
 //! (ADR-0011): o caminho revela o usuário e as pastas.
 //!
 //! O nome em uso fica em `meeting_files` (tabela aditiva), para renomear quando o título muda.
+//! Uma sessão importada leva também `import`, a linha de `meeting_imports`, que o `reindex`
+//! restaura; as outras não têm a chave.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset};
-use fala_meeting::SessionId;
+use fala_meeting::{SessionId, SessionMode};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
+use crate::meeting_imports::{self, ImportLink};
 use crate::meeting_search;
 use crate::meetings::{channel_str, mode_str, ms, parse_mode, parse_reason, reason_str, rfc3339};
 use crate::mirror::{frontmatter, write_atomic};
@@ -55,6 +58,8 @@ pub(crate) struct MeetingDoc {
     /// O nome aplicado a cada "Pessoa N".
     pub names: BTreeMap<u32, String>,
     pub notes_edited_at: Option<DateTime<FixedOffset>>,
+    /// De onde a sessão foi importada, se foi.
+    pub import: Option<ImportLink>,
 }
 
 /// As notas que entram no corpo: aparadas, e só se não estão em branco.
@@ -218,6 +223,9 @@ pub(crate) fn render(doc: &MeetingDoc) -> String {
     for (key, value) in lines {
         out.push_str(&format!("{key}: {value}\n"));
     }
+    if let Some(link) = &doc.import {
+        out.push_str(&format!("import: {}\n", link.to_json()));
+    }
     out.push_str("---\n");
 
     out.push_str(&header(r));
@@ -352,13 +360,29 @@ pub(crate) fn parse(content: &str) -> Result<MeetingDoc, String> {
             .ok_or_else(|| "`notes` verdadeiro sem notas depois do cabeçalho".to_string())?;
         record.notes_md = Some(format!("{notes}\n"));
     }
+    let imported = record.mode == SessionMode::Import;
     Ok(MeetingDoc {
         record,
         segments,
         participants,
         names,
         notes_edited_at: optional_time("notes_edited_at")?,
+        import: import_link(&keys, imported, id),
     })
+}
+
+/// A ligação de importação do frontmatter. Só a sessão importada tem a chave; numa gravada ela é
+/// ignorada (importar de novo apagaria a transcrição dela), e um valor inválido também: a
+/// reunião entra sem a ligação, que é opcional, em vez de ficar fora do `reindex`.
+fn import_link(keys: &HashMap<&str, Value>, imported: bool, id: SessionId) -> Option<ImportLink> {
+    let value = keys.get("import")?;
+    if !imported {
+        log::warn!("reindex: {id} não é importada e tem `import`; a chave fica de fora");
+        return None;
+    }
+    ImportLink::from_json(value)
+        .map_err(|reason| log::warn!("reindex: {id} entra sem a ligação de importação: {reason}"))
+        .ok()
 }
 
 /// Junta cada linha do bloco `fala:segments` (`sN canal falante t0 t1`) com a linha da
@@ -479,6 +503,11 @@ fn insert(conn: &Connection, doc: &MeetingDoc, file_name: &str) -> rusqlite::Res
             params![id, rfc3339(at)],
         )?;
     }
+    if let Some(link) = &doc.import
+        && !meeting_imports::restore(conn, r.id, link)?
+    {
+        log::info!("reindex: {id} entra sem a ligação de importação, que é de outra sessão");
+    }
     conn.execute(
         "INSERT INTO meeting_files (meeting_id, file_name) VALUES (?1, ?2)",
         params![id, file_name],
@@ -521,6 +550,7 @@ impl Store {
                 .filter_map(|s| Some((s.person, s.name?)))
                 .collect(),
             notes_edited_at: self.meeting_notes_edited_at(id)?,
+            import: meeting_imports::link(&self.conn, id)?,
         })
     }
 
@@ -714,7 +744,7 @@ fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fala_meeting::{SessionMode, StopReason};
+    use fala_meeting::StopReason;
 
     fn at(s: &str) -> DateTime<FixedOffset> {
         DateTime::parse_from_rfc3339(s).unwrap()
@@ -775,6 +805,7 @@ mod tests {
             participants: vec!["Ana".to_string(), "Bruno".to_string()],
             names: BTreeMap::from([(1, "Ana".to_string())]),
             notes_edited_at: Some(at("2026-10-12T15:00:00-03:00")),
+            import: None,
         }
     }
 
@@ -814,6 +845,54 @@ mod tests {
             parsed.record.notes_md.as_deref().map(str::trim),
             original.record.notes_md.as_deref().map(str::trim)
         );
+    }
+
+    #[test]
+    fn the_import_link_round_trips_and_only_imports_have_it() {
+        assert!(!render(&doc()).contains("\nimport:"));
+        let mut d = doc();
+        d.record.mode = SessionMode::Import;
+        d.import = Some(ImportLink {
+            source: "granola".to_string(),
+            external_id: "g-1".to_string(),
+            imported_at: "2026-10-12T21:00:00-03:00".to_string(),
+            title: "Título do Granola".to_string(),
+            annotations: "pauta: \"preço\"\n---\nfim".to_string(),
+        });
+        let md = render(&d);
+        let line = "import: {\"annotations\":\"pauta: \\\"preço\\\"\\n---\\nfim\",\
+                    \"external_id\":\"g-1\",\"imported_at\":\"2026-10-12T21:00:00-03:00\",\
+                    \"source\":\"granola\",\"title\":\"Título do Granola\"}";
+        assert!(md.contains(&format!("\n{line}\n---\n")), "{md}");
+        let parsed = parse(&md).unwrap();
+        assert_eq!(parsed.import, d.import);
+        assert_eq!(render(&parsed), md);
+
+        // Numa reunião gravada a chave fica de fora: importar de novo apagaria a transcrição.
+        let recorded = md.replace("\nmode: \"import\"", "\nmode: \"meeting\"");
+        assert_eq!(parse(&recorded).unwrap().import, None);
+
+        // Inválida, a ligação fica de fora e a reunião entra assim mesmo.
+        for (bad, reason) in [
+            ("{\"source\":\"granola\"}", "não é a ligação"),
+            (
+                "{\"source\":\"\",\"external_id\":\"g\",\"imported_at\":\
+                 \"2026-10-12T21:00:00-03:00\",\"title\":\"\",\"annotations\":\"\"}",
+                "sem `source`",
+            ),
+            (
+                "{\"source\":\"granola\",\"external_id\":\"g\",\"imported_at\":\
+                 \"ontem\",\"title\":\"\",\"annotations\":\"\"}",
+                "não é RFC 3339",
+            ),
+        ] {
+            let value: Value = serde_json::from_str(bad).unwrap();
+            let err = ImportLink::from_json(&value).unwrap_err();
+            assert!(err.contains(reason), "{reason}: {err}");
+            let parsed = parse(&md.replace(line, &format!("import: {bad}"))).unwrap();
+            assert_eq!(parsed.import, None, "{reason}");
+            assert_eq!(parsed.segments, d.segments, "{reason}");
+        }
     }
 
     #[test]
