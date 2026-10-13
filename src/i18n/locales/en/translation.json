@@ -394,7 +394,8 @@
       "title": "AI",
       "enabled": {
         "label": "Format dictations with AI",
-        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does."
+        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does.",
+        "waitingKey": "Waiting for the Gemini key below: nothing is formatted or sent until it is saved."
       },
       "cleanup": {
         "title": "How much the AI changes the text",
@@ -949,7 +950,8 @@
           "keySet": "Key saved",
           "keyMissing": "No key",
           "unknown": "Not checked",
-          "doesNotExist": "Does not exist"
+          "doesNotExist": "Does not exist",
+          "waitingForKey": "Waiting for the key"
         },
         "keys": {
           "title": "Where the keys are kept",
