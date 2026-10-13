@@ -303,6 +303,11 @@ impl Store {
                     "DELETE FROM meeting_segments WHERE meeting_id = ?1",
                     [id.to_string()],
                 )?;
+                // Importar de novo traz a reunião de volta: ela não some na purga da lixeira.
+                tx.execute(
+                    "DELETE FROM meeting_trash WHERE meeting_id = ?1",
+                    [id.to_string()],
+                )?;
                 (id, ImportOutcome::Updated)
             }
             None => {

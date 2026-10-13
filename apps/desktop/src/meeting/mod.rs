@@ -54,7 +54,7 @@ use recorder::{Control, Report};
 /// `sys.opus` and deletes it once both validate (ADR-0014).
 pub(crate) const WORK_WAV: &str = "recording.wav";
 
-/// Event with the id of a session deleted outside the Meetings page (a card's [Discard]).
+/// Event with the id of a session deleted or moved to the trash (a card's [Discard] included).
 pub(crate) const DELETED_EVENT: &str = "meeting-deleted";
 
 /// Event the tray emits when "Record meeting" is clicked before the third-party notice was

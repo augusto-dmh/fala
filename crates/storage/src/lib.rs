@@ -13,6 +13,8 @@
 //! `granola` lê o "Historical Data Export" do Granola (CSV ou `.zip`); cada reunião vira uma
 //! sessão `import` sem áudio, e `meeting_imports`, aditiva, liga cada uma ao id de origem, para
 //! importar de novo atualizar em vez de duplicar.
+//! `meeting_trash`, aditiva, guarda as sessões na lixeira por 30 dias; o `.md` delas fica em
+//! `Reuniões/.lixeira/`, e a lista, a busca e o MCP não as veem.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
@@ -25,6 +27,7 @@ mod meeting_notes;
 mod meeting_omissions;
 mod meeting_people;
 mod meeting_search;
+mod meeting_trash;
 mod meetings;
 mod metrics;
 mod mirror;
@@ -44,6 +47,7 @@ pub use meeting_imports::{ImportOutcome, GRANOLA};
 pub use meeting_omissions::{omitted_segment, OMITTED_TEXT};
 pub use meeting_people::{MeetingSpeaker, NameSuggestion};
 pub use meeting_search::{MeetingHit, MATCH_END, MATCH_START};
+pub use meeting_trash::{TrashedMeeting, TRASH_DAYS};
 pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};
 pub use metrics::{DayCount, DictationMetrics, MetricsSummary, Percentiles};
 pub use store::Store;

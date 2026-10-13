@@ -71,8 +71,8 @@ impl Store {
         Ok(written)
     }
 
-    /// Busca sem acento no título, nas anotações, nas notas e na transcrição das reuniões, das
-    /// criadas mais recentemente para as mais antigas.
+    /// Busca sem acento no título, nas anotações, nas notas e na transcrição das reuniões fora da
+    /// lixeira, das criadas mais recentemente para as mais antigas.
     ///
     /// Cada termo casa como prefixo e todos precisam casar, em qualquer coluna; a sintaxe do
     /// FTS5 é tratada como texto. Consulta vazia não acha nada.
@@ -89,6 +89,7 @@ impl Store {
             "SELECT f.meeting_id, snippet(meetings_fts, -1, '{MATCH_START}', '{MATCH_END}', '…', 16)
              FROM meetings_fts f JOIN meetings m ON m.id = f.meeting_id
              WHERE meetings_fts MATCH ?1
+               AND NOT EXISTS (SELECT 1 FROM meeting_trash t WHERE t.meeting_id = m.id)
              ORDER BY m.created_ms DESC, m.id DESC LIMIT ?2"
         ))?;
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
