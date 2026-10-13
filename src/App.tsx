@@ -23,6 +23,10 @@ import { MeetingsPage } from "./components/meeting/MeetingsPage";
 import { StatsPage } from "./components/stats/StatsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { type SettingsView } from "./components/settingsNav";
+import {
+  revealSettingsAnchor,
+  type SettingsAnchor,
+} from "./components/settingsAnchor";
 import { WhatsNewGate } from "./components/whats-new";
 import {
   requestConsent,
@@ -48,6 +52,12 @@ function App() {
   // The window opens on Início (the dictations), not on settings.
   const [destination, setDestination] = useState<RailDestination>("home");
   const [settingsView, setSettingsView] = useState<SettingsView>("general");
+  // The row a link asked Settings to open on; cleared once shown.
+  const [settingsAnchor, setSettingsAnchor] = useState<SettingsAnchor | null>(
+    null,
+  );
+  // Counts the clicks on "Meetings" in the rail while it is open: back to the list.
+  const [meetingsHome, setMeetingsHome] = useState(0);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -76,6 +86,19 @@ function App() {
   useLayoutEffect(() => {
     settingsScrollRef.current?.scrollTo({ top: 0 });
   }, [destination, settingsView]);
+
+  // After that reset, a link's row scrolls into view and takes the focus. Only inside the
+  // main page: while onboarding shows, the anchor waits.
+  useEffect(() => {
+    if (!settingsAnchor) return;
+    const frame = requestAnimationFrame(() => {
+      const main = settingsScrollRef.current;
+      if (!main) return;
+      revealSettingsAnchor(main, settingsAnchor);
+      setSettingsAnchor(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [settingsAnchor, destination, settingsView, isShowingOnboarding]);
 
   // The tray asked to record before the third-party notice was accepted: open the Meetings
   // page, which shows the notice (ADR-0005).
@@ -245,6 +268,7 @@ function App() {
     const unlisten = listen("open-microphone-settings", () => {
       setDestination("settings");
       setSettingsView("general");
+      setSettingsAnchor("microphone");
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -398,6 +422,9 @@ function App() {
           <Rail
             active={destination}
             onSelect={(next) => {
+              if (next === "meetings" && destination === "meetings") {
+                setMeetingsHome((n) => n + 1);
+              }
               setDestination(next);
               if (next === "settings") setSettingsView("general");
             }}
@@ -414,9 +441,11 @@ function App() {
               {destination === "dictionary" && <DictionaryPage />}
               {destination === "meetings" && (
                 <MeetingsPage
+                  home={meetingsHome}
                   onOpenSettings={() => {
                     setDestination("settings");
                     setSettingsView("general");
+                    setSettingsAnchor("meetings-key");
                   }}
                 />
               )}

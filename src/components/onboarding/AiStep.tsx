@@ -1,19 +1,13 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ApiKeyField } from "../settings/PostProcessingSettingsApi/ApiKeyField";
 import { useSettings } from "../../hooks/useSettings";
 
 const GEMINI_PROVIDER_ID = "gemini";
 
-interface AiStepProps {
-  /** Skip or go on: both lead to the meetings step. */
-  onNext: () => void;
-}
-
-/** Step 3 (optional): what leaves the machine, and the Gemini key or skip. */
-export const AiStep: React.FC<AiStepProps> = ({ onNext }) => {
+/** Step 3 (optional): what leaves the machine, and the Gemini key; the footer skips it. */
+export const AiStep: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updatePostProcessApiKey } = useSettings();
   const apiKey = settings?.post_process_api_keys?.[GEMINI_PROVIDER_ID] ?? "";
@@ -38,14 +32,6 @@ export const AiStep: React.FC<AiStepProps> = ({ onNext }) => {
           disabled={false}
         />
       </SettingContainer>
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onNext}>
-          {t("onboarding.ai.skip")}
-        </Button>
-        <Button variant="primary" onClick={onNext}>
-          {t("onboarding.ai.finish")}
-        </Button>
-      </div>
     </div>
   );
 };

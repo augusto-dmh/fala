@@ -22,9 +22,9 @@ const FalaTextLogo = ({
       xmlns="http://www.w3.org/2000/svg"
     >
       <text
-        x="465"
+        x="0"
         y="250"
-        textAnchor="middle"
+        textAnchor="start"
         fontSize="260"
         fontWeight="700"
         fontFamily="system-ui, sans-serif"

@@ -143,12 +143,12 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
     2,
     muted,
   );
-  // Escape fecha a folha, que fica embaixo da barra.
+  // Escape fecha a folha, que fica sobre a barra (Q23 do QA: a barra cortava a folha).
   assert.match(
     view,
     /if \(event\.key === "Escape"\) setTranscriptOpen\(false\);/,
   );
-  assert.match(view, /fixed inset-y-0 end-0 z-30/);
+  assert.match(view, /fixed inset-y-0 end-0 z-\[45\]/);
   assert.match(read("./SessionBar.tsx"), /sticky bottom-4 z-40/);
   ok("C11");
 }

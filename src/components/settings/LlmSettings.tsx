@@ -5,7 +5,7 @@ import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
-import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
+import { KeyField } from "../meeting/KeyField";
 import { AppStyles } from "./AppStyles";
 import { CleanupLevelCards } from "./CleanupLevelCards";
 import { DEFAULT_CLEANUP_LEVEL } from "./cleanupLevelModel";
@@ -58,19 +58,17 @@ export const LlmSettings: React.FC = React.memo(() => {
         title={t("settings.llm.apiKey.title")}
         description={t("settings.llm.apiKey.description")}
         descriptionMode="tooltip"
-        layout="horizontal"
+        layout="stacked"
         grouped={true}
       >
-        <ApiKeyField
-          value={apiKey}
-          onBlur={(value) => {
-            const trimmed = value.trim();
-            if (trimmed !== apiKey) {
-              void updatePostProcessApiKey(GEMINI_PROVIDER_ID, trimmed);
-            }
-          }}
-          placeholder={t("settings.llm.apiKey.placeholder")}
+        <KeyField
+          label={t("settings.llm.apiKey.title")}
+          saved={apiKey !== ""}
           disabled={!enabled}
+          onSave={(key) =>
+            void updatePostProcessApiKey(GEMINI_PROVIDER_ID, key)
+          }
+          onRemove={() => void updatePostProcessApiKey(GEMINI_PROVIDER_ID, "")}
         />
       </SettingContainer>
       <SettingContainer
