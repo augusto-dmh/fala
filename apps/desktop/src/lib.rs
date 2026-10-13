@@ -475,6 +475,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+    // Where the pill was dragged along its edge, before anything places it.
+    overlay::set_pill_center(settings.pill_center_x);
     // Rest in the idle pill when it is on; the overlay page shows it once it listens
     // (`pill_overlay_ready`).
     overlay::apply_idle_setting(app_handle, &settings);
@@ -861,6 +863,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             overlay::pill_overlay_ready,
             overlay::set_idle_pill_hover,
             overlay::open_pill_menu,
+            overlay::start_pill_drag,
             overlay::open_home_from_pill,
             overlay::open_meeting_from_pill,
             overlay::end_paste_failed,
