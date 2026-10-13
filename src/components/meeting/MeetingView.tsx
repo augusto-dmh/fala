@@ -103,6 +103,7 @@ export function MeetingView(props: MeetingViewProps) {
   }, [hasNotes]);
   const [showPeople, setShowPeople] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const granola = detail.summary.imported_from === "granola";
   // Escape closes the sheet, like the menus.
   useEffect(() => {
     if (!transcriptOpen) return;
@@ -391,7 +392,7 @@ export function MeetingView(props: MeetingViewProps) {
                     {t("meeting.notesEdit.edit")}
                   </Button>
                 )}
-                {detail.summary.imported_from === "granola" && (
+                {granola && (
                   <p className="text-caption text-text-2">
                     {t("meeting.granola.noAnchors")}
                   </p>
@@ -414,6 +415,7 @@ export function MeetingView(props: MeetingViewProps) {
                     playing={playing}
                     onPlay={play}
                     onReveal={reveal}
+                    locale={i18n.language}
                     t={t}
                   />
                 )}
@@ -423,8 +425,9 @@ export function MeetingView(props: MeetingViewProps) {
           <aside
             hidden={!transcriptOpen}
             aria-label={t("meeting.view.transcript")}
-            // Under the bar (z-40), with room at the bottom so the bar never hides a line.
-            className="fixed inset-y-0 end-0 z-30 w-[min(28rem,100vw)] space-y-2 overflow-y-auto border-s border-border bg-surface-1 p-4 pb-24 shadow-xl"
+            // Over the bar (z-40), under dialogs (z-50), down to the window's bottom: the bar
+            // never cuts a line, and the ✕ (or Esc) gives the bar back, as Granola's sheet does.
+            className="fixed inset-y-0 end-0 z-[45] w-[min(28rem,100vw)] space-y-2 overflow-y-auto border-s border-border bg-surface-1 p-4 shadow-xl"
           >
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-subtitle font-semibold">
@@ -443,9 +446,13 @@ export function MeetingView(props: MeetingViewProps) {
               <p className="text-sm">{t("meeting.view.noTranscript")}</p>
             ) : (
               <>
-                {!detail.audio_available && (
+                {(granola || !detail.audio_available) && (
                   <p className="text-caption text-text-2">
-                    {t("meeting.source.noAudio")}
+                    {t(
+                      granola
+                        ? "meeting.granola.noAudio"
+                        : "meeting.source.noAudio",
+                    )}
                   </p>
                 )}
                 {clipError !== null && (
@@ -480,6 +487,7 @@ export function MeetingView(props: MeetingViewProps) {
                   playing={playing}
                   highlighted={highlighted}
                   onPlay={play}
+                  timed={!granola}
                   // A new transcript renumbers "Person N" and drops the names.
                   onRename={
                     props.transcribing

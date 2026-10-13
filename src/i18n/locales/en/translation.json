@@ -1209,6 +1209,8 @@
       "cancel": "Cancel",
       "done": "Meetings imported: {{created}} new and {{updated}} updated. Rows skipped: {{rejected}}.",
       "close": "Close",
+      "importedOn": "Imported from Granola on {{date}}.",
+      "noAudio": "Imported from Granola: the transcript has no audio or times.",
       "noAnchors": "No anchors: imported from Granola.",
       "errors": {
         "empty": "This file is empty.",
