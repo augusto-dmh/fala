@@ -27,6 +27,8 @@ export interface ImportDialogProps {
   stage: ProgressStage | null;
   onImport: (source: ImportSource) => void;
   onCancel: () => void;
+  /** "Granola history": the export picked (a CSV or the `.zip` from the email). */
+  onGranola: (path: string) => void;
 }
 
 /** "Import": an audio or video file, or the audio of a URL, becomes a session. */
@@ -65,6 +67,20 @@ export function ImportDialog(props: ImportDialogProps) {
     if (typeof path === "string") props.onImport({ kind: "file", value: path });
   };
 
+  const chooseGranola = async () => {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        { name: t("meeting.import.granolaFiles"), extensions: ["csv", "zip"] },
+      ],
+    });
+    if (typeof path === "string") {
+      setExpanded(false);
+      props.onGranola(path);
+    }
+  };
+
   return (
     <div className="flex basis-full flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-1 p-4 text-sm">
       <Button onClick={() => void chooseFile()}>
@@ -85,6 +101,9 @@ export function ImportDialog(props: ImportDialogProps) {
         }}
       >
         {t("meeting.import.url")}
+      </Button>
+      <Button variant="secondary" onClick={() => void chooseGranola()}>
+        {t("meeting.import.granola")}
       </Button>
       <Button variant="secondary" onClick={() => setExpanded(false)}>
         {t("meeting.import.close")}
