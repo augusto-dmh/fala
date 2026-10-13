@@ -1,9 +1,14 @@
-//! O relógio manda: cada canal escreve até `relógio − 250 ms`, com zeros no que não chegou.
+//! O relógio manda: cada canal escreve até `relógio − 700 ms`, com zeros no que não chegou.
 //!
 //! O spike (`fala-cli record`) pareava os frames por ordem de chegada, e um canal sem frames
 //! travava o outro; no Windows o loopback não entrega nada enquanto nenhum app toca áudio. Aqui o
 //! tempo de parede decide quantos pares existem, e um canal mudo vira silêncio (door 2 do plano
 //! `meeting-recorder`).
+//!
+//! O canal do mic passa antes por um hold de 450 ms em memória, contado em amostras da fonte: um
+//! ditado durante a reunião (ADR-0015) abre um intervalo com `begin_omit`, que pode começar no
+//! passado (o pré-buffer do ditado), e toda amostra do intervalo sai do hold já zerada. O que nunca
+//! saiu do hold nunca foi escrito, então nem um crash põe voz de ditado no WAV.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -12,10 +17,14 @@ use super::wav::{MeetingWav, FLUSH_EVERY, MEETING_RATE};
 use crate::resample::Resampler;
 use crate::AudioError;
 
-/// 250 ms de folga antes de preencher: cobre o jitter do callback e o período do ring.
-pub const LAG_FRAMES: u64 = 12_000;
-/// Um canal com mais de 500 ms à frente do escrito perde o excesso mais antigo.
-pub const MAX_BACKLOG_FRAMES: usize = 24_000;
+/// O canal do mic fica este tempo em memória antes do resample: o pré-buffer de 300 ms do ditado
+/// mais a margem do jitter (ADR-0015).
+pub const MIC_HOLD: Duration = Duration::from_millis(450);
+/// 700 ms de folga antes de preencher: o hold do mic mais os 250 ms do jitter do callback e do
+/// período do ring.
+pub const LAG_FRAMES: u64 = 33_600;
+/// Um canal com mais de 1 s à frente do escrito perde o excesso mais antigo.
+pub const MAX_BACKLOG_FRAMES: usize = 48_000;
 
 /// O que aconteceu com um canal, em frames a 48 kHz.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +35,147 @@ pub struct ChannelStats {
     pub filled: u64,
     /// Frames descartados por excesso de atraso acumulado.
     pub dropped: u64,
+    /// Amostras da fonte que um intervalo omitido pedia mas que já tinham saído do hold.
+    pub omit_late: u64,
+}
+
+/// Um trecho do mic zerado por um ditado, em frames do WAV (48 kHz, `[start, end)`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OmittedSpan {
+    pub start: u64,
+    pub end: u64,
+}
+
+/// Um intervalo do ditado em amostras da fonte do mic; `end` aberto enquanto o ditado dura. Os
+/// frames do WAV são anotados quando a primeira e a última amostra saem do hold.
+#[derive(Debug, Clone, Copy)]
+struct Omit {
+    start: u64,
+    end: Option<u64>,
+    wav_start: Option<u64>,
+}
+
+/// As amostras do mic que ainda podem virar ditado. Índices contam as amostras da fonte desde o
+/// começo da gravação.
+struct Hold {
+    samples: VecDeque<f32>,
+    /// Índice da primeira amostra de `samples`.
+    first: u64,
+    capacity: usize,
+    rate: u32,
+    /// Uma amostra da fonte e o frame de saída do mic (48 kHz) que ela vira: o ponto de partida
+    /// da conta, que muda quando o mic passa a outra taxa.
+    origin: (u64, u64),
+    omits: Vec<Omit>,
+    closed: Vec<OmittedSpan>,
+    batch: Vec<f32>,
+}
+
+impl Hold {
+    fn new(rate: u32) -> Self {
+        Self {
+            samples: VecDeque::new(),
+            first: 0,
+            capacity: capacity(rate),
+            rate,
+            origin: (0, 0),
+            omits: Vec::new(),
+            closed: Vec::new(),
+            batch: Vec::new(),
+        }
+    }
+
+    /// O mic passa a vir em `rate`, com o hold já vazio e o resampler velho esvaziado em
+    /// `output` frames: um intervalo ainda aberto segue zerando a fonte nova.
+    fn switch_rate(&mut self, rate: u32, output: u64) {
+        let old = u128::from(self.rate.max(1));
+        let first = self.first;
+        for omit in &mut self.omits {
+            if let Some(end) = omit.end.filter(|e| *e > first) {
+                omit.end = Some(first + (u128::from(end - first) * u128::from(rate) / old) as u64);
+            }
+        }
+        self.rate = rate;
+        self.capacity = capacity(rate);
+        self.origin = (first, output);
+    }
+
+    /// Índice da próxima amostra a entrar.
+    fn next(&self) -> u64 {
+        self.first + self.samples.len() as u64
+    }
+
+    fn frames(&self, duration: Duration) -> u64 {
+        (u128::from(self.rate) * duration.as_nanos() / 1_000_000_000) as u64
+    }
+
+    /// Abre um intervalo `lookback` antes da próxima amostra; devolve quantas amostras pedidas já
+    /// tinham saído. Um intervalo que encosta no anterior o reabre: os dois viram um.
+    fn begin(&mut self, lookback: Duration) -> u64 {
+        let wanted = self.next().saturating_sub(self.frames(lookback));
+        let start = wanted.max(self.first);
+        match self.omits.last_mut() {
+            Some(last) if last.end.is_none_or(|end| end >= start) => last.end = None,
+            _ => self.omits.push(Omit {
+                start,
+                end: None,
+                wav_start: None,
+            }),
+        }
+        start - wanted
+    }
+
+    /// Fecha o intervalo aberto `margin` depois da próxima amostra.
+    fn end(&mut self, margin: Duration) {
+        let end = self.next() + self.frames(margin);
+        if let Some(last) = self.omits.last_mut().filter(|o| o.end.is_none()) {
+            last.end = Some(end);
+        }
+    }
+
+    /// Solta para `out` o que passou do hold (tudo, com `all`), zerado onde um intervalo cobre;
+    /// com `close`, o fim da gravação fecha os intervalos abertos. `wav_of` diz em que frame do
+    /// WAV cai uma amostra da fonte que sai agora.
+    fn release(&mut self, all: bool, close: bool, wav_of: impl Fn(u64) -> u64) -> &[f32] {
+        let keep = if all { 0 } else { self.capacity };
+        let n = self.samples.len().saturating_sub(keep);
+        self.batch.clear();
+        self.batch.extend(self.samples.drain(..n));
+        let (from, to) = (self.first, self.first + n as u64);
+        self.first = to;
+        let mut done = 0;
+        for omit in &mut self.omits {
+            let start = omit.start.max(from);
+            let end = omit.end.unwrap_or(u64::MAX).min(to);
+            if start < end {
+                let range = (start - from) as usize..(end - from) as usize;
+                self.batch[range].fill(0.0);
+                omit.wav_start.get_or_insert_with(|| wav_of(start));
+            }
+            // Fechado e todo já solto (ou no fim da gravação): vira um trecho do WAV.
+            let over = omit.end.is_some_and(|e| e <= to) || (close && omit.start < to);
+            if over {
+                done += 1;
+                if let Some(wav_start) = omit.wav_start {
+                    let end = omit.end.unwrap_or(to).min(to);
+                    self.closed.push(OmittedSpan {
+                        start: wav_start,
+                        end: wav_of(end).max(wav_start),
+                    });
+                }
+            }
+        }
+        self.omits.drain(..done);
+        if close {
+            self.omits.clear();
+        }
+        &self.batch
+    }
+}
+
+/// Amostras do hold na taxa `rate`.
+fn capacity(rate: u32) -> usize {
+    (u128::from(rate) * MIC_HOLD.as_millis() / 1_000) as usize
 }
 
 struct Channel {
@@ -89,6 +239,7 @@ fn frames_at(now: Duration) -> u64 {
 }
 
 pub struct MeetingRecorder {
+    hold: Hold,
     mic: Channel,
     system: Channel,
     wav: MeetingWav,
@@ -102,6 +253,7 @@ impl MeetingRecorder {
     /// `mic_rate` e `system_rate` são as taxas em que `push_mic`/`push_system` vão entregar.
     pub fn new(mic_rate: u32, system_rate: u32, wav: MeetingWav) -> Result<Self, AudioError> {
         Ok(Self {
+            hold: Hold::new(mic_rate),
             mic: Channel::new(mic_rate)?,
             system: Channel::new(system_rate)?,
             wav,
@@ -113,7 +265,47 @@ impl MeetingRecorder {
     }
 
     pub fn push_mic(&mut self, samples: &[f32]) -> Result<(), AudioError> {
-        self.mic.push(samples)
+        self.hold.samples.extend(samples);
+        self.release_mic(false, false)
+    }
+
+    /// Um ditado começou: o canal do mic é zerado a partir de `lookback` antes da última amostra
+    /// empurrada (o pré-buffer do ditado) até `end_omit`. O que já saiu do hold não volta: é
+    /// contado em `omit_late`.
+    pub fn begin_omit(&mut self, lookback: Duration) {
+        let late = self.hold.begin(lookback);
+        if late > 0 {
+            log::warn!("gravador: {late} amostras do mic já tinham saído do hold");
+            self.mic.stats.omit_late += late;
+        }
+    }
+
+    /// O ditado acabou: o intervalo cobre ainda `margin` depois da última amostra empurrada.
+    pub fn end_omit(&mut self, margin: Duration) {
+        self.hold.end(margin);
+    }
+
+    /// Os trechos omitidos já inteiros no caminho do WAV, desde a última chamada.
+    pub fn take_omitted(&mut self) -> Vec<OmittedSpan> {
+        std::mem::take(&mut self.hold.closed)
+    }
+
+    /// Solta o que passou do hold (tudo, com `all`) para o resample do mic; `close` como em
+    /// `Hold::release`.
+    fn release_mic(&mut self, all: bool, close: bool) -> Result<(), AudioError> {
+        let front = self.mic.stats.delivered - self.mic.queue.len() as u64;
+        let written = self.written;
+        let hold = &mut self.hold;
+        let (origin, rate) = (hold.origin, hold.rate);
+        // O frame de saída do mic (antes de ir ao WAV) que a amostra `i` da fonte vira.
+        let output_of = |i: u64| {
+            let k = u128::from(i.saturating_sub(origin.0)) * u128::from(MEETING_RATE)
+                / u128::from(rate.max(1));
+            origin.1 + k as u64
+        };
+        let wav_of = |i: u64| (written + output_of(i)).saturating_sub(front);
+        let batch = hold.release(all, close, wav_of);
+        self.mic.push(batch)
     }
 
     pub fn push_system(&mut self, samples: &[f32]) -> Result<(), AudioError> {
@@ -129,10 +321,13 @@ impl MeetingRecorder {
     }
 
     /// O mic reaberto (depois de uma suspensão do SO) entrega noutra taxa: igual a
-    /// [`Self::set_system_rate`].
+    /// [`Self::set_system_rate`]. O hold sai todo pelo resampler velho, já zerado, e um ditado
+    /// em curso segue zerando o mic novo.
     pub fn set_mic_rate(&mut self, rate: u32) -> Result<(), AudioError> {
+        self.release_mic(true, false)?;
         self.mic.drain_resampler()?;
         self.mic.resampler = Resampler::to(rate, MEETING_RATE)?;
+        self.hold.switch_rate(rate, self.mic.stats.delivered);
         Ok(())
     }
 
@@ -155,13 +350,24 @@ impl MeetingRecorder {
     }
 
     /// Escreve até o relógio, sem a folga, e finaliza o WAV. Devolve (mic, sistema).
-    pub fn finish(mut self, now: Duration) -> Result<(ChannelStats, ChannelStats), AudioError> {
+    pub fn finish(self, now: Duration) -> Result<(ChannelStats, ChannelStats), AudioError> {
+        self.finish_omitted(now)
+            .map(|(mic, system, _)| (mic, system))
+    }
+
+    /// Como `finish`, com os trechos omitidos que `take_omitted` ainda não devolveu; um ditado
+    /// ainda aberto termina no fim da gravação.
+    pub fn finish_omitted(
+        mut self,
+        now: Duration,
+    ) -> Result<(ChannelStats, ChannelStats, Vec<OmittedSpan>), AudioError> {
+        self.release_mic(true, true)?;
         self.mic.drain_resampler()?;
         self.system.drain_resampler()?;
         self.write_to(frames_at(now))?;
-        let stats = (self.mic.stats, self.system.stats);
+        let omitted = self.take_omitted();
         self.wav.finalize()?;
-        Ok(stats)
+        Ok((self.mic.stats, self.system.stats, omitted))
     }
 
     /// Pares já escritos no WAV.
@@ -227,6 +433,16 @@ mod tests {
         }
 
         fn go(&self, path: &Path, seconds: u64) -> (MeetingRecorder, u64) {
+            self.go_with(path, seconds, |_, _| {})
+        }
+
+        /// Como `go`, chamando `hook(passo, gravador)` depois dos pushes de cada passo de 10 ms.
+        fn go_with(
+            &self,
+            path: &Path,
+            seconds: u64,
+            mut hook: impl FnMut(u64, &mut MeetingRecorder),
+        ) -> (MeetingRecorder, u64) {
             let mic_rate = self.mic.as_ref().map_or(48_000, |s| s.0);
             let sys_rate = self.system.as_ref().map_or(48_000, |s| s.0);
             let wav = MeetingWav::create(path).unwrap();
@@ -246,6 +462,7 @@ mod tests {
                         }
                     }
                 }
+                hook(step, &mut rec);
                 let now = Duration::from_millis(step * 10);
                 if now.as_millis().is_multiple_of(TICK.as_millis()) {
                     rec.tick(now).unwrap();
@@ -313,25 +530,24 @@ mod tests {
     }
 
     #[test]
-    fn backlog_over_500_ms_is_dropped_and_counted() {
+    fn backlog_over_1_s_is_dropped_and_counted() {
         let path = tmp("backlog.wav");
         let wav = MeetingWav::create(&path).unwrap();
         let mut rec = MeetingRecorder::new(48_000, 48_000, wav).unwrap();
-        let half = Duration::from_millis(500);
-        rec.tick(half).unwrap();
-        assert_eq!(rec.written(), 24_000 - LAG_FRAMES);
-        let burst: Vec<f32> = (0..96_000).map(|i| signal(i, 5)).collect();
-        rec.push_mic(&burst).unwrap();
-        rec.push_system(&vec![0.0; 24_000]).unwrap();
-        rec.tick(half).unwrap();
+        let second = Duration::from_secs(1);
+        rec.tick(second).unwrap();
+        assert_eq!(rec.written(), 48_000 - LAG_FRAMES);
+        let burst: Vec<f32> = (0..144_000).map(|i| signal(i, 5)).collect();
+        rec.push_system(&burst).unwrap();
+        rec.tick(second).unwrap();
         let (mic, system) = rec.stats();
-        assert_eq!(mic.dropped, 96_000 - MAX_BACKLOG_FRAMES as u64);
-        assert_eq!(system.dropped, 0);
-        // O que sobra é o fim do burst: o próximo frame escrito é o 72 000º.
-        rec.finish(half + Duration::from_millis(10)).unwrap();
-        let (left, _) = read(&path);
-        let written_burst = &left[(24_000 - LAG_FRAMES as usize)..];
-        assert_eq!(written_burst[0], to_i16(burst[72_000]));
+        assert_eq!(system.dropped, 144_000 - MAX_BACKLOG_FRAMES as u64);
+        assert_eq!(mic.dropped, 0);
+        // O que sobra é o fim do burst: o próximo frame escrito é o 96 000º.
+        rec.finish(second + Duration::from_millis(10)).unwrap();
+        let (_, right) = read(&path);
+        let written_burst = &right[(48_000 - LAG_FRAMES as usize)..];
+        assert_eq!(written_burst[0], to_i16(burst[96_000]));
     }
 
     #[test]
@@ -379,11 +595,11 @@ mod tests {
         let (_, right) = read(&path);
         assert_eq!(right.len(), 144_000, "o relógio manda, troca ou não");
         assert!(right[..48_000].iter().all(|&r| r == to_i16(0.25)));
-        // A folga de 250 ms adianta tudo o que chega depois do buraco: os zeros vão de 1 s até
-        // perto de 1,75 s.
-        let gap = &right[50_000..80_000];
+        // A folga de 700 ms adianta tudo o que chega depois do buraco: os zeros vão de 1 s até
+        // perto de 1,3 s.
+        let gap = &right[50_000..62_000];
         assert!(gap.iter().all(|&r| r == 0), "zeros no intervalo da troca");
-        let after = &right[100_000..125_000];
+        let after = &right[70_000..105_000];
         let want = i32::from(to_i16(0.5));
         assert!(
             after.iter().all(|&r| (i32::from(r) - want).abs() <= 2),
@@ -401,8 +617,8 @@ mod tests {
         let wav = MeetingWav::create(&path).unwrap();
         let mut rec = MeetingRecorder::new(48_000, 48_000, wav).unwrap();
         let header = || hound::WavReader::open(&path).unwrap().duration();
-        rec.tick(Duration::from_millis(500)).unwrap();
-        assert_eq!(header(), 0, "0,5 s: ainda sem flush");
+        rec.tick(Duration::from_millis(900)).unwrap();
+        assert_eq!(header(), 0, "0,9 s: ainda sem flush");
         rec.tick(Duration::from_secs(1)).unwrap();
         assert_eq!(header(), 48_000 - LAG_FRAMES as u32);
         rec.tick(Duration::from_millis(1_500)).unwrap();
@@ -451,5 +667,214 @@ mod tests {
         rec.finish(Duration::from_secs(2)).unwrap();
         let reader = hound::WavReader::open(&path).unwrap();
         assert_eq!(reader.duration(), 96_000);
+    }
+
+    const LOOKBACK: Duration = Duration::from_millis(400);
+    const MARGIN: Duration = Duration::from_millis(50);
+    /// O hold de 450 ms a 48 kHz.
+    const HOLD: usize = 21_600;
+
+    fn zeros(samples: &[i16]) -> bool {
+        samples.iter().all(|&x| x == 0)
+    }
+
+    #[test]
+    fn a_dictation_is_zeroed_from_its_prebuffer_and_nothing_else_is() {
+        let path = tmp("omit.wav");
+        let run = Run {
+            mic: Run::source(48_000, 4, 10),
+            system: Run::source(48_000, 4, 11),
+        };
+        // O ditado começa aos 2 s (o pré-buffer vem de antes) e acaba aos 3 s.
+        let (rec, _) = run.go_with(&path, 4, |step, rec| match step {
+            200 => rec.begin_omit(LOOKBACK),
+            300 => rec.end_omit(MARGIN),
+            _ => {}
+        });
+        let (mic, _, omitted) = rec.finish_omitted(Duration::from_secs(4)).unwrap();
+        let (left, right) = read(&path);
+        let mic_in = as_i16(&run.mic.as_ref().unwrap().1);
+        let (start, end) = (96_000 - 19_200, 144_000 + 2_400);
+        assert!(zeros(&left[start..end]), "zeros exatos no intervalo");
+        assert_eq!(left[..start], mic_in[..start]);
+        assert_eq!(left[end..], mic_in[end..]);
+        assert_eq!(
+            right,
+            as_i16(&run.system.as_ref().unwrap().1),
+            "o sistema não muda"
+        );
+        assert_eq!(
+            omitted,
+            [OmittedSpan {
+                start: start as u64,
+                end: end as u64
+            }]
+        );
+        assert_eq!(mic.omit_late, 0);
+    }
+
+    #[test]
+    fn a_crash_mid_dictation_leaves_only_zeros_on_disk() {
+        let path = tmp("omit-crash.wav");
+        let run = Run {
+            mic: Run::source(48_000, 3, 12),
+            system: None,
+        };
+        let (rec, _) = run.go_with(&path, 3, |step, rec| {
+            if step == 200 {
+                rec.begin_omit(LOOKBACK);
+            }
+        });
+        // O processo morre: nada de `finish`, nem o `Drop` do WAV.
+        std::mem::forget(rec);
+        let (left, _) = read(&path);
+        let start = 96_000 - 19_200;
+        assert!(
+            left.len() > start + 24_000,
+            "{} frames no disco",
+            left.len()
+        );
+        assert!(zeros(&left[start..]), "o que foi ao disco já estava zerado");
+        assert!(!zeros(&left[..start]));
+    }
+
+    #[test]
+    fn an_open_dictation_ends_with_the_recording() {
+        let path = tmp("omit-open.wav");
+        let run = Run {
+            mic: Run::source(48_000, 2, 13),
+            system: None,
+        };
+        let (rec, _) = run.go_with(&path, 2, |step, rec| {
+            if step == 150 {
+                rec.begin_omit(LOOKBACK);
+            }
+        });
+        let (_, _, omitted) = rec.finish_omitted(Duration::from_secs(2)).unwrap();
+        let (left, _) = read(&path);
+        let start = 72_000 - 19_200;
+        assert!(zeros(&left[start..]));
+        assert_eq!(
+            omitted,
+            [OmittedSpan {
+                start: start as u64,
+                end: 96_000
+            }]
+        );
+    }
+
+    #[test]
+    fn overlapping_dictations_become_one_span() {
+        let path = tmp("omit-overlap.wav");
+        let run = Run {
+            mic: Run::source(48_000, 4, 14),
+            system: None,
+        };
+        // Dois ditados a 200 ms um do outro: o pré-buffer do segundo cai no primeiro.
+        let (mut rec, _) = run.go_with(&path, 4, |step, rec| match step {
+            100 | 220 => rec.begin_omit(LOOKBACK),
+            200 | 300 => rec.end_omit(MARGIN),
+            _ => {}
+        });
+        let mut omitted = rec.take_omitted();
+        let (_, _, rest) = rec.finish_omitted(Duration::from_secs(4)).unwrap();
+        omitted.extend(rest);
+        assert_eq!(
+            omitted,
+            [OmittedSpan {
+                start: 48_000 - 19_200,
+                end: 144_000 + 2_400
+            }]
+        );
+    }
+
+    #[test]
+    fn a_lookback_past_the_hold_zeroes_what_is_left_and_counts_the_rest() {
+        let path = tmp("omit-late.wav");
+        let run = Run {
+            mic: Run::source(48_000, 3, 15),
+            system: None,
+        };
+        let (rec, _) = run.go_with(&path, 3, |step, rec| match step {
+            200 => rec.begin_omit(Duration::from_secs(1)),
+            250 => rec.end_omit(MARGIN),
+            _ => {}
+        });
+        let (mic, _, _) = rec.finish_omitted(Duration::from_secs(3)).unwrap();
+        assert_eq!(mic.omit_late, 48_000 - HOLD as u64);
+        let (left, _) = read(&path);
+        assert!(zeros(&left[96_000 - HOLD..120_000 + 2_400]));
+        assert!(left[96_000 - HOLD - 1] != 0, "o que já tinha saído ficou");
+    }
+
+    #[test]
+    fn a_mic_at_another_rate_is_zeroed_in_the_wav_too() {
+        let path = tmp("omit-16k.wav");
+        let run = Run {
+            mic: Run::source(16_000, 4, 16),
+            system: None,
+        };
+        let (rec, _) = run.go_with(&path, 4, |step, rec| match step {
+            200 => rec.begin_omit(LOOKBACK),
+            300 => rec.end_omit(MARGIN),
+            _ => {}
+        });
+        let (_, _, omitted) = rec.finish_omitted(Duration::from_secs(4)).unwrap();
+        let (left, _) = read(&path);
+        let [span] = omitted[..] else {
+            panic!("{omitted:?}")
+        };
+        let (start, end) = (96_000 - 19_200, 144_000 + 2_400);
+        assert!(span.start.abs_diff(start as u64) <= 480, "{span:?}");
+        assert!(span.end.abs_diff(end as u64) <= 480, "{span:?}");
+        // A borda do filtro tem só o vazamento das amostras de fora; o miolo é zero exato.
+        let edge = 480;
+        assert!(zeros(&left[start + edge..end - edge]));
+        assert!(left[start - 2 * edge..start - edge].iter().any(|&x| x != 0));
+    }
+
+    #[test]
+    fn a_dictation_across_a_mic_rate_switch_stays_zeroed() {
+        let path = tmp("omit-switch.wav");
+        let wav = MeetingWav::create(&path).unwrap();
+        let mut rec = MeetingRecorder::new(48_000, 48_000, wav).unwrap();
+        let tick = |rec: &mut MeetingRecorder, step: u64| {
+            rec.push_system(&vec![0.0; 480]).unwrap();
+            rec.tick(Duration::from_millis(step * 10)).unwrap();
+        };
+        // 2 s a 48 kHz, o ditado começa a 1,5 s; o mic reabre a 16 kHz e o ditado acaba a 3 s.
+        for step in 1..=200u64 {
+            rec.push_mic(&vec![0.25; 480]).unwrap();
+            if step == 150 {
+                rec.begin_omit(LOOKBACK);
+            }
+            tick(&mut rec, step);
+        }
+        rec.set_mic_rate(16_000).unwrap();
+        for step in 201..=400u64 {
+            rec.push_mic(&vec![0.25; 160]).unwrap();
+            if step == 300 {
+                rec.end_omit(MARGIN);
+            }
+            tick(&mut rec, step);
+        }
+        let (mic, _, omitted) = rec.finish_omitted(Duration::from_secs(4)).unwrap();
+        assert_eq!(mic.omit_late, 0);
+        let (left, _) = read(&path);
+        let [span] = omitted[..] else {
+            panic!("{omitted:?}")
+        };
+        let (start, end) = (72_000 - 19_200, 144_000 + 2_400);
+        assert_eq!(span.start, start as u64);
+        assert!(span.end.abs_diff(end as u64) <= 480, "{span:?}");
+        // Depois da troca o filtro de 16 kHz vaza até ~20 ms das amostras de fora na borda.
+        assert!(
+            zeros(&left[start..end - 960]),
+            "zerado dos dois lados da troca"
+        );
+        assert!(left[..start].iter().all(|&x| x == to_i16(0.25)));
+        let after = &left[end + 960..end + 24_000];
+        let want = i32::from(to_i16(0.25));
+        assert!(after.iter().all(|&x| (i32::from(x) - want).abs() <= 2));
     }
 }

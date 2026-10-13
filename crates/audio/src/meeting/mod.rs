@@ -11,7 +11,9 @@ mod system;
 mod wav;
 
 pub use outputs::{OutputDevice, OutputMeter, OutputPeak};
-pub use recorder::{ChannelStats, MeetingRecorder, LAG_FRAMES, MAX_BACKLOG_FRAMES};
+pub use recorder::{
+    ChannelStats, MeetingRecorder, OmittedSpan, LAG_FRAMES, MAX_BACKLOG_FRAMES, MIC_HOLD,
+};
 pub use system::SystemAudio;
 pub(crate) use system::ENV_OPEN;
 pub use wav::{MeetingWav, FLUSH_EVERY, MEETING_RATE};
