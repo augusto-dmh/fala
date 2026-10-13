@@ -7,10 +7,10 @@ import {
   Globe,
   Languages,
   RefreshCw,
-  Search,
 } from "lucide-react";
 import type { ModelCardStatus } from "./ModelCard";
 import ModelCard from "./ModelCard";
+import { SearchField } from "../../ui/SearchField";
 import { useModelStore } from "@/stores/modelStore";
 import {
   getLanguageLabel,
@@ -249,16 +249,12 @@ export const ModelsSettings: React.FC = () => {
       </div>
 
       {/* Search bar — filter the catalog by name or description */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t("settings.models.searchPlaceholder")}
-          className="w-full pl-9 pr-3 py-2 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-logo-primary placeholder:text-text/40"
-        />
-      </div>
+      <SearchField
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder={t("settings.models.searchPlaceholder")}
+        aria-label={t("settings.models.searchPlaceholder")}
+      />
 
       <div className="space-y-6">
         {/* Downloaded Models Section — header always visible so filter stays accessible */}
