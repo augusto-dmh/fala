@@ -148,7 +148,7 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
     imported_from: "granola",
   };
   const list = renderToStaticMarkup(
-    <MeetingList sessions={[session]} selectedId={null} onOpen={noop} />,
+    <MeetingList sessions={[session]} onOpen={noop} />,
   );
   assert.ok(list.includes("meeting.list.granola"));
   assert.ok(!list.includes("00:00"));

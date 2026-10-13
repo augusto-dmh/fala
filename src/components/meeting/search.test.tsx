@@ -46,28 +46,20 @@ assert.deepEqual(
   ["B", "A"],
 );
 
-const html = renderToStaticMarkup(
-  <MeetingList {...found} selectedId={null} onOpen={() => {}} />,
-);
+const html = renderToStaticMarkup(<MeetingList {...found} onOpen={() => {}} />);
 assert.ok(html.includes("<mark>Orça</mark><span>mento</span>"), html);
 // O trecho é texto: nada vira HTML.
 const evil = renderToStaticMarkup(
   <MeetingList
     sessions={[session("A", "x")]}
     snippets={new Map([["A", "<img src=x>"]])}
-    selectedId={null}
     onOpen={() => {}}
   />,
 );
 assert.ok(!evil.includes("<img"), evil);
 assert.ok(
   renderToStaticMarkup(
-    <MeetingList
-      sessions={[]}
-      snippets={new Map()}
-      selectedId={null}
-      onOpen={() => {}}
-    />,
+    <MeetingList sessions={[]} snippets={new Map()} onOpen={() => {}} />,
   ).includes("meeting.list.noResults"),
 );
 
