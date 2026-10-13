@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { Button } from "../ui/Button";
 import type { Translate } from "./meetingModel";
 
@@ -27,47 +25,6 @@ export function DeleteConfirm({ onConfirm, onCancel, t }: DeleteConfirmProps) {
           {t("meeting.delete.cancel")}
         </Button>
       </div>
-    </div>
-  );
-}
-
-export interface DeleteMeetingProps {
-  /** Recording, transcribing or generating notes: nothing to delete yet. */
-  disabled: boolean;
-  onDelete: () => void;
-}
-
-/** "Delete meeting", which asks first. */
-export function DeleteMeeting({ disabled, onDelete }: DeleteMeetingProps) {
-  const { t } = useTranslation();
-  const [confirming, setConfirming] = useState(false);
-  // A job that starts meanwhile closes the question; it never comes back by itself.
-  useEffect(() => {
-    if (disabled) setConfirming(false);
-  }, [disabled]);
-  if (confirming && !disabled) {
-    return (
-      <div className="px-4 pb-4">
-        <DeleteConfirm
-          onConfirm={() => {
-            setConfirming(false);
-            onDelete();
-          }}
-          onCancel={() => setConfirming(false)}
-          t={t}
-        />
-      </div>
-    );
-  }
-  return (
-    <div className="px-4 pb-4">
-      <Button
-        variant="danger-ghost"
-        disabled={disabled}
-        onClick={() => setConfirming(true)}
-      >
-        {t("meeting.delete.action")}
-      </Button>
     </div>
   );
 }

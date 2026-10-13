@@ -1,8 +1,15 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { MeetingStatus } from "@/bindings";
 import { Button } from "../ui/Button";
 import { clock, type Translate } from "./meetingModel";
+import { useDismiss } from "../../hooks/useDismiss";
 
 export interface NewMeetingButtonProps {
   disabled: boolean;
@@ -17,25 +24,12 @@ export function NewMeetingButton(props: NewMeetingButtonProps) {
   const { t } = props;
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
   // A recording that starts (here or from the tray) closes the options.
   useEffect(() => {
     if (props.disabled) setOpen(false);
   }, [props.disabled]);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("mousedown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open]);
+  useDismiss(open, close, box);
 
   return (
     <div ref={box} className="relative flex">

@@ -22,6 +22,17 @@ Proof: `bun src/components/meeting/search.test.tsx`; `bun src/components/meeting
 **C5** - a página não usa `SettingsGroup`; "Nova reunião" grava e abre a sessão; gravando, a faixa com o tempo e "Abrir"; órfão em âmbar e erro no topo; abrir troca a lista pela sessão com "← Reuniões"
 Proof: `bun src/components/meeting/home.test.tsx`; `meeting.test.tsx`, `meetingFlow.test.tsx`, `lifecycle.test.tsx`, `import.test.tsx`
 
+### S3 - a reunião como nota (PR 3)
+
+**C7** - título grande e editável (salvo no Enter ou ao sair, a lista acompanha); linha "Hoje · 14:02 · 37:30 · Online"
+Proof: `bun src/components/meeting/screen.test.tsx`
+
+**C8** - "Minhas anotações | Notas": abre nas notas quando existem, nas anotações sem elas e gravando; um só campo de anotações por sessão; "/" sozinho abre o template; recarregar a sessão não volta o texto digitado
+Proof: `bun src/components/meeting/screen.test.tsx`; `bun src/components/meeting/meeting.test.tsx`
+
+**C9** - "⋯" junta copiar Markdown, copiar transcrição, participantes e apagar (com a confirmação); sugestões de nome aparecem sem abrir
+Proof: `bun src/components/meeting/screen.test.tsx`; `meeting.test.tsx`; `lifecycle.test.tsx`
+
 ### Todas as fatias
 
 **C6** - strings novas em pt e en; lint, tsc, format

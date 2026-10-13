@@ -1,6 +1,6 @@
 # meetings-ui-redesign — a área de Reuniões como notas, não como página de configurações
 
-Profile: light · Fase 2, beta · quatro PRs empilhados
+Profile: light · Fase 2, beta · cinco PRs empilhados
 
 ## Problem
 
@@ -21,9 +21,12 @@ numa fatia própria.
   "seg., 6 de out."), linha com ponto de estado, hora, título e duração. Estados: vazio, faixa de
   gravação com "Abrir", órfão em âmbar, erro em linha. Abrir uma reunião troca a lista pela
   sessão ("← Reuniões").
-- **PR 3** (`-3`): a sessão em tela própria com título editável, "Minhas anotações | Notas",
-  barra inferior fixa, transcrição em folha lateral e menu "⋯".
-- **PR 4** (`-4`): passo opcional "Reuniões" no onboarding.
+- **PR 3** (`-3`): a sessão como nota: título grande e editável, linha de data, duração e
+  modo, "Minhas anotações | Notas" (um só campo de anotações, também gravando), "/" no campo
+  vazio abre o template das notas, menu "⋯" com copiar, transcrição, participantes e apagar.
+- **PR 4** (`-4`): barra inferior fixa com os botões do estado, transcrição em folha lateral,
+  avisos do gravador em faixas âmbar, lugar reservado ao chat.
+- **PR 5** (`-5`): passo opcional "Reuniões" no onboarding.
 
 ## Doors
 

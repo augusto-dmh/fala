@@ -162,7 +162,7 @@ const OPTIONS = "opções";
   );
   assert.match(
     page,
-    /if \(selected\) \{[\s\S]*breadcrumb=\{\{[\s\S]*onParent: \(\) => setSelected\(null\)/,
+    /if \(selected\) \{[\s\S]*onClick=\{\(\) => setSelected\(null\)\}/,
   );
   // A run that ends reloads only the session still open: never back over the list.
   assert.match(

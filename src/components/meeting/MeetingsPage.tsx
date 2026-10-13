@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -21,9 +22,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { PageHeader } from "../PageHeader";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
-import { DeleteMeeting } from "./DeleteMeeting";
 import { ImportDialog } from "./ImportDialog";
 import { MeetingList } from "./MeetingList";
 import { NewMeetingButton, RecordingStrip } from "./MeetingHome";
@@ -415,10 +414,13 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
       }}
     />
   );
+  // From the list, which a rename refreshes; `live` loads once per recording.
+  const recordingSummary =
+    sessions.find((s) => s.id === status.id) ?? live?.summary;
   const strip = (
     <RecordingStrip
       status={status}
-      title={live ? titleOf(live.summary, t) : ""}
+      title={recordingSummary ? titleOf(recordingSummary, t) : ""}
       onOpen={() => status.id !== null && void open(status.id)}
       t={t}
     />
@@ -455,14 +457,19 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
     const recordingThis = status.id === selected.summary.id;
     return (
       <div className="mx-auto w-full max-w-2xl space-y-4">
-        <PageHeader
-          title={t("meeting.list.title")}
-          breadcrumb={{
-            parent: t("meeting.list.title"),
-            onParent: () => setSelected(null),
-            current: titleOf(selected.summary, t),
-          }}
-        />
+        <button
+          type="button"
+          onClick={() => setSelected(null)}
+          className="flex items-center gap-1 rounded-lg text-body text-text-2 transition-colors hover:text-text focus-visible:focus-ring"
+        >
+          <ChevronLeft
+            size={16}
+            strokeWidth={1.5}
+            className="rtl:rotate-180"
+            aria-hidden="true"
+          />
+          {t("meeting.list.title")}
+        </button>
         {banners}
         {importing && (
           <ImportDialog
@@ -480,15 +487,6 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
               <p className="p-4 text-caption text-text-2">
                 {t("meeting.recorder.processing")}
               </p>
-            )}
-            {live && (
-              <div className="px-4 pb-4">
-                <AnnotationsField
-                  id={live.summary.id}
-                  initial={live.annotations}
-                  label={t("meeting.view.annotations")}
-                />
-              </div>
             )}
           </div>
         ) : (
@@ -514,14 +512,16 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
               void generate(selected.summary.id, templateId, replaceEdited)
             }
             onCopy={() => void copy(selected.summary.id)}
-            onNamesChanged={() => void reload(selected.summary.id)}
-          />
-          <DeleteMeeting
-            key={`delete-${selected.summary.id}`}
-            disabled={
+            onNamesChanged={() => {
+              // The title may have changed: the list shows it too.
+              void reload(selected.summary.id);
+              void refresh();
+            }}
+            deleteDisabled={
               recordingThis ||
               transcribing === selected.summary.id ||
-              generating === selected.summary.id
+              generating === selected.summary.id ||
+              selected.notes_running
             }
             onDelete={() => void remove(selected.summary.id)}
           />
