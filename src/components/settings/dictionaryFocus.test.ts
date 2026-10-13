@@ -57,32 +57,19 @@ const ok = (id: string) => console.log(`${id} ok`);
   ok("F2");
 }
 
-// F3: os campos ficam habilitados durante a gravação (o foco e as teclas seguintes ficam neles);
-// adicionar espera a gravação; a remoção pelo teclado leva o foco ao vizinho, com o campo de
-// reserva; o clique não mexe no foco.
+// F3: na lista única do Dicionário (Q8), os campos ficam habilitados durante a gravação (o foco e
+// as teclas seguintes ficam neles); adicionar espera a gravação e devolve o foco ao primeiro campo;
+// a remoção pelo teclado leva o foco ao vizinho, com o "Adicionar" de reserva; o clique não mexe
+// no foco.
 {
-  const words = read("./CustomWords.tsx");
-  assert.match(words, /if \(busy\) return;/);
-  const field = /<Input\s+ref=\{inputRef\}[\s\S]*?\/>/.exec(words)?.[0] ?? "";
-  assert.ok(field && !field.includes("disabled"), field);
-  assert.match(words, /neighbourAfterRemoval\(visibleWords, wordToRemove\)/);
-  assert.match(
-    words,
-    /entryButton\(listRef\.current, next\) \?\? inputRef\.current/,
-  );
-  assert.match(words, /handleRemoveWord\(word, event\.detail === 0\)/);
-  assert.match(words, /data-entry=\{word\}/);
-
-  const pairs = read("./DictionaryReplacements.tsx");
-  assert.match(pairs, /!busy;/, "canAdd espera a gravação");
-  assert.doesNotMatch(pairs, /variant="compact"\s+disabled=\{busy\}/);
-  assert.match(pairs, /spokenRef\.current\?\.focus\(\);/);
-  assert.match(
-    pairs,
-    /entryButton\(listRef\.current, next\) \?\? spokenRef\.current/,
-  );
-  assert.match(pairs, /handleRemove\(pair\.spoken, event\.detail === 0\)/);
-  assert.match(pairs, /data-entry=\{pair\.spoken\}/);
+  const list = read("../DictionaryList.tsx");
+  assert.match(list, /if \(busy\) return;/);
+  const form = list.slice(list.indexOf("const form"), list.indexOf("return ("));
+  assert.doesNotMatch(form, /<(Input|Textarea)\b[^>]*disabled=/);
+  assert.match(list, /setWritten\(""\);\s*spokenRef\.current\?\.focus\(\);/);
+  assert.match(list, /entryButton\(listRef\.current, next\) \?\? fallback\(\)/);
+  assert.match(list, /remove\(entry, event\.detail === 0\)/);
+  assert.match(list, /data-entry=\{entry\.key\}/);
   assert.match(read("../ui/Input.tsx"), /React\.forwardRef<HTMLInputElement/);
   ok("F3");
 }
