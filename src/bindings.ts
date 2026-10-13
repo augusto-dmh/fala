@@ -1388,6 +1388,37 @@ async setMeetingTranscriptionKey(key: string) : Promise<Result<MeetingKeys, Meet
 }
 },
 /**
+ * Stores the Anthropic key of the notes in the OS keyring (ADR-0008), like the ElevenLabs one.
+ */
+async setMeetingNotesKey(key: string) : Promise<Result<MeetingKeys, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_notes_key", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Test the meeting sound" (first run): the level of the output a meeting would record, as
+ * `MeetingSoundLevel` events, until stopped or for a minute. Nothing is recorded (ADR-0005).
+ */
+async startMeetingSoundCheck() : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_meeting_sound_check") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopMeetingSoundCheck() : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_meeting_sound_check") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The outputs and the remembered choice. Enumerating can stall, so it runs off the main loop.
  */
 async meetingOutputs() : Promise<Result<MeetingOutputs, MeetingError>> {
@@ -1645,6 +1676,7 @@ export const events = __makeEvents__<{
 granolaProgress: GranolaProgress,
 historyUpdatePayload: HistoryUpdatePayload,
 meetingProgress: MeetingProgress,
+meetingSoundLevel: MeetingSoundLevel,
 meetingStatus: MeetingStatus,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent
@@ -1652,6 +1684,7 @@ streamTextEvent: StreamTextEvent
 granolaProgress: "granola-progress",
 historyUpdatePayload: "history-update-payload",
 meetingProgress: "meeting-progress",
+meetingSoundLevel: "meeting-sound-level",
 meetingStatus: "meeting-status",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event"
@@ -2191,6 +2224,11 @@ export type MeetingSleep = {
  * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
  */
 at_ms: number; slept_ms: number }
+/**
+ * The RMS of the meeting sound since the last event, 0 to 1. `ended`: the test stopped by
+ * itself after [`LIMIT`]; a stop the UI asked for sends nothing.
+ */
+export type MeetingSoundLevel = { level: number; ended: boolean }
 /**
  * What the UI shows about the current recording; emitted on every change and at 4 Hz while
  * recording.

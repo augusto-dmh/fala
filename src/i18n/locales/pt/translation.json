@@ -249,7 +249,21 @@
       "keyLabel": "Chave do Gemini",
       "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações.",
       "skip": "Pular",
-      "finish": "Concluir"
+      "finish": "Continuar"
+    },
+    "meetings": {
+      "title": "Reuniões (opcional)",
+      "description": "Grave calls e aulas e receba as notas. Teste o som e deixe as chaves prontas, ou faça isso depois em Configurações.",
+      "micLabel": "Seu microfone",
+      "systemLabel": "Som do computador",
+      "systemDescription": "Toque um vídeo ou entre numa call e veja a barra subir. Nada é gravado.",
+      "accept": "Entendi",
+      "accepted": "Aviso aceito",
+      "anthropicLabel": "Chave da Anthropic",
+      "anthropicDescription": "Escreve as notas a partir da transcrição. Fica no cofre do sistema e não aparece de novo.",
+      "skip": "Pular",
+      "finish": "Concluir",
+      "micDescription": "O que você fala na reunião. Fica neste computador até a transcrição."
     }
   },
   "modelSelector": {
@@ -865,7 +879,8 @@
         "exitButton": "Sair da pré-visualização",
         "microphoneButton": "Microfone",
         "shortcutButton": "Atalho",
-        "aiButton": "IA"
+        "aiButton": "IA",
+        "meetingsButton": "Reuniões"
       }
     },
     "about": {

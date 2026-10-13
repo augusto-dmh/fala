@@ -15,6 +15,7 @@ use crate::meeting::pipeline::{
 };
 use crate::meeting::recovery::MeetingOrphan;
 use crate::meeting::search::MeetingSearchHit;
+use crate::meeting::sound_check::SoundCheck;
 use crate::meeting::{MeetingError, MeetingManager, MeetingMode, MeetingStatus};
 use crate::settings::{self, NotesLanguage};
 
@@ -287,6 +288,44 @@ pub async fn set_meeting_transcription_key(
     key: String,
 ) -> Result<MeetingKeys, MeetingError> {
     meetings.set_transcription_key(&key)
+}
+
+/// Stores the Anthropic key of the notes in the OS keyring (ADR-0008), like the ElevenLabs one.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_notes_key(
+    meetings: Meetings<'_>,
+    key: String,
+) -> Result<MeetingKeys, MeetingError> {
+    meetings.set_notes_key(&key)
+}
+
+/// "Test the meeting sound" (first run): the level of the output a meeting would record, as
+/// `MeetingSoundLevel` events, until stopped or for a minute. Nothing is recorded (ADR-0005).
+#[tauri::command]
+#[specta::specta]
+pub async fn start_meeting_sound_check(
+    app: AppHandle,
+    check: State<'_, Arc<SoundCheck>>,
+) -> Result<(), MeetingError> {
+    let saved = settings::get_settings(&app).meeting_output_device;
+    let check = Arc::clone(&check);
+    // Enumerating and opening can stall: off the async workers, like `meeting_outputs`.
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = crate::meeting::output::resolve(saved.as_deref())?;
+        check.start(app, output)
+    })
+    .await
+    .map_err(|e| MeetingError::AudioDevice(e.to_string()))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_meeting_sound_check(
+    check: State<'_, Arc<SoundCheck>>,
+) -> Result<(), MeetingError> {
+    check.stop();
+    Ok(())
 }
 
 /// The profile the notes LLM receives (ADR-0016), cut to `fala_notes::PROFILE_MAX_CHARS`.

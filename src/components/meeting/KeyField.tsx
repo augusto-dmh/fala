@@ -6,9 +6,11 @@ import { Input } from "../ui/Input";
 export interface KeyFieldProps {
   /** Stores the key in the keyring; the field empties and never shows it again. */
   onSave: (key: string) => void;
+  /** The field's name for screen readers; the ElevenLabs key by default. */
+  label?: string;
 }
 
-export function KeyField({ onSave }: KeyFieldProps) {
+export function KeyField({ onSave, label }: KeyFieldProps) {
   const { t } = useTranslation();
   const [key, setKey] = useState("");
   return (
@@ -17,7 +19,7 @@ export function KeyField({ onSave }: KeyFieldProps) {
         type="password"
         variant="compact"
         autoComplete="off"
-        aria-label={t("meeting.key.label")}
+        aria-label={label ?? t("meeting.key.label")}
         value={key}
         placeholder={t("meeting.key.placeholder")}
         onChange={(event) => setKey(event.target.value)}

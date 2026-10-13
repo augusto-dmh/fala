@@ -24,6 +24,7 @@ pub(crate) mod recorder;
 pub(crate) mod recovery;
 pub(crate) mod search;
 pub(crate) mod sleeps;
+pub(crate) mod sound_check;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};

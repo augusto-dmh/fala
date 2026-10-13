@@ -629,11 +629,25 @@ impl MeetingManager {
 
     /// Stores the ElevenLabs key in the keyring; it is never logged nor sent back.
     pub fn set_transcription_key(&self, key: &str) -> Result<MeetingKeys, MeetingError> {
+        self.store_key(SCRIBE_KEY, "ElevenLabs", key)
+    }
+
+    /// Stores the Anthropic key the notes use in the keyring; never logged nor sent back.
+    pub fn set_notes_key(&self, key: &str) -> Result<MeetingKeys, MeetingError> {
+        self.store_key(fala_notes::KEY_PROVIDER, "Anthropic", key)
+    }
+
+    fn store_key(
+        &self,
+        provider: &str,
+        name: &str,
+        key: &str,
+    ) -> Result<MeetingKeys, MeetingError> {
         let key = ApiKey::new(key.trim()).map_err(|_| MeetingError::InvalidKey)?;
         self.keys
-            .set(SCRIBE_KEY, &key)
+            .set(provider, &key)
             .map_err(|_| MeetingError::Keyring)?;
-        log::info!("ElevenLabs key stored in the keyring");
+        log::info!("{name} key stored in the keyring");
         Ok(self.keys())
     }
 

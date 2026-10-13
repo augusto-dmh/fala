@@ -8,11 +8,12 @@ import { useSettings } from "../../hooks/useSettings";
 const GEMINI_PROVIDER_ID = "gemini";
 
 interface AiStepProps {
-  onFinish: () => void;
+  /** Skip or go on: both lead to the meetings step. */
+  onNext: () => void;
 }
 
 /** Step 3 (optional): what leaves the machine, and the Gemini key or skip. */
-export const AiStep: React.FC<AiStepProps> = ({ onFinish }) => {
+export const AiStep: React.FC<AiStepProps> = ({ onNext }) => {
   const { t } = useTranslation();
   const { settings, updatePostProcessApiKey } = useSettings();
   const apiKey = settings?.post_process_api_keys?.[GEMINI_PROVIDER_ID] ?? "";
@@ -38,10 +39,10 @@ export const AiStep: React.FC<AiStepProps> = ({ onFinish }) => {
         />
       </SettingContainer>
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onFinish}>
+        <Button variant="secondary" onClick={onNext}>
           {t("onboarding.ai.skip")}
         </Button>
-        <Button variant="primary" onClick={onFinish}>
+        <Button variant="primary" onClick={onNext}>
           {t("onboarding.ai.finish")}
         </Button>
       </div>
