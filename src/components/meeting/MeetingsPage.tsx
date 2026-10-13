@@ -68,14 +68,20 @@ const withoutId = (ids: Set<string>, id: string) => {
 export interface MeetingsPageProps {
   /** Settings, where the ElevenLabs key goes. */
   onOpenSettings?: () => void;
+  /** Goes up each time "Meetings" in the rail is clicked while the page is open: back to the
+   *  list. */
+  home?: number;
 }
 
 /** The Meetings page: the sessions by day with "New meeting" on top, or the one open. */
-export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
+export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<MeetingStatus>(IDLE);
   const [sessions, setSessions] = useState<MeetingSummary[]>([]);
   const [selected, setSelected] = useState<MeetingDetail | null>(null);
+  useEffect(() => {
+    if (home > 0) setSelected(null);
+  }, [home]);
   const [live, setLive] = useState<MeetingDetail | null>(null);
   const [catalog] = useMeetingTemplates();
   const templates = catalog.templates;

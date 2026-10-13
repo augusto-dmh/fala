@@ -174,6 +174,7 @@ export const MeetingsStep: React.FC<MeetingsStepProps> = ({
         layout="stacked"
       >
         <KeyField
+          saved={keys?.elevenlabs}
           onSave={(key) =>
             void save(() => commands.setMeetingTranscriptionKey(key))
           }
@@ -183,13 +184,14 @@ export const MeetingsStep: React.FC<MeetingsStepProps> = ({
         title={t("onboarding.meetings.anthropicLabel")}
         description={
           keys?.anthropic
-            ? t("meeting.key.saved")
+            ? t("meeting.notesKey.saved")
             : t("onboarding.meetings.anthropicDescription")
         }
         layout="stacked"
       >
         <KeyField
           label={t("onboarding.meetings.anthropicLabel")}
+          saved={keys?.anthropic}
           onSave={(key) => void save(() => commands.setMeetingNotesKey(key))}
         />
       </SettingContainer>
