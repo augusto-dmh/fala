@@ -1135,6 +1135,14 @@
     "dismiss": "Dispensar"
   },
   "meeting": {
+    "keys": {
+      "missingElevenlabs": "Falta a chave da ElevenLabs: é com ela que as reuniões são transcritas.",
+      "missingAnthropic": "Falta a chave da Anthropic: é com ela que as notas são escritas.",
+      "add": "Adicionar chave",
+      "transcribeNeedsKey": "Adicione a chave da ElevenLabs em Configurações para transcrever.",
+      "notesNeedKey": "Adicione a chave da Anthropic em Configurações para escrever as notas.",
+      "notesNeedContent": "Transcreva a reunião ou digite notas antes."
+    },
     "title": "Reunião",
     "untitled": "Reunião de {{date}}",
     "consent": {

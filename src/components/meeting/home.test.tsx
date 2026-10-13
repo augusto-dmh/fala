@@ -185,7 +185,9 @@ const OPTIONS = "opções";
 // de gravação; o órfão em âmbar; a sessão no lugar da lista, com a volta.
 {
   assert.ok(!page.includes("SettingsGroup"));
-  assert.ok(page.includes('className="mx-auto w-full max-w-2xl space-y-4"'));
+  // A largura das outras páginas (Q54 do QA): sem `max-w-2xl` próprio.
+  assert.ok(page.includes('className="w-full space-y-4"'));
+  assert.ok(!page.includes("max-w-2xl"));
   assert.match(
     page,
     /<NewMeetingButton[\s\S]*onStart=\{\(\) => void start\(null\)\}/,

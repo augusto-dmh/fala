@@ -5,6 +5,7 @@ import {
   commands,
   type MeetingDetail,
   type MeetingError,
+  type MeetingKeys,
   type MeetingLine,
   type MeetingTemplate,
 } from "@/bindings";
@@ -16,7 +17,12 @@ import { DeleteConfirm } from "./DeleteMeeting";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { NotesEditor } from "./NotesEditor";
-import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
+import {
+  errorKey,
+  needsConfirmation,
+  sessionHints,
+  titleOf,
+} from "./meetingModel";
 import { NotesView } from "./NotesView";
 import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
@@ -47,6 +53,8 @@ export interface MeetingViewProps {
   deleteDisabled?: boolean;
   /** This session's recording: the bar's pause and stop, or the processing line. */
   live?: LiveControls | null;
+  /** Which meeting keys are saved; `null` until known (nothing is turned off meanwhile). */
+  keys?: MeetingKeys | null;
 }
 
 export type SessionTab = "annotations" | "notes";
@@ -71,6 +79,17 @@ export function MeetingView(props: MeetingViewProps) {
     [detail.lines, query],
   );
   const [editing, setEditing] = useState(false);
+  // Something is typed in "My notes" now, ahead of the save: notes can be written from it alone.
+  // A boolean, so typing does not re-render the session on every key.
+  const [typedHere, setTypedHere] = useState(false);
+  const hints = sessionHints(props.keys ?? null, {
+    transcript: detail.lines.length > 0,
+    typed: typedHere || detail.annotations.trim() !== "",
+    noAudio: detail.summary.imported_from === "granola",
+  });
+  // "Gerar notas" and the buttons that write them again are off together.
+  const notesOff =
+    props.recording || props.generating || editing || hints.generate !== null;
   const [confirming, setConfirming] = useState(false);
   // Edited here: counts before the reload brings `notes_edited`.
   const [editedHere, setEditedHere] = useState(false);
@@ -214,6 +233,7 @@ export function MeetingView(props: MeetingViewProps) {
       initial={detail.annotations}
       label={draft ? t("meeting.view.agenda") : t("meeting.view.annotations")}
       labelHidden={!draft}
+      onTextChange={(text) => setTypedHere(text.trim() !== "")}
       slashMenu={(clear) => (
         <div
           role="group"
@@ -301,7 +321,7 @@ export function MeetingView(props: MeetingViewProps) {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={props.recording || editing}
+                disabled={props.recording || editing || hints.generate !== null}
                 onClick={generate}
               >
                 {t("meeting.view.retry")}
@@ -317,7 +337,7 @@ export function MeetingView(props: MeetingViewProps) {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={props.recording || props.generating || editing}
+                disabled={notesOff}
                 onClick={generate}
               >
                 {t("meeting.rename.generate")}
@@ -340,7 +360,7 @@ export function MeetingView(props: MeetingViewProps) {
               <Button
                 variant="danger"
                 size="sm"
-                disabled={props.recording || props.generating || editing}
+                disabled={notesOff}
                 onClick={() => {
                   setConfirming(false);
                   setEditedHere(false);
@@ -500,9 +520,11 @@ export function MeetingView(props: MeetingViewProps) {
         onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
         onRecordDraft={props.onRecordDraft}
         transcribing={props.transcribing}
+        transcribeHint={hints.transcribe ? t(hints.transcribe) : undefined}
         transcribeDisabled={
           props.recording ||
           props.transcribing ||
+          hints.transcribe !== null ||
           // Granola sends no audio: there is nothing to transcribe.
           detail.summary.imported_from === "granola"
         }
@@ -511,7 +533,8 @@ export function MeetingView(props: MeetingViewProps) {
         generateLabel={
           props.generating ? generatingLabel : t("meeting.view.generate")
         }
-        generateDisabled={props.recording || props.generating || editing}
+        generateDisabled={notesOff}
+        generateHint={hints.generate ? t(hints.generate) : undefined}
         onGenerate={generate}
         templateSelect={templateSelect}
         t={t}
