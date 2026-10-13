@@ -179,7 +179,7 @@ const panel = (s: MeetingStatus) =>
   assert.ok(first.includes("meeting.recorder.consentChip"), first);
   assert.ok(!panel(status({ recorded_ms: 5000 })).includes("consentChip"));
   assert.ok(first.includes("meeting.notice.copy"), first);
-  assert.ok(first.includes('<option value="um-a-um" selected="">'), first);
+  assert.match(first, /aria-haspopup="menu"[^>]*title="1:1"/, first);
   assert.ok(
     panel(status({ state: "idle", id: null })).includes("meeting.notice.copy"),
   );
@@ -244,7 +244,7 @@ const view = (d: MeetingDetail, over: Record<string, unknown> = {}) =>
   const draft = view(
     detail({ summary: { ...detail().summary, started_at: null } }),
   );
-  assert.ok(draft.includes('<option value="um-a-um" selected="">'), draft);
+  assert.match(draft, /aria-haspopup="menu"[^>]*title="1:1"/, draft);
   assert.match(
     viewSource,
     /if \(detail\.notes_md === null\) \{\s*void commands\.setMeetingTemplate\(detail\.summary\.id, id\);/,

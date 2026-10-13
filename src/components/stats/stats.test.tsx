@@ -14,6 +14,7 @@ import {
   averageWordsPerDay,
   budgetOf,
   budgetState,
+  barText,
   dayBars,
   fallbackShare,
   formatMs,
@@ -43,7 +44,13 @@ const lookup = (resources: Record<string, unknown>, key: string) =>
 const translator =
   (resources: Record<string, unknown>): Translate =>
   (key, options = {}) => {
-    const value = lookup(resources, key);
+    // i18next's plural keys: `count` picks `_one` or `_other`.
+    const plural =
+      typeof options.count === "number"
+        ? `${key}_${options.count === 1 ? "one" : "other"}`
+        : null;
+    const value =
+      (plural && lookup(resources, plural)) ?? lookup(resources, key);
     assert.equal(typeof value, "string", `chave sem texto: ${key}`);
     return (value as string).replace(/\{\{(\w+)\}\}/g, (_, name) =>
       String(options[name]),
@@ -238,8 +245,8 @@ ok("S6");
   assert.equal(dayBars([], 90, TODAY).length, 90);
   const html = view(stats());
   assert.equal([...html.matchAll(/role="img"/g)].length, 7);
-  assert.ok(html.includes('title="2026-10-11 · palavras: 934"'));
-  assert.ok(html.includes('title="2026-10-06 · palavras: 0"'));
+  assert.ok(html.includes('title="domingo, 11 de outubro: 934 palavras"'));
+  assert.ok(html.includes('title="terça-feira, 6 de outubro: 0 palavras"'));
   assert.match(html, /style="height:100%"/);
 }
 ok("S7");
@@ -302,9 +309,14 @@ ok("S9");
     "stats.markdown.title",
   ];
   assert.ok(keys.length > 15, `keys ${keys.length}`);
+  // A plural key exists as `_one` and `_other`.
+  const has = (locale: Record<string, unknown>, key: string) =>
+    typeof lookup(locale, key) === "string" ||
+    (typeof lookup(locale, `${key}_one`) === "string" &&
+      typeof lookup(locale, `${key}_other`) === "string");
   for (const key of keys) {
-    assert.equal(typeof lookup(pt, key), "string", `pt ${key}`);
-    assert.equal(typeof lookup(en, key), "string", `en ${key}`);
+    assert.ok(has(pt, key), `pt ${key}`);
+    assert.ok(has(en, key), `en ${key}`);
   }
   assert.equal(lookup(pt, "rail.stats"), "Desempenho");
   assert.equal(lookup(en, "rail.stats"), "Performance");
@@ -319,3 +331,50 @@ ok("S9");
   );
 }
 ok("S10");
+
+// QA Q30: the chart says which day each bar is and how many words it has, in the UI language:
+// every weekday and its words in a week, a date once a week counted back from today otherwise.
+{
+  const week = barText(dayBars(stats().per_day, 7, TODAY), 7, "pt");
+  assert.deepEqual(
+    week.map((b) => b.axis),
+    ["seg.", "ter.", "qua.", "qui.", "sex.", "sáb.", "dom."],
+  );
+  assert.deepEqual(
+    week.map((b) => b.value),
+    ["300", null, null, null, null, null, "934"],
+  );
+  assert.equal(week[6].date, "domingo, 11 de outubro");
+  const month = barText(dayBars([], 30, TODAY), 30, "en");
+  const shown = month.flatMap((b, i) => (b.axis ? [[i, b.axis]] : []));
+  assert.deepEqual(shown[shown.length - 1], [29, "Oct 11"]);
+  assert.deepEqual(shown[shown.length - 2], [22, "Oct 4"]);
+  assert.ok(
+    month.every((b) => b.value === null),
+    "no numbers on 30 bars",
+  );
+  const html = view(stats());
+  assert.match(html, />dom\.</);
+  assert.match(html, />934</);
+  assert.ok(!html.includes("2026-10-11"), "no ISO date on the page");
+  // An eighth, older day in a week keeps the weekday labels and the words.
+  const eight = barText(
+    dayBars([{ day: "2026-10-04", dictations: 1, words: 1 }], 7, TODAY),
+    7,
+    "pt",
+  );
+  assert.equal(eight.length, 8);
+  assert.ok(eight.every((b) => b.axis !== null));
+  assert.equal(eight[0].value, "1");
+  // One word in the singular; a day from another year carries its year.
+  assert.ok(
+    view({
+      ...stats(),
+      per_day: [{ day: "2026-10-11", dictations: 1, words: 1 }],
+    }).includes('title="domingo, 11 de outubro: 1 palavra"'),
+  );
+  const newYear = barText(dayBars([], 7, new Date(2027, 0, 2)), 7, "en");
+  assert.match(newYear[0].date, /2026/);
+  assert.doesNotMatch(newYear[6].date, /2027/);
+  ok("Q30");
+}

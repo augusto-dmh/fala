@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   MeetingMode,
@@ -9,6 +9,8 @@ import type {
 import { showsConsentChip } from "../../overlay/pillModel";
 import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
+import { Dropdown, type DropdownOption } from "../ui/Dropdown";
+import { SettingTitleContext } from "../ui/SettingContainer";
 import { Input } from "../ui/Input";
 import { clock, levelPercent } from "./meetingModel";
 import { shownTemplate, TemplateSelect } from "./TemplateSelect";
@@ -44,7 +46,7 @@ const STRIP =
   "flex flex-wrap items-center gap-2 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-caption";
 
 /** "Copy notice": a ready text for the call's chat, saying the meeting is being recorded. */
-export function CopyNoticeButton() {
+export function CopyNoticeButton({ size = "sm" }: { size?: "sm" | "md" }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -54,43 +56,51 @@ export function CopyNoticeButton() {
     setTimeout(() => setCopied(false), 3000);
   };
   return (
-    <Button variant="secondary" size="sm" onClick={() => void copy()}>
+    <Button variant="secondary" size={size} onClick={() => void copy()}>
       {copied ? t("meeting.notice.copied") : t("meeting.notice.copy")}
     </Button>
   );
 }
 
-/** "Meeting sound": the default output (named) or one of the outputs, remembered. */
-function OutputSelect({
-  outputs,
-  onChange,
-}: {
-  outputs: MeetingOutputs;
-  onChange: (name: string | null) => void;
-}) {
-  const { t } = useTranslation();
+/** The options of "Meeting sound": the default output (named), each output, and a remembered
+ *  one that is not plugged in now. The default is the empty value. */
+export function outputOptions(
+  outputs: MeetingOutputs,
+  defaultLabel: (name: string) => string,
+): DropdownOption[] {
   const fallback = outputs.devices.find((d) => d.is_default)?.name ?? "";
+  const options = [
+    { value: "", label: defaultLabel(fallback) },
+    ...outputs.devices.map((d) => ({ value: d.name, label: d.name })),
+  ];
+  if (
+    outputs.selected !== null &&
+    !outputs.devices.some((d) => d.name === outputs.selected)
+  ) {
+    options.push({ value: outputs.selected, label: outputs.selected });
+  }
+  return options;
+}
+
+/** A recorder choice: its name above the control, as in the rest of the app. The name labels
+ *  the control: a Dropdown through the settings title context, an input through `labelledBy`. */
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: (labelledBy: string) => ReactNode;
+}) {
+  const id = useId();
   return (
-    <select
-      aria-label={t("meeting.recorder.output")}
-      title={t("meeting.recorder.output")}
-      className="max-w-56 rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
-      value={outputs.selected ?? ""}
-      onChange={(event) => onChange(event.target.value || null)}
-    >
-      <option value="">
-        {t("meeting.recorder.outputDefault", { name: fallback })}
-      </option>
-      {outputs.devices.map((d) => (
-        <option key={d.name} value={d.name}>
-          {d.name}
-        </option>
-      ))}
-      {outputs.selected !== null &&
-        !outputs.devices.some((d) => d.name === outputs.selected) && (
-          <option value={outputs.selected}>{outputs.selected}</option>
-        )}
-    </select>
+    <div className="flex flex-col gap-1">
+      <span id={id} className="text-caption text-text-2">
+        {label}
+      </span>
+      <SettingTitleContext.Provider value={id}>
+        {children(id)}
+      </SettingTitleContext.Provider>
+    </div>
   );
 }
 
@@ -116,44 +126,64 @@ export function RecorderPanel(props: RecorderPanelProps) {
   const live = status.state === "recording" || status.state === "paused";
 
   if (!live) {
+    const outputs = props.outputs;
+    const modes: DropdownOption[] = [
+      { value: "meeting", label: t("meeting.recorder.online") },
+      { value: "in_person", label: t("meeting.recorder.inPerson") },
+      { value: "system_only", label: t("meeting.recorder.systemOnly") },
+    ];
     return (
-      <div className="flex flex-wrap items-center gap-2 p-4">
-        <select
-          aria-label={t("meeting.recorder.mode")}
-          className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
-          value={props.mode}
-          onChange={(event) =>
-            props.onModeChange(event.target.value as MeetingMode)
-          }
-        >
-          <option value="meeting">{t("meeting.recorder.online")}</option>
-          <option value="in_person">{t("meeting.recorder.inPerson")}</option>
-          <option value="system_only">
-            {t("meeting.recorder.systemOnly")}
-          </option>
-        </select>
-        {props.outputs && (
-          <OutputSelect
-            outputs={props.outputs}
-            onChange={props.onOutputChange}
-          />
-        )}
-        <Input
-          variant="compact"
-          value={props.title}
-          placeholder={t("meeting.recorder.titlePlaceholder")}
-          onChange={(event) => props.onTitleChange(event.target.value)}
-        />
-        <Button onClick={props.onStart} disabled={status.state === "stopping"}>
-          {t("meeting.recorder.start")}
-        </Button>
-        <Button variant="secondary" onClick={props.onNewDraft}>
-          {t("meeting.recorder.newDraft")}
-        </Button>
-        <CopyNoticeButton />
-        {status.state === "processing" && (
-          <span className="text-xs">{t("meeting.recorder.processing")}</span>
-        )}
+      <div className="flex flex-col gap-3 p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t("meeting.recorder.mode")}>
+            {() => (
+              <Dropdown
+                options={modes}
+                selectedValue={props.mode}
+                onSelect={(mode) => props.onModeChange(mode as MeetingMode)}
+              />
+            )}
+          </Field>
+          {outputs && (
+            <Field label={t("meeting.recorder.output")}>
+              {() => (
+                <Dropdown
+                  options={outputOptions(outputs, (name) =>
+                    t("meeting.recorder.outputDefault", { name }),
+                  )}
+                  selectedValue={outputs.selected ?? ""}
+                  onSelect={(name) => props.onOutputChange(name || null)}
+                />
+              )}
+            </Field>
+          )}
+        </div>
+        <Field label={t("meeting.recorder.title")}>
+          {(labelledBy) => (
+            <Input
+              variant="compact"
+              aria-labelledby={labelledBy}
+              value={props.title}
+              placeholder={t("meeting.recorder.titlePlaceholder")}
+              onChange={(event) => props.onTitleChange(event.target.value)}
+            />
+          )}
+        </Field>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={props.onStart}
+            disabled={status.state === "stopping"}
+          >
+            {t("meeting.recorder.start")}
+          </Button>
+          <Button variant="secondary" onClick={props.onNewDraft}>
+            {t("meeting.recorder.newDraft")}
+          </Button>
+          <CopyNoticeButton size="md" />
+          {status.state === "processing" && (
+            <span className="text-xs">{t("meeting.recorder.processing")}</span>
+          )}
+        </div>
       </div>
     );
   }

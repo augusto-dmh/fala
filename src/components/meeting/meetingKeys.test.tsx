@@ -113,6 +113,7 @@ const dialog = read("./ImportDialog.tsx");
       generateHint="falta a Anthropic"
       onGenerate={noop}
       templateSelect={null}
+      templateMenu={() => null}
       t={keyOnly}
     />,
   );

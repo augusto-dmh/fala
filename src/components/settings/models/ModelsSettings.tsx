@@ -12,6 +12,8 @@ import type { ModelCardStatus } from "./ModelCard";
 import ModelCard from "./ModelCard";
 import { SearchField } from "../../ui/SearchField";
 import { useModelStore } from "@/stores/modelStore";
+import { useSettings } from "@/hooks/useSettings";
+import { recommendedFor, splitByLanguage } from "./modelsModel";
 import {
   languageName,
   localizedLanguages,
@@ -43,6 +45,10 @@ export const ModelsSettings: React.FC = () => {
   const [languageSearch, setLanguageSearch] = useState("");
   const languageDropdownRef = useRef<HTMLDivElement>(null);
   const languageSearchInputRef = useRef<HTMLInputElement>(null);
+  // The dictation language: it decides "Recommended" and which downloads come first.
+  const { getSetting } = useSettings();
+  const asrLanguage = getSetting("selected_language");
+  const [showOther, setShowOther] = useState(false);
   const {
     models,
     currentModel,
@@ -235,6 +241,38 @@ export const ModelsSettings: React.FC = () => {
     };
   }, [filteredModels, downloadingModels, extractingModels, currentModel]);
 
+  // The language a "Recommended" badge is about: the filter's when one is on, else the
+  // dictation language.
+  const targetLanguage =
+    languageFilter === "all" ? asrLanguage : languageFilter;
+  // Only the plain list folds the other languages away: a search or a filter shows every match.
+  const narrowed =
+    languageFilter !== "all" ||
+    searchQuery.trim() !== "" ||
+    filterStreaming ||
+    filterTranslation;
+  const { fit: shownAvailable, other: hiddenAvailable } = useMemo(
+    () =>
+      narrowed
+        ? { fit: availableModels, other: [] }
+        : splitByLanguage(availableModels, asrLanguage),
+    [narrowed, availableModels, asrLanguage],
+  );
+  const availableCard = (model: ModelInfo) => (
+    <ModelCard
+      key={model.id}
+      model={model}
+      status={getModelStatus(model.id)}
+      onSelect={handleModelSelect}
+      onDownload={handleModelDownload}
+      onDelete={handleModelDelete}
+      onCancel={handleModelCancel}
+      downloadProgress={getDownloadProgress(model.id)}
+      downloadSpeed={getDownloadSpeed(model.id)}
+      showRecommended={recommendedFor(model, targetLanguage)}
+    />
+  );
+
   if (loading) {
     return (
       <div className="max-w-3xl w-full mx-auto">
@@ -426,26 +464,31 @@ export const ModelsSettings: React.FC = () => {
           ))}
         </div>
 
-        {/* Available Models Section */}
+        {/* Available Models Section: the ones for the dictation language first; with no
+            language filter, the rest waits behind "Other models". */}
         {availableModels.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-sm font-medium text-text/60">
               {t("settings.models.availableModels")}
             </h2>
-            {availableModels.map((model: ModelInfo) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                status={getModelStatus(model.id)}
-                onSelect={handleModelSelect}
-                onDownload={handleModelDownload}
-                onDelete={handleModelDelete}
-                onCancel={handleModelCancel}
-                downloadProgress={getDownloadProgress(model.id)}
-                downloadSpeed={getDownloadSpeed(model.id)}
-                showRecommended={true}
-              />
-            ))}
+            {shownAvailable.map(availableCard)}
+            {hiddenAvailable.length > 0 && (
+              <button
+                type="button"
+                aria-expanded={showOther}
+                onClick={() => setShowOther((open) => !open)}
+                className="flex items-center gap-1 text-sm text-text/60 hover:text-text"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${showOther ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+                {t("settings.models.otherModels", {
+                  count: hiddenAvailable.length,
+                })}
+              </button>
+            )}
+            {showOther && hiddenAvailable.map(availableCard)}
           </div>
         )}
         {filteredModels.length === 0 && (

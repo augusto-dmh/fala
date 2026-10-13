@@ -13,7 +13,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
 import { SearchField } from "../ui/SearchField";
 import { AnnotationsField } from "./AnnotationsField";
-import { DeleteConfirm } from "./DeleteMeeting";
+import { DeleteConfirm, trashNeedsConfirm } from "./DeleteMeeting";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { NotesEditor } from "./NotesEditor";
@@ -26,7 +26,7 @@ import {
 import { NotesView } from "./NotesView";
 import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
-import { shownTemplate, TemplateSelect } from "./TemplateSelect";
+import { shownTemplate, TemplateMenu, TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
 import { SessionBar, type LiveControls } from "./SessionBar";
 import { searchLines, transcriptText } from "./transcriptSearch";
@@ -48,8 +48,9 @@ export interface MeetingViewProps {
   onCopy: () => void;
   /** A name or the title changed, or the notes were edited: reload the session. */
   onNamesChanged?: () => void;
+  /** "Move to trash", after the confirmation when there is audio to lose. */
   onDelete?: () => void;
-  /** Recording, transcribing or writing notes: nothing to delete yet. */
+  /** Recording, transcribing or writing notes: nothing to move yet. */
   deleteDisabled?: boolean;
   /** This session's recording: the bar's pause and stop, or the processing line. */
   live?: LiveControls | null;
@@ -193,6 +194,7 @@ export function MeetingView(props: MeetingViewProps) {
   };
   const templateSelect = (
     <TemplateSelect
+      placement="up"
       templates={props.templates}
       value={picked}
       onChange={pickTemplate}
@@ -279,7 +281,11 @@ export function MeetingView(props: MeetingViewProps) {
               void copyToClipboard(transcriptText(detail.lines, t))
             }
             onPeople={() => setShowPeople(true)}
-            onDelete={() => setDeleting(true)}
+            onDelete={() => {
+              // Without audio, the toast's [Undo] is enough.
+              if (trashNeedsConfirm(detail)) setDeleting(true);
+              else props.onDelete?.();
+            }}
             t={t}
           />
         </div>
@@ -300,6 +306,7 @@ export function MeetingView(props: MeetingViewProps) {
             props.onDelete?.();
           }}
           onCancel={() => setDeleting(false)}
+          kind="trash"
           t={t}
         />
       )}
@@ -545,6 +552,14 @@ export function MeetingView(props: MeetingViewProps) {
         generateHint={hints.generate ? t(hints.generate) : undefined}
         onGenerate={generate}
         templateSelect={templateSelect}
+        templateMenu={(close) => (
+          <TemplateMenu
+            templates={props.templates}
+            value={picked}
+            onChange={pickTemplate}
+            onPicked={close}
+          />
+        )}
         t={t}
       />
     </div>
