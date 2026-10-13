@@ -14,7 +14,7 @@ Windows 11 (Alienware), Bun 1.4.2. Uma linha por check, na fatia que o prova.
 | C9 | `screen.test.tsx`: C9 ok (participantes só pelo "⋯", sugestões sempre; apagar desligado enquanto o pipeline escreve as notas); `meeting.test.tsx`: os quatro itens do menu, copiar transcrição só com transcrição, apagar desligado ocupado; `lifecycle.test.tsx`: a confirmação de apagar |
 | C10 | `bun src/components/meeting/bar.test.tsx`: C10 ok (barra `role="toolbar"`; gravando, 12:34, pausar/retomar e parar; parando, só a linha de processamento; rascunho, gravar e o template, sem onda; depois, transcrever, cancelar só transcrevendo, gerar com o template atrás da seta; onda com `aria-pressed`) |
 | C11 | `bar.test.tsx`: C11 ok (folha `hidden` até abrir, a fonte de uma nota a abre e rola, Esc fecha, folha em z-30 sob a barra em z-40; `RecorderPanel` sem controles na reunião, com o aviso e duas faixas âmbar para canal mudo e disco); `notesPolish.test.tsx`: as três entradas de gerar passam pela mesma regra |
-| C12 | `bun src/components/onboarding/onboarding.test.tsx`: 15 checks ok, C22 novo (duas barras `role="meter"`, aviso e "Entendi", dois campos de chave, pular e concluir; `setMeetingNotesKey`, consentimento só no clique, o teste para ao sair e nada abre na prévia), C1 e C8 com os quatro passos; `cargo test -p fala --lib meeting::`: 41 ok, 2 novos (`rms` do silêncio e de uma onda quadrada; `stop` sem teste e com um rodando); `cargo clippy -p fala --all-targets -D warnings` limpo; `src/bindings.ts` regerado pelo `fala.exe --list-devices` portátil (3 comandos e o evento `MeetingSoundLevel`) |
+| C12 | `bun src/components/onboarding/onboarding.test.tsx`: 15 checks ok, C22 novo (duas barras `role="meter"`, aviso e "Entendi" lido do ajuste, dois campos de chave, pular e concluir; `setMeetingNotesKey`, erro visível quando o comando lança, um início por vez, o botão volta quando o teste para sozinho, o teste para ao sair e nada abre na prévia), C1 e C8 com os quatro passos; `cargo test -p fala --lib meeting::`: 45 ok, 2 do `sound_check` (`rms`; um parar chega ao teste que ainda abre a saída e um teste novo para o anterior); `src/bindings.ts` regerado pelo `fala.exe --list-devices` portátil, igual ao do commit |
 | C6 | `bun run check:translations` ok; `bun run lint` limpo; `bunx tsc --noEmit` limpo; `bun run format:check` limpo |
 
 Not tested:
@@ -42,3 +42,9 @@ mesmo template não limpava (viraram botões fora do rótulo); a faixa de grava�
 título renomeado; apagar liberado com as notas do pipeline rodando; a duração parada enquanto
 grava; `useDismiss` mudou para `src/hooks`. Na fatia 4: a folha cobria Parar e não fechava no
 Esc; dois seletores de template enquanto grava.
+
+Revisão da fatia 5: `/code-review high` achou 10 pontos; 9 corrigidos (corrida de parar/iniciar
+enquanto a saída abre, clique duplo, início bloqueando um worker async, fim silencioso depois de
+1 min, aviso já aceito pedido de novo e aceito mesmo com falha, erro de IPC engolido nas chaves,
+setter de chave duplicado, comentário da prévia, comentários de "três passos"). Ficou o RMS em
+duas linhas repetido entre o gravador e o teste de som.

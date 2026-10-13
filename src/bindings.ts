@@ -1614,6 +1614,17 @@ async changeMeetingCapSetting(hours: number) : Promise<Result<null, string>> {
 }
 },
 /**
+ * "Keep the PC awake while recording"; the next recording uses it.
+ */
+async changeMeetingKeepAwakeSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_keep_awake_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The card the prompt window should show now, for a window that just loaded.
  */
 async callPromptCurrent() : Promise<CallPromptPayload | null> {
@@ -1834,7 +1845,11 @@ meeting_audio_retention_days?: number | null;
 /**
  * The recording cap of a meeting in hours, 1 to 8.
  */
-meeting_cap_hours?: number }
+meeting_cap_hours?: number; 
+/**
+ * The PC does not sleep for inactivity while a meeting records; the display still may.
+ */
+meeting_keep_awake?: boolean }
 /**
  * An app, as `fala_inject::app_name_from_exe_path` names it, and the id of its style.
  */

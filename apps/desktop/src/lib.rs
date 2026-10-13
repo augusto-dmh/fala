@@ -26,6 +26,7 @@ mod memory;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod power;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -945,6 +946,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::recover_meeting,
             commands::meeting::change_meeting_retention_setting,
             commands::meeting::change_meeting_cap_setting,
+            commands::meeting::change_meeting_keep_awake_setting,
             call_prompt::call_prompt_current,
             call_prompt::answer_call_prompt,
             call_prompt::call_prompt_apps,
