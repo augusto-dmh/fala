@@ -20,6 +20,7 @@ pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
 pub(crate) mod recovery;
+pub(crate) mod search;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -46,6 +47,9 @@ use recorder::{Control, Report};
 /// The working WAV inside `audio/<id>/`; `fala-retention` turns it into `mic.opus` and
 /// `sys.opus` and deletes it once both validate (ADR-0014).
 pub(crate) const WORK_WAV: &str = "recording.wav";
+
+/// Event with the id of a session deleted outside the Meetings page (a card's [Discard]).
+pub(crate) const DELETED_EVENT: &str = "meeting-deleted";
 
 /// Event the tray emits when "Record meeting" is clicked before the third-party notice was
 /// accepted: the window opens on the Meetings page with the notice instead of recording.
@@ -376,6 +380,10 @@ struct Active {
     last_tick: Duration,
     /// Loudest level of each channel since the last `Tick`.
     tick_levels: Levels,
+    /// Recorded time with speech (`lifecycle::SPEECH_RMS`), for "Recorded by mistake?".
+    voiced: Duration,
+    /// The capture ended on a device or disk error, not on a stop.
+    capture_failed: bool,
 }
 
 #[derive(Default)]
@@ -632,6 +640,8 @@ impl MeetingManager {
             route: output::Route::new(mode.session_mode(), &system),
             last_tick: Duration::ZERO,
             tick_levels: Levels::default(),
+            voiced: Duration::ZERO,
+            capture_failed: false,
         });
         inner.status = MeetingStatus {
             low_disk_bytes: low_disk,
@@ -642,7 +652,9 @@ impl MeetingManager {
     }
 
     pub fn pause(&self) -> Result<MeetingStatus, MeetingError> {
-        self.act(UserAction::PauseRecording)
+        let status = self.act(UserAction::PauseRecording)?;
+        crate::call_prompt::hide_still_recording(&self.app);
+        Ok(status)
     }
 
     /// "Resume": the only place a paused capture records again (ADR-0005).
@@ -652,6 +664,21 @@ impl MeetingManager {
 
     pub fn stop(&self) -> Result<MeetingStatus, MeetingError> {
         self.act(UserAction::StopRecording)
+    }
+
+    /// "Keep recording" on "Still recording?": the silence counts from zero again.
+    pub fn keep_recording(&self) -> Result<MeetingStatus, MeetingError> {
+        self.act(UserAction::KeepRecording)
+    }
+
+    /// The "Still recording?" card is on screen: only now may silence stop the recording.
+    pub(crate) fn silence_warning_shown(&self) {
+        let mut inner = self.lock();
+        if let Some(active) = inner.active.as_mut() {
+            let _ = active
+                .session
+                .apply(millis(now_local()), Input::SilenceWarningShown);
+        }
     }
 
     /// "One more hour" on the cap warning.
@@ -752,8 +779,12 @@ impl MeetingManager {
                 active.tick_levels.system = active.tick_levels.system.max(system);
                 let mut effects = Vec::new();
                 if recorded >= active.last_tick + Duration::from_secs(1) {
+                    let elapsed = recorded - active.last_tick;
                     active.last_tick = recorded;
                     let levels = std::mem::take(&mut active.tick_levels);
+                    if levels.mic.max(levels.system) >= lifecycle::SPEECH_RMS {
+                        active.voiced += elapsed;
+                    }
                     match active
                         .session
                         .apply(millis(now_local()), Input::Tick { recorded, levels })
@@ -783,6 +814,7 @@ impl MeetingManager {
             Report::Finalized { recorded, error } => {
                 if let Some(e) = error {
                     log::error!("meeting capture failed: {e}");
+                    active.capture_failed = true;
                 }
                 let now = millis(now_local());
                 if matches!(
@@ -841,6 +873,9 @@ impl MeetingManager {
                     inner.status.cap_remaining_ms =
                         Some(u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX));
                 }
+                Effect::SilenceWarning { remaining } => {
+                    crate::call_prompt::show_still_recording(&self.app, remaining)
+                }
                 Effect::Process => self.process(inner),
                 // Starting is done by `start`; suspension is not detected yet (TODO(windows)).
                 Effect::StartCapture | Effect::AskContinueOrStop => {
@@ -866,15 +901,25 @@ impl MeetingManager {
         let id = active.session.id();
         let reason = stop_reason(active.session.state());
         let recorded_ms = inner.status.recorded_ms;
+        let voiced_ms = u64::try_from(active.voiced.as_millis()).unwrap_or(u64::MAX);
+        // Only a stop the person clicked, or silence, may look like a mistake; never the cap or a
+        // device that failed.
+        let may_be_mistake =
+            !active.capture_failed && matches!(reason, StopReason::User | StopReason::Silence);
         inner.processing.push(id);
+        crate::call_prompt::hide_still_recording(&self.app);
+        if reason == StopReason::Silence && voiced_ms >= lifecycle::LITTLE_SPEECH_MS {
+            crate::call_prompt::show_silence_stopped(&self.app);
+        }
         let app = self.app.clone();
         let dir = self.session_dir(id);
-        log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms)");
+        log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms, {voiced_ms} ms of speech)");
         let spawned = std::thread::Builder::new()
             .name("meeting-process".to_string())
             .spawn(move || {
                 if let Some(manager) = app.try_state::<Arc<MeetingManager>>() {
-                    manager.finish(id, reason, recorded_ms, &dir);
+                    let voiced_ms = may_be_mistake.then_some(voiced_ms);
+                    manager.finish(id, reason, recorded_ms, voiced_ms, &dir);
                 }
             });
         if let Err(e) = spawned {
@@ -883,7 +928,15 @@ impl MeetingManager {
         }
     }
 
-    fn finish(&self, id: SessionId, reason: StopReason, recorded_ms: u64, dir: &Path) {
+    fn finish(
+        &self,
+        id: SessionId,
+        reason: StopReason,
+        recorded_ms: u64,
+        // `None` when the stop cannot be a mistake (cap, failed capture).
+        voiced_ms: Option<u64>,
+        dir: &Path,
+    ) {
         if let Err(e) = self
             .with_store(|store| Ok(store.finish_meeting(id, now_local(), recorded_ms, reason)?))
         {
@@ -902,6 +955,11 @@ impl MeetingManager {
             let mut inner = self.lock();
             inner.processing.retain(|p| *p != id);
             self.publish(&mut inner);
+        }
+        if let Some(voiced_ms) = voiced_ms {
+            if self.handle_mistake(id, recorded_ms, voiced_ms) {
+                return;
+            }
         }
         let lines = self.transcribe_if_keyed(id);
         if self.quit_if_asked(id) {
@@ -924,9 +982,9 @@ impl MeetingManager {
         quit
     }
 
-    /// With the key in the keyring, the transcript follows a stop, an import or a recovery
-    /// without another click.
-    fn transcribe_if_keyed(&self, id: SessionId) -> Option<Vec<pipeline::MeetingLine>> {
+    /// With the key in the keyring, the transcript follows a stop, an import, a recovery or a
+    /// "Keep" without another click.
+    pub(crate) fn transcribe_if_keyed(&self, id: SessionId) -> Option<Vec<pipeline::MeetingLine>> {
         if !pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
             return None;
         }

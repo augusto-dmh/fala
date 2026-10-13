@@ -120,7 +120,7 @@ pub(crate) fn mode_str(mode: SessionMode) -> &'static str {
     }
 }
 
-fn parse_mode(s: &str) -> Option<SessionMode> {
+pub(crate) fn parse_mode(s: &str) -> Option<SessionMode> {
     Some(match s {
         "meeting" => SessionMode::Meeting,
         "in_person" => SessionMode::InPerson,
@@ -138,7 +138,7 @@ pub(crate) fn reason_str(reason: StopReason) -> &'static str {
     }
 }
 
-fn parse_reason(s: &str) -> Option<StopReason> {
+pub(crate) fn parse_reason(s: &str) -> Option<StopReason> {
     Some(match s {
         "user" => StopReason::User,
         "silence" => StopReason::Silence,
@@ -225,7 +225,7 @@ fn read_segment(row: &Row<'_>) -> rusqlite::Result<MeetingSegment> {
     })
 }
 
-fn ms(value: u64) -> i64 {
+pub(crate) fn ms(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
 
@@ -245,7 +245,7 @@ impl Store {
             ],
         )?;
         log::debug!("reunião {} criada como rascunho", meeting.id);
-        self.mirror_meeting(meeting.id);
+        self.after_meeting_change(meeting.id);
         Ok(())
     }
 
@@ -272,7 +272,7 @@ impl Store {
             self.meeting(id)?;
             return Err(StorageError::MeetingAlreadyStarted(id.to_string()));
         }
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 
@@ -297,7 +297,7 @@ impl Store {
             params![id.to_string(), title],
         )?;
         if changed > 0 {
-            self.mirror_meeting(id);
+            self.after_meeting_change(id);
         }
         Ok(changed > 0)
     }
@@ -390,6 +390,7 @@ impl Store {
         if tx.execute("DELETE FROM meetings WHERE id = ?1", [id.to_string()])? == 0 {
             return Err(StorageError::NotFound(id.to_string()));
         }
+        crate::meeting_search::refresh(&tx, id)?;
         self.remove_meeting_mirror(id, file)?;
         tx.commit()?;
         log::debug!("reunião {id} apagada");
@@ -418,7 +419,7 @@ impl Store {
             params![id.to_string(), template],
         )?;
         if changed > 0 {
-            self.mirror_meeting(id);
+            self.after_meeting_change(id);
         }
         Ok(changed > 0)
     }
@@ -443,7 +444,7 @@ impl Store {
             [id.to_string()],
         )?;
         tx.commit()?;
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 
@@ -493,7 +494,7 @@ impl Store {
         }
         tx.commit()?;
         log::debug!("reunião {id}: {} trechos gravados", segments.len());
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 
@@ -518,7 +519,7 @@ impl Store {
         if self.conn.execute(sql, params)? == 0 {
             return Err(StorageError::NotFound(id.to_string()));
         }
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 }
