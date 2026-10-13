@@ -13,6 +13,7 @@
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
+pub(crate) mod granola;
 pub(crate) mod import;
 pub(crate) mod lifecycle;
 pub(crate) mod output;
@@ -405,7 +406,7 @@ pub struct MeetingManager {
     work: Mutex<pipeline::Work>,
     /// Held for the whole WAV → Opus conversion, and while audio is deleted.
     retaining: Mutex<()>,
-    /// The import in flight, one at a time.
+    /// The import in flight (a file, a URL or a Granola export), one at a time.
     importing: Mutex<Option<fala_media::CancelToken>>,
     /// Recordings the last run left without an end, found at startup (`recovery`).
     orphans: Mutex<Vec<SessionId>>,

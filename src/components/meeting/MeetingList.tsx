@@ -42,9 +42,11 @@ export function MeetingList({
               {when(session.started_at ?? session.created_at)}
             </span>
             <span className="ms-2 text-xs">
-              {session.started_at === null
-                ? t("meeting.list.draft")
-                : clock(session.recorded_ms)}
+              {session.imported_from === "granola"
+                ? t("meeting.list.granola")
+                : session.started_at === null
+                  ? t("meeting.list.draft")
+                  : clock(session.recorded_ms)}
             </span>
             {session.transcribed && (
               <span className="ms-2 text-xs">
