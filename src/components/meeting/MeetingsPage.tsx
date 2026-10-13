@@ -36,8 +36,10 @@ import {
   errorDetail,
   errorKey,
   takeConsentRequest,
+  missingKeyMessage,
   takeOpenMeetingRequest,
   titleOf,
+  type KeyStep,
 } from "./meetingModel";
 
 const IDLE: MeetingStatus = {
@@ -97,7 +99,24 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const lastStage = useRef(new Map<string, string>());
   // Sessions whose last transcription or notes run failed: the red dot in the list.
   const [failed, setFailed] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<MeetingError | string | null>(null);
+  // The last error with the step that raised it, so a missing key names the key that step
+  // needs. One state: any other error replaces the step too.
+  const [shown, setShown] = useState<{
+    error: MeetingError | string | null;
+    step: KeyStep | null;
+  }>({ error: null, step: null });
+  const error = shown.error;
+  const setError = useCallback(
+    (failure: MeetingError | string | null) =>
+      setShown({ error: failure, step: null }),
+    [],
+  );
+  // The session on screen, read by runs that end after the person left it.
+  const selectedRef = useRef<string | null>(null);
+  // A transcription or notes run's error, shown only while its session is still the one open.
+  const fail = (id: string, failure: MeetingError | string, step: KeyStep) => {
+    if (selectedRef.current === id) setShown({ error: failure, step });
+  };
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
   const [query, setQuery] = useState("");
   // The last search's hits; `null` while the box is empty.
@@ -122,6 +141,12 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     if (result.status === "ok") setSelected(result.data);
     else setError(result.error);
   }, []);
+  // Another meeting (or the list) does not carry the last one's error.
+  const selectedId = selected?.summary.id ?? null;
+  useEffect(() => {
+    selectedRef.current = selectedId;
+    setError(null);
+  }, [selectedId, setError]);
 
   // Opening a session replaces the list, so a reload after a run only refreshes the session
   // still on screen and never brings back one the person left. `orHome`: also open it on the
@@ -293,7 +318,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     setTranscribing(id);
     const result = await commands.transcribeMeeting(id);
     setTranscribing(null);
-    if (result.status === "error") setError(result.error);
+    if (result.status === "error") fail(id, result.error, "transcribe");
     await reload(id);
     await refresh();
   };
@@ -311,7 +336,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       replaceEdited,
     );
     setGenerating((current) => (current === id ? null : current));
-    if (result.status === "error") setError(result.error);
+    if (result.status === "error") fail(id, result.error, "notes");
     await reload(id);
     await refresh();
   };
@@ -440,6 +465,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     />
   );
   // On the home and on a session alike: the notice, a recording to recover, the last error.
+  const missingKey = missingKeyMessage(error, shown.step);
   const banners = (
     <>
       {askConsent && (
@@ -459,30 +485,45 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
         t={t}
       />
       {error !== null && (
-        <p role="alert" className="text-body text-danger">
-          {t(errorKey(error), { detail: errorDetail(error) })}
+        <p
+          role="alert"
+          className="flex flex-wrap items-center gap-2 text-body text-danger"
+        >
+          {missingKey === null ? (
+            <span>{t(errorKey(error), { detail: errorDetail(error) })}</span>
+          ) : (
+            <span>{t(missingKey)}</span>
+          )}
+          {missingKey && onOpenSettings && (
+            <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+              {t("meeting.keys.add")}
+            </Button>
+          )}
         </p>
       )}
     </>
   );
 
-  // The Granola import, first in both the list and the session: React keeps it mounted (and its
-  // preview or progress) when a meeting opens or closes.
+  // The Granola import in a card under the actions, in both the list and the session. Its key
+  // lets React keep it mounted (and its preview or progress) when a meeting opens or closes.
   const granola = granolaPath !== null && (
-    <GranolaImport
-      key={granolaPath}
-      path={granolaPath}
-      onImported={() => void refresh()}
-      onClose={() => setGranolaPath(null)}
-    />
+    <div
+      key={`granola-${granolaPath}`}
+      className="rounded-lg border border-border bg-surface-1 p-4 text-sm"
+    >
+      <GranolaImport
+        path={granolaPath}
+        onImported={() => void refresh()}
+        onClose={() => setGranolaPath(null)}
+      />
+    </div>
   );
 
   if (selected) {
     // Recording, stopping or processing: the backend keeps the id until the pipeline takes over.
     const recordingThis = status.id === selected.summary.id;
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-4">
-        {granola}
+      <div className="w-full space-y-4">
         <button
           type="button"
           onClick={() => setSelected(null)}
@@ -497,6 +538,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           {t("meeting.list.title")}
         </button>
         {banners}
+        {granola}
         {importing && (
           <ImportDialog
             importing={importing}
@@ -543,6 +585,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
                   }
                 : null
             }
+            keys={keys}
             deleteDisabled={
               recordingThis ||
               transcribing === selected.summary.id ||
@@ -557,8 +600,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4">
-      {granola}
+    <div className="w-full space-y-4">
       <PageHeader
         title={t("meeting.list.title")}
         actions={
@@ -591,6 +633,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           />
         )}
       </div>
+      {granola}
       {keys && !keys.elevenlabs && (
         <p className="flex flex-wrap items-center gap-2 text-caption text-text-2">
           {t("meeting.home.noKey")}

@@ -89,6 +89,9 @@ pub struct ShortcutBinding {
     pub description: String,
     pub default_binding: String,
     pub current_binding: String,
+    /// A second combination for the same action; empty is none. Never set on `cancel`.
+    #[serde(default)]
+    pub alternate_binding: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
@@ -1174,6 +1177,7 @@ pub fn get_default_settings() -> AppSettings {
             description: "Converts your speech into text.".to_string(),
             default_binding: default_shortcut.to_string(),
             current_binding: default_shortcut.to_string(),
+            alternate_binding: String::new(),
         },
     );
     // The dictation LLM is automatic on `transcribe`, so the legacy post-processing
@@ -1187,6 +1191,7 @@ pub fn get_default_settings() -> AppSettings {
                 .to_string(),
             default_binding: String::new(),
             current_binding: String::new(),
+            alternate_binding: String::new(),
         },
     );
     bindings.insert(
@@ -1197,10 +1202,11 @@ pub fn get_default_settings() -> AppSettings {
             description: "Cancels the current recording.".to_string(),
             default_binding: "escape".to_string(),
             current_binding: "escape".to_string(),
+            alternate_binding: String::new(),
         },
     );
-    // Paste and copy the last dictation: no key until the user picks one, so they never
-    // collide with another app's shortcut.
+    // Paste and copy the last dictation, and record or stop a meeting: no key until the user
+    // picks one, so they never collide with another app's shortcut.
     for (id, name, description) in [
         (
             "paste_last",
@@ -1212,6 +1218,11 @@ pub fn get_default_settings() -> AppSettings {
             "Copy Last Dictation",
             "Copies the last dictation to the clipboard.",
         ),
+        (
+            "meeting_toggle",
+            "Record or Stop Meeting",
+            "Starts a new meeting or stops the one recording.",
+        ),
     ] {
         bindings.insert(
             id.to_string(),
@@ -1221,6 +1232,7 @@ pub fn get_default_settings() -> AppSettings {
                 description: description.to_string(),
                 default_binding: String::new(),
                 current_binding: String::new(),
+                alternate_binding: String::new(),
             },
         );
     }
@@ -2289,6 +2301,29 @@ mod tests {
             settings.bindings["paste_last"].current_binding,
             "alt+shift+z"
         );
+    }
+
+    #[test]
+    fn old_store_loads_without_second_keys_and_gets_the_meeting_shortcut() {
+        let mut settings = migrated(schema_2_store("alt+p"));
+        assert!(settings
+            .bindings
+            .values()
+            .all(|b| b.alternate_binding.is_empty()));
+        assert!(add_missing_bindings(&mut settings));
+        let meeting = &settings.bindings["meeting_toggle"];
+        assert_eq!(meeting.current_binding, "");
+        assert_eq!(meeting.default_binding, "");
+        assert_eq!(meeting.alternate_binding, "");
+        // A second key survives a save and a load.
+        settings
+            .bindings
+            .get_mut("transcribe")
+            .unwrap()
+            .alternate_binding = "f9".into();
+        let raw = serde_json::to_value(&settings).expect("settings serialize");
+        let again: AppSettings = serde_json::from_value(raw).expect("settings parse");
+        assert_eq!(again.bindings["transcribe"].alternate_binding, "f9");
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ImportSource, ProgressStage } from "@/bindings";
@@ -81,34 +82,50 @@ export function ImportDialog(props: ImportDialogProps) {
     }
   };
 
+  // The URL gets its own line and Close is the ✕ in the corner: at 900 px the old single row
+  // pushed "Close" alone onto a second line and cut the URL placeholder.
   return (
-    <div className="flex basis-full flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-1 p-4 text-sm">
-      <Button onClick={() => void chooseFile()}>
-        {t("meeting.import.file")}
-      </Button>
-      <Input
-        variant="compact"
-        type="url"
-        value={url}
-        placeholder={t("meeting.import.urlPlaceholder")}
-        onChange={(event) => setUrl(event.target.value)}
-      />
+    <div className="relative basis-full space-y-3 rounded-lg border border-border bg-surface-1 p-4 pe-12 text-sm">
       <Button
-        disabled={!isHttpUrl(url)}
-        onClick={() => {
-          props.onImport({ kind: "url", value: url.trim() });
-          setUrl("");
-        }}
+        variant="ghost"
+        size="sm"
+        className="absolute end-2 top-2 px-1.5"
+        aria-label={t("meeting.import.close")}
+        title={t("meeting.import.close")}
+        onClick={() => setExpanded(false)}
       >
-        {t("meeting.import.url")}
+        <X size={16} strokeWidth={1.5} aria-hidden="true" />
       </Button>
-      <Button variant="secondary" onClick={() => void chooseGranola()}>
-        {t("meeting.import.granola")}
-      </Button>
-      <Button variant="secondary" onClick={() => setExpanded(false)}>
-        {t("meeting.import.close")}
-      </Button>
-      <p className="w-full text-xs text-mid-gray">{t("meeting.import.hint")}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => void chooseFile()}>
+          {t("meeting.import.file")}
+        </Button>
+        <Button variant="secondary" onClick={() => void chooseGranola()}>
+          {t("meeting.import.granola")}
+        </Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          variant="compact"
+          type="url"
+          className="min-w-0 flex-1"
+          value={url}
+          placeholder={t("meeting.import.urlPlaceholder")}
+          aria-label={t("meeting.import.urlPlaceholder")}
+          onChange={(event) => setUrl(event.target.value)}
+        />
+        <Button
+          className="shrink-0"
+          disabled={!isHttpUrl(url)}
+          onClick={() => {
+            props.onImport({ kind: "url", value: url.trim() });
+            setUrl("");
+          }}
+        >
+          {t("meeting.import.url")}
+        </Button>
+      </div>
+      <p className="text-caption text-text-2">{t("meeting.import.hint")}</p>
     </div>
   );
 }

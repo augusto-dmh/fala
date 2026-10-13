@@ -305,6 +305,7 @@
     },
     "general": {
       "title": "General",
+      "app": "App",
       "shortcut": {
         "title": "Fala Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
@@ -1136,6 +1137,14 @@
     "dismiss": "Dismiss"
   },
   "meeting": {
+    "keys": {
+      "missingElevenlabs": "The ElevenLabs key is missing: meetings are transcribed with it.",
+      "missingAnthropic": "The Anthropic key is missing: notes are written with it.",
+      "add": "Add key",
+      "transcribeNeedsKey": "Add the ElevenLabs key in Settings to transcribe.",
+      "notesNeedKey": "Add the Anthropic key in Settings to write notes.",
+      "notesNeedContent": "Transcribe the meeting or type notes first."
+    },
     "title": "Meeting",
     "untitled": "Meeting on {{date}}",
     "consent": {
@@ -1210,6 +1219,8 @@
       "cancel": "Cancel",
       "done": "Meetings imported: {{created}} new and {{updated}} updated. Rows skipped: {{rejected}}.",
       "close": "Close",
+      "importedOn": "Imported from Granola on {{date}}.",
+      "noAudio": "Imported from Granola: the transcript has no audio or times.",
       "noAnchors": "No anchors: imported from Granola.",
       "errors": {
         "empty": "This file is empty.",

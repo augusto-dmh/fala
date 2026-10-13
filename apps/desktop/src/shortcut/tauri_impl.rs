@@ -30,12 +30,10 @@ pub fn init_shortcuts(app: &AppHandle) {
             .get(&id)
             .cloned()
             .unwrap_or(default_binding);
-        if super::binding_is_unset(&binding) {
-            continue;
-        }
-
-        if let Err(e) = register_shortcut(app, binding) {
-            error!("Failed to register shortcut {} during init: {}", id, e);
+        for registered in super::registrations(&binding) {
+            if let Err(e) = register_shortcut(app, registered) {
+                error!("Failed to register shortcut {} during init: {}", id, e);
+            }
         }
     }
 }

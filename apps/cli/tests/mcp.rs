@@ -1658,6 +1658,36 @@ fn deleted_meeting_disappears_mid_session() {
 }
 
 #[test]
+fn trashed_meeting_is_not_found_anywhere() {
+    let data = Data::with_meetings("meetings-trashed");
+    let m = meetings(&data);
+    data.store()
+        .trash_meeting(m.second.parse().unwrap(), at(40))
+        .unwrap();
+    let mut s = data.session();
+    assert_eq!(items(&s.ok("list_meetings", json!({}))), [m.first.as_str()]);
+    for (tool, args) in [
+        ("get_meeting", json!({ "id": m.second })),
+        ("get_transcript_segment", json!({ "meeting_id": m.second })),
+    ] {
+        let response = s.call(tool, args);
+        assert_eq!(
+            tool_text(&response),
+            format!("meeting not found: {}", m.second),
+            "{tool}"
+        );
+    }
+    let list = s.request("resources/list", json!({}));
+    assert_eq!(meeting_uris(&list), [format!("fala://meeting/{}", m.first)]);
+    let read = s.request(
+        "resources/read",
+        json!({ "uri": format!("fala://meeting/{}", m.second) }),
+    );
+    assert_eq!(read["error"]["code"], json!(INVALID_PARAMS), "{read}");
+    s.finish();
+}
+
+#[test]
 fn meeting_storage_failure_is_opaque_error() {
     let data = Data::with_meetings("meetings-storage-failure");
     let m = meetings(&data);

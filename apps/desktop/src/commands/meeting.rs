@@ -8,6 +8,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::meeting::granola::{GranolaImportError, GranolaImported, GranolaPreview};
 use crate::meeting::import::ImportSource;
+use crate::meeting::lifecycle::TrashedMeetingSummary;
 use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
     templates, templates_dir, MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary,
@@ -461,7 +462,7 @@ pub async fn recover_meeting(meetings: Meetings<'_>, id: String) -> Result<(), M
         .map_err(|e| MeetingError::Storage(e.to_string()))?
 }
 
-/// "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+/// "Delete forever" after its confirmation: audio, transcript and notes, for good (ADR-0005).
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
@@ -469,6 +470,34 @@ pub async fn delete_meeting(meetings: Meetings<'_>, id: String) -> Result<(), Me
     tauri::async_runtime::spawn_blocking(move || manager.delete(&id))
         .await
         .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// "Move to trash": the audio goes now; the rest stays 30 days in the trash.
+#[tauri::command]
+#[specta::specta]
+pub async fn trash_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.trash(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// "Restore" in the trash, or [Undo] right after moving.
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.restore(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_trashed_meetings(
+    meetings: Meetings<'_>,
+) -> Result<Vec<TrashedMeetingSummary>, MeetingError> {
+    meetings.trashed()
 }
 
 /// "Meeting audio": keep (`None`) or delete N days after the end; applied at once.
