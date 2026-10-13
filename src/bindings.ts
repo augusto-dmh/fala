@@ -2116,7 +2116,11 @@ channel: string; person: number | null;
 /**
  * The name applied to "Person N" from a suggestion; absent when there is none.
  */
-name?: string | null; t0_ms: number; t1_ms: number; text: string }
+name?: string | null; t0_ms: number; t1_ms: number; text: string; 
+/**
+ * The line marks a span of the mic zeroed by a dictation (ADR-0015); nobody speaks in it.
+ */
+omitted?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */

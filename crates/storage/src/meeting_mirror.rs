@@ -132,7 +132,7 @@ fn one_line(text: &str) -> String {
 /// Numa linha só: um nome com quebra não parte a linha do trecho.
 fn label(speaker: SegmentSpeaker, names: &BTreeMap<u32, String>) -> String {
     match speaker {
-        SegmentSpeaker::Me => "Eu".to_string(),
+        SegmentSpeaker::Me | SegmentSpeaker::Omitted => "Eu".to_string(),
         SegmentSpeaker::Person(n) => names
             .get(&n)
             .map(|name| one_line(name))
@@ -245,6 +245,7 @@ pub(crate) fn render(doc: &MeetingDoc) -> String {
     for s in &doc.segments {
         let speaker = match s.speaker {
             SegmentSpeaker::Me => "me".to_string(),
+            SegmentSpeaker::Omitted => "omitted".to_string(),
             SegmentSpeaker::Person(n) => n.to_string(),
         };
         out.push_str(&format!(
@@ -400,6 +401,7 @@ fn parse_segments(
             },
             speaker: match speaker {
                 "me" => SegmentSpeaker::Me,
+                "omitted" => SegmentSpeaker::Omitted,
                 n => SegmentSpeaker::Person(n.parse().map_err(|_| bad())?),
             },
             t0_ms: t0.parse().map_err(|_| bad())?,
@@ -460,6 +462,13 @@ fn insert(conn: &Connection, doc: &MeetingDoc, file_name: &str) -> rusqlite::Res
                 s.text
             ],
         )?;
+        // The recorder's spans live only in the markers here: a later transcription keeps them.
+        if s.speaker == SegmentSpeaker::Omitted {
+            conn.execute(
+                "INSERT INTO meeting_omissions (meeting_id, t0_ms, t1_ms) VALUES (?1, ?2, ?3)",
+                params![id, ms(s.t0_ms), ms(s.t1_ms)],
+            )?;
+        }
     }
     for (index, name) in doc.participants.iter().enumerate() {
         conn.execute(
@@ -743,7 +752,7 @@ mod tests {
         MeetingSegment {
             seq,
             channel: match speaker {
-                SegmentSpeaker::Me => SegmentChannel::Mic,
+                SegmentSpeaker::Me | SegmentSpeaker::Omitted => SegmentChannel::Mic,
                 SegmentSpeaker::Person(_) => SegmentChannel::System,
             },
             speaker,

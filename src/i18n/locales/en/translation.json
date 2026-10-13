@@ -1257,6 +1257,7 @@
       "stop": "Stop",
       "noAudio": "This meeting's audio is no longer on disk."
     },
+    "omitted": "Dictation left out",
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"

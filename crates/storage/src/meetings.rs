@@ -97,6 +97,8 @@ pub enum SegmentChannel {
 pub enum SegmentSpeaker {
     Me,
     Person(u32),
+    /// A linha marcadora de um trecho do mic zerado por um ditado (ADR-0015); ninguém fala.
+    Omitted,
 }
 
 /// Um trecho transcrito. `seq` (1 a n, na ordem de `t0_ms`) é o id que os ponteiros `^sN` das
@@ -457,8 +459,11 @@ impl Store {
         mut segments: Vec<MeetingSegment>,
         transcribed_at: DateTime<FixedOffset>,
     ) -> Result<(), StorageError> {
-        segments.sort_by_key(|s| (s.t0_ms, s.channel == SegmentChannel::System));
         let tx = self.conn.transaction()?;
+        // Os marcadores vêm da tabela do gravador, nunca de quem transcreve.
+        segments.retain(|s| s.speaker != SegmentSpeaker::Omitted);
+        segments.extend(crate::meeting_omissions::omitted_segments(&tx, id)?);
+        segments.sort_by_key(|s| (s.t0_ms, s.channel == SegmentChannel::System));
         let changed = tx.execute(
             "UPDATE meetings SET transcribed_at = ?2 WHERE id = ?1",
             params![id.to_string(), rfc3339(&transcribed_at)],

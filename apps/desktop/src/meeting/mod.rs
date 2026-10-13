@@ -831,6 +831,19 @@ impl MeetingManager {
                 crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 self.run_effects(&mut inner, effects);
             }
+            Report::Omitted(spans) => {
+                let id = active.session.id();
+                // Saved now, so a crash keeps the marker of every dictation already closed.
+                let saved = self.with_store(|store| {
+                    for (t0, t1) in &spans {
+                        store.add_meeting_omission(id, *t0, *t1)?;
+                    }
+                    Ok(())
+                });
+                if let Err(e) = saved {
+                    log::error!("meeting {id}: dictation span not saved: {e}");
+                }
+            }
             Report::SystemSwitched { name, error } => {
                 if error.is_none() {
                     active.route.switched(&name);

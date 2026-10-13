@@ -17,7 +17,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fala_audio::{
-    MeetingRecorder, MeetingWav, MicTap, OutputMeter, OutputPeak, SystemAudio, MEETING_RATE,
+    MeetingRecorder, MeetingWav, MicTap, OmittedSpan, OutputMeter, OutputPeak, SystemAudio,
+    MEETING_RATE,
 };
 
 use crate::dictation_capture::MIC_HUB;
@@ -59,6 +60,9 @@ pub(crate) enum Report {
         /// A dictation zeroed the mic for part of the period: its level counts for nothing.
         mic_omitted: bool,
     },
+    /// Spans of the mic zeroed by a dictation, in ms of the recording (`[t0, t1)`): each one
+    /// becomes a "dictation left out" line of the transcript (ADR-0015).
+    Omitted(Vec<(u64, u64)>),
     /// The system channel now records `name`, or still records the previous output (`error`).
     SystemSwitched { name: String, error: Option<String> },
     /// The WAV is closed (or the capture failed); the thread is gone.
@@ -164,6 +168,14 @@ impl<A: PowerApi> Gate<A> {
         }
         self.awake.set(self.keep_awake && self.writing());
     }
+}
+
+/// The spans in ms of the recording.
+fn omitted_ms(spans: Vec<OmittedSpan>) -> Vec<(u64, u64)> {
+    spans
+        .into_iter()
+        .map(|s| (recorded_ms(s.start), recorded_ms(s.end)))
+        .collect()
 }
 
 /// Recorded milliseconds for a number of 48 kHz frames written to the WAV.
@@ -431,6 +443,10 @@ fn run(
                 break;
             }
         }
+        let spans = capture.recorder.take_omitted();
+        if !spans.is_empty() {
+            on_report(Report::Omitted(omitted_ms(spans)));
+        }
         if now.duration_since(last_report) >= REPORT_EVERY {
             last_report = now;
             let (mic, mic_peak) = mic_level.take();
@@ -450,8 +466,13 @@ fn run(
     let recorded = gate.elapsed(Instant::now());
     // The PC may sleep again from here on: the WAV is closed below either way.
     drop(gate);
-    if let Err(e) = capture.recorder.finish(recorded) {
-        error.get_or_insert_with(|| e.to_string());
+    match capture.recorder.finish_omitted(recorded) {
+        // A dictation still running ends with the recording.
+        Ok((_, _, spans)) if !spans.is_empty() => on_report(Report::Omitted(omitted_ms(spans))),
+        Ok(_) => {}
+        Err(e) => {
+            error.get_or_insert_with(|| e.to_string());
+        }
     }
     if let Some(e) = &error {
         log::error!("meeting capture ended with an error: {e}");
@@ -538,6 +559,15 @@ mod tests {
             clock.paused_for(t0 + Duration::from_secs(5)),
             Duration::from_secs(2)
         );
+    }
+
+    #[test]
+    fn omitted_spans_are_reported_in_ms() {
+        let spans = vec![OmittedSpan {
+            start: 48_000,
+            end: 72_000,
+        }];
+        assert_eq!(omitted_ms(spans), [(1_000, 1_500)]);
     }
 
     #[test]

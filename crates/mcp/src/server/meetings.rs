@@ -308,6 +308,7 @@ fn summary(r: &MeetingRecord, participants: Vec<String>) -> Value {
 fn segment(s: &MeetingSegment, names: &BTreeMap<u32, String>) -> Value {
     let (speaker, name) = match s.speaker {
         SegmentSpeaker::Me => ("me".to_string(), None),
+        SegmentSpeaker::Omitted => ("omitted".to_string(), None),
         SegmentSpeaker::Person(n) => (person(n), names.get(&n)),
     };
     json!({

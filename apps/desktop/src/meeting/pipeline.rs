@@ -76,6 +76,10 @@ pub struct MeetingLine {
     pub t0_ms: u64,
     pub t1_ms: u64,
     pub text: String,
+    /// The line marks a span of the mic zeroed by a dictation (ADR-0015); nobody speaks in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub omitted: Option<bool>,
 }
 
 /// An opened session.
@@ -211,13 +215,14 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         }
         .to_string(),
         person: match segment.speaker {
-            SegmentSpeaker::Me => None,
+            SegmentSpeaker::Me | SegmentSpeaker::Omitted => None,
             SegmentSpeaker::Person(n) => Some(n),
         },
         name: None,
         t0_ms: segment.t0_ms,
         t1_ms: segment.t1_ms,
         text: segment.text.clone(),
+        omitted: (segment.speaker == SegmentSpeaker::Omitted).then_some(true),
     }
 }
 
@@ -258,6 +263,7 @@ pub(crate) fn notes_segments(
             },
             speaker: match segment.speaker {
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
+                SegmentSpeaker::Omitted => fala_notes::Speaker::Omitted,
                 SegmentSpeaker::Person(n) => match names.get(&n) {
                     Some(name) => fala_notes::Speaker::Named(name.clone()),
                     None => fala_notes::Speaker::Person(n),
@@ -559,7 +565,7 @@ impl MeetingManager {
                 .map(|segment| MeetingLine {
                     name: match segment.speaker {
                         SegmentSpeaker::Person(n) => names.get(&n).cloned(),
-                        SegmentSpeaker::Me => None,
+                        SegmentSpeaker::Me | SegmentSpeaker::Omitted => None,
                     },
                     ..line(segment)
                 })
@@ -914,6 +920,19 @@ mod tests {
         assert_eq!(line(&numbered[0]).person, None);
         assert_eq!(line(&numbered[1]).person, Some(2));
         assert_eq!(line(&numbered[1]).channel, "system");
+        assert_eq!(line(&numbered[1]).omitted, None);
+
+        // The recorder's marker: a mic line nobody speaks, labelled as such for the notes.
+        let marker = MeetingSegment {
+            seq: 3,
+            ..fala_storage::omitted_segment(5_000, 9_000)
+        };
+        assert_eq!(line(&marker).omitted, Some(true));
+        assert_eq!(line(&marker).person, None);
+        assert_eq!(
+            notes_segments(&[marker], &names)[0].speaker,
+            fala_notes::Speaker::Omitted
+        );
     }
 
     #[test]
@@ -1104,6 +1123,7 @@ mod tests {
             t0_ms: 0,
             t1_ms: 1,
             text: text.clone(),
+            omitted: None,
         };
         let enough = vec![line(1), line(2)];
         assert!(auto_notes_due(true, &long, true, &enough));

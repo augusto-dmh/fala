@@ -1257,6 +1257,7 @@
       "stop": "Parar",
       "noAudio": "O áudio desta reunião não está mais no disco."
     },
+    "omitted": "Trecho de ditado omitido",
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
