@@ -873,6 +873,14 @@ async openPillMenu() : Promise<void> {
     await TAURI_INVOKE("open_pill_menu");
 },
 /**
+ * The pointer moved past the drag threshold on the idle or the meeting pill with the button
+ * down: the pill follows the cursor along its edge until the button comes up, then the place is
+ * saved in `pill_center_x`. Windows only, like the idle pill.
+ */
+async startPillDrag() : Promise<void> {
+    await TAURI_INVOKE("start_pill_drag");
+},
+/**
  * A click on the idle pill opens the main window on Início.
  */
 async openHomeFromPill() : Promise<void> {
@@ -1741,6 +1749,12 @@ overlay_style?: OverlayStyle;
  * and only while `overlay_style` shows a pill.
  */
 pill_idle_visible?: boolean; 
+/**
+ * Where along its edge (`overlay_position`) the pill sits, as the fraction of the monitor's
+ * width under its center; `None` centers it. Set by dragging the pill (Windows); choosing
+ * the edge again recenters it.
+ */
+pill_center_x?: number | null; 
 /**
  * The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
  */
