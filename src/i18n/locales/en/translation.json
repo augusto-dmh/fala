@@ -1135,6 +1135,14 @@
     "dismiss": "Dismiss"
   },
   "meeting": {
+    "keys": {
+      "missingElevenlabs": "The ElevenLabs key is missing: meetings are transcribed with it.",
+      "missingAnthropic": "The Anthropic key is missing: notes are written with it.",
+      "add": "Add key",
+      "transcribeNeedsKey": "Add the ElevenLabs key in Settings to transcribe.",
+      "notesNeedKey": "Add the Anthropic key in Settings to write notes.",
+      "notesNeedContent": "Transcribe the meeting or type notes first."
+    },
     "title": "Meeting",
     "untitled": "Meeting on {{date}}",
     "consent": {
