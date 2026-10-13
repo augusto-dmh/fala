@@ -4,7 +4,7 @@
 //! Keys come only from the OS keyring (ADR-0008): `elevenlabs` for the transcript and the
 //! `anthropic` key the post-processing settings already store, for the notes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -200,6 +200,25 @@ pub(crate) fn summary(record: &MeetingRecord) -> MeetingSummary {
         has_notes: record.notes_md.is_some(),
         imported_from: None,
     }
+}
+
+/// The page's list: every session outside the trash, newest first.
+pub(crate) fn list_in(store: &Store) -> Result<Vec<MeetingSummary>, MeetingError> {
+    let mut sources = store.meeting_import_sources()?;
+    let trashed: HashSet<SessionId> = store
+        .trashed_meetings()?
+        .into_iter()
+        .map(|t| t.record.id)
+        .collect();
+    Ok(store
+        .meetings()?
+        .iter()
+        .filter(|record| !trashed.contains(&record.id))
+        .map(|record| MeetingSummary {
+            imported_from: sources.remove(&record.id),
+            ..summary(record)
+        })
+        .collect())
 }
 
 /// The summary with where the session came from, for the opened session.
@@ -543,17 +562,7 @@ impl MeetingManager {
     }
 
     pub fn list(&self) -> Result<Vec<MeetingSummary>, MeetingError> {
-        self.with_store(|store| {
-            let mut sources = store.meeting_import_sources()?;
-            Ok(store
-                .meetings()?
-                .iter()
-                .map(|record| MeetingSummary {
-                    imported_from: sources.remove(&record.id),
-                    ..summary(record)
-                })
-                .collect())
-        })
+        self.with_store(|store| list_in(store))
     }
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {

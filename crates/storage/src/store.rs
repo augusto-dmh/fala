@@ -108,6 +108,7 @@ impl Store {
         conn.execute_batch(meeting_mirror::SCHEMA)?;
         conn.execute_batch(meeting_search::SCHEMA)?;
         conn.execute_batch(meeting_imports::SCHEMA)?;
+        conn.execute_batch(crate::meeting_trash::SCHEMA)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),

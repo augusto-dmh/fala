@@ -1,5 +1,6 @@
-//! A session after its recording (phase 2, F3): delete it, and keep its retained audio only as
-//! long as the setting says (ADR-0005: retained by default, retention configurable).
+//! A session after its recording (phase 2, F3): move it to the trash or delete it, and keep its
+//! retained audio only as long as the setting says (ADR-0005: retained by default, retention
+//! configurable).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -7,10 +8,21 @@ use std::time::Duration;
 
 use fala_meeting::{Levels, SessionId, UnixMillis};
 use fala_retention::{audio_due, RetainedSession, RetentionPolicy};
-use fala_storage::{MeetingRecord, Store};
+use fala_storage::{MeetingRecord, Store, TRASH_DAYS};
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use tauri::{AppHandle, Manager};
 
+use super::pipeline::MeetingSummary;
 use super::{millis, parse_id, MeetingError, MeetingManager};
+
+/// A session in the trash.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct TrashedMeetingSummary {
+    pub summary: MeetingSummary,
+    /// When it was moved, RFC 3339 with the local offset.
+    pub trashed_at: String,
+}
 
 /// How often the upkeep thread wakes up to see whether a day passed since the last retention.
 /// Wall-clock: a monotonic sleep of 24 h does not advance while the PC is suspended.
@@ -121,6 +133,12 @@ fn mark_audio_gone(store: &Store, gone: &[SessionId]) -> Result<(), MeetingError
     Ok(())
 }
 
+/// After its audio folder is gone: the session has no audio and is in the trash from now on.
+fn move_to_trash(store: &Store, id: SessionId) -> Result<(), MeetingError> {
+    store.clear_meeting_audio_retained(id)?;
+    Ok(store.trash_meeting(id, super::now_local())?)
+}
+
 impl MeetingManager {
     /// "Delete meeting", after the literal confirmation in the UI: audio folder first, then the
     /// row and, by cascade, transcript, participants and speaker names (ADR-0005: no trash for
@@ -151,6 +169,73 @@ impl MeetingManager {
         self.forget_orphan(id);
         log::info!("meeting {id} deleted");
         Ok(())
+    }
+
+    /// "Move to trash": the audio goes now, with the same refusals and order as `delete`
+    /// (ADR-0005: no trash for audio); transcript, annotations and notes stay `TRASH_DAYS` days.
+    /// If the audio does not go, the session does not move.
+    pub fn trash(&self, id: &str) -> Result<(), MeetingError> {
+        let id = parse_id(id)?;
+        let _retaining = self.retaining.lock().unwrap_or_else(|e| e.into_inner());
+        let work = self.work.lock().unwrap_or_else(|e| e.into_inner());
+        if self.is_live(id) {
+            return Err(MeetingError::StillRecording);
+        }
+        if work.involves(id) {
+            return Err(MeetingError::Busy);
+        }
+        self.with_store(|store| Ok(store.meeting(id).map(|_| ())?))?;
+        if let Err((gone, error)) = delete_audio(&self.audio_root, id) {
+            if gone {
+                self.with_store(|store| mark_audio_gone(store, &[id]))?;
+            }
+            return Err(error);
+        }
+        self.with_store(|store| move_to_trash(store, id))?;
+        let _ = tauri::Emitter::emit(&self.app, super::DELETED_EVENT, id.to_string());
+        self.forget_orphan(id);
+        log::info!("meeting {id} moved to the trash");
+        Ok(())
+    }
+
+    /// "Restore" in the trash: the session is back on the page, without audio.
+    pub fn restore(&self, id: &str) -> Result<(), MeetingError> {
+        let id = parse_id(id)?;
+        self.with_store(|store| Ok(store.restore_meeting(id)?))?;
+        log::info!("meeting {id} restored from the trash");
+        Ok(())
+    }
+
+    /// The sessions in the trash, last moved first.
+    pub fn trashed(&self) -> Result<Vec<TrashedMeetingSummary>, MeetingError> {
+        self.with_store(|store| {
+            Ok(store
+                .trashed_meetings()?
+                .iter()
+                .map(|t| TrashedMeetingSummary {
+                    summary: super::pipeline::summary(&t.record),
+                    trashed_at: super::pipeline::rfc3339(&t.trashed_at),
+                })
+                .collect())
+        })
+    }
+
+    /// Deletes for good the sessions that have been in the trash for `TRASH_DAYS` days.
+    pub fn purge_trash(&self) {
+        let now = super::now_local().timestamp_millis();
+        let due = match self.with_store(|store| Ok(store.trash_due(now)?)) {
+            Ok(due) => due,
+            Err(e) => {
+                log::warn!("meeting trash was not emptied: {e}");
+                return;
+            }
+        };
+        for id in due {
+            match self.delete(&id.to_string()) {
+                Ok(()) => log::info!("meeting {id}: deleted after {TRASH_DAYS} days in the trash"),
+                Err(e) => log::warn!("meeting {id}: not deleted from the trash: {e}"),
+            }
+        }
     }
 
     /// After a stop the person clicked: discards an empty recording, or asks about one that
@@ -255,6 +340,7 @@ impl MeetingManager {
                 manager.sync_mirrors();
                 let mut last = millis(super::now_local());
                 manager.run_retention();
+                manager.purge_trash();
                 manager.retain_stopped();
                 loop {
                     std::thread::sleep(RETENTION_CHECK_EVERY);
@@ -262,6 +348,7 @@ impl MeetingManager {
                     if now.0.saturating_sub(last.0) >= RETENTION_EVERY_MS {
                         last = now;
                         manager.run_retention();
+                        manager.purge_trash();
                     }
                 }
             });
@@ -442,5 +529,46 @@ mod tests {
         // A draft has no audio folder and is deleted all the same.
         let draft = session(&store, 3, None);
         delete(&store, &audio, draft).unwrap();
+    }
+
+    #[test]
+    fn trash_deletes_the_audio_now_and_the_rest_after_thirty_days() {
+        let (_dir, store, audio) = setup();
+        let id = session(&store, 1, Some(at(2, 14, 0)));
+        let other = session(&store, 2, Some(at(2, 15, 0)));
+        for session in [id, other] {
+            store
+                .finish_meeting(session, at(2, 16, 0), 1_000, StopReason::User)
+                .unwrap();
+            let dir = fala_retention::session_audio_dir(&audio, session);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(fala_retention::MIC_FILE), b"opus").unwrap();
+            store.set_meeting_audio_retained(session).unwrap();
+        }
+        // What `MeetingManager::trash` does, without the locks and the live/busy guards.
+        delete_audio(&audio, id).map_err(|(_, e)| e).unwrap();
+        move_to_trash(&store, id).unwrap();
+
+        assert!(!fala_retention::session_audio_dir(&audio, id).exists());
+        assert!(fala_retention::session_audio_dir(&audio, other).exists());
+        let record = store.meeting(id).unwrap();
+        assert!(!record.audio_retained);
+        assert_eq!(record.title, "r1");
+        let listed: Vec<String> = crate::meeting::pipeline::list_in(&store)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(listed, [other.to_string()]);
+
+        // The purge takes the session only once its days are up, then deletes it for good.
+        let moved = store.meeting_trashed_at(id).unwrap().unwrap();
+        let day = 86_400_000;
+        let ms = moved.timestamp_millis() + TRASH_DAYS * day;
+        assert!(store.trash_due(ms - 3_600_000).unwrap().is_empty());
+        assert_eq!(store.trash_due(ms).unwrap(), [id]);
+        delete(&store, &audio, id).unwrap();
+        assert!(store.trashed_meetings().unwrap().is_empty());
+        assert!(store.meeting(id).is_err());
     }
 }

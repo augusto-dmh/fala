@@ -9,7 +9,8 @@
 //!
 //! O nome em uso fica em `meeting_files` (tabela aditiva), para renomear quando o título muda.
 //! Uma sessão importada leva também `import`, a linha de `meeting_imports`, que o `reindex`
-//! restaura; as outras não têm a chave.
+//! restaura; as outras não têm a chave. Uma sessão na lixeira leva `trashed_at` e mora em
+//! `Reuniões/.lixeira/`, que o Obsidian não mostra (pasta com ponto).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -21,15 +22,17 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use crate::meeting_imports::{self, ImportLink};
-use crate::meeting_search;
 use crate::meetings::{channel_str, mode_str, ms, parse_mode, parse_reason, reason_str, rfc3339};
 use crate::mirror::{frontmatter, write_atomic};
+use crate::{meeting_search, meeting_trash};
 use crate::{
     MeetingRecord, MeetingSegment, ReindexReport, SegmentChannel, SegmentSpeaker, Skipped,
     StorageError, Store,
 };
 
 pub(crate) const REUNIOES: &str = "Reuniões";
+/// A pasta da lixeira, dentro de `Reuniões/`.
+pub(crate) const LIXEIRA: &str = ".lixeira";
 
 pub(crate) const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meeting_files (
@@ -60,6 +63,8 @@ pub(crate) struct MeetingDoc {
     pub notes_edited_at: Option<DateTime<FixedOffset>>,
     /// De onde a sessão foi importada, se foi.
     pub import: Option<ImportLink>,
+    /// Quando a sessão foi para a lixeira, se está nela.
+    pub trashed_at: Option<DateTime<FixedOffset>>,
 }
 
 /// As notas que entram no corpo: aparadas, e só se não estão em branco.
@@ -226,6 +231,9 @@ pub(crate) fn render(doc: &MeetingDoc) -> String {
     if let Some(link) = &doc.import {
         out.push_str(&format!("import: {}\n", link.to_json()));
     }
+    if let Some(at) = &doc.trashed_at {
+        out.push_str(&format!("trashed_at: {}\n", Value::from(rfc3339(at))));
+    }
     out.push_str("---\n");
 
     out.push_str(&header(r));
@@ -369,7 +377,21 @@ pub(crate) fn parse(content: &str) -> Result<MeetingDoc, String> {
         names,
         notes_edited_at: optional_time("notes_edited_at")?,
         import: import_link(&keys, imported, id),
+        trashed_at: trashed_at(&keys, id),
     })
+}
+
+/// `trashed_at` do frontmatter. Inválido, fica de fora e a pasta decide (ver `reindex_meetings`),
+/// em vez de a sessão ficar fora do `reindex`.
+fn trashed_at(keys: &HashMap<&str, Value>, id: SessionId) -> Option<DateTime<FixedOffset>> {
+    let value = keys.get("trashed_at")?;
+    let parsed = value
+        .as_str()
+        .and_then(|at| DateTime::parse_from_rfc3339(at).ok());
+    if parsed.is_none() {
+        log::warn!("reindex: {id} tem `trashed_at` inválido; a pasta decide se está na lixeira");
+    }
+    parsed
 }
 
 /// A ligação de importação do frontmatter. Só a sessão importada tem a chave; numa gravada ela é
@@ -517,11 +539,19 @@ fn insert(conn: &Connection, doc: &MeetingDoc, file_name: &str) -> rusqlite::Res
     {
         log::info!("reindex: {id} entra sem a ligação de importação, que é de outra sessão");
     }
+    if let Some(at) = &doc.trashed_at {
+        meeting_trash::insert(conn, r.id, at)?;
+    }
     conn.execute(
         "INSERT INTO meeting_files (meeting_id, file_name) VALUES (?1, ?2)",
         params![id, file_name],
     )?;
     Ok(())
+}
+
+/// Se `path` é um `.md` da sessão `id` (uma cópia que uma mudança de pasta deixou).
+fn holds(path: &Path, id: SessionId) -> bool {
+    fs::read_to_string(path).is_ok_and(|content| content.contains(&format!("\nid: \"{id}\"\n")))
 }
 
 fn not_found_ok(result: std::io::Result<()>) -> std::io::Result<()> {
@@ -534,6 +564,10 @@ fn not_found_ok(result: std::io::Result<()>) -> std::io::Result<()> {
 impl Store {
     fn meetings_dir(&self) -> PathBuf {
         self.notes_dir.join(REUNIOES)
+    }
+
+    fn trash_dir(&self) -> PathBuf {
+        self.meetings_dir().join(LIXEIRA)
     }
 
     /// O nome do `.md` da sessão, se já foi escrito.
@@ -560,6 +594,7 @@ impl Store {
                 .collect(),
             notes_edited_at: self.meeting_notes_edited_at(id)?,
             import: meeting_imports::link(&self.conn, id)?,
+            trashed_at: meeting_trash::trashed_at(&self.conn, id)?,
         })
     }
 
@@ -587,15 +622,30 @@ impl Store {
         Err(StorageError::NotFound(format!("nome livre para {id}")))
     }
 
-    /// Reescreve o `.md` da sessão se o conteúdo ou o nome mudou; devolve se escreveu.
+    /// Reescreve o `.md` da sessão se o conteúdo, o nome ou a pasta mudou; devolve se escreveu.
+    /// Entrar na lixeira ou sair dela muda a pasta: o arquivo novo é escrito e o da outra pasta
+    /// sai depois, então uma falha no meio deixa duas cópias, e a próxima sincronização apaga a
+    /// velha.
     fn write_meeting_mirror(&self, id: SessionId) -> Result<bool, StorageError> {
         let doc = self.meeting_doc(id)?;
         let content = render(&doc);
-        let dir = self.meetings_dir();
+        let (dir, other) = match doc.trashed_at {
+            Some(_) => (self.trash_dir(), self.meetings_dir()),
+            None => (self.meetings_dir(), self.trash_dir()),
+        };
         let current = self.meeting_file(id)?;
         let stem = file_stem(&doc.record);
+        let stale = current
+            .as_deref()
+            .map(|name| other.join(name))
+            .filter(|path| path.is_file());
+        // Mudando de pasta, o nome pode estar tomado por um arquivo que não é desta sessão.
+        let moving = stale.is_some()
+            && current
+                .as_deref()
+                .is_some_and(|name| !holds(&dir.join(name), id));
         let name = match &current {
-            Some(name) if fits(name, &stem) => name.clone(),
+            Some(name) if fits(name, &stem) && !moving => name.clone(),
             _ => self.free_file_name(&dir, &stem, id)?,
         };
         let path = dir.join(&name);
@@ -605,7 +655,8 @@ impl Store {
             source,
         };
         let renamed = current.as_deref() != Some(name.as_str());
-        if !renamed && fs::read_to_string(&path).is_ok_and(|old| old == content) {
+        if !renamed && stale.is_none() && fs::read_to_string(&path).is_ok_and(|old| old == content)
+        {
             return Ok(false);
         }
         write_atomic(&path, &content).map_err(failed)?;
@@ -615,9 +666,13 @@ impl Store {
                  ON CONFLICT (meeting_id) DO UPDATE SET file_name = excluded.file_name",
                 params![id.to_string(), name],
             )?;
-            if let Some(old) = current {
+            // Mudando de pasta, o nome velho na pasta nova é de outro arquivo.
+            if let Some(old) = current.filter(|_| !moving) {
                 not_found_ok(fs::remove_file(dir.join(old))).map_err(failed)?;
             }
+        }
+        if let Some(stale) = &stale {
+            not_found_ok(fs::remove_file(stale)).map_err(failed)?;
         }
         Ok(true)
     }
@@ -654,7 +709,8 @@ impl Store {
         })
     }
 
-    /// Apaga o `.md` de uma sessão que está saindo do banco (dentro da transação que a apaga).
+    /// Apaga o `.md` de uma sessão que está saindo do banco (dentro da transação que a apaga),
+    /// em `Reuniões/` ou na lixeira.
     pub(crate) fn remove_meeting_mirror(
         &self,
         id: SessionId,
@@ -663,29 +719,36 @@ impl Store {
         let Some(name) = file else {
             return Ok(());
         };
-        let path = self.meetings_dir().join(name);
-        not_found_ok(fs::remove_file(&path)).map_err(|source| StorageError::MeetingMirror {
-            id: id.to_string(),
-            path,
-            source,
-        })
+        for dir in [self.meetings_dir(), self.trash_dir()] {
+            let path = dir.join(&name);
+            not_found_ok(fs::remove_file(&path)).map_err(|source| StorageError::MeetingMirror {
+                id: id.to_string(),
+                path,
+                source,
+            })?;
+        }
+        Ok(())
     }
 
-    /// Acrescenta ao banco as reuniões de `<notes_dir>/Reuniões/*.md` que faltam nele, numa
-    /// única transação; devolve quantas entraram.
+    /// Acrescenta ao banco as reuniões de `<notes_dir>/Reuniões/*.md` e da lixeira
+    /// (`Reuniões/.lixeira/*.md`) que faltam nele, numa única transação; devolve quantas entraram.
+    ///
+    /// Um `.md` da lixeira sem `trashed_at` entra nela com agora: o prazo recomeça, nunca encurta.
     ///
     /// Uma sessão que o banco já tem não muda: ele é a fonte de verdade e guarda o que o `.md`
     /// não guarda (sugestões de nome pendentes, tempos em ms). Com id repetido vale o arquivo
     /// cujo nome bate com o título. Um `.md` inválido, repetido ou que o banco recusa entra no
     /// relatório; os outros entram.
     pub fn reindex_meetings(&mut self) -> Result<ReindexReport, StorageError> {
-        let dir = self.meetings_dir();
+        let now = chrono::Local::now().fixed_offset();
         let mut files = Vec::new();
-        if dir.is_dir() {
-            for entry in fs::read_dir(&dir)? {
-                let path = entry?.path();
-                if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                    files.push(path);
+        for (dir, trashed) in [(self.meetings_dir(), false), (self.trash_dir(), true)] {
+            if dir.is_dir() {
+                for entry in fs::read_dir(&dir)? {
+                    let path = entry?.path();
+                    if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+                        files.push((path, trashed));
+                    }
                 }
             }
         }
@@ -693,12 +756,17 @@ impl Store {
 
         let mut report = ReindexReport::default();
         let mut docs = Vec::new();
-        for path in files {
+        for (path, trashed) in files {
             let parsed = fs::read_to_string(&path)
                 .map_err(|e| format!("não deu para ler: {e}"))
                 .and_then(|content| parse(&content));
             match parsed {
-                Ok(doc) => docs.push((file_name(&path), path, doc)),
+                Ok(mut doc) => {
+                    if trashed && doc.trashed_at.is_none() {
+                        doc.trashed_at = Some(now);
+                    }
+                    docs.push((file_name(&path), path, doc));
+                }
                 Err(reason) => report.skipped.push(Skipped { path, reason }),
             }
         }
@@ -815,6 +883,7 @@ mod tests {
             names: BTreeMap::from([(1, "Ana".to_string())]),
             notes_edited_at: Some(at("2026-10-12T15:00:00-03:00")),
             import: None,
+            trashed_at: None,
         }
     }
 
