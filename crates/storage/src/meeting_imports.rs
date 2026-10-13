@@ -8,13 +8,17 @@
 //! também.
 //!
 //! Tabela aditiva, criada a cada abertura como `meeting_speakers`, sem subir `user_version`.
-//! Apagar a sessão apaga a ligação (cascata): importar de novo a traz de volta.
+//! Apagar a sessão apaga a ligação (cascata): importar de novo a traz de volta. O `.md` da sessão
+//! guarda a ligação (`import` no frontmatter) e o `reindex` a restaura: sem ela, importar de novo
+//! depois de perder o banco duplicaria as reuniões.
 
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, FixedOffset};
 use fala_meeting::{SessionId, SessionMode};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::Deserialize;
+use serde_json::{json, Value};
 
 use crate::granola::GranolaMeeting;
 use crate::meeting_mirror::GENERATED_MARKER;
@@ -41,6 +45,88 @@ const ME_LABELS: [&str; 5] = ["me", "you", "eu", "você", "voce"];
 const GENERIC_LABELS: [&str; 5] = ["them", "they", "speaker", "eles", "outro"];
 /// Teto de um rótulo de falante, em caracteres; acima disso o ":" é parte da frase.
 const LABEL_MAX_CHARS: usize = 40;
+
+/// A linha de `meeting_imports` de uma sessão, como o `.md` a guarda.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub(crate) struct ImportLink {
+    pub source: String,
+    pub external_id: String,
+    /// RFC 3339, como no banco.
+    pub imported_at: String,
+    /// O título e as anotações da última importação, para importar de novo saber o que a pessoa
+    /// mudou.
+    pub title: String,
+    pub annotations: String,
+}
+
+impl ImportLink {
+    /// As chaves em ordem alfabética: com ou sem o `preserve_order` do `serde_json` (que outro
+    /// crate da árvore pode ligar), o `.md` sai igual.
+    pub(crate) fn to_json(&self) -> Value {
+        json!({
+            "annotations": self.annotations,
+            "external_id": self.external_id,
+            "imported_at": self.imported_at,
+            "source": self.source,
+            "title": self.title,
+        })
+    }
+
+    /// Lê o valor de `import` no frontmatter; o `Err` é o motivo legível para o log.
+    pub(crate) fn from_json(value: &Value) -> Result<Self, String> {
+        let link = Self::deserialize(value)
+            .map_err(|_| "`import` não é a ligação de importação".to_string())?;
+        if link.source.is_empty() || link.external_id.is_empty() {
+            return Err("`import` sem `source` ou `external_id`".to_string());
+        }
+        DateTime::parse_from_rfc3339(&link.imported_at)
+            .map_err(|e| format!("`import.imported_at` não é RFC 3339: {e}"))?;
+        Ok(link)
+    }
+}
+
+/// A ligação da sessão, se ela foi importada.
+pub(crate) fn link(conn: &Connection, id: SessionId) -> rusqlite::Result<Option<ImportLink>> {
+    conn.query_row(
+        "SELECT source, external_id, imported_at, title, annotations FROM meeting_imports
+         WHERE meeting_id = ?1",
+        [id.to_string()],
+        |row| {
+            Ok(ImportLink {
+                source: row.get(0)?,
+                external_id: row.get(1)?,
+                imported_at: row.get(2)?,
+                title: row.get(3)?,
+                annotations: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// Restaura a ligação de uma sessão lida do `.md`. Se o banco já liga a mesma origem a outra
+/// sessão, aquela fica (o banco é a fonte de verdade) e esta entra sem ligação; devolve se gravou.
+pub(crate) fn restore(
+    conn: &Connection,
+    id: SessionId,
+    link: &ImportLink,
+) -> rusqlite::Result<bool> {
+    let changed = conn.execute(
+        "INSERT INTO meeting_imports
+             (source, external_id, meeting_id, imported_at, title, annotations)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT DO NOTHING",
+        params![
+            link.source,
+            link.external_id,
+            id.to_string(),
+            link.imported_at,
+            link.title,
+            link.annotations
+        ],
+    )?;
+    Ok(changed > 0)
+}
 
 /// O que a importação fez com uma reunião.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,14 +392,7 @@ impl Store {
 
     /// De onde a sessão foi importada (`granola`), se foi.
     pub fn meeting_import_source(&self, id: SessionId) -> Result<Option<String>, StorageError> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT source FROM meeting_imports WHERE meeting_id = ?1",
-                [id.to_string()],
-                |row| row.get(0),
-            )
-            .optional()?)
+        Ok(link(&self.conn, id)?.map(|link| link.source))
     }
 }
 
