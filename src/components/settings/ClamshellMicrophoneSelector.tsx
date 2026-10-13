@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { deviceLabel } from "@/lib/utils/deviceLabel";
 import { commands } from "@/bindings";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
@@ -61,10 +62,9 @@ export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorPr
     const handleReset = async () => {
       await resetSetting("clamshell_microphone");
     };
-
     const microphoneOptions = audioDevices.map((device) => ({
       value: device.name,
-      label: device.name,
+      label: deviceLabel(device.name, t),
     }));
 
     return (

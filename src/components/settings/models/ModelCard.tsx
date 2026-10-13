@@ -17,7 +17,7 @@ import {
   getTranslatedModelName,
 } from "../../../lib/utils/modelTranslation";
 import {
-  getLanguageLabel,
+  languageName,
   getUniqueCapabilityLanguages,
 } from "../../../lib/constants/languages";
 import Badge from "../../ui/Badge";
@@ -28,11 +28,12 @@ import { useSettingsStore } from "@/stores/settingsStore";
 const getLanguageDisplayText = (
   supportedLanguages: string[],
   t: (key: string, options?: Record<string, unknown>) => string,
+  locale: string,
 ): string => {
   const capabilityLanguages = getUniqueCapabilityLanguages(supportedLanguages);
   if (capabilityLanguages.length === 1) {
     const langCode = capabilityLanguages[0];
-    const langName = getLanguageLabel(langCode) || langCode;
+    const langName = languageName(langCode, locale) || langCode;
     return t("modelSelector.capabilities.languageOnly", { language: langName });
   }
   return t("modelSelector.capabilities.languageCount", {
@@ -91,7 +92,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
   downloadSpeed,
   showRecommended = true,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const debugMode = useSettingsStore(
     (state) => state.settings?.debug_mode ?? false,
   );
@@ -240,7 +241,13 @@ const ModelCard: React.FC<ModelCardProps> = ({
             }
           >
             <Globe className="w-3.5 h-3.5" />
-            <span>{getLanguageDisplayText(model.supported_languages, t)}</span>
+            <span>
+              {getLanguageDisplayText(
+                model.supported_languages,
+                t,
+                i18n.language,
+              )}
+            </span>
           </div>
         )}
         {model.supports_translation && (

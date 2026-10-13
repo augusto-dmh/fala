@@ -1,10 +1,10 @@
 {
   "tray": {
     "settings": "Settings...",
-    "checkUpdates": "Check for Updates...",
-    "copyLastTranscript": "Copy Last Dictation",
-    "pasteLastTranscript": "Paste Last Dictation",
-    "unloadModel": "Unload Model",
+    "checkUpdates": "Check for updates...",
+    "copyLastTranscript": "Copy last dictation",
+    "pasteLastTranscript": "Paste last dictation",
+    "unloadModel": "Unload model",
     "model": "Model",
     "dictationLanguage": "Dictation language",
     "languagePtBr": "Portuguese (Brazil)",
@@ -77,7 +77,7 @@
     }
   },
   "dictionary": {
-    "description": "Words, names and terms Fala should recognise when you dictate.",
+    "description": "Words, names and terms Fala should recognize when you dictate.",
     "search": "Search the dictionary",
     "replacements": {
       "title": "Spoken → written",
@@ -94,7 +94,7 @@
     },
     "snippets": {
       "title": "Snippets",
-      "description": "Say the trigger and Fala inserts the text as it is: a signature, a calendar link, an address. The trigger needs two words or more and matches ignoring case and accents. {data}, {data_extenso} and {hora} become the date, the long date and the time of the dictation. The snippet text never goes to the formatting AI.",
+      "description": "Say the trigger and Fala inserts the text as it is: a signature, a calendar link, an address. The trigger needs two words or more and matches ignoring case and accents. {data}, {data_extenso} and {hora} (the Portuguese names stay) become the date, the long date and the time of the dictation. The snippet text never goes to the formatting AI.",
       "spokenPlaceholder": "my signature",
       "writtenPlaceholder": "Jane Doe\nexample.com",
       "spokenLabel": "Trigger",
@@ -279,12 +279,12 @@
     "extractingGeneric": "Extracting...",
     "downloading": "Downloading {{percentage}}%",
     "downloadingMultiple": "Downloading {{count}} models...",
-    "modelReady": "Model Ready",
+    "modelReady": "Model ready",
     "loading": "Loading {{modelName}}...",
     "loadingGeneric": "Loading...",
-    "modelError": "Model Error",
-    "modelUnloaded": "Model Unloaded",
-    "noModelDownloadRequired": "No Model - Download Required",
+    "modelError": "Model error",
+    "modelUnloaded": "Model unloaded",
+    "noModelDownloadRequired": "No model - download required",
     "deleteModel": "Delete {{modelName}}",
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Cancel",
@@ -301,13 +301,13 @@
   },
   "settings": {
     "modelSettings": {
-      "title": "{{model}} Settings"
+      "title": "Settings for {{model}}"
     },
     "general": {
       "title": "General",
       "app": "App",
       "shortcut": {
-        "title": "Fala Shortcuts",
+        "title": "Fala shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -316,15 +316,15 @@
         "unset": "No shortcut",
         "bindings": {
           "transcribe": {
-            "name": "Transcribe Shortcut",
+            "name": "Transcribe shortcut",
             "description": "The keyboard shortcut to record and transcribe your voice."
           },
           "cancel": {
-            "name": "Cancel Shortcut",
+            "name": "Cancel shortcut",
             "description": "The keyboard shortcut to cancel the current recording."
           },
           "transcribe_with_post_process": {
-            "name": "Post-Processing Hotkey",
+            "name": "Post-processing hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
           },
           "paste_last": {
@@ -350,7 +350,7 @@
         "auto": "Auto"
       },
       "shortcutActivation": {
-        "title": "Shortcut Behavior",
+        "title": "Shortcut behavior",
         "description": "Choose how the transcribe shortcut starts and stops recording.",
         "options": {
           "pushToTalkDoubleTap": "Hold or double-tap",
@@ -367,16 +367,16 @@
       }
     },
     "models": {
-      "title": "Transcription Models",
+      "title": "Transcription models",
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
       "searchPlaceholder": "Search models by name…",
-      "yourModels": "Downloaded Models",
-      "availableModels": "Available to Download",
+      "yourModels": "Downloaded models",
+      "availableModels": "Available to download",
       "deleteConfirm": "Are you sure you want to delete {{modelName}}? You will need to download it again to use it.",
       "deleteActiveConfirm": "{{modelName}} is your active model. Deleting it will stop transcriptions until you select a new model. Are you sure?",
-      "deleteTitle": "Delete Model",
+      "deleteTitle": "Delete model",
       "filters": {
-        "allLanguages": "All Languages",
+        "allLanguages": "All languages",
         "streaming": "Filter models that support live streaming transcription",
         "translation": "Filter models that support translation to English"
       },
@@ -494,13 +494,13 @@
         "loading": "Loading..."
       },
       "channel": {
-        "title": "Input Channel",
+        "title": "Input channel",
         "description": "Select which input channel to record from. Use this if your audio interface has multiple inputs.",
         "average": "Average all channels",
         "channel": "Channel {{n}}"
       },
       "audioFeedback": {
-        "label": "Audio Feedback",
+        "label": "Audio feedback",
         "description": "Play sound when recording starts and stops"
       },
       "pauseMediaWhileRecording": {
@@ -512,7 +512,7 @@
         "description": "Pauses the music and videos playing while the meeting records, so they stay out of the recording, and resumes only what Fala paused"
       },
       "outputDevice": {
-        "title": "Output Device",
+        "title": "Output device",
         "description": "Select your preferred audio output device for feedback sounds",
         "placeholder": "Select output device...",
         "loading": "Loading..."
@@ -520,7 +520,8 @@
       "volume": {
         "title": "Volume",
         "description": "Adjust the volume of audio feedback sounds"
-      }
+      },
+      "defaultDevice": "Automatic"
     },
     "advanced": {
       "groups": {
@@ -531,20 +532,20 @@
         "experimental": "Experimental"
       },
       "experimentalToggle": {
-        "label": "Experimental Features",
+        "label": "Experimental features",
         "description": "Enable experimental features that are still in development."
       },
       "lazyStreamClose": {
-        "label": "Keep Mic Open Between Transcriptions",
+        "label": "Keep mic open between transcriptions",
         "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."
       },
       "acceleration": {
         "transcribe": {
-          "title": "transcribe.cpp Acceleration",
-          "description": "Hardware acceleration for transcribe.cpp (Whisper-family) models. Auto uses GPU if available (Metal on macOS, Vulkan on Windows/Linux)."
+          "title": "transcribe.cpp acceleration",
+          "description": "Hardware acceleration for transcribe.cpp (Whisper-family) models. Auto uses the GPU (Vulkan) when there is one."
         },
         "ort": {
-          "title": "ONNX Acceleration",
+          "title": "ONNX acceleration",
           "description": "Hardware acceleration for ONNX models (Parakeet, Canary, Moonshine, etc.). DirectML on Windows is experimental. Models may fail to transcribe."
         },
         "gpuDevice": {
@@ -552,21 +553,21 @@
         }
       },
       "startHidden": {
-        "label": "Start Hidden",
+        "label": "Start hidden",
         "description": "Launch to system tray without opening the window."
       },
       "autostart": {
-        "label": "Launch on Startup",
+        "label": "Launch on startup",
         "description": "Automatically start Fala when you log in to your computer."
       },
       "showTrayIcon": {
-        "label": "Show Tray Icon",
+        "label": "Show tray icon",
         "description": "Display the Fala icon in the system tray."
       },
       "overlay": {
         "style": {
           "title": "Overlay",
-          "description": "Choose the recording overlay: None hides it, Minimal shows a compact pill, Live shows transcription in real time as you speak (streaming-capable models only — look for the Streaming badge in the model picker). On Linux 'None' is recommended.",
+          "description": "Choose the recording overlay: None hides it, Minimal shows a compact pill, Live shows transcription in real time as you speak (streaming-capable models only — look for the Streaming badge in the model picker).",
           "options": {
             "none": "None",
             "minimal": "Minimal",
@@ -574,7 +575,7 @@
           }
         },
         "position": {
-          "title": "Overlay Position",
+          "title": "Overlay position",
           "description": "Where the overlay appears on screen during recording and transcription.",
           "options": {
             "bottom": "Bottom",
@@ -587,7 +588,7 @@
         "description": "Keeps a quiet pill on screen between dictations; hover it to see the shortcut and click it to open Fala. It hides while an app is full screen."
       },
       "pasteMethod": {
-        "title": "Paste Method",
+        "title": "Paste method",
         "description": "Choose how text is inserted. Direct: simulates typing via system input. None: skips paste, only updates history/clipboard.",
         "options": {
           "clipboard": "Clipboard ({{modifier}}+V)",
@@ -595,28 +596,28 @@
           "clipboardShiftInsert": "Clipboard (Shift+Insert)",
           "direct": "Direct",
           "none": "None",
-          "externalScript": "External Script"
+          "externalScript": "External script"
         },
         "externalScriptPlaceholder": "/path/to/your/script.sh"
       },
       "typingTool": {
-        "title": "Typing Tool",
+        "title": "Typing tool",
         "description": "Choose which Linux typing tool to use for Direct paste method. Auto will automatically detect and use the best available tool for your system.",
         "options": {
-          "auto": "Auto (Recommended)"
+          "auto": "Auto (recommended)"
         }
       },
       "clipboardHandling": {
-        "title": "Clipboard Handling",
+        "title": "Clipboard handling",
         "description": "Don't Modify Clipboard preserves your current clipboard contents after transcription. Copy to Clipboard leaves the transcription result in your clipboard after pasting.",
         "options": {
-          "dontModify": "Don't Modify Clipboard",
-          "copyToClipboard": "Copy to Clipboard"
+          "dontModify": "Don't modify clipboard",
+          "copyToClipboard": "Copy to clipboard"
         }
       },
       "autoSubmit": {
-        "title": "Auto Submit",
-        "description": "Automatically send the selected key combination after text insertion. Cmd+Enter applies on macOS, while Windows/Linux use Super+Enter.",
+        "title": "Auto submit",
+        "description": "Automatically send the selected key combination after the text is inserted.",
         "options": {
           "off": "Off",
           "enter": "Enter",
@@ -630,7 +631,7 @@
         "description": "Automatically translate speech from other languages to English during transcription."
       },
       "modelUnload": {
-        "title": "Unload Model",
+        "title": "Unload model",
         "description": "Automatically free GPU/CPU memory when the model hasn't been used for the specified time",
         "options": {
           "never": "Never",
@@ -640,7 +641,7 @@
           "min10": "After 10 minutes",
           "min15": "After 15 minutes",
           "hour1": "After 1 hour",
-          "sec15": "After 15 seconds (Debug)"
+          "sec15": "After 15 seconds (debug)"
         }
       },
       "customWords": {
@@ -652,11 +653,11 @@
         "duplicate": "\"{{word}}\" already exists"
       },
       "voiceActivityDetection": {
-        "title": "Voice Activity Detection",
+        "title": "Voice activity detection",
         "description": "Filter silence from recordings. Disabling VAD records raw audio."
       },
       "fillerWordRemoval": {
-        "title": "Remove Filler Words",
+        "title": "Remove filler words",
         "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
       }
     },
@@ -665,7 +666,7 @@
         "title": "Hotkey"
       },
       "api": {
-        "title": "API (OpenAI Compatible)",
+        "title": "API (OpenAI compatible)",
         "provider": {
           "title": "Provider",
           "description": "Select an OpenAI-compatible provider."
@@ -679,7 +680,7 @@
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
-          "title": "API Key",
+          "title": "API key",
           "description": "API key for the selected provider.",
           "placeholder": "sk-..."
         },
@@ -695,20 +696,20 @@
       "prompts": {
         "title": "Prompt",
         "selectedPrompt": {
-          "title": "Selected Prompt",
+          "title": "Selected prompt",
           "description": "Select a template for refining transcriptions or create a new one. Use ${output} inside the prompt text to reference the captured transcript."
         },
         "noPrompts": "No prompts available",
         "selectPrompt": "Select a prompt",
-        "createNew": "Create New Prompt",
-        "promptLabel": "Prompt Label",
+        "createNew": "Create new prompt",
+        "promptLabel": "Prompt label",
         "promptLabelPlaceholder": "Enter prompt name",
-        "promptInstructions": "Prompt Instructions",
+        "promptInstructions": "Prompt instructions",
         "promptInstructionsPlaceholder": "Write the instructions to run after transcription. Example: Improve grammar and clarity for the following text: ${output}",
         "promptTip": "Tip: Use <code>${output}</code> to insert the transcribed text in your prompt.",
-        "updatePrompt": "Update Prompt",
-        "deletePrompt": "Delete Prompt",
-        "createPrompt": "Create Prompt",
+        "updatePrompt": "Update prompt",
+        "deletePrompt": "Delete prompt",
+        "createPrompt": "Create prompt",
         "cancel": "Cancel",
         "selectToEdit": "Select a prompt above to view and edit its details.",
         "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
@@ -716,7 +717,7 @@
     },
     "history": {
       "title": "History",
-      "openFolder": "Open Recordings Folder",
+      "openFolder": "Open recordings folder",
       "loading": "Loading history...",
       "empty": "No dictations yet.",
       "emptyHold": "No dictations yet. Hold {{keys}} and speak.",
@@ -748,20 +749,23 @@
       "recover": "Recover",
       "recovered": "Dictation recovered and copied",
       "recoverError": "Could not recover the dictation.",
-      "audioDeleted": "This dictation's audio was deleted; the text stays."
+      "audioDeleted": "This dictation's audio was deleted; the text stays.",
+      "play": "Play the recording",
+      "hidePlayer": "Hide the player",
+      "more": "More actions"
     },
     "debug": {
       "title": "Debug",
       "logDirectory": {
-        "title": "Log Directory",
+        "title": "Log directory",
         "description": "Location where log files are stored"
       },
       "logLevel": {
-        "title": "Log Level",
+        "title": "Log level",
         "description": "Set the verbosity of logging"
       },
       "liveLogs": {
-        "title": "Live Logs",
+        "title": "Live logs",
         "description": "Stream application logs in real time to diagnose issues without opening the log file. Only logs emitted while this panel is open are shown; respects the Log Level setting above.",
         "live": "Live",
         "paused": "Paused",
@@ -772,32 +776,32 @@
         "empty": "Waiting for logs… Entries appear here as the app emits them."
       },
       "updateChecks": {
-        "label": "Check for Updates",
+        "label": "Check for updates",
         "description": "Automatically check for new versions of Fala",
         "lockedDescription": "Disabled by system configuration (FALA_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
-        "title": "Preview What's New",
+        "title": "Preview what's new",
         "description": "Open the latest bundled release note without marking it as seen",
         "button": "Preview",
         "noNotes": "No bundled release notes found",
         "error": "Failed to preview release notes"
       },
       "onboardingPreview": {
-        "title": "Preview Onboarding",
+        "title": "Preview onboarding",
         "description": "Open the first-run wizard on one step, without downloading a model or changing the completion state",
-        "exitButton": "Exit Preview",
+        "exitButton": "Exit preview",
         "microphoneButton": "Microphone",
         "shortcutButton": "Shortcut",
         "aiButton": "AI",
         "meetingsButton": "Meetings"
       },
       "soundTheme": {
-        "label": "Sound Theme",
+        "label": "Sound theme",
         "description": "Choose a sound theme for recording start and stop feedback"
       },
       "wordCorrectionThreshold": {
-        "title": "Word Correction Threshold",
+        "title": "Word correction threshold",
         "description": "Sensitivity for custom word corrections"
       },
       "historyLimit": {
@@ -816,57 +820,57 @@
         "placeholder": "Select retention period..."
       },
       "alwaysOnMicrophone": {
-        "label": "Always-On Microphone",
+        "label": "Always-on microphone",
         "description": "Keep microphone active for faster response"
       },
       "clamshellMicrophone": {
-        "title": "Clamshell Microphone",
+        "title": "Clamshell microphone",
         "description": "Microphone to use when laptop lid is closed"
       },
       "postProcessingToggle": {
-        "label": "Post Processing",
+        "label": "Post processing",
         "description": "Enable AI-powered text refinement after transcription"
       },
       "muteWhileRecording": {
-        "label": "Mute While Recording",
+        "label": "Mute while recording",
         "description": "Mute system audio during recording"
       },
       "appendTrailingSpace": {
-        "label": "Append Trailing Space",
+        "label": "Append trailing space",
         "description": "Add a space after pasted transcription"
       },
       "keyboardImplementation": {
-        "title": "Keyboard Implementation",
+        "title": "Keyboard implementation",
         "description": "Choose the keyboard shortcut backend.",
         "bindingsReset": "Keyboard shortcuts were incompatible and reset to defaults"
       },
       "paths": {
-        "appData": "App Data:",
+        "appData": "App data:",
         "models": "Models:",
         "settings": "Settings:"
       },
       "pasteDelay": {
-        "title": "Paste Delay (Before)",
+        "title": "Paste delay (before)",
         "description": "Delay (in milliseconds) after copying text, before sending the paste keystroke. Increase if nothing gets pasted."
       },
       "pasteDelayAfter": {
-        "title": "Paste Delay (After)",
+        "title": "Paste delay (after)",
         "description": "Delay (in milliseconds) after the paste keystroke, before restoring your previous clipboard. Increase if your old clipboard content is being pasted instead of the transcription."
       },
       "holdThreshold": {
-        "title": "Hold Threshold",
+        "title": "Hold threshold",
         "description": "Auto mode only: how long (in milliseconds) the shortcut must be held before it counts as a hold instead of a tap. Lower if short holds keep leaving recording on; raise if deliberate taps get treated as holds."
       },
       "reliablePaste": {
-        "title": "Reliable Paste (Beta)",
+        "title": "Reliable paste (beta)",
         "description": "Restore the clipboard only after the target app actually reads the transcription, instead of after a fixed delay. Intended to fix old clipboard content being pasted under system load. Requires a clipboard paste method; macOS and Windows only."
       },
       "recordingBuffer": {
-        "title": "Extra Recording Buffer",
+        "title": "Extra recording buffer",
         "description": "Extra time (in milliseconds) to keep recording after you release the key, to capture trailing audio. 0 = no extra buffer."
       },
       "keyboardDiagnostic": {
-        "title": "Keyboard Diagnostic",
+        "title": "Keyboard diagnostic",
         "description": "Checks whether keyboard events reach Fala. Only event counts are recorded — never which keys you press.",
         "run": "Run 10s diagnostic",
         "running": "Listening… press your shortcut a few times (e.g. Option+Space)",
@@ -893,7 +897,7 @@
         "description": "Current version of Fala"
       },
       "whatsNewUpdates": {
-        "label": "Show What's New",
+        "label": "Show what's new",
         "description": "Show release notes after Fala updates"
       },
       "privacy": {
@@ -926,7 +930,7 @@
           },
           "mcp": {
             "name": "History for assistants (MCP)",
-            "sends": "Dictations not made in the apps without AI and, with meetings = true, meetings that are not local-only (never the audio), read-only, when an assistant on this computer asks. Only with mcp.toml turned on.",
+            "sends": "Your dictations (except those made in the apps without AI) and, if you also allow meetings, the meetings not kept only on this computer, never their audio. Read-only, and only when an assistant on this computer asks. Off unless you turn it on in the mcp.toml file in Fala's data folder.",
             "destination": "The local assistant you set up, which may send them to its own provider"
           },
           "telemetry": {
@@ -958,11 +962,11 @@
         }
       },
       "appDataDirectory": {
-        "title": "App Data Directory",
+        "title": "App data directory",
         "description": "Location where Fala stores its data"
       },
       "sourceCode": {
-        "title": "Source Code",
+        "title": "Source code",
         "description": "View source code and contribute",
         "button": "View on GitHub"
       },
@@ -980,7 +984,7 @@
     "checkingUpdates": "Checking for updates...",
     "updateAvailableShort": "Update available",
     "upToDate": "Up to date",
-    "updateCheckingDisabled": "Update Checking Disabled",
+    "updateCheckingDisabled": "Update checking disabled",
     "downloading": "Downloading... {{progress}}%",
     "installing": "Installing...",
     "preparing": "Preparing...",
@@ -989,7 +993,7 @@
     "portableUpdateMessage": "Portable installs cannot be updated automatically. Download the installer for your system below, run it, and install to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
     "portableUpdateButton": "Download installer",
     "portableUpdateBrowseMessage": "Portable installs cannot be updated automatically. Download the latest version for your system from GitHub Releases and install it to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
-    "portableUpdateBrowseButton": "Open GitHub Releases"
+    "portableUpdateBrowseButton": "Open GitHub releases"
   },
   "whatsNew": {
     "title": "New in Fala v{{version}}"
@@ -1002,39 +1006,40 @@
     "copy": "Copy",
     "resetToDefault": "Reset to default",
     "clear": "Clear",
-    "noOptionsFound": "No options found"
+    "noOptionsFound": "No options found",
+    "selectOption": "Select an option…"
   },
   "accessibility": {
     "permissionsDescription": "Fala needs accessibility permissions to type transcribed text.",
-    "openSettings": "Open System Settings"
+    "openSettings": "Open system settings"
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
-    "micPermissionDeniedTitle": "Microphone Access Denied",
+    "micPermissionDeniedTitle": "Microphone access denied",
     "micPermissionDenied": {
       "generic": "Microphone access was denied by the operating system. Please grant microphone permission in your system settings.",
       "windows": "Enable microphone access in Settings → Privacy & security → Microphone (including desktop app access).",
       "macos": "Grant microphone access in System Settings → Privacy & Security → Microphone.",
       "linux": "Grant microphone access in your system's sound or privacy settings."
     },
-    "noInputDeviceTitle": "No Microphone Found",
+    "noInputDeviceTitle": "No microphone found",
     "noInputDevice": "No audio input device was detected. Please connect a microphone or headset and try again.",
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load model: {{model}}",
     "modelLoadFailedUnknown": "unknown model",
     "modelNotFound": "No available speech model is selected. Choose one in Settings > Models.",
     "modelNotDownloaded": "The model has not been downloaded yet. Download it in Settings > Models.",
-    "pasteFailedTitle": "Failed to Paste Text",
+    "pasteFailedTitle": "Failed to paste text",
     "pasteFailed": "Text could not be pasted into the active application.",
-    "transcriptionFailedTitle": "Transcription Failed",
+    "transcriptionFailedTitle": "Transcription failed",
     "meetingInPerson": "Dictation is unavailable during an in-person meeting, even paused: the mic is the meeting. Stop the meeting to dictate."
   },
   "appLanguage": {
-    "title": "Application Language",
+    "title": "App language",
     "description": "Change the language of the Fala interface"
   },
   "theme": {
-    "title": "Application Theme",
+    "title": "App theme",
     "description": "Choose whether Fala follows your system theme or stays light or dark",
     "options": {
       "system": "System",
@@ -1061,7 +1066,8 @@
       "micFailed": "Couldn't open the microphone",
       "modelMissing": "No speech model downloaded",
       "chooseMic": "Choose microphone",
-      "resolve": "Fix it"
+      "resolve": "Fix it",
+      "micMutedNamed": "No sound from {{device}}. Is it muted?"
     },
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",
@@ -1260,7 +1266,7 @@
       "copy": "Copy Markdown",
       "transcript": "Transcript",
       "noTranscript": "No transcript yet.",
-      "notes": "Notes",
+      "notes": "AI notes",
       "search": "Search the transcript",
       "found_one": "{{count}} match",
       "found_other": "{{count}} matches",
@@ -1428,7 +1434,7 @@
       "title": "Meeting title",
       "titleFailed": "Could not save the title.",
       "more": "More actions",
-      "tabs": "My notes and the notes",
+      "tabs": "My notes and the AI notes",
       "myNotes": "My notes",
       "noNotes": "The notes show here once they are generated.",
       "slash": "Notes template:",
