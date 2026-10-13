@@ -749,7 +749,10 @@
       "recover": "Recuperar",
       "recovered": "Ditado recuperado e copiado",
       "recoverError": "Não foi possível recuperar o ditado.",
-      "audioDeleted": "O áudio deste ditado já foi apagado; o texto fica."
+      "audioDeleted": "O áudio deste ditado já foi apagado; o texto fica.",
+      "play": "Ouvir a gravação",
+      "hidePlayer": "Fechar o player",
+      "more": "Mais ações"
     },
     "debug": {
       "title": "Depuração",

@@ -142,8 +142,13 @@ function deps(
     /\{action && /.test(screen),
     "o botão só aparece quando editAction não é nulo",
   );
-  assert.ok(screen.includes('t("settings.history.undoAiEdit")'));
-  assert.ok(screen.includes('t("settings.history.applyAiEdit")'));
+  // QA Q4: the AI edit moved into the row's "⋮" menu.
+  const menu = read("./HistoryRowMenu.tsx");
+  assert.ok(menu.includes('t("settings.history.undoAiEdit")'));
+  assert.ok(menu.includes('t("settings.history.applyAiEdit")'));
+  assert.ok(
+    screen.includes('editAction={action && kind === "normal" ? action : null}'),
+  );
   ok("C28");
 }
 
@@ -443,8 +448,8 @@ await (async () => {
     "redo",
   );
   assert.ok(
-    /action === "undo"\s*\?\s*t\("settings\.history\.undoAiEdit"\)\s*:\s*t\("settings\.history\.applyAiEdit"\)/.test(
-      screen,
+    /editAction === "undo"\s*\?\s*t\("settings\.history\.undoAiEdit"\)\s*:\s*t\("settings\.history\.applyAiEdit"\)/.test(
+      read("./HistoryRowMenu.tsx"),
     ),
     "o botão de redo precisa usar settings.history.applyAiEdit",
   );

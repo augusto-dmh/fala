@@ -749,7 +749,10 @@
       "recover": "Recover",
       "recovered": "Dictation recovered and copied",
       "recoverError": "Could not recover the dictation.",
-      "audioDeleted": "This dictation's audio was deleted; the text stays."
+      "audioDeleted": "This dictation's audio was deleted; the text stays.",
+      "play": "Play the recording",
+      "hidePlayer": "Hide the player",
+      "more": "More actions"
     },
     "debug": {
       "title": "Debug",
