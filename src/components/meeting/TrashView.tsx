@@ -6,12 +6,12 @@ import { DeleteConfirm } from "./DeleteMeeting";
 import { dayLabel, startOf } from "./meetingDays";
 import { titleOf, type Translate } from "./meetingModel";
 
-const DAY_MS = 86_400_000;
-
-/** Whole days since the session went to the trash; never negative (a clock moved back). */
+/** Calendar days since the session went to the trash, like the dates beside it; never negative. */
 export function daysInTrash(trashedAt: string, now: Date): number {
-  const elapsed = now.getTime() - new Date(trashedAt).getTime();
-  return Math.max(0, Math.floor(elapsed / DAY_MS));
+  const day = (date: Date) =>
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = (day(now) - day(new Date(trashedAt))) / 86_400_000;
+  return Math.max(0, Math.round(days));
 }
 
 /** "apagada hoje", "apagada há 1 dia", "apagada há N dias". */

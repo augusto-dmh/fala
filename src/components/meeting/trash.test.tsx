@@ -96,7 +96,7 @@ const detail = (audio: boolean, retained: boolean): MeetingDetail => ({
   assert.match(page, /commands\.trashMeeting\(id\)/);
   assert.match(
     page,
-    /toast\(t\("meeting\.trash\.moved"\), \{\s*duration: UNDO_MS,\s*action: \{\s*label: t\("meeting\.trash\.undo"\),\s*onClick: \(\) => void restore\(id, false\)/,
+    /toast\(t\("meeting\.trash\.moved"\), \{\s*duration: UNDO_MS,\s*action: \{\s*label: t\("meeting\.trash\.undo"\),\s*onClick: \(\) => void restore\(id, wasOpen \? "open" : "none"\)/,
   );
   assert.equal(tr("meeting.trash.moved"), "Reunião na lixeira");
   ok("T2 toast with undo");
@@ -114,6 +114,9 @@ const detail = (audio: boolean, retained: boolean): MeetingDetail => ({
   ];
   assert.equal(daysInTrash(trashed[0].trashed_at, now), 3);
   assert.equal(daysInTrash("2026-10-14T00:00:00-03:00", now), 0);
+  // Calendar days, like the date beside it: last night at 23:00 seen at 09:00 is "1 dia".
+  const lastNight = new Date(2026, 9, 12, 23, 0).toISOString();
+  assert.equal(daysInTrash(lastNight, new Date(2026, 9, 13, 9, 0)), 1);
   assert.equal(sinceLabel(1, tr), "apagada há 1 dia");
   const html = renderToStaticMarkup(
     <TrashView
@@ -155,7 +158,10 @@ const detail = (audio: boolean, retained: boolean): MeetingDetail => ({
   assert.equal(tr("meeting.trash.link", { count: 2 }), "Lixeira (2)");
   assert.match(page, /\{trashed\.length > 0 && \(/);
   // Restoring from the trash offers to open the session.
-  assert.match(page, /onRestore=\{\(id\) => void restore\(id, true\)\}/);
+  assert.match(page, /onRestore=\{\(id\) => void restore\(id, "offer"\)\}/);
+  // [Undo] on the open session reopens it; the trash is never left behind a session.
+  assert.match(page, /if \(then === "open"\) void open\(id\);/);
+  assert.match(page, /setShowTrash\(false\);\s*setSelected\(result\.data\);/);
   assert.match(page, /toast\.success\(t\("meeting\.trash\.restored"\)/);
   ok("T4 empty trash and link");
 }

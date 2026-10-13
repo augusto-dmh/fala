@@ -114,19 +114,24 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   const [showTrash, setShowTrash] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [list, trash] = await Promise.all([
-      commands.listMeetings(),
-      commands.listTrashedMeetings(),
-    ]);
+    const list = await commands.listMeetings();
     if (list.status === "ok") setSessions(list.data);
     else setError(list.error);
+  }, []);
+
+  // Only a move, a restore, a delete or the purge (`meeting-deleted`) changes the trash.
+  const refreshTrash = useCallback(async () => {
+    const trash = await commands.listTrashedMeetings();
     if (trash.status === "ok") setTrashed(trash.data);
+    else setError(trash.error);
   }, []);
 
   const open = useCallback(async (id: string) => {
     const result = await commands.getMeeting(id);
-    if (result.status === "ok") setSelected(result.data);
-    else setError(result.error);
+    if (result.status === "ok") {
+      setShowTrash(false);
+      setSelected(result.data);
+    } else setError(result.error);
   }, []);
 
   // Opening a session replaces the list, so a reload after a run only refreshes the session
@@ -170,6 +175,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
       .meetingKeys()
       .then((r) => r.status === "ok" && setKeys(r.data));
     void refresh();
+    void refreshTrash();
     void commands
       .meetingOrphans()
       .then((r) => r.status === "ok" && setOrphans(r.data));
@@ -213,12 +219,13 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
       }),
       // The page is open: the app does not leave a request for the next mount.
       listen("meeting-consent-required", () => setAskConsent(true)),
-      // A card's [Discard] or an empty recording: the session is gone.
+      // A card's [Discard], an empty recording, a move to the trash or its purge.
       listen<string>("meeting-deleted", (event) => {
         setSelected((current) =>
           current?.summary.id === event.payload ? null : current,
         );
         void refresh();
+        void refreshTrash();
       }),
       listen<string | null>("open-meeting", (event) => {
         if (event.payload) void open(event.payload);
@@ -227,7 +234,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
     return () => {
       unlisteners.forEach((p) => void p.then((unlisten) => unlisten()));
     };
-  }, [refresh, open, reload]);
+  }, [refresh, refreshTrash, open, reload]);
 
   // The notes field of the session being recorded starts from what the draft already had.
   useEffect(() => {
@@ -345,7 +352,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   const onDrop = useRef<(path: string) => void>(() => {});
   useEffect(() => {
     onDrop.current = (path) => {
-      if (!askConsent && selected === null)
+      if (!askConsent && selected === null && !showTrash)
         void importSource({ kind: "file", value: path });
     };
   });
@@ -387,23 +394,20 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
     await open(id);
   };
 
-  const restore = async (id: string, offerOpen: boolean) => {
+  // `offer`: from the trash, a toast offers to open it; `open`: [Undo] reopens the session the
+  // person was on.
+  const restore = async (id: string, then: "offer" | "open" | "none") => {
     setError(null);
     const result = await commands.restoreMeeting(id);
-    await refresh();
+    await Promise.all([refresh(), refreshTrash()]);
     if (result.status === "error") {
       setError(result.error);
       return;
     }
-    if (offerOpen) {
+    if (then === "open") void open(id);
+    if (then === "offer") {
       toast.success(t("meeting.trash.restored"), {
-        action: {
-          label: t("meeting.home.open"),
-          onClick: () => {
-            setShowTrash(false);
-            void open(id);
-          },
-        },
+        action: { label: t("meeting.home.open"), onClick: () => void open(id) },
       });
     }
   };
@@ -411,6 +415,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   // "Move to trash": the audio goes now; the rest can come back with [Undo] or from the trash.
   const remove = async (id: string) => {
     setError(null);
+    const wasOpen = selected?.summary.id === id;
     const result = await commands.trashMeeting(id);
     if (result.status === "ok") {
       setSelected((current) => (current?.summary.id === id ? null : current));
@@ -419,18 +424,18 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
         duration: UNDO_MS,
         action: {
           label: t("meeting.trash.undo"),
-          onClick: () => void restore(id, false),
+          onClick: () => void restore(id, wasOpen ? "open" : "none"),
         },
       });
     } else setError(result.error);
-    await refresh();
+    await Promise.all([refresh(), refreshTrash()]);
   };
 
   const deleteForever = async (id: string) => {
     setError(null);
     const result = await commands.deleteMeeting(id);
     if (result.status === "error") setError(result.error);
-    await refresh();
+    await Promise.all([refresh(), refreshTrash()]);
   };
 
   const recordingNow =
@@ -601,11 +606,13 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   if (showTrash) {
     return (
       <div className="mx-auto w-full max-w-2xl space-y-4">
+        {granola}
         {banners}
+        {strip}
         <TrashView
           trashed={trashed}
           onBack={() => setShowTrash(false)}
-          onRestore={(id) => void restore(id, true)}
+          onRestore={(id) => void restore(id, "offer")}
           onDelete={(id) => void deleteForever(id)}
           locale={i18n.language}
           t={t}
