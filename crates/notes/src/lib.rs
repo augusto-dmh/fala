@@ -24,7 +24,7 @@ pub use document::note_document;
 pub use input::{Channel, NotesInput, Segment, Speaker, PROFILE_MAX_CHARS};
 pub use key::{ApiKey, KeySource};
 pub use payload::NotesPayload;
-pub use pointers::{remap_pointers, ERASED_POINTER};
+pub use pointers::{erased_pointer, remap_pointers};
 pub use render::{render_transcript, Notes, SpeakerSuggestion, GENERATED_MARKER};
 pub use template::{
     builtin_templates, duplicate_builtin, ensure_templates_dir, load_user_templates, Section,

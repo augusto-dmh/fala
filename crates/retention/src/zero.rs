@@ -6,7 +6,7 @@
 //! substituem os originais (a regra da ADR-0014 para o WAV vale para o Opus reescrito).
 
 use std::fs::{self, File};
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use ogg::PacketReader;
@@ -19,11 +19,10 @@ use crate::{validate_opus, RetentionError, MIC_FILE, SYSTEM_FILE};
 
 /// Amostras por ms a 48 kHz.
 const PER_MS: u64 = SAMPLE_RATE_HZ as u64 / 1000;
-/// Cabeçalho fixo de um page Ogg, antes da tabela de segmentos.
-const PAGE_HEADER: usize = 27;
 
-/// Zera `[t0_ms, t1_ms)` de `mic.opus` e `sys.opus` em `session_dir`. Em qualquer erro, os
-/// originais ficam como estavam.
+/// Zera `[t0_ms, t1_ms)` de `mic.opus` e `sys.opus` em `session_dir`. Se um `.part` não sai ou
+/// não valida, os originais ficam como estavam. Se a troca do segundo falhar (arquivo preso), o
+/// primeiro já está zerado e o erro volta: tentar de novo zera o que falta.
 pub fn zero_range(session_dir: &Path, t0_ms: u64, t1_ms: u64) -> Result<(), RetentionError> {
     zero_range_with(session_dir, t0_ms, t1_ms, validate_opus)
 }
@@ -35,7 +34,7 @@ fn zero_range_with(
     t1_ms: u64,
     validate: impl Fn(&Path, u64) -> Result<(), RetentionError>,
 ) -> Result<(), RetentionError> {
-    let range = (t0_ms * PER_MS, t1_ms * PER_MS);
+    let range = (t0_ms.saturating_mul(PER_MS), t1_ms.saturating_mul(PER_MS));
     let files = [
         (session_dir.join(MIC_FILE), 1),
         (session_dir.join(SYSTEM_FILE), 2),
@@ -53,11 +52,16 @@ fn zero_range_with(
         }
         return Err(e);
     }
-    for ((path, _), part) in files.iter().zip(&parts) {
-        fs::rename(part, path).map_err(|e| RetentionError::io(path, e))?;
+    let renamed = files.iter().zip(&parts).try_for_each(|((path, _), part)| {
+        fs::rename(part, path).map_err(|e| RetentionError::io(path, e))
+    });
+    if renamed.is_err() {
+        for part in &parts {
+            let _ = fs::remove_file(part);
+        }
     }
     sync_dir(session_dir);
-    Ok(())
+    renamed
 }
 
 /// Decodifica `src` inteiro, zera `[from, to)` (em amostras depois do pre-skip) e recodifica em
@@ -68,10 +72,7 @@ fn rewrite_zeroed(
     serial: u32,
     (from, to): (u64, u64),
 ) -> Result<u64, RetentionError> {
-    let total = stream_samples(src)?;
     let mut out = OpusStream::create(part, serial)?;
-    // Como no `retain_wav`: quadros de zeros até cobrir `total + pre_skip` (RFC 7845 §4).
-    let target = total + out.pre_skip;
     let mut frame = Vec::with_capacity(FRAME);
     let mut index: u64 = 0;
     let mut encoded: u64 = 0;
@@ -91,12 +92,10 @@ fn rewrite_zeroed(
         }
         Ok(())
     })?;
-    if index != total {
-        return Err(RetentionError::Unreadable {
-            path: src.to_path_buf(),
-            reason: format!("decodificadas {index} amostras, o granule diz {total}"),
-        });
-    }
+    // Como no `retain_wav`: quadros de zeros até cobrir `total + pre_skip` (RFC 7845 §4). O
+    // `decode_all` já cortou o original no granule final, então `index` é o total.
+    let total = index;
+    let target = total + out.pre_skip;
     loop {
         frame.resize(FRAME, 0);
         encoded += FRAME as u64;
@@ -153,48 +152,6 @@ fn decode_all(
         }
     }
     Err(unreadable("stream sem fim (EOS)".into()))
-}
-
-/// Amostras de um Ogg Opus mono depois do pre-skip, pelo granule do último page. Lê só os
-/// cabeçalhos dos pages.
-fn stream_samples(path: &Path) -> Result<u64, RetentionError> {
-    let unreadable = |reason: String| RetentionError::Unreadable {
-        path: path.to_path_buf(),
-        reason,
-    };
-    let file = File::open(path).map_err(|e| RetentionError::io(path, e))?;
-    let head = PacketReader::new(BufReader::new(&file))
-        .read_packet()
-        .map_err(|e| unreadable(format!("Ogg ilegível: {e}")))?
-        .ok_or_else(|| unreadable("sem OpusHead".into()))?;
-    let pre_skip = u64::from(parse_head(&head.data).map_err(&unreadable)?);
-    let mut file = BufReader::new(file);
-    file.seek(SeekFrom::Start(0))
-        .map_err(|e| RetentionError::io(path, e))?;
-    let mut header = [0u8; PAGE_HEADER];
-    let mut lacing = [0u8; 255];
-    let mut last = None;
-    loop {
-        match file.read_exact(&mut header) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(RetentionError::io(path, e)),
-        }
-        if &header[..4] != b"OggS" {
-            return Err(unreadable("page Ogg inválido".into()));
-        }
-        let mut granule = [0u8; 8];
-        granule.copy_from_slice(&header[6..14]);
-        let segments = usize::from(header[26]);
-        file.read_exact(&mut lacing[..segments])
-            .map_err(|e| RetentionError::io(path, e))?;
-        let body: i64 = lacing[..segments].iter().map(|&b| i64::from(b)).sum();
-        file.seek_relative(body)
-            .map_err(|e| RetentionError::io(path, e))?;
-        last = Some(u64::from_le_bytes(granule));
-    }
-    let last = last.ok_or_else(|| unreadable("sem pages".into()))?;
-    Ok(last.saturating_sub(pre_skip))
 }
 
 #[cfg(test)]

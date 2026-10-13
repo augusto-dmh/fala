@@ -80,9 +80,25 @@ impl Store {
             )?
             .query_map([id.to_string()], read_segment)?
             .collect::<Result<_, _>>()?;
-        let gone = |s: &MeetingSegment| !s.speaker.is_marker() && overlaps(s, t0_ms, t1_ms);
-        let removed = old.iter().filter(|s| gone(s)).count();
-        let mut segments: Vec<MeetingSegment> = old.iter().filter(|s| !gone(s)).cloned().collect();
+        // Um trecho que encosta num já apagado vira um só, com um marcador.
+        let (mut t0_ms, mut t1_ms) = (t0_ms, t1_ms);
+        let before = erasures(&tx, id)?;
+        while let Some(&(a, b)) = before
+            .iter()
+            .find(|&&(a, b)| a <= t1_ms && b >= t0_ms && (a < t0_ms || b > t1_ms))
+        {
+            (t0_ms, t1_ms) = (t0_ms.min(a), t1_ms.max(b));
+        }
+        let spoken = |s: &MeetingSegment| !s.speaker.is_marker() && overlaps(s, t0_ms, t1_ms);
+        let merged = |s: &MeetingSegment| {
+            s.speaker == SegmentSpeaker::Erased && s.t0_ms <= t1_ms && s.t1_ms >= t0_ms
+        };
+        let removed = old.iter().filter(|s| spoken(s)).count();
+        let mut segments: Vec<MeetingSegment> = old
+            .iter()
+            .filter(|s| !spoken(s) && !merged(s))
+            .cloned()
+            .collect();
         segments.push(erased_segment(t0_ms, t1_ms));
         sort_segments(&mut segments);
 
@@ -93,6 +109,10 @@ impl Store {
                 map.insert(segment.seq, Some(index as u32 + 1));
             }
         }
+        tx.execute(
+            "DELETE FROM meeting_erasures WHERE meeting_id = ?1 AND t0_ms <= ?3 AND t1_ms >= ?2",
+            params![id.to_string(), ms(t0_ms), ms(t1_ms)],
+        )?;
         tx.execute(
             "INSERT INTO meeting_erasures (meeting_id, t0_ms, t1_ms) VALUES (?1, ?2, ?3)",
             params![id.to_string(), ms(t0_ms), ms(t1_ms)],

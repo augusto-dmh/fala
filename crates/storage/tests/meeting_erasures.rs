@@ -6,6 +6,7 @@
 
 mod common;
 
+use std::collections::BTreeMap;
 use std::fs;
 
 use common::{at, env};
@@ -79,6 +80,11 @@ fn session(store: &mut Store) -> SessionId {
     id
 }
 
+/// The pointer rewrite the app passes, with the pt-BR text.
+fn remap(md: &str, map: &BTreeMap<u32, Option<u32>>) -> (String, usize) {
+    fala_notes::remap_pointers(md, map, "(trecho apagado)")
+}
+
 fn texts(store: &Store, id: SessionId) -> Vec<(u32, String)> {
     store
         .meeting_segments(id)
@@ -96,7 +102,7 @@ fn erasing_takes_both_channels_and_remaps_the_notes() {
 
     // Da fala do mic às 20 s até o fim da do sistema às 29 s.
     let erased = store
-        .erase_meeting_range(id, (20_000, 29_000), fala_notes::remap_pointers)
+        .erase_meeting_range(id, (20_000, 29_000), remap)
         .unwrap();
     assert_eq!(erased.removed, 2);
     assert_eq!(erased.notes_lines, 1);
@@ -140,6 +146,22 @@ fn erasing_takes_both_channels_and_remaps_the_notes() {
         assert!(md.contains(want), "{want}\n---\n{md}");
     }
     assert!(!md.contains("hipopótamo"), "{md}");
+
+    // A stretch that overlaps the erased one becomes one stretch, with one marker.
+    let again = store
+        .erase_meeting_range(id, (15_000, 35_000), remap)
+        .unwrap();
+    assert_eq!(again.removed, 0);
+    assert_eq!(store.meeting_erasures(id).unwrap(), [(15_000, 35_000)]);
+    assert_eq!(
+        texts(&store, id),
+        [
+            (1, "Vamos começar.".to_string()),
+            (2, "Proponho sexta.".to_string()),
+            (3, ERASED_TEXT.to_string()),
+            (4, "Fechado.".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -148,7 +170,7 @@ fn a_new_transcript_keeps_the_erased_stretch_out() {
     let mut store = e.open();
     let id = session(&mut store);
     store
-        .erase_meeting_range(id, (20_000, 29_000), fala_notes::remap_pointers)
+        .erase_meeting_range(id, (20_000, 29_000), remap)
         .unwrap();
 
     // O ASR devolve texto dentro do trecho (e um marcador de mentira): nada disso entra.
@@ -181,7 +203,7 @@ fn reindex_brings_back_the_marker_and_keeps_it_on_the_next_transcript() {
     let mut store = e.open();
     let id = session(&mut store);
     store
-        .erase_meeting_range(id, (20_000, 29_000), fala_notes::remap_pointers)
+        .erase_meeting_range(id, (20_000, 29_000), remap)
         .unwrap();
     let before = (
         store.meeting_segments(id).unwrap(),

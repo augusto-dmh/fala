@@ -1,23 +1,34 @@
 //! Os ponteiros das notas depois de um trecho apagado: a transcrição é renumerada 1..n, e cada
 //! `[[#^sN|mm:ss]]` passa a citar o número novo do mesmo trecho; o que citava um trecho que saiu
-//! vira [`ERASED_POINTER`]. Nada mais nas notas muda.
+//! vira [`erased_pointer`], no idioma das notas. Nada mais nas notas muda.
 
 use std::collections::BTreeMap;
 
-/// O que fica no lugar de um ponteiro para um trecho apagado.
-pub const ERASED_POINTER: &str = "(trecho apagado)";
+use fala_core::Language;
+
+/// O que fica no lugar de um ponteiro para um trecho apagado, no idioma das notas.
+pub fn erased_pointer(language: Language) -> &'static str {
+    match language {
+        Language::PtBr => "(trecho apagado)",
+        Language::En => "(erased stretch)",
+    }
+}
 
 const OPEN: &str = "[[#^s";
 
 /// Reescreve os ponteiros de `markdown` por `map` (número antigo → novo, `None` se o trecho
-/// saiu). Um número fora do mapa fica como está. Devolve o texto e quantas linhas citavam um
-/// trecho apagado.
-pub fn remap_pointers(markdown: &str, map: &BTreeMap<u32, Option<u32>>) -> (String, usize) {
+/// saiu, e então `erased` no lugar). Um número fora do mapa fica como está. Devolve o texto e
+/// quantas linhas citavam um trecho apagado.
+pub fn remap_pointers(
+    markdown: &str,
+    map: &BTreeMap<u32, Option<u32>>,
+    erased: &str,
+) -> (String, usize) {
     let mut lines_hit = 0;
     let out: Vec<String> = markdown
         .split('\n')
         .map(|line| {
-            let (line, hit) = remap_line(line, map);
+            let (line, hit) = remap_line(line, map, erased);
             lines_hit += usize::from(hit);
             line
         })
@@ -25,7 +36,7 @@ pub fn remap_pointers(markdown: &str, map: &BTreeMap<u32, Option<u32>>) -> (Stri
     (out.join("\n"), lines_hit)
 }
 
-fn remap_line(line: &str, map: &BTreeMap<u32, Option<u32>>) -> (String, bool) {
+fn remap_line(line: &str, map: &BTreeMap<u32, Option<u32>>, erased: &str) -> (String, bool) {
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
     let mut hit = false;
@@ -41,7 +52,7 @@ fn remap_line(line: &str, map: &BTreeMap<u32, Option<u32>>) -> (String, bool) {
             .filter(|_| after[digits..].starts_with('|'));
         match pointer.map(|(n, close)| (map.get(&n).copied(), n, close)) {
             Some((Some(None), _, close)) => {
-                out.push_str(ERASED_POINTER);
+                out.push_str(erased);
                 hit = true;
                 rest = &after[close + 2..];
             }
@@ -78,7 +89,7 @@ mod tests {
                      - Preço. [[#^s2|00:40]] [[#^s12|1:02:05]] <!-- fala:ia -->\n\
                      - Só apagado. [[#^s3|00:50]] <!-- fala:ia -->\n\
                      - Minha nota, sem ponteiro [[#^s99|x]] e [[#^sx|y]] [[#^s1|00:00]]";
-        let (out, lines) = remap_pointers(notes, &map);
+        let (out, lines) = remap_pointers(notes, &map, erased_pointer(Language::PtBr));
         assert_eq!(
             out,
             "## Notas\n\n\
@@ -89,10 +100,10 @@ mod tests {
         );
         assert_eq!(lines, 2);
         assert_eq!(
-            remap_pointers("sem ponteiros", &map),
+            remap_pointers("sem ponteiros", &map, "x"),
             ("sem ponteiros".into(), 0)
         );
         // Um ponteiro quebrado no fim não trava a leitura.
-        assert_eq!(remap_pointers("[[#^s4|01", &map).0, "[[#^s4|01");
+        assert_eq!(remap_pointers("[[#^s4|01", &map, "x").0, "[[#^s4|01");
     }
 }
