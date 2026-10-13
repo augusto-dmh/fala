@@ -26,7 +26,7 @@ import {
 import { NotesView } from "./NotesView";
 import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
-import { shownTemplate, TemplateSelect } from "./TemplateSelect";
+import { shownTemplate, TemplateMenu, TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
 import { SessionBar, type LiveControls } from "./SessionBar";
 import { searchLines, transcriptText } from "./transcriptSearch";
@@ -194,6 +194,7 @@ export function MeetingView(props: MeetingViewProps) {
   };
   const templateSelect = (
     <TemplateSelect
+      placement="up"
       templates={props.templates}
       value={picked}
       onChange={pickTemplate}
@@ -551,6 +552,14 @@ export function MeetingView(props: MeetingViewProps) {
         generateHint={hints.generate ? t(hints.generate) : undefined}
         onGenerate={generate}
         templateSelect={templateSelect}
+        templateMenu={(close) => (
+          <TemplateMenu
+            templates={props.templates}
+            value={picked}
+            onChange={pickTemplate}
+            onPicked={close}
+          />
+        )}
         t={t}
       />
     </div>
