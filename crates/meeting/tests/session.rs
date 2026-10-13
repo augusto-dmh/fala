@@ -78,6 +78,12 @@ fn suspended() -> MeetingSession {
     s
 }
 
+fn suspended_while_paused() -> MeetingSession {
+    let mut s = paused();
+    s.apply(at(2), Input::OsSuspended).unwrap();
+    s
+}
+
 fn stopping() -> MeetingSession {
     let mut s = recording(SessionMode::Meeting);
     s.apply(at(1), user(UserAction::StopRecording)).unwrap();
@@ -298,9 +304,10 @@ mod pause {
 
     #[test]
     fn only_resume_recording_resumes() {
+        // Waking the PC never turns a pause into a recording (ADR-0005).
         for (name, make) in [
             ("paused", paused as fn() -> MeetingSession),
-            ("suspended", suspended),
+            ("suspended while paused", suspended_while_paused),
         ] {
             for input in every_input() {
                 if input == user(UserAction::ResumeRecording) {
@@ -739,7 +746,7 @@ mod suspend {
             assert_eq!(
                 effects,
                 vec![
-                    Effect::FinalizeCapture,
+                    Effect::SuspendCapture,
                     Effect::ShowIndicator(IndicatorKind::Suspended)
                 ],
                 "{name}"
@@ -752,25 +759,16 @@ mod suspend {
     }
 
     #[test]
-    fn os_resume_asks() {
-        let mut s = suspended();
-        let effects = s.apply(at(30), Input::OsResumed).unwrap();
-        assert_eq!(effects, vec![Effect::AskContinueOrStop]);
-        assert!(matches!(s.state(), SessionState::Suspended { .. }));
-    }
-
-    #[test]
-    fn user_resume_records_gap() {
+    fn os_resume_continues_the_recording_and_marks_the_gap() {
         let mut s = recording(SessionMode::Meeting);
         s.apply(at(4), loud(4 * MIN)).unwrap();
         s.apply(at(4), Input::OsSuspended).unwrap();
-        s.apply(at(40), Input::OsResumed).unwrap();
-        let effects = s.apply(at(41), user(UserAction::ResumeRecording)).unwrap();
+        let effects = s.apply(at(40), Input::OsResumed).unwrap();
         assert_eq!(
             effects,
             vec![
-                Effect::ShowIndicator(IndicatorKind::Recording),
-                Effect::ResumeCapture
+                Effect::WakeCapture,
+                Effect::ShowIndicator(IndicatorKind::Recording)
             ]
         );
         assert!(matches!(s.state(), SessionState::Recording { .. }));
@@ -780,8 +778,70 @@ mod suspend {
                 kind: GapKind::Suspend,
                 audio_offset: 4 * MIN,
                 from: at(4),
-                to: Some(at(41)),
+                to: Some(at(40)),
             }]
         );
+        // A second wake notice (PBT_APMRESUMESUSPEND after RESUMEAUTOMATIC) changes nothing.
+        assert_eq!(s.apply(at(41), Input::OsResumed), Ok(vec![]));
+    }
+
+    #[test]
+    fn os_resume_keeps_a_pause() {
+        let mut s = suspended_while_paused();
+        let effects = s.apply(at(30), Input::OsResumed).unwrap();
+        assert_eq!(
+            effects,
+            vec![
+                Effect::WakeCapture,
+                Effect::ShowIndicator(IndicatorKind::Paused)
+            ]
+        );
+        assert!(matches!(s.state(), SessionState::Paused { .. }));
+        let kinds: Vec<_> = s.gaps().iter().map(|g| (g.kind, g.to)).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (GapKind::Pause, Some(at(2))),
+                (GapKind::Suspend, Some(at(30))),
+                (GapKind::Pause, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_click_wakes_a_session_whose_wake_notice_never_came() {
+        for (name, mut s) in [
+            ("recording", suspended()),
+            ("paused", suspended_while_paused()),
+        ] {
+            let effects = s.apply(at(5), user(UserAction::ResumeRecording)).unwrap();
+            assert_eq!(
+                effects,
+                vec![
+                    Effect::WakeCapture,
+                    Effect::ShowIndicator(IndicatorKind::Recording),
+                    Effect::ResumeCapture
+                ],
+                "{name}"
+            );
+            assert!(matches!(s.state(), SessionState::Recording { .. }));
+            assert!(s.gaps().iter().all(|gap| gap.to.is_some()), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_warning_from_before_the_sleep_never_stops_after_it() {
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=14 {
+            s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap();
+        }
+        s.apply(at(14), Input::SilenceWarningShown).unwrap();
+        s.apply(at(14), Input::OsSuspended).unwrap();
+        s.apply(at(60), Input::OsResumed).unwrap();
+        for m in 15..=27 {
+            let effects = s.apply(at(60 + m), tick(mins(m), 0.0, 0.0)).unwrap();
+            assert!(effects.is_empty(), "minute {m}: {effects:?}");
+        }
+        assert!(matches!(s.state(), SessionState::Recording { .. }));
     }
 }

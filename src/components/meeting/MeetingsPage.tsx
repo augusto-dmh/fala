@@ -15,10 +15,10 @@ import {
   type MeetingSearchHit,
   type MeetingStatus,
   type MeetingSummary,
-  type MeetingTemplates,
   type ProgressStage,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
@@ -26,14 +26,12 @@ import { ConsentNotice } from "./ConsentNotice";
 import { DeleteMeeting } from "./DeleteMeeting";
 import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
-import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
 import { SEARCH_AFTER_MS, searchResults } from "./meetingSearch";
 import { MeetingView } from "./MeetingView";
-import { NotesContextSettings } from "./NotesContextSettings";
+import { useMeetingTemplates } from "./useMeetingTemplates";
 import { RecorderPanel } from "./RecorderPanel";
 import { RecoverBanner } from "./RecoverBanner";
-import { TemplatesSettings } from "./TemplatesSettings";
 import {
   errorDetail,
   errorKey,
@@ -65,17 +63,19 @@ const withoutId = (ids: Set<string>, id: string) => {
   return next;
 };
 
+export interface MeetingsPageProps {
+  /** Settings, where the ElevenLabs key goes. */
+  onOpenSettings?: () => void;
+}
+
 /** The Meetings page: record, the list of sessions and the open one. */
-export function MeetingsPage() {
+export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<MeetingStatus>(IDLE);
   const [sessions, setSessions] = useState<MeetingSummary[]>([]);
   const [selected, setSelected] = useState<MeetingDetail | null>(null);
   const [live, setLive] = useState<MeetingDetail | null>(null);
-  const [catalog, setCatalog] = useState<MeetingTemplates>({
-    templates: [],
-    errors: [],
-  });
+  const [catalog] = useMeetingTemplates();
   const templates = catalog.templates;
   const [keys, setKeys] = useState<MeetingKeys | null>(null);
   const [mode, setMode] = useState<MeetingMode>("meeting");
@@ -132,18 +132,6 @@ export function MeetingsPage() {
       clearTimeout(timer);
     };
   }, [query, sessions]);
-
-  // The templates folder is read again on mount and whenever the app gets the focus back:
-  // the person edits the JSON in another app (no file watcher).
-  useEffect(() => {
-    const load = () =>
-      void commands
-        .meetingTemplates()
-        .then((r) => r.status === "ok" && setCatalog(r.data));
-    load();
-    window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
-  }, []);
 
   useEffect(() => {
     void commands
@@ -373,12 +361,6 @@ export function MeetingsPage() {
     await refresh();
   };
 
-  const saveKey = async (key: string) => {
-    const result = await commands.setMeetingTranscriptionKey(key);
-    if (result.status === "ok") setKeys(result.data);
-    else setError(result.error);
-  };
-
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <SettingsGroup title={t("meeting.title")}>
@@ -458,7 +440,14 @@ export function MeetingsPage() {
           </div>
         )}
         {keys && !keys.elevenlabs && (
-          <KeyField onSave={(key) => void saveKey(key)} />
+          <p className="flex flex-wrap items-center gap-2 px-4 pb-4 text-caption text-text-2">
+            {t("meeting.home.noKey")}
+            {onOpenSettings && (
+              <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+                {t("meeting.home.openSettings")}
+              </Button>
+            )}
+          </p>
         )}
         {error !== null && (
           <p role="alert" className="p-4 text-sm text-red-500">
@@ -517,8 +506,6 @@ export function MeetingsPage() {
           />
         </SettingsGroup>
       )}
-      <NotesContextSettings />
-      <TemplatesSettings catalog={catalog} onChange={setCatalog} />
     </div>
   );
 }

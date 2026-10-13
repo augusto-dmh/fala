@@ -467,7 +467,7 @@
       },
       "keepAwake": {
         "label": "Impedir a suspensão enquanto grava",
-        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar."
+        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar. Se ele dormir mesmo assim, a gravação continua na mesma reunião quando ele acordar."
       },
       "saveFailed": "Não consegui salvar essa opção. Tente de novo."
     },
@@ -1093,6 +1093,10 @@
       "title": "Nada foi gravado",
       "body": "A gravação terminou sem áudio e foi descartada."
     },
+    "woke": {
+      "title": "A gravação continuou depois da suspensão",
+      "body": "O computador dormiu por {{minutes}} min."
+    },
     "recordAgain": "Gravar de novo",
     "dismiss": "Fechar",
     "keep": "Manter",
@@ -1236,7 +1240,8 @@
       "writing": "Escrevendo notas…",
       "enhancing": "Aprimorando suas notas…",
       "notesFailed": "Não deu para gerar as notas. Suas anotações e o áudio estão salvos.",
-      "retry": "Tentar de novo"
+      "retry": "Tentar de novo",
+      "slept": "O computador dormiu por {{minutes}} min"
     },
     "notesEdit": {
       "edit": "Editar",
@@ -1314,9 +1319,11 @@
       "folderError": "Não consegui usar a pasta de templates: {{detail}}"
     },
     "key": {
-      "label": "Chave da ElevenLabs para transcrever:",
+      "label": "Chave da ElevenLabs",
       "placeholder": "cole a chave",
-      "save": "Salvar no cofre do sistema"
+      "save": "Salvar no cofre do sistema",
+      "saved": "Salva no cofre do sistema. Cole outra para trocar.",
+      "missing": "Sem ela, as reuniões gravam mas não são transcritas. Fica no cofre do sistema e não aparece de novo."
     },
     "errors": {
       "consent_required": "Aceite o aviso antes de gravar.",
@@ -1361,6 +1368,10 @@
       "title": "Recuperar gravação de {{time}} ({{minutes}} min)?",
       "body": "O Fala fechou no meio desta gravação. O áudio até o último segundo está salvo.",
       "action": "Recuperar"
+    },
+    "home": {
+      "noKey": "As reuniões gravam, mas só são transcritas com a chave da ElevenLabs.",
+      "openSettings": "Configurar"
     }
   }
 }

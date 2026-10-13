@@ -467,7 +467,7 @@
       },
       "keepAwake": {
         "label": "Keep the PC awake while recording",
-        "description": "The PC doesn't sleep while a meeting records; the screen can still turn off."
+        "description": "The PC doesn't sleep while a meeting records; the screen can still turn off. If it sleeps anyway, the recording goes on in the same meeting when it wakes."
       },
       "saveFailed": "This option could not be saved. Try again."
     },
@@ -1096,6 +1096,10 @@
       "title": "Nothing was recorded",
       "body": "The recording ended without audio and was discarded."
     },
+    "woke": {
+      "title": "The recording went on after sleep",
+      "body": "The computer slept for {{minutes}} min."
+    },
     "recordAgain": "Record again",
     "dismiss": "Close",
     "keep": "Keep",
@@ -1236,7 +1240,8 @@
       "writing": "Writing notes…",
       "enhancing": "Enhancing your notes…",
       "notesFailed": "Couldn't generate the notes. Your typed notes and the audio are saved.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "slept": "The computer slept for {{minutes}} min"
     },
     "notesEdit": {
       "edit": "Edit",
@@ -1314,9 +1319,11 @@
       "folderError": "Could not use the templates folder: {{detail}}"
     },
     "key": {
-      "label": "ElevenLabs key to transcribe:",
+      "label": "ElevenLabs key",
       "placeholder": "paste the key",
-      "save": "Save to the system keyring"
+      "save": "Save to the system keyring",
+      "saved": "Saved in the system keyring. Paste another to replace it.",
+      "missing": "Without it, meetings record but are not transcribed. It stays in the system keyring and is never shown again."
     },
     "errors": {
       "consent_required": "Accept the notice before recording.",
@@ -1361,6 +1368,10 @@
       "title": "Recover the recording from {{time}} ({{minutes}} min)?",
       "body": "Fala closed in the middle of this recording. The audio up to the last second is saved.",
       "action": "Recover"
+    },
+    "home": {
+      "noKey": "Meetings record, but are only transcribed with the ElevenLabs key.",
+      "openSettings": "Set up"
     }
   }
 }
