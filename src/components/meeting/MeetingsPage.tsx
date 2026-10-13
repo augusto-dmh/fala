@@ -24,6 +24,7 @@ import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
 import { DeleteMeeting } from "./DeleteMeeting";
+import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
 import { MeetingList } from "./MeetingList";
 import { SEARCH_AFTER_MS, searchResults } from "./meetingSearch";
@@ -98,6 +99,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   // The session the running import writes, known from its first progress event.
   const importId = useRef<string | null>(null);
   const importRunning = useRef(false);
+  const [granolaPath, setGranolaPath] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await commands.listMeetings();
@@ -417,6 +419,15 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
             stage={importStage}
             onImport={(source) => void importSource(source)}
             onCancel={() => void commands.cancelMeetingImport()}
+            onGranola={setGranolaPath}
+          />
+        )}
+        {granolaPath !== null && (
+          <GranolaImport
+            key={granolaPath}
+            path={granolaPath}
+            onImported={() => void refresh()}
+            onClose={() => setGranolaPath(null)}
           />
         )}
         {live && (
