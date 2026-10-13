@@ -9,6 +9,7 @@ import { Button } from "../ui/Button";
 import {
   PERIODS,
   averageWordsPerDay,
+  barText,
   dayBars,
   fallbackShare,
   formatCount,
@@ -121,6 +122,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
   const n = (v: number) => formatCount(v, lang);
   const empty = stats !== null && stats.dictations === 0;
   const average = stats ? averageWordsPerDay(stats) : null;
+  const bars = stats ? dayBars(stats.per_day, days, today) : [];
+  const barTexts = barText(bars, days, lang);
   return (
     <div className="w-full space-y-6">
       <PageHeader
@@ -217,11 +220,14 @@ export const StatsView: React.FC<StatsViewProps> = ({
             </dl>
           </Card>
           <Card title={t("stats.perDay.title")}>
-            <div className="flex h-32 items-end gap-px">
-              {dayBars(stats.per_day, days, today).map((bar) => {
+            <div className="flex h-40 items-stretch gap-px">
+              {bars.map((bar, i) => {
+                const text = barTexts[i];
+                const last = i === bars.length - 1;
                 const label = t("stats.perDay.bar", {
-                  day: bar.day,
+                  day: text.date,
                   words: n(bar.words),
+                  count: bar.words,
                 });
                 return (
                   <div
@@ -229,12 +235,35 @@ export const StatsView: React.FC<StatsViewProps> = ({
                     title={label}
                     aria-label={label}
                     role="img"
-                    className="flex h-full flex-1 items-end"
+                    className="flex min-w-0 flex-1 flex-col"
                   >
-                    <div
-                      className="w-full rounded-t-sm bg-text/60"
-                      style={{ height: `${Math.max(bar.height, 1)}%` }}
-                    />
+                    {/* The words float above the bar, so every height stays a share of
+                        the same column; pt-5 leaves room for the busiest day's. */}
+                    <div className="flex flex-1 flex-col justify-end pt-5">
+                      <div
+                        className="relative w-full rounded-t-sm bg-text/60"
+                        style={{ height: `${Math.max(bar.height, 1)}%` }}
+                      >
+                        {text.value && (
+                          <span className="absolute inset-x-0 bottom-full pb-0.5 text-center text-caption text-text-2 tabular-nums">
+                            {text.value}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {/* A date wider than its bar stays centred on it; today's ends at the
+                        chart's edge. */}
+                    <span aria-hidden="true" className="relative h-5">
+                      {text.axis && (
+                        <span
+                          className={`absolute top-1 whitespace-nowrap text-caption text-text-2 ${
+                            last ? "end-0" : "start-1/2 -translate-x-1/2"
+                          }`}
+                        >
+                          {text.axis}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 );
               })}
