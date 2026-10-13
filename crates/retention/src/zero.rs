@@ -1,9 +1,10 @@
 //! Apagar um trecho do áudio de uma sessão: zerar, não cortar. A linha do tempo fica igual, então
 //! os tempos dos outros trechos, as omissões do ditado e "tocar o trecho" continuam valendo.
 //!
-//! Cada Opus é decodificado do início ao fim, com as amostras do trecho zeradas, e recodificado
-//! num `.part`; só depois de os dois `.part` decodificarem com a contagem exata de amostras eles
-//! substituem os originais (a regra da ADR-0014 para o WAV vale para o Opus reescrito).
+//! Em cada Opus, os pacotes em volta do trecho são recodificados com as amostras zeradas e os
+//! outros são copiados, num `.part`; só depois de os dois `.part` decodificarem com a contagem
+//! exata de amostras eles substituem os originais (a regra da ADR-0014 para o WAV vale para o
+//! Opus reescrito).
 
 use std::fs::{self, File};
 use std::io::BufReader;
@@ -13,12 +14,17 @@ use ogg::PacketReader;
 use opus::{Channels, Decoder};
 
 use crate::encode::{
-    opus_error, parse_head, part_path, sync_dir, OpusStream, FRAME, MAX_DECODED, SAMPLE_RATE_HZ,
+    new_encoder, opus_error, parse_head, part_path, sync_dir, OpusStream, FRAME, MAX_DECODED,
+    MAX_PACKET, SAMPLE_RATE_HZ,
 };
-use crate::{validate_opus, RetentionError, MIC_FILE, SYSTEM_FILE};
+use crate::{validate_opus, RetentionError, MIC_FILE, PREROLL_SAMPLES, SYSTEM_FILE};
 
 /// Amostras por ms a 48 kHz.
 const PER_MS: u64 = SAMPLE_RATE_HZ as u64 / 1000;
+/// Quanto recodificar antes e depois do trecho: a emenda com os pacotes copiados fica longe dele.
+const MARGIN: u64 = SAMPLE_RATE_HZ as u64;
+/// Pacotes de aquecimento do encoder novo, descartados.
+const WARM: u64 = 5;
 
 /// Zera `[t0_ms, t1_ms)` de `mic.opus` e `sys.opus` em `session_dir`. Se um `.part` não sai ou
 /// não valida, os originais ficam como estavam. Se a troca do segundo falhar (arquivo preso), o
@@ -64,57 +70,77 @@ fn zero_range_with(
     renamed
 }
 
-/// Decodifica `src` inteiro, zera `[from, to)` (em amostras depois do pre-skip) e recodifica em
-/// `part`. Devolve o número de amostras, igual ao de `src`.
+/// Reescreve `src` em `part` com `[from, to)` (em amostras depois do pre-skip) zerado. Só os
+/// pacotes de uma janela em volta do trecho são recodificados; os outros são copiados byte a
+/// byte, então o resto do áudio não perde qualidade e o custo segue o tamanho do trecho, não o
+/// da reunião. Devolve o número de amostras, igual ao de `src`.
 fn rewrite_zeroed(
     src: &Path,
     part: &Path,
     serial: u32,
     (from, to): (u64, u64),
 ) -> Result<u64, RetentionError> {
-    let mut out = OpusStream::create(part, serial)?;
-    let mut frame = Vec::with_capacity(FRAME);
-    let mut index: u64 = 0;
-    let mut encoded: u64 = 0;
-    decode_all(src, |pcm| {
-        for &sample in pcm {
-            frame.push(if (from..to).contains(&index) {
-                0
-            } else {
-                sample
-            });
-            index += 1;
-            if frame.len() == FRAME {
-                encoded += FRAME as u64;
-                out.write_frame(&frame, encoded, false)?;
-                frame.clear();
-            }
-        }
-        Ok(())
-    })?;
-    // Como no `retain_wav`: quadros de zeros até cobrir `total + pre_skip` (RFC 7845 §4). O
-    // `decode_all` já cortou o original no granule final, então `index` é o total.
-    let total = index;
-    let target = total + out.pre_skip;
-    loop {
-        frame.resize(FRAME, 0);
-        encoded += FRAME as u64;
-        let last = encoded >= target;
-        out.write_frame(&frame, if last { target } else { encoded }, last)?;
-        frame.clear();
-        if last {
-            break;
+    let stream = read_stream(src)?;
+    let (pre_skip, frame) = (stream.pre_skip, FRAME as u64);
+    let count = stream.packets.len() as u64;
+    let total = stream.final_granule.saturating_sub(pre_skip);
+    let (from, to) = (from.min(total), to.min(total));
+    // A janela, em pacotes: o trecho na posição do stream (com o pre-skip) mais uma margem.
+    let first = (from + pre_skip).saturating_sub(MARGIN) / frame;
+    let end = (to + pre_skip + MARGIN).div_ceil(frame).min(count);
+    // Um encoder novo atrasa o sinal em `pre_skip`: alimentado a partir do instante original
+    // `P`, o pacote dele cai na posição `P` do stream. Os `warm` primeiros só aquecem o encoder.
+    let warm = first.min(WARM);
+    let start = (first - warm) * frame;
+    let mut pcm = decode_positions(src, &stream, start + pre_skip, end * frame + pre_skip)?;
+    for (i, sample) in pcm.iter_mut().enumerate() {
+        if (from..to).contains(&(start + i as u64)) {
+            *sample = 0;
         }
     }
-    out.finish(part)?;
+    let mut encoder = new_encoder()?;
+    let mut out = vec![0u8; MAX_PACKET];
+    let mut packets = stream.packets;
+    for (m, chunk) in pcm.chunks(FRAME).enumerate() {
+        let mut input = chunk.to_vec();
+        input.resize(FRAME, 0);
+        let len = encoder.encode(&input, &mut out).map_err(opus_error)?;
+        if let Some(packet) = (m as u64)
+            .checked_sub(warm)
+            .and_then(|k| packets.get_mut((first + k) as usize))
+        {
+            *packet = out[..len].to_vec();
+        }
+    }
+
+    let mut writer = OpusStream::create(part, serial)?;
+    if writer.pre_skip != pre_skip {
+        return Err(RetentionError::Opus(format!(
+            "pre-skip {} no original e {} no encoder",
+            pre_skip, writer.pre_skip
+        )));
+    }
+    for (i, packet) in packets.into_iter().enumerate() {
+        let last = i as u64 + 1 == count;
+        let granule = if last {
+            stream.final_granule
+        } else {
+            (i as u64 + 1) * frame
+        };
+        writer.write_packet(packet, granule, last)?;
+    }
+    writer.finish(part)?;
     Ok(total)
 }
 
-/// Entrega o PCM de um Ogg Opus mono do começo ao fim, sem o pre-skip e cortado no granule final.
-fn decode_all(
-    path: &Path,
-    mut sink: impl FnMut(&[i16]) -> Result<(), RetentionError>,
-) -> Result<(), RetentionError> {
+/// Um Ogg Opus retido lido em memória: os pacotes de áudio (uma hora a 24 kbps são ~11 MB).
+struct Stream {
+    pre_skip: u64,
+    packets: Vec<Vec<u8>>,
+    final_granule: u64,
+}
+
+fn read_stream(path: &Path) -> Result<Stream, RetentionError> {
     let unreadable = |reason: String| RetentionError::Unreadable {
         path: path.to_path_buf(),
         reason,
@@ -129,29 +155,54 @@ fn decode_all(
     let head = next()?.ok_or_else(|| unreadable("sem OpusHead".into()))?;
     let pre_skip = u64::from(parse_head(&head.data).map_err(&unreadable)?);
     next()?.ok_or_else(|| unreadable("sem OpusTags".into()))?;
-    let mut decoder = Decoder::new(SAMPLE_RATE_HZ, Channels::Mono).map_err(opus_error)?;
-    let mut pcm = vec![0i16; MAX_DECODED];
-    let mut position: u64 = 0;
+    let mut packets = Vec::new();
     while let Some(packet) = next()? {
-        let n = decoder
-            .decode(&packet.data, &mut pcm, false)
-            .map_err(|e| unreadable(format!("pacote indecodificável: {e}")))?
-            as u64;
-        let mut valid = n;
-        if packet.last_in_stream() {
-            valid = valid.min(packet.absgp_page().saturating_sub(position));
-        }
-        let from = pre_skip.max(position);
-        let to = position + valid;
-        if to > from {
-            sink(&pcm[(from - position) as usize..(to - position) as usize])?;
-        }
-        position += n;
-        if packet.last_in_stream() {
-            return Ok(());
+        let last = packet.last_in_stream();
+        let granule = packet.absgp_page();
+        packets.push(packet.data);
+        if last {
+            return Ok(Stream {
+                pre_skip,
+                packets,
+                final_granule: granule,
+            });
         }
     }
     Err(unreadable("stream sem fim (EOS)".into()))
+}
+
+/// O PCM das posições `[a, b)` do stream (com o pre-skip), decodificando desde
+/// [`PREROLL_SAMPLES`] antes de `a`; o que passa do fim vem em zeros.
+fn decode_positions(
+    path: &Path,
+    stream: &Stream,
+    a: u64,
+    b: u64,
+) -> Result<Vec<i16>, RetentionError> {
+    let frame = FRAME as u64;
+    let first = a.saturating_sub(PREROLL_SAMPLES) / frame;
+    let mut decoder = Decoder::new(SAMPLE_RATE_HZ, Channels::Mono).map_err(opus_error)?;
+    let mut pcm = vec![0i16; MAX_DECODED];
+    let mut out = Vec::with_capacity(usize::try_from(b - a).unwrap_or(0));
+    let mut position = first * frame;
+    for packet in stream.packets.iter().skip(first as usize) {
+        if position >= b {
+            break;
+        }
+        let n = decoder
+            .decode(packet, &mut pcm, false)
+            .map_err(|e| RetentionError::Unreadable {
+                path: path.to_path_buf(),
+                reason: format!("pacote indecodificável: {e}"),
+            })? as u64;
+        let (lo, hi) = (a.max(position), b.min(position + n));
+        if hi > lo {
+            out.extend_from_slice(&pcm[(lo - position) as usize..(hi - position) as usize]);
+        }
+        position += n;
+    }
+    out.resize(usize::try_from(b - a).unwrap_or(0), 0);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -188,10 +239,6 @@ mod tests {
             Err(RetentionError::ValidationFailed { .. })
         ));
         assert_eq!(fs::read(dir.join(MIC_FILE)).unwrap(), before);
-        let names: Vec<_> = fs::read_dir(&dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert!(names.iter().all(|n| !n.ends_with(".part")), "{names:?}");
+        assert!(!dir.join("mic.opus.part").exists() && !dir.join("sys.opus.part").exists());
     }
 }

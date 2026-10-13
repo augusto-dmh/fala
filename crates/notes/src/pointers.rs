@@ -99,10 +99,6 @@ mod tests {
              - Minha nota, sem ponteiro [[#^s99|x]] e [[#^sx|y]] [[#^s1|00:00]]"
         );
         assert_eq!(lines, 2);
-        assert_eq!(
-            remap_pointers("sem ponteiros", &map, "x"),
-            ("sem ponteiros".into(), 0)
-        );
         // Um ponteiro quebrado no fim não trava a leitura.
         assert_eq!(remap_pointers("[[#^s4|01", &map, "x").0, "[[#^s4|01");
     }

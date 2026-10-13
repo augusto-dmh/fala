@@ -29,6 +29,4 @@ C7, C8 PASS: `bun src/components/meeting/trash.test.tsx` → T1-T4 ok; the 15 fi
 
 ## S3 (PR 3)
 
-C10-C12 PASS: `cargo test -p fala-retention` (zero 1 passed, unit 13), `-p fala-storage`
-(meeting_erasures 3 passed), `-p fala-notes` (35 passed). Opus spreads each edge ~25 ms
-(one frame plus lookahead); from 40 ms in, the samples are exactly zero.
+C10, C11 PASS (`cargo test -p fala-retention`, `-p fala-storage`, `-p fala-notes`). Opus spreads each edge ~25 ms; from 40 ms in, exact zeros.

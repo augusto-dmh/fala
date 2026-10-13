@@ -3,7 +3,6 @@
 #![allow(clippy::unwrap_used)]
 
 use std::path::Path;
-use std::time::Instant;
 
 use fala_retention::{decode_range, retain_wav, zero_range, MIC_FILE, SYSTEM_FILE};
 
@@ -41,6 +40,13 @@ fn decode_all(path: &Path, samples: u64) -> Vec<i16> {
     decode_range(path, 0, samples).unwrap()
 }
 
+/// The raw packets of an Ogg Opus, headers included.
+fn packets(path: &Path) -> Vec<Vec<u8>> {
+    let file = std::io::BufReader::new(std::fs::File::open(path).unwrap());
+    let mut reader = ogg::PacketReader::new(file);
+    std::iter::from_fn(|| reader.read_packet().unwrap().map(|p| p.data)).collect()
+}
+
 fn rms(pcm: &[i16]) -> f64 {
     let sum: f64 = pcm.iter().map(|&s| f64::from(s).powi(2)).sum();
     (sum / pcm.len() as f64).sqrt()
@@ -71,6 +77,7 @@ fn zero_range_silences_both_channels_and_keeps_the_rest() {
         .iter()
         .map(|f| decode_all(f, retained.samples))
         .collect();
+    let packets_before: Vec<Vec<Vec<u8>>> = files.iter().map(|f| packets(f)).collect();
 
     zero_range(&dir, 2_000, 3_500).unwrap();
 
@@ -89,24 +96,17 @@ fn zero_range_silences_both_channels_and_keeps_the_rest() {
             assert!(c > 0.9, "{file:?} {from}-{to} ms: correlação {c:.3}");
         }
     }
+    // Away from the stretch, the Opus packets are the same bytes: no second-generation loss.
+    for (file, before) in files.iter().zip(&packets_before) {
+        let after = packets(file);
+        assert_eq!(after.len(), before.len());
+        assert_eq!(after[..40], before[..40], "{file:?}");
+        assert_eq!(after[240..], before[240..], "{file:?}");
+        assert_ne!(after[100..150], before[100..150], "{file:?}");
+    }
     assert!(std::fs::read_dir(&dir).unwrap().all(|e| !e
         .unwrap()
         .file_name()
         .to_string_lossy()
         .ends_with(".part")));
-}
-
-/// Quanto custa recodificar uma hora: `cargo test -p fala-retention --release --test zero --
-/// --ignored --nocapture`.
-#[test]
-#[ignore = "mede o tempo de 1 h; escreve ~700 MB em disco"]
-fn one_hour_takes() {
-    let tmp = tempfile::tempdir().unwrap();
-    let wav = tmp.path().join("recording.wav");
-    let dir = tmp.path().join("sessao");
-    write_wav(&wav, 3_600);
-    retain_wav(&wav, &dir).unwrap();
-    let start = Instant::now();
-    zero_range(&dir, 1_800_000, 1_830_000).unwrap();
-    println!("zero_range de 1 h: {:.1} s", start.elapsed().as_secs_f64());
 }

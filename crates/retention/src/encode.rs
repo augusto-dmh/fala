@@ -14,7 +14,7 @@ pub const BITRATE_BPS: i32 = 24_000;
 /// 20 ms a 48 kHz.
 pub(crate) const FRAME: usize = 960;
 /// Maior pacote que o libopus devolve.
-const MAX_PACKET: usize = 4000;
+pub(crate) const MAX_PACKET: usize = 4000;
 /// Maior quadro que um pacote decodifica (120 ms a 48 kHz).
 pub(crate) const MAX_DECODED: usize = 5760;
 /// Um page Ogg por segundo de áudio: dá pontos de busca para tocar um trecho (2.F9).
@@ -258,6 +258,16 @@ impl OpusStream {
             .encoder
             .encode(frame, &mut self.out)
             .map_err(opus_error)?;
+        self.write_packet(self.out[..len].to_vec(), granule, last)
+    }
+
+    /// Escreve um pacote já codificado, com a mesma divisão em pages de `write_frame`.
+    pub(crate) fn write_packet(
+        &mut self,
+        packet: Vec<u8>,
+        granule: u64,
+        last: bool,
+    ) -> Result<(), RetentionError> {
         self.packets += 1;
         let info = if last {
             PacketWriteEndInfo::EndStream
@@ -267,7 +277,7 @@ impl OpusStream {
             PacketWriteEndInfo::NormalPacket
         };
         self.writer
-            .write_packet(self.out[..len].to_vec(), self.serial, info, granule)
+            .write_packet(packet, self.serial, info, granule)
             .map_err(|e| RetentionError::Opus(format!("escrita Ogg: {e}")))
     }
 
@@ -282,7 +292,7 @@ impl OpusStream {
     }
 }
 
-fn new_encoder() -> Result<Encoder, RetentionError> {
+pub(crate) fn new_encoder() -> Result<Encoder, RetentionError> {
     let mut encoder =
         Encoder::new(SAMPLE_RATE_HZ, Channels::Mono, Application::Voip).map_err(opus_error)?;
     encoder

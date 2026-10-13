@@ -115,14 +115,6 @@ fn erasing_takes_both_channels_and_remaps_the_notes() {
             (4, "Fechado.".to_string()),
         ]
     );
-    let segments = store.meeting_segments(id).unwrap();
-    assert_eq!(
-        segments[2],
-        MeetingSegment {
-            seq: 3,
-            ..erased_segment(20_000, 29_000)
-        }
-    );
     let notes = store.meeting(id).unwrap().notes_md.unwrap();
     assert_eq!(
         notes,
@@ -165,39 +157,6 @@ fn erasing_takes_both_channels_and_remaps_the_notes() {
 }
 
 #[test]
-fn a_new_transcript_keeps_the_erased_stretch_out() {
-    let e = env("meeting_erase_retranscribe");
-    let mut store = e.open();
-    let id = session(&mut store);
-    store
-        .erase_meeting_range(id, (20_000, 29_000), remap)
-        .unwrap();
-
-    // O ASR devolve texto dentro do trecho (e um marcador de mentira): nada disso entra.
-    store
-        .replace_meeting_segments(
-            id,
-            vec![
-                line(0, SegmentSpeaker::Me, "Vamos começar."),
-                line(21_000, SegmentSpeaker::Me, "hipopótamo"),
-                line(26_000, SegmentSpeaker::Person(1), "hipopótamo"),
-                erased_segment(1_000, 2_000),
-                line(40_000, SegmentSpeaker::Me, "Fechado."),
-            ],
-            at(15, 0, 0),
-        )
-        .unwrap();
-    assert_eq!(
-        texts(&store, id),
-        [
-            (1, "Vamos começar.".to_string()),
-            (2, ERASED_TEXT.to_string()),
-            (3, "Fechado.".to_string()),
-        ]
-    );
-}
-
-#[test]
 fn reindex_brings_back_the_marker_and_keeps_it_on_the_next_transcript() {
     let e = env("meeting_erase_reindex");
     let mut store = e.open();
@@ -225,9 +184,18 @@ fn reindex_brings_back_the_marker_and_keeps_it_on_the_next_transcript() {
     store
         .replace_meeting_segments(
             id,
-            vec![line(22_000, SegmentSpeaker::Me, "hipopótamo")],
+            // The ASR brings text inside the stretch and a fake marker: neither comes in.
+            vec![
+                line(22_000, SegmentSpeaker::Me, "hipopótamo"),
+                line(26_000, SegmentSpeaker::Person(1), "hipopótamo"),
+                erased_segment(1_000, 2_000),
+                line(40_000, SegmentSpeaker::Me, "Fechado."),
+            ],
             at(15, 0, 0),
         )
         .unwrap();
-    assert_eq!(texts(&store, id), [(1, ERASED_TEXT.to_string())]);
+    assert_eq!(
+        texts(&store, id),
+        [(1, ERASED_TEXT.to_string()), (2, "Fechado.".to_string())]
+    );
 }

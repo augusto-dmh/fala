@@ -23,8 +23,5 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-session-edit`
 
 ## S3 — apagar trecho, núcleo (PR 3)
 
-- **C10** `zero_range`: mesma contagem nos dois Opus, < -90 dBFS a 40 ms das bordas, o resto
-  correlacionado; um `.part` recusado não substitui. `cargo test -p fala-retention`
-- **C11** falas que cruzam o intervalo saem nos dois canais, marcador, renumeração, ponteiros,
-  nomes e nota editada ficam; transcrição nova e `reindex` mantêm o apagado. `cargo test -p fala-storage --test meeting_erasures`
-- **C12** `remap_pointers`. `cargo test -p fala-notes pointers`
+- **C10** `zero_range`: mesma contagem, < -90 dBFS a 40 ms das bordas, pacotes fora da janela iguais, `.part` recusado não substitui. `cargo test -p fala-retention`
+- **C11** falas que cruzam saem nos dois canais, marcador, renumeração, ponteiros, trechos que se cruzam viram um; transcrição nova e `reindex` mantêm o apagado. `cargo test -p fala-storage --test meeting_erasures`, `-p fala-notes`
