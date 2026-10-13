@@ -40,7 +40,7 @@ const TRANSCRIPT_HEADING: &str = "\n## Transcrição\n\n";
 const SEGMENTS_OPEN: &str = "\n<!-- fala:segments\n";
 const SEGMENTS_CLOSE: &str = "-->\n";
 /// O marcador das linhas geradas (`fala_notes::GENERATED_MARKER`); sai do texto dos trechos.
-const GENERATED_MARKER: &str = "<!-- fala:ia -->";
+pub(crate) const GENERATED_MARKER: &str = "<!-- fala:ia -->";
 /// Caracteres que o Windows não aceita num nome de arquivo ou que quebram um link do Obsidian.
 const FORBIDDEN: &str = "<>:\"/\\|?*#^[]";
 /// Teto do título no nome do arquivo, em caracteres.

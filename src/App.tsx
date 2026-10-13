@@ -261,6 +261,17 @@ function App() {
     };
   }, []);
 
+  // "Configurações" in the pill menu opens Configurações.
+  useEffect(() => {
+    const unlisten = listen("open-settings", () => {
+      setDestination("settings");
+      setSettingsView("general");
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const revealMainWindowForPermissions = async () => {
     try {
       await commands.showMainWindowCommand();

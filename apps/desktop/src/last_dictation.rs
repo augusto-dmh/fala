@@ -174,11 +174,20 @@ pub fn paste_last(app: &AppHandle, from_tray: bool) {
     });
 }
 
-/// Remembers the app in the foreground when the pointer reaches the tray icon, before the
-/// menu takes the focus. Windows only: the tray's pointer events are wired there.
+/// Remembers the app in the foreground when the pointer reaches the tray icon or right-clicks
+/// the pill, before the menu takes the focus. Windows only: the tray's pointer events are wired
+/// there.
 #[cfg(windows)]
 pub fn remember_foreground() {
     platform::remember_foreground();
+}
+
+/// After a menu closed: if `owner` (the pill, which never takes focus otherwise) holds the
+/// foreground, gives it back to the app remembered by [`remember_foreground`]. A click that
+/// closed the menu on another window keeps that window.
+#[cfg(windows)]
+pub fn return_focus_from(owner: windows::Win32::Foundation::HWND) {
+    platform::return_focus_from(owner);
 }
 
 #[cfg(windows)]
@@ -194,7 +203,7 @@ mod platform {
         GetForegroundWindow, IsWindow, SetForegroundWindow,
     };
 
-    /// The window that had focus before the tray menu opened; 0 when unknown.
+    /// The window that had focus before the tray or the pill menu opened; 0 when unknown.
     static TRAY_FOREGROUND: AtomicIsize = AtomicIsize::new(0);
 
     /// Time for the restored window to take the focus before the chord.
@@ -204,6 +213,24 @@ mod platform {
         // SAFETY: no arguments; returns a null handle when no window has the focus.
         let hwnd = unsafe { GetForegroundWindow() };
         TRAY_FOREGROUND.store(hwnd.0 as isize, Ordering::Relaxed);
+    }
+
+    pub(super) fn return_focus_from(owner: HWND) {
+        // SAFETY: no arguments; returns a null handle when no window has the focus.
+        if unsafe { GetForegroundWindow() } != owner {
+            return;
+        }
+        let raw = TRAY_FOREGROUND.load(Ordering::Relaxed);
+        if raw == 0 {
+            return;
+        }
+        let hwnd = HWND(raw as *mut _);
+        // SAFETY: both calls only read the handle; a stale one makes `IsWindow` false.
+        let restored =
+            unsafe { IsWindow(Some(hwnd)).as_bool() && SetForegroundWindow(hwnd).as_bool() };
+        if !restored {
+            log::debug!("pill menu: could not give the focus back to the previous window");
+        }
     }
 
     pub(super) fn restore_foreground() {

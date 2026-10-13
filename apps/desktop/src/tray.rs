@@ -714,50 +714,10 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             model_submenu.append(&item)?;
         }
 
-        // Dictation language: idle only, so a dictation in flight keeps the
-        // language it started with.
-        let language_submenu =
-            Submenu::with_id(app, "language_submenu", &strings.dictation_language, true)?;
-        for tag in &DICTATION_LANGUAGES {
-            let label = if *tag == "en" {
-                &strings.language_en
-            } else {
-                &strings.language_pt_br
-            };
-            let item = CheckMenuItem::with_id(
-                app,
-                language_item_id(tag),
-                label,
-                true,
-                Some(*tag) == inputs.language_choice,
-                None::<&str>,
-            )?;
-            language_submenu.append(&item)?;
-        }
-
-        // Microphone: idle only, like the language, so a recording keeps its device.
-        let microphone_submenu =
-            Submenu::with_id(app, "microphone_submenu", &strings.microphone, true)?;
-        let auto_i = CheckMenuItem::with_id(
-            app,
-            MICROPHONE_AUTO_ID,
-            microphone_auto_label(&strings, inputs.microphones.default.as_deref()),
-            true,
-            inputs.selected_microphone.is_none(),
-            None::<&str>,
-        )?;
-        microphone_submenu.append(&auto_i)?;
-        for name in &inputs.microphones.names {
-            let item = CheckMenuItem::with_id(
-                app,
-                microphone_item_id(name),
-                name,
-                true,
-                inputs.selected_microphone.as_deref() == Some(name.as_str()),
-                None::<&str>,
-            )?;
-            microphone_submenu.append(&item)?;
-        }
+        // Dictation language and microphone: idle only, so a dictation in flight keeps the
+        // language and the device it started with.
+        let language_submenu = language_submenu(app, &strings, inputs, "language_submenu")?;
+        let microphone_submenu = microphone_submenu(app, &strings, inputs, "microphone_submenu")?;
 
         let unload_model_i = MenuItem::with_id(
             app,
@@ -823,6 +783,120 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     Ok((menu, tooltip))
 }
 
+/// The dictation language submenu, shared by the tray and the pill menus.
+fn language_submenu(
+    app: &AppHandle,
+    strings: &TrayStrings,
+    inputs: &MenuInputs,
+    id: &str,
+) -> tauri::Result<Submenu<tauri::Wry>> {
+    let submenu = Submenu::with_id(app, id, &strings.dictation_language, true)?;
+    for tag in &DICTATION_LANGUAGES {
+        let label = if *tag == "en" {
+            &strings.language_en
+        } else {
+            &strings.language_pt_br
+        };
+        let item = CheckMenuItem::with_id(
+            app,
+            language_item_id(tag),
+            label,
+            true,
+            Some(*tag) == inputs.language_choice,
+            None::<&str>,
+        )?;
+        submenu.append(&item)?;
+    }
+    Ok(submenu)
+}
+
+/// The microphone submenu, shared by the tray and the pill menus.
+fn microphone_submenu(
+    app: &AppHandle,
+    strings: &TrayStrings,
+    inputs: &MenuInputs,
+    id: &str,
+) -> tauri::Result<Submenu<tauri::Wry>> {
+    let submenu = Submenu::with_id(app, id, &strings.microphone, true)?;
+    let auto_i = CheckMenuItem::with_id(
+        app,
+        MICROPHONE_AUTO_ID,
+        microphone_auto_label(strings, inputs.microphones.default.as_deref()),
+        true,
+        inputs.selected_microphone.is_none(),
+        None::<&str>,
+    )?;
+    submenu.append(&auto_i)?;
+    for name in &inputs.microphones.names {
+        let item = CheckMenuItem::with_id(
+            app,
+            microphone_item_id(name),
+            name,
+            true,
+            inputs.selected_microphone.as_deref() == Some(name.as_str()),
+            None::<&str>,
+        )?;
+        submenu.append(&item)?;
+    }
+    Ok(submenu)
+}
+
+/// Menu item id for "Ocultar por 1 hora" in the pill menu.
+pub const PILL_HIDE_HOUR_ID: &str = "pill_hide_hour";
+
+/// Menu item id for "Configurações" in the pill menu: opens the main window on Configurações.
+pub const PILL_SETTINGS_ID: &str = "pill_settings";
+
+/// The pill menu, top to bottom; `None` is a separator. The submenus and "Colar o último ditado"
+/// reuse the tray's ids, so the tray's handler in `lib.rs` runs them.
+const PILL_MENU: [Option<&str>; 7] = [
+    Some("paste_last_transcript"),
+    None,
+    Some("pill_language_submenu"),
+    Some("pill_microphone_submenu"),
+    None,
+    Some(PILL_HIDE_HOUR_ID),
+    Some(PILL_SETTINGS_ID),
+];
+
+/// The menu a right click on the idle pill opens (Wispr's Flow Bar menu, research 21 § 8.A).
+/// Built from the same inputs as the tray, with the microphone list the tray last refreshed.
+pub fn build_pill_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let inputs = compute_desired(app, TrayIconState::Idle).menu;
+    let strings = get_tray_translations(Some(inputs.locale.clone()));
+    let menu = Menu::new(app)?;
+    for entry in PILL_MENU {
+        match entry {
+            None => menu.append(&PredefinedMenuItem::separator(app)?)?,
+            Some("pill_language_submenu") => menu.append(&language_submenu(
+                app,
+                &strings,
+                &inputs,
+                "pill_language_submenu",
+            )?)?,
+            Some("pill_microphone_submenu") => menu.append(&microphone_submenu(
+                app,
+                &strings,
+                &inputs,
+                "pill_microphone_submenu",
+            )?)?,
+            Some(id) => {
+                let label = match id {
+                    "paste_last_transcript" => &strings.paste_last_transcript,
+                    PILL_HIDE_HOUR_ID => &strings.hide_pill_hour,
+                    PILL_SETTINGS_ID => &strings.settings,
+                    other => {
+                        warn!("pill menu item without a label: {other}");
+                        continue;
+                    }
+                };
+                menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?
+            }
+        }
+    }
+    Ok(menu)
+}
+
 /// The last-dictation items: paste only while idle, since a dictation in flight ignores it.
 fn last_dictation_menu_ids(busy: bool) -> &'static [&'static str] {
     if busy {
@@ -872,7 +946,7 @@ mod tests {
         check_updates_item_visible, language_item_id, last_dictation_menu_ids, load_tray_icon,
         microphone_auto_label, microphone_item_id, parse_language_item, parse_microphone_item,
         tray_language_choice, MenuInputs, Microphones, TrayDesired, TrayIconState,
-        MICROPHONE_AUTO_ID,
+        MICROPHONE_AUTO_ID, PILL_MENU,
     };
     use super::{effective_icon_state, meeting_menu_ids};
     use crate::meeting::MeetingIndicator;
@@ -925,6 +999,39 @@ mod tests {
         let mut recording = inputs(false);
         recording.meeting = MeetingIndicator::Recording;
         assert_ne!(inputs(false), recording);
+    }
+
+    #[test]
+    fn pill_menu_items_and_their_handlers() {
+        assert_eq!(
+            PILL_MENU,
+            [
+                Some("paste_last_transcript"),
+                None,
+                Some("pill_language_submenu"),
+                Some("pill_microphone_submenu"),
+                None,
+                Some("pill_hide_hour"),
+                Some("pill_settings"),
+            ]
+        );
+        // Every item the pill menu adds runs in the tray's handler, which hears every menu.
+        let lib = include_str!("lib.rs");
+        let handler = &lib[lib.find(".on_menu_event(").unwrap()..];
+        for id in [
+            "\"paste_last_transcript\" =>",
+            "tray::PILL_HIDE_HOUR_ID =>",
+            "tray::PILL_SETTINGS_ID =>",
+            "tray::LANGUAGE_ITEM_PREFIX",
+            "tray::MICROPHONE_ITEM_PREFIX",
+        ] {
+            assert!(handler.contains(id), "{id}");
+        }
+        assert!(handler.contains("overlay::snooze_idle(app)"));
+        let strings = get_tray_translations(Some("pt-BR".to_string()));
+        assert_eq!(strings.hide_pill_hour, "Ocultar por 1 hora");
+        let strings = get_tray_translations(Some("en".to_string()));
+        assert_eq!(strings.hide_pill_hour, "Hide for 1 hour");
     }
 
     #[test]
