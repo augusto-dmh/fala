@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { errorDetail } from "./meetingModel";
+import { useMeetingTemplates } from "./useMeetingTemplates";
 
 export interface TemplatesSettingsProps {
   catalog: MeetingTemplates;
@@ -80,4 +81,10 @@ export function TemplatesSettings(props: TemplatesSettingsProps) {
       )}
     </SettingsGroup>
   );
+}
+
+/** Settings > Meetings: the templates, with their own copy of the catalog. */
+export function MeetingTemplatesSettings() {
+  const [catalog, setCatalog] = useMeetingTemplates();
+  return <TemplatesSettings catalog={catalog} onChange={setCatalog} />;
 }
