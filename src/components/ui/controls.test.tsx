@@ -94,7 +94,7 @@ for (const mode of ["tooltip", "inline"] as const) {
     );
     assert.match(
       html,
-      /<h3 class="[^"]*text-body[^"]*">Atalho<\/h3>/,
+      /<h3 class="[^"]*text-body[^"]*"[^>]*>Atalho<\/h3>/,
       `${mode}/${layout} title`,
     );
     assert.match(
