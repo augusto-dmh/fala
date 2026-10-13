@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useSettings } from "../../hooks/useSettings";
@@ -7,6 +7,11 @@ import { Input } from "../ui/Input";
 import { Textarea } from "../ui/Textarea";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
+import {
+  entryButton,
+  neighbourAfterRemoval,
+  useFocusWhenIdle,
+} from "../../hooks/useFocusWhenIdle";
 
 interface DictionaryReplacementsProps {
   /** Shows only the pairs whose spoken or written form contains it. */
@@ -55,6 +60,9 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
     const keys = `dictionary.${kind}`;
     const pairs = getSetting(setting) || [];
     const busy = isUpdating(setting);
+    const spokenRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLUListElement>(null);
+    const focusWhenIdle = useFocusWhenIdle(busy);
     const cleanSpoken = spoken.replace(/\s+/g, " ").trim();
     const cleanWritten = written.trim();
     const words = cleanSpoken ? cleanSpoken.split(" ").length : 0;
@@ -78,9 +86,24 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
       ]);
       setSpoken("");
       setWritten("");
+      // The fields stay enabled during the write: the next pair starts at its spoken form.
+      spokenRef.current?.focus();
     };
 
-    const handleRemove = (target: string) => {
+    // From the keyboard, focus moves to the pair that takes its place (or the field); a click
+    // leaves focus alone.
+    const handleRemove = (target: string, fromKeyboard: boolean) => {
+      if (fromKeyboard) {
+        const next = neighbourAfterRemoval(
+          visible.map((pair) => pair.spoken),
+          target,
+        );
+        focusWhenIdle(() =>
+          next === null
+            ? spokenRef.current
+            : (entryButton(listRef.current, next) ?? spokenRef.current),
+        );
+      }
       updateSetting(
         setting,
         pairs.filter((pair) => pair.spoken !== target),
@@ -111,6 +134,7 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
         >
           <div className="flex flex-wrap items-center gap-2">
             <Input
+              ref={spokenRef}
               type="text"
               className="w-40"
               value={spoken}
@@ -120,7 +144,6 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
               aria-label={t(`${keys}.spokenLabel`)}
               maxLength={MAX_SPOKEN}
               variant="compact"
-              disabled={busy}
             />
             <ArrowIcon />
             {kind === "snippets" ? (
@@ -133,7 +156,6 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
                 aria-label={t(`${keys}.writtenLabel`)}
                 maxLength={maxWritten}
                 variant="compact"
-                disabled={busy}
               />
             ) : (
               <Input
@@ -146,7 +168,6 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
                 aria-label={t(`${keys}.writtenLabel`)}
                 maxLength={maxWritten}
                 variant="compact"
-                disabled={busy}
               />
             )}
             <Button
@@ -165,7 +186,7 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
           )}
         </SettingContainer>
         {visible.length > 0 && (
-          <ul className="px-4 py-2 flex flex-col gap-1">
+          <ul ref={listRef} className="px-4 py-2 flex flex-col gap-1">
             {visible.map((pair) => (
               <li
                 key={pair.spoken}
@@ -180,7 +201,10 @@ export const DictionaryReplacements: React.FC<DictionaryReplacementsProps> =
                   {t(`${keys}.uses`, { count: pair.uses ?? 0 })}
                 </span>
                 <Button
-                  onClick={() => handleRemove(pair.spoken)}
+                  data-entry={pair.spoken}
+                  onClick={(event) =>
+                    handleRemove(pair.spoken, event.detail === 0)
+                  }
                   disabled={busy}
                   variant="secondary"
                   size="sm"
