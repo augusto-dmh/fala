@@ -576,9 +576,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             {t("settings.history.partialAi")}
           </span>
         )}
-        {expanded && (
-          <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
-        )}
+        {expanded &&
+          (entry.audio_deleted ? (
+            <span className="text-xs text-text/50">
+              {t("settings.history.audioDeleted")}
+            </span>
+          ) : (
+            <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
+          ))}
       </div>
       <div
         className={`flex items-start shrink-0 transition-opacity ${
@@ -631,21 +636,23 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             fill={entry.saved ? "currentColor" : "none"}
           />
         </IconButton>
-        <IconButton
-          onClick={handleRetranscribe}
-          disabled={retrying}
-          title={t("settings.history.retranscribe")}
-        >
-          <RotateCcw
-            width={16}
-            height={16}
-            style={
-              retrying
-                ? { animation: "spin 1s linear infinite reverse" }
-                : undefined
-            }
-          />
-        </IconButton>
+        {!entry.audio_deleted && (
+          <IconButton
+            onClick={handleRetranscribe}
+            disabled={retrying}
+            title={t("settings.history.retranscribe")}
+          >
+            <RotateCcw
+              width={16}
+              height={16}
+              style={
+                retrying
+                  ? { animation: "spin 1s linear infinite reverse" }
+                  : undefined
+              }
+            />
+          </IconButton>
+        )}
         <IconButton
           onClick={handleDeleteEntry}
           disabled={retrying}
