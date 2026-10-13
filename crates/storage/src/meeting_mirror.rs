@@ -18,6 +18,7 @@ use fala_meeting::SessionId;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
+use crate::meeting_search;
 use crate::meetings::{channel_str, mode_str, ms, parse_mode, parse_reason, reason_str, rfc3339};
 use crate::mirror::{frontmatter, write_atomic};
 use crate::{
@@ -39,7 +40,7 @@ const TRANSCRIPT_HEADING: &str = "\n## Transcrição\n\n";
 const SEGMENTS_OPEN: &str = "\n<!-- fala:segments\n";
 const SEGMENTS_CLOSE: &str = "-->\n";
 /// O marcador das linhas geradas (`fala_notes::GENERATED_MARKER`); sai do texto dos trechos.
-const GENERATED_MARKER: &str = "<!-- fala:ia -->";
+pub(crate) const GENERATED_MARKER: &str = "<!-- fala:ia -->";
 /// Caracteres que o Windows não aceita num nome de arquivo ou que quebram um link do Obsidian.
 const FORBIDDEN: &str = "<>:\"/\\|?*#^[]";
 /// Teto do título no nome do arquivo, em caracteres.
@@ -582,9 +583,12 @@ impl Store {
         Ok(true)
     }
 
-    /// Depois de uma mudança já gravada: a falha do espelho vai para o log, sem o caminho (que
-    /// tem o título), e a próxima [`Store::sync_meeting_mirrors`] tenta de novo.
-    pub(crate) fn mirror_meeting(&self, id: SessionId) {
+    /// Depois de uma mudança já gravada: a linha de busca e o `.md` da sessão. Uma falha vai
+    /// para o log, sem o caminho (que tem o título); a próxima abertura do desktop refaz os dois.
+    pub(crate) fn after_meeting_change(&self, id: SessionId) {
+        if let Err(e) = meeting_search::refresh(&self.conn, id) {
+            log::warn!("busca da reunião {id}: {e}");
+        }
         if let Err(e) = self.write_meeting_mirror(id) {
             log::warn!("{e}");
         }
@@ -677,7 +681,9 @@ impl Store {
                 continue;
             }
             let sp = tx.savepoint()?;
-            match insert(&sp, &doc, &name) {
+            match insert(&sp, &doc, &name)
+                .and_then(|()| meeting_search::refresh(&sp, doc.record.id))
+            {
                 Ok(()) => {
                     sp.commit()?;
                     report.indexed += 1;

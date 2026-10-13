@@ -366,6 +366,7 @@ fn windows_text_scale_factor() -> f64 {
 /// Overlay rectangle in the destination monitor's physical pixels, so nothing
 /// is converted through the window's previous-monitor DPI.
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)] // plain geometry inputs, each one named at the call site
 fn windows_overlay_bounds(
     monitor_position: PhysicalPosition<i32>,
     monitor_size: PhysicalSize<u32>,
@@ -374,14 +375,14 @@ fn windows_overlay_bounds(
     logical_width: f64,
     logical_height: f64,
     overlay_position: OverlayPosition,
+    center: f64,
 ) -> (i32, i32, i32, i32) {
     // Grow the window with the text scale; offsets stay DPI-only since the
     // card sits flush against the window's screen-edge side.
     let content_scale = scale * text_scale;
     let width = (logical_width * content_scale).round().max(1.0) as i32;
     let height = (logical_height * content_scale).round().max(1.0) as i32;
-    let x = (monitor_position.x as f64 + (monitor_size.width as f64 - width as f64) / 2.0).round()
-        as i32;
+    let x = pill_left(monitor_position.x, monitor_size.width, width, center);
     let y = match overlay_position {
         OverlayPosition::Top => {
             (monitor_position.y as f64 + OVERLAY_TOP_OFFSET * scale).round() as i32
@@ -393,6 +394,44 @@ fn windows_overlay_bounds(
     };
 
     (x, y, width, height)
+}
+
+/// The pill centered on its edge, as a fraction of the monitor's width.
+const PILL_CENTERED: f64 = 0.5;
+
+/// Where along its edge the pill's center sits, as a fraction of the monitor's width, in `f64`
+/// bits: `pill_center_x` from the settings, or the live place while the pill is dragged.
+static PILL_CENTER: AtomicU64 = AtomicU64::new(PILL_CENTERED.to_bits());
+
+#[cfg(target_os = "windows")]
+fn pill_center() -> f64 {
+    f64::from_bits(PILL_CENTER.load(Ordering::SeqCst))
+}
+
+/// Applies `pill_center_x`: at startup, and when choosing the edge again recenters the pill.
+pub fn set_pill_center(center: Option<f64>) {
+    let center = center
+        .filter(|c| c.is_finite())
+        .unwrap_or(PILL_CENTERED)
+        .clamp(0.0, 1.0);
+    PILL_CENTER.store(center.to_bits(), Ordering::SeqCst);
+}
+
+/// Left edge of a window `width` wide whose center sits at `center` of the monitor's width,
+/// kept inside the monitor.
+#[cfg(target_os = "windows")]
+fn pill_left(monitor_x: i32, monitor_width: u32, width: i32, center: f64) -> i32 {
+    let left = (monitor_x as f64 + center * monitor_width as f64 - width as f64 / 2.0).round();
+    let right_most = (monitor_x + monitor_width as i32 - width).max(monitor_x);
+    (left as i32).clamp(monitor_x, right_most)
+}
+
+/// Where the center of a window dragged `dx` from `start_center` (physical x) sits, as a
+/// fraction of the monitor's width.
+#[cfg(target_os = "windows")]
+fn dragged_center(monitor_x: i32, monitor_width: u32, start_center: i32, dx: i32) -> f64 {
+    let center = (start_center + dx - monitor_x) as f64;
+    (center / monitor_width.max(1) as f64).clamp(0.0, 1.0)
 }
 
 /// Moves and sizes the overlay in one native SetWindowPos, bypassing tao's
@@ -417,6 +456,7 @@ fn place_windows_overlay(
         logical_width,
         logical_height,
         settings::get_settings(app_handle).overlay_position,
+        pill_center(),
     );
     let hwnd = overlay_window
         .hwnd()
@@ -1019,10 +1059,76 @@ fn rest_after_hide(idle_wanted: bool, meeting: MeetingIndicator, fullscreen: boo
 
 fn current_rest() -> Rest {
     rest_after_hide(
-        IDLE_VISIBLE.load(Ordering::SeqCst),
+        IDLE_VISIBLE.load(Ordering::SeqCst) && !snoozed(IDLE_SNOOZED_UNTIL.load(Ordering::SeqCst)),
         crate::meeting::indicator(),
         FULLSCREEN.load(Ordering::SeqCst),
     )
+}
+
+/// "Ocultar por 1 hora" in the pill menu hides the idle pill this long. Only the pill at rest:
+/// dictation, notices and the meeting indicator still show (ADR-0005).
+const IDLE_SNOOZE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Until when (Unix ms) the idle pill stays hidden; 0 when it is not. Kept in memory: a restart
+/// shows the pill again.
+static IDLE_SNOOZED_UNTIL: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn snoozed(until_ms: u64) -> bool {
+    is_snoozed(until_ms, now_ms())
+}
+
+fn is_snoozed(until_ms: u64, now_ms: u64) -> bool {
+    now_ms < until_ms
+}
+
+/// The snooze timer wakes at least this often, so a clock change or a suspend never leaves the
+/// pill hidden much past the end.
+const SNOOZE_CHECK: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long the snooze timer sleeps next: until the end, at most [`SNOOZE_CHECK`]; `None` once
+/// the snooze is over.
+fn snooze_wait(until_ms: u64, now_ms: u64) -> Option<std::time::Duration> {
+    is_snoozed(until_ms, now_ms)
+        .then(|| std::time::Duration::from_millis(until_ms - now_ms).min(SNOOZE_CHECK))
+}
+
+static SNOOZE_TIMER_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Hides the idle pill for [`IDLE_SNOOZE`], then brings it back. A second snooze pushes the end
+/// out and the one timer follows it.
+pub fn snooze_idle(app_handle: &AppHandle) {
+    IDLE_SNOOZED_UNTIL.store(now_ms() + IDLE_SNOOZE.as_millis() as u64, Ordering::SeqCst);
+    log::debug!("idle pill hidden for {} min", IDLE_SNOOZE.as_secs() / 60);
+    refresh_idle(app_handle);
+    if SNOOZE_TIMER_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let handle = app_handle.clone();
+    std::thread::spawn(move || loop {
+        while let Some(wait) = snooze_wait(IDLE_SNOOZED_UNTIL.load(Ordering::SeqCst), now_ms()) {
+            std::thread::sleep(wait);
+        }
+        SNOOZE_TIMER_RUNNING.store(false, Ordering::SeqCst);
+        refresh_idle(&handle);
+        // Snoozed again between the check and the store: keep this thread.
+        if !snoozed(IDLE_SNOOZED_UNTIL.load(Ordering::SeqCst))
+            || SNOOZE_TIMER_RUNNING.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+    });
+}
+
+/// Ends a snooze early: turning the idle pill on in Configurações shows it right away.
+pub fn end_idle_snooze() {
+    IDLE_SNOOZED_UNTIL.store(0, Ordering::SeqCst);
 }
 
 /// What a change of the setting or of the full-screen state does to the window: only a hidden or
@@ -1104,6 +1210,11 @@ pub fn set_idle_pill_hover(app: AppHandle, hover: bool) {
         }
         let state = if hover { "idle_hover" } else { "idle" };
         SHOWN.store(Shown::of(state) as u8, Ordering::SeqCst);
+        // The pointer may be on its way to a right click: list the microphones for the menu,
+        // as the tray does when the pointer reaches its icon.
+        if hover {
+            crate::tray::refresh_microphones(&handle);
+        }
         #[cfg(target_os = "windows")]
         if let Some(overlay_window) = handle.get_webview_window("recording_overlay") {
             let (width, height) = overlay_dimensions(state);
@@ -1111,9 +1222,62 @@ pub fn set_idle_pill_hover(app: AppHandle, hover: bool) {
                 log::error!("Failed to resize the idle pill: {error}");
             }
         }
-        #[cfg(not(target_os = "windows"))]
-        let _ = handle;
     });
+}
+
+/// A right click on the idle pill opens its menu at the cursor (`tray::build_pill_menu`); the
+/// tray's menu handler in `lib.rs` runs the item. Async so the menu inputs are read off the main
+/// thread, like the tray's.
+#[tauri::command]
+#[specta::specta]
+pub async fn open_pill_menu(app: AppHandle) {
+    if !matches!(Shown::load(), Shown::Idle | Shown::IdleHover) {
+        return;
+    }
+    // Still the user's app: the menu has not taken the focus yet. "Colar o último ditado" gives
+    // it back before pasting, like from the tray.
+    #[cfg(target_os = "windows")]
+    crate::last_dictation::remember_foreground();
+    let menu = match crate::tray::build_pill_menu(&app) {
+        Ok(menu) => menu,
+        Err(error) => {
+            log::error!("Failed to build the pill menu: {error}");
+            return;
+        }
+    };
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(overlay_window) = handle.get_webview_window("recording_overlay") else {
+            return;
+        };
+        // Blocks until the menu closes (TrackPopupMenu on Windows).
+        if let Err(error) = overlay_window.popup_menu(&menu) {
+            log::error!("Failed to open the pill menu: {error}");
+        }
+        // The menu made the pill the foreground window; a pill that never takes focus hands it
+        // back to the app the user was in.
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = overlay_window.hwnd() {
+            crate::last_dictation::return_focus_from(hwnd);
+        }
+        // The menu held the pointer, so the page never heard it leave: close the shortcut card
+        // when the pointer ended up off the pill.
+        if Shown::load() == Shown::IdleHover && !pointer_over(&handle, &overlay_window) {
+            show_overlay_state_on_main(&handle, "idle");
+        }
+    });
+}
+
+/// Whether the cursor is over the overlay window. Physical on Windows, where the idle pill lives.
+fn pointer_over(app_handle: &AppHandle, window: &tauri::webview::WebviewWindow) -> bool {
+    match (
+        input::get_cursor_position(app_handle),
+        window.outer_position(),
+        window.outer_size(),
+    ) {
+        (Some(cursor), Ok(position), Ok(size)) => is_mouse_within_monitor(cursor, &position, &size),
+        _ => false,
+    }
 }
 
 /// A click on the idle pill opens the main window on Início.
@@ -1133,6 +1297,119 @@ pub fn open_meeting_from_pill(app: AppHandle) {
         .and_then(|meetings| meetings.status().id);
     crate::show_main_window(&app);
     let _ = app.emit_to("main", "open-meeting", id);
+}
+
+/// The pointer moved past the drag threshold on the idle or the meeting pill with the button
+/// down: the pill follows the cursor along its edge until the button comes up, then the place is
+/// saved in `pill_center_x`. Windows only, like the idle pill.
+#[tauri::command]
+#[specta::specta]
+pub fn start_pill_drag(app: AppHandle) {
+    #[cfg(target_os = "windows")]
+    start_windows_drag(&app);
+    #[cfg(not(target_os = "windows"))]
+    let _ = app;
+}
+
+#[cfg(target_os = "windows")]
+static PILL_DRAGGING: AtomicBool = AtomicBool::new(false);
+
+/// How often the dragged pill follows the cursor (~60 Hz).
+#[cfg(target_os = "windows")]
+const DRAG_STEP: std::time::Duration = std::time::Duration::from_millis(16);
+
+#[cfg(target_os = "windows")]
+fn start_windows_drag(app_handle: &AppHandle) {
+    if Shown::load() == Shown::Hidden || PILL_DRAGGING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let window = app_handle.get_webview_window("recording_overlay");
+    let monitor = window
+        .as_ref()
+        .and_then(|w| w.current_monitor().ok().flatten());
+    let (Some(hwnd), Some(monitor)) = (window.and_then(|w| w.hwnd().ok()), monitor) else {
+        PILL_DRAGGING.store(false, Ordering::SeqCst);
+        return;
+    };
+    // `HWND` is not `Send`; the drag thread takes the raw handle.
+    let raw = hwnd.0 as isize;
+    let (monitor_x, monitor_width) = (monitor.position().x, monitor.size().width);
+    let handle = app_handle.clone();
+    std::thread::spawn(move || {
+        let center = drag_until_release(raw, monitor_x, monitor_width);
+        PILL_DRAGGING.store(false, Ordering::SeqCst);
+        if let Some(center) = center {
+            log::debug!("pill dragged to {center:.3} of the monitor width");
+            let mut settings = settings::get_settings(&handle);
+            settings.pill_center_x = Some(center);
+            settings::write_settings(&handle, settings);
+        }
+    });
+}
+
+/// Moves the window along its edge with the cursor while the primary button is down. Returns
+/// where its center ended, or `None` when it never moved (a flick released before the first
+/// step) or the cursor or the window could not be read.
+#[cfg(target_os = "windows")]
+fn drag_until_release(raw: isize, monitor_x: i32, monitor_width: u32) -> Option<f64> {
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetCursorPos, GetSystemMetrics, GetWindowRect, SetWindowPos, SM_SWAPBUTTON,
+        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+    };
+
+    let hwnd = HWND(raw as *mut _);
+    let cursor_x = || {
+        let mut point = POINT::default();
+        // SAFETY: writes the cursor position into a local.
+        unsafe { GetCursorPos(&mut point) }.ok().map(|()| point.x)
+    };
+    let window_rect = || {
+        let mut rect = RECT::default();
+        // SAFETY: reads the rectangle of our own window into a local.
+        unsafe { GetWindowRect(hwnd, &mut rect) }
+            .ok()
+            .map(|()| rect)
+    };
+    // GetAsyncKeyState reads the physical buttons: with them swapped, the primary is the right.
+    // SAFETY: no arguments.
+    let primary = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 {
+        VK_RBUTTON
+    } else {
+        VK_LBUTTON
+    };
+
+    let start_cursor = cursor_x()?;
+    let start = window_rect()?;
+    let start_center = start.left + (start.right - start.left) / 2;
+    let mut moved_to = None;
+    // SAFETY: reads the button's state; the high bit is set while it is down.
+    while unsafe { GetAsyncKeyState(i32::from(primary.0)) } < 0 {
+        if let (Some(x), Some(rect)) = (cursor_x(), window_rect()) {
+            let center = dragged_center(monitor_x, monitor_width, start_center, x - start_cursor);
+            let left = pill_left(monitor_x, monitor_width, rect.right - rect.left, center);
+            if left != rect.left {
+                // A hover that resizes the window meanwhile places it here too.
+                PILL_CENTER.store(center.to_bits(), Ordering::SeqCst);
+                moved_to = Some(center);
+                // SAFETY: moves our own window; async, so this thread never waits on the UI one.
+                let _ = unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        None,
+                        left,
+                        rect.top,
+                        0,
+                        0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                    )
+                };
+            }
+        }
+        std::thread::sleep(DRAG_STEP);
+    }
+    moved_to
 }
 
 /// Polls the notification state every 2 s while the idle pill is on, so it hides while a
@@ -1455,6 +1732,68 @@ mod tests {
         assert!(apply.find("if wanted {").unwrap() < apply.find("start_fullscreen_poll").unwrap());
     }
 
+    #[test]
+    fn snooze_hides_only_the_idle_pill_for_an_hour() {
+        use std::time::Duration;
+        assert_eq!(IDLE_SNOOZE.as_secs(), 3_600);
+        // Snoozed until `until`, not after; 0 is never snoozed.
+        assert!(is_snoozed(1_000, 999));
+        assert!(!is_snoozed(1_000, 1_000));
+        assert!(!is_snoozed(0, 1));
+        // A snoozed pill counts as not wanted: the rest hides it, the meeting keeps its state.
+        let rest = body_of("fn current_rest");
+        assert!(rest.contains(
+            "IDLE_VISIBLE.load(Ordering::SeqCst) && !snoozed(IDLE_SNOOZED_UNTIL.load(Ordering::SeqCst))"
+        ));
+        assert_eq!(
+            idle_refresh(
+                Shown::IdleHover,
+                rest_after_hide(false, MeetingIndicator::None, false)
+            ),
+            IdleRefresh::Hide
+        );
+        // The timer sleeps until the end, waking at least every minute, so a clock change or a
+        // suspend never strands the pill.
+        assert_eq!(snooze_wait(10_000, 9_000), Some(Duration::from_secs(1)));
+        assert_eq!(snooze_wait(10_000_000, 0), Some(SNOOZE_CHECK));
+        assert_eq!(SNOOZE_CHECK, Duration::from_secs(60));
+        assert_eq!(snooze_wait(10_000, 10_000), None);
+        assert_eq!(snooze_wait(0, 5), None);
+        // Shown and brought back through `refresh_idle`, which never replaces a live state.
+        let snooze = body_of("pub fn snooze_idle");
+        let timer = snooze.find("while let Some(wait) = snooze_wait(").unwrap();
+        assert!(snooze[..timer].contains("refresh_idle(app_handle)"));
+        assert!(snooze[timer..].contains("refresh_idle(&handle)"));
+        assert!(snooze[..timer].contains("if SNOOZE_TIMER_RUNNING.swap(true, Ordering::SeqCst) {"));
+        // The menu opens only over the idle pill.
+        let menu = body_of("pub async fn open_pill_menu");
+        assert!(menu.contains("if !matches!(Shown::load(), Shown::Idle | Shown::IdleHover)"));
+        assert!(
+            menu.find("remember_foreground").unwrap() < menu.find("popup_menu").unwrap()
+                && menu.find("popup_menu").unwrap() < menu.find("return_focus_from").unwrap()
+        );
+        // The page never hears the pointer leave during the menu: the card closes after it.
+        let reset = menu
+            .find("!pointer_over(&handle, &overlay_window)")
+            .unwrap();
+        assert!(menu.find("popup_menu").unwrap() < reset);
+        assert!(menu[reset..].contains("show_overlay_state_on_main(&handle, \"idle\")"));
+        // The focus goes back only from the pill: a click that closed the menu elsewhere stays.
+        let focus = include_str!("last_dictation.rs");
+        let focus = &focus[focus.find("pub(super) fn return_focus_from").unwrap()..];
+        assert!(
+            focus.contains("if unsafe { GetForegroundWindow() } != owner {\n            return;")
+        );
+        // Turning the idle pill on in Configurações ends the snooze.
+        let toggle = include_str!("shortcut/mod.rs");
+        let toggle = &toggle[toggle
+            .find("pub fn change_pill_idle_visible_setting")
+            .unwrap()..];
+        assert!(
+            toggle.find("end_idle_snooze()").unwrap() < toggle.find("apply_idle_setting").unwrap()
+        );
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn fullscreen_states() {
@@ -1529,6 +1868,7 @@ mod tests {
                 OVERLAY_WIDTH,
                 OVERLAY_HEIGHT,
                 OverlayPosition::Bottom,
+                PILL_CENTERED,
             ),
             (3648, 2025, 384, 75)
         );
@@ -1541,9 +1881,95 @@ mod tests {
                 OVERLAY_WIDTH,
                 OVERLAY_HEIGHT,
                 OverlayPosition::Top,
+                PILL_CENTERED,
             ),
             (3648, 6, 384, 75)
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn dragged_pill_slides_along_its_edge() {
+        // Centered, the left edge is the old centering formula.
+        assert_eq!(
+            pill_left(1920, 3840, 384, PILL_CENTERED),
+            1920 + (3840 - 384) / 2
+        );
+        assert_eq!(pill_left(-2560, 2560, 500, PILL_CENTERED), -1530);
+        // Anywhere along the edge, kept inside the monitor.
+        assert_eq!(pill_left(0, 1000, 100, 0.25), 200);
+        assert_eq!(pill_left(0, 1000, 100, 0.0), 0);
+        assert_eq!(pill_left(0, 1000, 100, 1.0), 900);
+        assert_eq!(pill_left(0, 100, 300, 0.5), 0);
+        // The center follows the cursor's travel; dragging past the monitor clamps.
+        assert_eq!(dragged_center(0, 1000, 500, -250), 0.25);
+        assert_eq!(dragged_center(-1000, 1000, -500, 0), 0.5);
+        assert_eq!(dragged_center(0, 1000, 500, 900), 1.0);
+        assert_eq!(dragged_center(0, 1000, 500, -900), 0.0);
+        // The bounds follow the center; the edge (y) does not move.
+        let at = |center| {
+            windows_overlay_bounds(
+                PhysicalPosition::new(0, 0),
+                PhysicalSize::new(1000, 800),
+                1.0,
+                1.0,
+                OVERLAY_IDLE_WIDTH,
+                OVERLAY_IDLE_HEIGHT,
+                OverlayPosition::Bottom,
+                center,
+            )
+        };
+        assert_eq!(at(0.25), (218, 740, 64, 20));
+        assert_eq!(at(PILL_CENTERED), (468, 740, 64, 20));
+    }
+
+    #[test]
+    fn pill_center_setting_is_applied_and_reset() {
+        set_pill_center(Some(f64::NAN));
+        assert_eq!(
+            f64::from_bits(PILL_CENTER.load(Ordering::SeqCst)),
+            PILL_CENTERED
+        );
+        // The drag saves where it ended, once the button is up.
+        let source = include_str!("overlay.rs");
+        let production = &source[..source
+            .find(
+                "#[cfg(test)]
+mod tests",
+            )
+            .unwrap()];
+        let start = &production[production.find("fn start_windows_drag").unwrap()..];
+        let saved = start.find("settings.pill_center_x = Some(center)").unwrap();
+        assert!(start.find("drag_until_release(raw").unwrap() < saved);
+        let release = &production[production.find("fn drag_until_release").unwrap()..];
+        assert!(release.contains("while unsafe { GetAsyncKeyState(i32::from(primary.0)) } < 0 {"));
+        // A flick that never moved the pill saves nothing.
+        assert!(release.contains("let mut moved_to = None;"));
+        assert!(release[..release.find("\n}\n").unwrap()].ends_with("    moved_to"));
+        // Placement reads the center; startup applies it before the idle pill shows.
+        assert!(body_of("fn place_windows_overlay").contains("pill_center(),"));
+        let lib = include_str!("lib.rs");
+        assert!(
+            lib.find("overlay::set_pill_center(settings.pill_center_x)")
+                .unwrap()
+                < lib
+                    .find("overlay::apply_idle_setting(app_handle, &settings)")
+                    .unwrap()
+        );
+        // Choosing the edge recenters the pill.
+        let shortcut = include_str!("shortcut/mod.rs");
+        let position = &shortcut[shortcut
+            .find("pub fn change_overlay_position_setting")
+            .unwrap()..];
+        let position = &position[..position
+            .find(
+                "
+}
+",
+            )
+            .unwrap()];
+        assert!(position.contains("settings.pill_center_x = None;"));
+        assert!(position.contains("crate::overlay::set_pill_center(None);"));
     }
 
     #[cfg(target_os = "windows")]
@@ -1558,6 +1984,7 @@ mod tests {
                 OVERLAY_STREAM_WIDTH,
                 OVERLAY_STREAM_HEIGHT,
                 OverlayPosition::Bottom,
+                PILL_CENTERED,
             ),
             (-1530, 1040, 500, 150)
         );
@@ -1577,6 +2004,7 @@ mod tests {
             OVERLAY_STREAM_WIDTH,
             OVERLAY_STREAM_HEIGHT,
             OverlayPosition::Bottom,
+            PILL_CENTERED,
         );
         // 400x120 logical at 1.25 DPI x 1.1 text, still centered horizontally.
         assert_eq!((x, y, width, height), (-1555, 1025, 550, 165));
@@ -1591,6 +2019,7 @@ mod tests {
             OVERLAY_STREAM_WIDTH,
             OVERLAY_STREAM_HEIGHT,
             OverlayPosition::Top,
+            PILL_CENTERED,
         );
         // Top offset rides the DPI scale alone, so the top edge doesn't move.
         assert_eq!(top_y, -195);

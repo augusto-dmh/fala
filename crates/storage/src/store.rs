@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::meetings::SCHEMA_2;
 use crate::metrics::{self, DictationMetrics, MetricsSummary};
 use crate::mirror::{self, DITADOS};
-use crate::{meeting_mirror, meeting_notes, meeting_people};
+use crate::{meeting_imports, meeting_mirror, meeting_notes, meeting_people, meeting_search};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
 /// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
@@ -105,6 +105,8 @@ impl Store {
         conn.execute_batch(meeting_people::SCHEMA)?;
         conn.execute_batch(meeting_notes::SCHEMA)?;
         conn.execute_batch(meeting_mirror::SCHEMA)?;
+        conn.execute_batch(meeting_search::SCHEMA)?;
+        conn.execute_batch(meeting_imports::SCHEMA)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),
@@ -186,15 +188,9 @@ impl Store {
             }
             return Ok(rows);
         }
-        // Um termo sem letra nem dígito não vira token no `unicode61`: não há o que casar.
-        if terms.iter().any(|t| !t.chars().any(char::is_alphanumeric)) {
+        let Some(fts_query) = match_expr(&terms) else {
             return Ok(rows);
-        }
-        let fts_query = terms
-            .iter()
-            .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
-            .collect::<Vec<_>>()
-            .join(" ");
+        };
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM dictations_fts f JOIN dictations d ON d.rowid = f.rowid
              WHERE dictations_fts MATCH ?1
@@ -438,4 +434,20 @@ fn collect_md(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), StorageError> {
         }
     }
     Ok(())
+}
+
+/// A consulta FTS5 dos termos: cada um casa como prefixo e todos precisam casar; a sintaxe do
+/// FTS5 vira texto. `None` se algum termo não tem letra nem dígito: ele não vira token no
+/// `unicode61`, e não há o que casar.
+pub(crate) fn match_expr(terms: &[&str]) -> Option<String> {
+    if terms.iter().any(|t| !t.chars().any(char::is_alphanumeric)) {
+        return None;
+    }
+    Some(
+        terms
+            .iter()
+            .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }

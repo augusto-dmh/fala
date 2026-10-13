@@ -43,7 +43,7 @@ impl Store {
             ],
         )?;
         tx.commit()?;
-        self.mirror_meeting(id);
+        self.after_meeting_change(id);
         Ok(())
     }
 

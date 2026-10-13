@@ -12,19 +12,23 @@ import {
   type MeetingMode,
   type MeetingOrphan,
   type MeetingOutputs,
+  type MeetingSearchHit,
   type MeetingStatus,
   type MeetingSummary,
   type MeetingTemplates,
   type ProgressStage,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
+import { Input } from "../ui/Input";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
 import { DeleteMeeting } from "./DeleteMeeting";
+import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
 import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
+import { SEARCH_AFTER_MS, searchResults } from "./meetingSearch";
 import { MeetingView } from "./MeetingView";
 import { NotesContextSettings } from "./NotesContextSettings";
 import { RecorderPanel } from "./RecorderPanel";
@@ -85,6 +89,9 @@ export function MeetingsPage() {
   const lastStage = useRef(new Map<string, string>());
   const [error, setError] = useState<MeetingError | string | null>(null);
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
+  const [query, setQuery] = useState("");
+  // The last search's hits; `null` while the box is empty.
+  const [hits, setHits] = useState<MeetingSearchHit[] | null>(null);
   const [orphans, setOrphans] = useState<MeetingOrphan[]>([]);
   const [recovering, setRecovering] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -92,6 +99,7 @@ export function MeetingsPage() {
   // The session the running import writes, known from its first progress event.
   const importId = useRef<string | null>(null);
   const importRunning = useRef(false);
+  const [granolaPath, setGranolaPath] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await commands.listMeetings();
@@ -104,6 +112,26 @@ export function MeetingsPage() {
     if (result.status === "ok") setSelected(result.data);
     else setError(result.error);
   }, []);
+
+  // The search follows the box and the list: a session transcribed meanwhile is searched again.
+  useEffect(() => {
+    if (!query.trim()) {
+      setHits(null);
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      void commands.searchMeetings(query).then((result) => {
+        if (!current) return;
+        if (result.status === "ok") setHits(result.data);
+        else setError(result.error);
+      });
+    }, SEARCH_AFTER_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [query, sessions]);
 
   // The templates folder is read again on mount and whenever the app gets the focus back:
   // the person edits the JSON in another app (no file watcher).
@@ -409,6 +437,15 @@ export function MeetingsPage() {
             stage={importStage}
             onImport={(source) => void importSource(source)}
             onCancel={() => void commands.cancelMeetingImport()}
+            onGranola={setGranolaPath}
+          />
+        )}
+        {granolaPath !== null && (
+          <GranolaImport
+            key={granolaPath}
+            path={granolaPath}
+            onImported={() => void refresh()}
+            onClose={() => setGranolaPath(null)}
           />
         )}
         {live && (
@@ -430,8 +467,18 @@ export function MeetingsPage() {
         )}
       </SettingsGroup>
       <SettingsGroup title={t("meeting.list.title")}>
+        <div className="px-4 pt-2">
+          <Input
+            variant="compact"
+            type="search"
+            value={query}
+            placeholder={t("meeting.list.search")}
+            aria-label={t("meeting.list.search")}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
         <MeetingList
-          sessions={sessions}
+          {...(hits ? searchResults(sessions, hits) : { sessions })}
           selectedId={selected?.summary.id ?? null}
           onOpen={(id) => void open(id)}
         />

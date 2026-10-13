@@ -1,5 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
 import "./Pill.css";
@@ -11,6 +17,8 @@ import { Pill } from "./Pill";
 import { CallOutputCard, ConsentCard, MeetingPill } from "./MeetingPill";
 import { IdlePill } from "./IdlePill";
 import { PasteFailedPill } from "./PasteFailedPill";
+import { createPillDrag } from "./pillDrag";
+import { useOsType } from "@/hooks/useOsType";
 import {
   SLOW_LOAD_MS,
   idleKeys,
@@ -107,6 +115,16 @@ const RecordingOverlay: React.FC = () => {
   const [overflowing, setOverflowing] = useState(false);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
+  // Dragging the idle or the meeting pill slides it along its edge. Windows only: elsewhere a
+  // small slip of the hand must not swallow the click.
+  const osType = useOsType();
+  const drag = useMemo(
+    () =>
+      osType === "windows"
+        ? createPillDrag(() => void commands.startPillDrag())
+        : {},
+    [osType],
+  );
   // Live-text scroll-back: the text region "sticks" to the newest line while the
   // user is at the bottom; if they scroll up to read history, auto-follow pauses
   // until they scroll back down.
@@ -429,8 +447,14 @@ const RecordingOverlay: React.FC = () => {
       <div
         dir={direction}
         className={`ov-stage ${position}`}
+        {...drag}
         onMouseEnter={() => hover(true)}
         onMouseLeave={() => hover(false)}
+        onContextMenu={(event) => {
+          // The pill menu is native (`open_pill_menu`), not the webview's.
+          event.preventDefault();
+          void commands.openPillMenu();
+        }}
       >
         <IdlePill
           hover={idleHover}
@@ -583,6 +607,7 @@ const RecordingOverlay: React.FC = () => {
       <div
         dir={direction}
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+        {...drag}
       >
         {callOutput ? (
           <div className="ov-stack">
