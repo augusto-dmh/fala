@@ -443,15 +443,13 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
             .get(&id)
             .cloned()
             .unwrap_or(default_binding);
-        if super::binding_is_unset(&binding) {
-            continue;
-        }
-
-        if let Err(e) = state.register(&binding) {
-            error!(
-                "Failed to register handy-keys shortcut {} during init: {}",
-                id, e
-            );
+        for registered in super::registrations(&binding) {
+            if let Err(e) = state.register(&registered) {
+                error!(
+                    "Failed to register handy-keys shortcut {} during init: {}",
+                    registered.id, e
+                );
+            }
         }
     }
 

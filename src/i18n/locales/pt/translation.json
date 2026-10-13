@@ -206,7 +206,8 @@
     "nav": {
       "back": "Voltar",
       "next": "Continuar",
-      "done": "Concluir"
+      "done": "Concluir",
+      "skip": "Pular"
     },
     "footer": {
       "pending": "Preparando o modelo de transcrição",
@@ -247,9 +248,7 @@
       "description": "A IA corrige pontuação e formatação do que você ditou.",
       "privacy": "Com a IA ligada, só o texto do ditado vai para o Gemini; nunca o áudio, que fica na sua máquina.",
       "keyLabel": "Chave do Gemini",
-      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações.",
-      "skip": "Pular",
-      "finish": "Continuar"
+      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações."
     },
     "meetings": {
       "title": "Reuniões (opcional)",
@@ -261,8 +260,8 @@
       "accepted": "Aviso aceito",
       "anthropicLabel": "Chave da Anthropic",
       "anthropicDescription": "Escreve as notas a partir da transcrição. Fica no cofre do sistema e não aparece de novo.",
-      "skip": "Pular",
-      "finish": "Concluir",
+      "testSound": "Testar o som",
+      "stopSound": "Parar",
       "micDescription": "O que você fala na reunião. Fica neste computador até a transcrição."
     }
   },
@@ -306,6 +305,7 @@
     },
     "general": {
       "title": "Geral",
+      "app": "Aplicativo",
       "shortcut": {
         "title": "Atalhos do Fala",
         "description": "Configure atalhos de teclado para iniciar a gravação de voz para texto",
@@ -425,7 +425,7 @@
       },
       "apiKey": {
         "title": "Chave do Gemini",
-        "description": "Fica no cofre de senhas do sistema. Sem chave, só as regras locais formatam o texto.",
+        "description": "Fica no cofre do sistema. Sem chave, só as regras locais formatam o texto.",
         "placeholder": "Cole a chave da API"
       },
       "disabledApps": {
@@ -1136,6 +1136,14 @@
     "dismiss": "Dispensar"
   },
   "meeting": {
+    "keys": {
+      "missingElevenlabs": "Falta a chave da ElevenLabs: é com ela que as reuniões são transcritas.",
+      "missingAnthropic": "Falta a chave da Anthropic: é com ela que as notas são escritas.",
+      "add": "Adicionar chave",
+      "transcribeNeedsKey": "Adicione a chave da ElevenLabs em Configurações para transcrever.",
+      "notesNeedKey": "Adicione a chave da Anthropic em Configurações para escrever as notas.",
+      "notesNeedContent": "Transcreva a reunião ou digite notas antes."
+    },
     "title": "Reunião",
     "untitled": "Reunião de {{date}}",
     "consent": {
@@ -1210,6 +1218,8 @@
       "cancel": "Cancelar",
       "done": "Reuniões importadas: {{created}} novas e {{updated}} atualizadas. Linhas ignoradas: {{rejected}}.",
       "close": "Fechar",
+      "importedOn": "Importado do Granola em {{date}}.",
+      "noAudio": "Importada do Granola: a transcrição não tem áudio nem tempos.",
       "noAnchors": "Sem âncoras: importada do Granola.",
       "errors": {
         "empty": "Esse arquivo está vazio.",
@@ -1338,10 +1348,13 @@
     },
     "key": {
       "label": "Chave da ElevenLabs",
-      "placeholder": "cole a chave",
-      "save": "Salvar no cofre do sistema",
-      "saved": "Salva no cofre do sistema. Cole outra para trocar.",
+      "saved": "Salva no cofre do sistema. As reuniões são transcritas.",
       "missing": "Sem ela, as reuniões gravam mas não são transcritas. Fica no cofre do sistema e não aparece de novo."
+    },
+    "notesKey": {
+      "label": "Chave da Anthropic",
+      "saved": "Salva no cofre do sistema. As notas saem da transcrição.",
+      "missing": "Escreve as notas a partir da transcrição. Sem ela, as reuniões ficam sem notas. Fica no cofre do sistema e não aparece de novo."
     },
     "errors": {
       "consent_required": "Aceite o aviso antes de gravar.",
@@ -1424,5 +1437,15 @@
       "label": "Ações da reunião",
       "close": "Fechar a transcrição"
     }
+  },
+  "keyField": {
+    "placeholder": "Cole a chave",
+    "save": "Salvar",
+    "saved": "Salva",
+    "replace": "Trocar",
+    "replaceNamed": "Trocar a {{name}}",
+    "remove": "Remover",
+    "removeNamed": "Remover a {{name}}",
+    "cancel": "Cancelar"
   }
 }

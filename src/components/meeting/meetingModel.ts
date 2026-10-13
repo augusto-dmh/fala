@@ -1,6 +1,7 @@
 import type {
   MeetingDetail,
   MeetingError,
+  MeetingKeys,
   MeetingLine,
   MeetingSummary,
   ProgressStage,
@@ -53,6 +54,50 @@ export function errorKey(error: MeetingError | string | undefined): string {
     default:
       return "meeting.errors.generic";
   }
+}
+
+/** What a session has to write notes from, and whether it has audio to transcribe. */
+export interface SessionContent {
+  transcript: boolean;
+  /** Notes typed in "My notes", saved or not. */
+  typed: boolean;
+  /** No audio to transcribe (a Granola import): no key would help. */
+  noAudio: boolean;
+}
+
+/** Why "Transcrever" and "Gerar notas" are off, when the person can fix it: a missing key, or
+ * notes with nothing to write from (no transcript and nothing typed). `null` when available. */
+export function sessionHints(
+  keys: MeetingKeys | null,
+  content: SessionContent,
+): { transcribe: string | null; generate: string | null } {
+  return {
+    transcribe:
+      keys && !keys.elevenlabs && !content.noAudio
+        ? "meeting.keys.transcribeNeedsKey"
+        : null,
+    generate:
+      keys && !keys.anthropic
+        ? "meeting.keys.notesNeedKey"
+        : !content.transcript && !content.typed
+          ? "meeting.keys.notesNeedContent"
+          : null,
+  };
+}
+
+/** The step whose command failed: it says which key a `missing_key` is about. */
+export type KeyStep = "transcribe" | "notes";
+
+/** A missing-key error as the key the step needs (ElevenLabs to transcribe, Anthropic for the
+ * notes); `null` for any other error. */
+export function missingKeyMessage(
+  error: MeetingError | string | null,
+  step: KeyStep | null,
+): string | null {
+  if (typeof error !== "object" || error?.kind !== "missing_key") return null;
+  if (step === "transcribe") return "meeting.keys.missingElevenlabs";
+  if (step === "notes") return "meeting.keys.missingAnthropic";
+  return null;
 }
 
 /** The `{{detail}}` an error key may show: the tool name, or the tail of the tool's message. */

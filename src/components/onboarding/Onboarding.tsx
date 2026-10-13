@@ -49,6 +49,8 @@ const Onboarding: React.FC<OnboardingProps> = ({
   const { t } = useTranslation();
   const [step, setStep] = useState<OnboardingStepId>(initialStep ?? steps[0]);
   const [access, setAccess] = useState<MicAccess>("ok");
+  // The first answer about the access came back: until then "ok" is only a guess.
+  const [accessChecked, setAccessChecked] = useState(false);
   const [waitingForAccess, setWaitingForAccess] = useState(false);
   const refreshAudioDevices = useSettingsStore((s) => s.refreshAudioDevices);
   const {
@@ -114,9 +116,9 @@ const Onboarding: React.FC<OnboardingProps> = ({
         );
         if (cancelled) return;
         setAccess(next);
+        setAccessChecked(true);
         if (next === "ok" && access === "denied") {
           setWaitingForAccess(false);
-          void refreshAudioDevices();
         }
       } catch (e) {
         console.warn("Failed to check microphone access:", e);
@@ -129,7 +131,15 @@ const Onboarding: React.FC<OnboardingProps> = ({
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [preview, access, refreshAudioDevices]);
+  }, [preview, access]);
+
+  // The app reads the devices only after the first run: the microphone step reads them itself,
+  // when it opens and when the access comes back.
+  useEffect(() => {
+    if (preview || !accessChecked || step !== "microphone" || access !== "ok")
+      return;
+    void refreshAudioDevices();
+  }, [preview, accessChecked, step, access, refreshAudioDevices]);
 
   const openPrivacySettings = async () => {
     if (preview) return;
@@ -146,11 +156,14 @@ const Onboarding: React.FC<OnboardingProps> = ({
   const next = nextStep(steps, step);
   const previous = previousStep(steps, step);
   const blocked = step === "microphone" && access === "denied";
+  // The optional steps can be skipped. Skip and go on lead to the same place: a key is stored
+  // by its own field (the Gemini one on blur, the meeting ones by their Save button).
   const optional = step === "ai" || step === "meetings";
+  const goOn = () => (next ? setStep(next) : onFinish());
 
   return (
     <div className="flex h-screen w-full flex-col bg-surface-0">
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]">
         <div className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-6 py-8 max-[840px]:px-4">
           <FalaTextLogo width={96} />
           <header className="flex flex-col gap-1">
@@ -182,12 +195,8 @@ const Onboarding: React.FC<OnboardingProps> = ({
               preview={preview}
             />
           )}
-          {step === "ai" && (
-            <AiStep onNext={() => (next ? setStep(next) : onFinish())} />
-          )}
-          {step === "meetings" && (
-            <MeetingsStep onFinish={onFinish} preview={preview} />
-          )}
+          {step === "ai" && <AiStep />}
+          {step === "meetings" && <MeetingsStep preview={preview} />}
         </div>
       </div>
       <footer className="flex items-center justify-between gap-4 border-t border-border bg-surface-1 px-6 py-3 max-[840px]:px-4">
@@ -202,21 +211,14 @@ const Onboarding: React.FC<OnboardingProps> = ({
               {t("onboarding.nav.back")}
             </Button>
           )}
-          {/* The optional steps carry their own skip and go-on buttons. */}
-          {next && !optional && (
-            <Button
-              variant="primary"
-              disabled={blocked}
-              onClick={() => setStep(next)}
-            >
-              {t("onboarding.nav.next")}
+          {optional && (
+            <Button variant="secondary" onClick={goOn}>
+              {t("onboarding.nav.skip")}
             </Button>
           )}
-          {!next && !optional && (
-            <Button variant="primary" disabled={blocked} onClick={onFinish}>
-              {t("onboarding.nav.done")}
-            </Button>
-          )}
+          <Button variant="primary" disabled={blocked} onClick={goOn}>
+            {next ? t("onboarding.nav.next") : t("onboarding.nav.done")}
+          </Button>
         </div>
       </footer>
     </div>
