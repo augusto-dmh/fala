@@ -718,7 +718,9 @@
       "title": "History",
       "openFolder": "Open Recordings Folder",
       "loading": "Loading history...",
-      "empty": "No transcriptions yet. Start recording to build your history!",
+      "empty": "No dictations yet.",
+      "emptyHold": "No dictations yet. Hold {{keys}} and speak.",
+      "emptyToggle": "No dictations yet. Press {{keys}}, speak, and press it again.",
       "copyToClipboard": "Copy transcription to clipboard",
       "copyError": "Failed to copy transcription to clipboard.",
       "save": "Save transcription",
@@ -1401,6 +1403,10 @@
         "ready": "Notes ready",
         "failed": "Failed",
         "idle": "No notes"
+      },
+      "failedWhy": {
+        "transcript": "Not transcribed",
+        "notes": "Notes didn't finish"
       }
     },
     "screen": {

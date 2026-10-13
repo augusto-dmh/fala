@@ -718,7 +718,9 @@
       "title": "Histórico",
       "openFolder": "Abrir Pasta de Gravações",
       "loading": "Carregando histórico...",
-      "empty": "Nenhuma transcrição ainda. Comece a gravar para construir seu histórico!",
+      "empty": "Nenhum ditado ainda.",
+      "emptyHold": "Nenhum ditado ainda. Segure {{keys}} e fale.",
+      "emptyToggle": "Nenhum ditado ainda. Aperte {{keys}}, fale e aperte de novo.",
       "copyToClipboard": "Copiar transcrição para área de transferência",
       "copyError": "Não foi possível copiar a transcrição para a área de transferência.",
       "save": "Salvar transcrição",
@@ -1401,6 +1403,10 @@
         "ready": "Notas prontas",
         "failed": "Falhou",
         "idle": "Sem notas"
+      },
+      "failedWhy": {
+        "transcript": "Sem transcrição",
+        "notes": "As notas não saíram"
       }
     },
     "screen": {
