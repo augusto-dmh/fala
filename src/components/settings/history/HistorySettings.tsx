@@ -1,18 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import {
-  Check,
-  Copy,
-  FolderOpen,
-  Redo2,
-  RotateCcw,
-  Search,
-  Star,
-  Trash2,
-  Undo2,
-  X,
-} from "lucide-react";
+import { Check, Copy, FolderOpen, Play, Search, Star, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -28,6 +17,7 @@ import { formatDate } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
 import { copyToClipboard } from "./clipboard";
+import { HistoryRowMenu } from "./HistoryRowMenu";
 import {
   appLabel,
   appName,
@@ -451,6 +441,11 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const [retrying, setRetrying] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // ▷ opens the player under the text and starts it; the text expands on its own click.
+  const [playing, setPlaying] = useState(false);
+
+  // A retention cleanup can delete the audio while the player is open.
+  const showPlayer = playing && !entry.audio_deleted;
 
   const kind = rowKind(entry);
   const hasTranscription = shownText(entry).trim().length > 0;
@@ -576,22 +571,43 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             {t("settings.history.partialAi")}
           </span>
         )}
-        {expanded &&
-          (entry.audio_deleted ? (
-            <span className="text-xs text-text/50">
-              {t("settings.history.audioDeleted")}
-            </span>
-          ) : (
-            <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
-          ))}
+        {expanded && entry.audio_deleted && (
+          <span className="text-xs text-text/50">
+            {t("settings.history.audioDeleted")}
+          </span>
+        )}
+        {showPlayer && (
+          <AudioPlayer
+            onLoadRequest={handleLoadAudio}
+            autoPlay
+            className="w-full"
+          />
+        )}
       </div>
       <div
         className={`flex items-start shrink-0 transition-opacity ${
-          expanded
+          expanded || showPlayer
             ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+            : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100"
         }`}
       >
+        {!entry.audio_deleted && (
+          <IconButton
+            onClick={() => setPlaying((open) => !open)}
+            active={showPlayer}
+            title={
+              showPlayer
+                ? t("settings.history.hidePlayer")
+                : t("settings.history.play")
+            }
+          >
+            {showPlayer ? (
+              <X width={16} height={16} />
+            ) : (
+              <Play width={16} height={16} />
+            )}
+          </IconButton>
+        )}
         <IconButton
           onClick={handleCopyText}
           disabled={!hasTranscription || retrying}
@@ -603,23 +619,6 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             <Copy width={16} height={16} />
           )}
         </IconButton>
-        {action && kind === "normal" && (
-          <IconButton
-            onClick={() => onSwitchText(action)}
-            disabled={retrying}
-            title={
-              action === "undo"
-                ? t("settings.history.undoAiEdit")
-                : t("settings.history.applyAiEdit")
-            }
-          >
-            {action === "undo" ? (
-              <Undo2 width={16} height={16} />
-            ) : (
-              <Redo2 width={16} height={16} />
-            )}
-          </IconButton>
-        )}
         <IconButton
           onClick={onToggleSaved}
           disabled={retrying}
@@ -636,30 +635,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             fill={entry.saved ? "currentColor" : "none"}
           />
         </IconButton>
-        {!entry.audio_deleted && (
-          <IconButton
-            onClick={handleRetranscribe}
-            disabled={retrying}
-            title={t("settings.history.retranscribe")}
-          >
-            <RotateCcw
-              width={16}
-              height={16}
-              style={
-                retrying
-                  ? { animation: "spin 1s linear infinite reverse" }
-                  : undefined
-              }
-            />
-          </IconButton>
-        )}
-        <IconButton
-          onClick={handleDeleteEntry}
-          disabled={retrying}
-          title={t("settings.history.delete")}
-        >
-          <Trash2 width={16} height={16} />
-        </IconButton>
+        <HistoryRowMenu
+          editAction={action && kind === "normal" ? action : null}
+          canRetranscribe={!entry.audio_deleted}
+          busy={retrying}
+          onSwitchText={(next) => void onSwitchText(next)}
+          onRetranscribe={() => void handleRetranscribe()}
+          onDelete={() => void handleDeleteEntry()}
+        />
       </div>
     </div>
   );
