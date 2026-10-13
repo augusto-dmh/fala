@@ -18,7 +18,8 @@
     "recordMeeting": "Gravar reunião",
     "pauseMeeting": "Pausar reunião",
     "resumeMeeting": "Retomar reunião",
-    "stopMeeting": "Parar reunião"
+    "stopMeeting": "Parar reunião",
+    "hidePillHour": "Ocultar por 1 hora"
   },
   "rail": {
     "navigation": "Navegação principal",
@@ -1206,7 +1207,9 @@
       "draft": "rascunho",
       "transcribed": "transcrita",
       "notes": "com notas",
-      "granola": "Granola"
+      "granola": "Granola",
+      "search": "Buscar no título, nas notas e na transcrição",
+      "noResults": "Nenhuma reunião encontrada."
     },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",

@@ -96,6 +96,9 @@ fn an_imported_meeting_is_a_finished_session_without_audio() {
     );
     let speakers = store.meeting_speakers(m.id).unwrap();
     assert_eq!(speakers[0].name.as_deref(), Some("Ana"));
+    // A transcrição importada entra na busca das reuniões, sem acento.
+    let hits = store.search_meetings("comeco contrato", 10).unwrap();
+    assert_eq!(hits.iter().map(|h| h.id).collect::<Vec<_>>(), [m.id]);
 
     // Sem título, sem resumo e sem transcrição: a UI dá o título no idioma dela.
     let empty = meetings.iter().find(|e| e.id != m.id).unwrap();

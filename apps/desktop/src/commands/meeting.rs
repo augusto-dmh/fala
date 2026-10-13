@@ -14,6 +14,7 @@ use crate::meeting::pipeline::{
     MeetingTemplates,
 };
 use crate::meeting::recovery::MeetingOrphan;
+use crate::meeting::search::MeetingSearchHit;
 use crate::meeting::{MeetingError, MeetingManager, MeetingMode, MeetingStatus};
 use crate::settings::{self, NotesLanguage};
 
@@ -101,6 +102,16 @@ pub async fn extend_meeting_cap(meetings: Meetings<'_>) -> Result<MeetingStatus,
 #[specta::specta]
 pub async fn list_meetings(meetings: Meetings<'_>) -> Result<Vec<MeetingSummary>, MeetingError> {
     meetings.list()
+}
+
+/// Sessions whose title, notes or transcript match `query`, newest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_meetings(
+    meetings: Meetings<'_>,
+    query: String,
+) -> Result<Vec<MeetingSearchHit>, MeetingError> {
+    meetings.search(&query)
 }
 
 #[tauri::command]

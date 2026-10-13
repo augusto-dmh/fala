@@ -345,6 +345,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "paste_last_transcript" => {
                 last_dictation::paste_last(app, true);
             }
+            tray::PILL_HIDE_HOUR_ID => {
+                overlay::snooze_idle(app);
+            }
+            tray::PILL_SETTINGS_ID => {
+                show_main_window(app);
+                let _ = app.emit_to("main", "open-settings", ());
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {
@@ -853,6 +860,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::open_microphone_troubleshooting,
             overlay::pill_overlay_ready,
             overlay::set_idle_pill_hover,
+            overlay::open_pill_menu,
             overlay::open_home_from_pill,
             overlay::open_meeting_from_pill,
             overlay::end_paste_failed,
@@ -897,6 +905,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::stop_meeting,
             commands::meeting::extend_meeting_cap,
             commands::meeting::list_meetings,
+            commands::meeting::search_meetings,
             commands::meeting::get_meeting,
             commands::meeting::transcribe_meeting,
             commands::meeting::cancel_meeting_transcription,

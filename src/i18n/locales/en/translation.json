@@ -18,7 +18,8 @@
     "recordMeeting": "Record meeting",
     "pauseMeeting": "Pause meeting",
     "resumeMeeting": "Resume meeting",
-    "stopMeeting": "Stop meeting"
+    "stopMeeting": "Stop meeting",
+    "hidePillHour": "Hide for 1 hour"
   },
   "rail": {
     "navigation": "Main navigation",
@@ -1206,7 +1207,9 @@
       "draft": "draft",
       "transcribed": "transcribed",
       "notes": "with notes",
-      "granola": "Granola"
+      "granola": "Granola",
+      "search": "Search titles, notes and transcripts",
+      "noResults": "No meetings found."
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",

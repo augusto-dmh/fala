@@ -23,6 +23,7 @@ mod meeting_imports;
 mod meeting_mirror;
 mod meeting_notes;
 mod meeting_people;
+mod meeting_search;
 mod meetings;
 mod metrics;
 mod mirror;
@@ -40,6 +41,7 @@ pub use granola::{
 };
 pub use meeting_imports::{ImportOutcome, GRANOLA};
 pub use meeting_people::{MeetingSpeaker, NameSuggestion};
+pub use meeting_search::{MeetingHit, MATCH_END, MATCH_START};
 pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};
 pub use metrics::{DayCount, DictationMetrics, MetricsSummary, Percentiles};
 pub use store::Store;

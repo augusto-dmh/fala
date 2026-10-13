@@ -865,6 +865,14 @@ async setIdlePillHover(hover: boolean) : Promise<void> {
     await TAURI_INVOKE("set_idle_pill_hover", { hover });
 },
 /**
+ * A right click on the idle pill opens its menu at the cursor (`tray::build_pill_menu`); the
+ * tray's menu handler in `lib.rs` runs the item. Async so the menu inputs are read off the main
+ * thread, like the tray's.
+ */
+async openPillMenu() : Promise<void> {
+    await TAURI_INVOKE("open_pill_menu");
+},
+/**
  * A click on the idle pill opens the main window on Início.
  */
 async openHomeFromPill() : Promise<void> {
@@ -1210,6 +1218,17 @@ async extendMeetingCap() : Promise<Result<MeetingStatus, MeetingError>> {
 async listMeetings() : Promise<Result<MeetingSummary[], MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_meetings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sessions whose title, notes or transcript match `query`, newest first.
+ */
+async searchMeetings(query: string) : Promise<Result<MeetingSearchHit[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_meetings", { query }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2118,6 +2137,14 @@ export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" |
  * Where the processing of a session is, at least once a second while the transcript runs.
  */
 export type MeetingProgress = { id: string; stage: ProgressStage }
+/**
+ * A session the search found.
+ */
+export type MeetingSearchHit = { id: string; 
+/**
+ * The matching excerpt; each found term sits between `\u{2}` and `\u{3}`.
+ */
+snippet: string }
 /**
  * What the UI shows about the current recording; emitted on every change and at 4 Hz while
  * recording.
