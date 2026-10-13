@@ -377,9 +377,26 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   const key = renderToStaticMarkup(<KeyField onSave={noop} />);
   assert.ok(key.includes('type="password"') && key.includes('value=""'), key);
   // The field lives in Settings > Meetings; without the key the page only points there.
+  // QA Q18: both meeting keys live in Settings, the notes key too.
+  const keySetting = read("../settings/MeetingKeySetting.tsx");
+  assert.equal(keySetting.match(/<KeyField/g)?.length, 2, keySetting);
+  assert.ok(keySetting.includes("commands.setMeetingTranscriptionKey(key)"));
+  assert.ok(keySetting.includes("commands.setMeetingNotesKey(key)"));
+  assert.ok(keySetting.includes('anchor="meetings-key"'));
+  // QA Q36: a saved key shows "Saved" and [Replace], never the input; the Gemini key too.
+  const saved = renderToStaticMarkup(<KeyField onSave={noop} saved />);
+  assert.ok(!saved.includes('type="password"'), saved);
   assert.ok(
-    read("../settings/MeetingKeySetting.tsx").includes("<KeyField onSave="),
+    saved.includes("keyField.saved") && saved.includes("keyField.replace"),
   );
+  assert.ok(!saved.includes("keyField.remove"), "remove only when offered");
+  assert.ok(
+    renderToStaticMarkup(
+      <KeyField onSave={noop} saved onRemove={noop} />,
+    ).includes("keyField.remove"),
+  );
+  const llm = read("../settings/LlmSettings.tsx");
+  assert.ok(llm.includes("<KeyField") && !llm.includes("ApiKeyField"), llm);
   assert.ok(
     /keys && !keys\.elevenlabs && \(\s*<p[\s\S]*meeting\.home\.noKey/.test(
       page,

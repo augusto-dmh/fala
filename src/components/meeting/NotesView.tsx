@@ -2,7 +2,11 @@ import { useState } from "react";
 import { Search } from "lucide-react";
 import type { MeetingLine } from "@/bindings";
 import type { Translate } from "./meetingModel";
-import type { ParsedNotes } from "./notesModel";
+import {
+  granolaImportDate,
+  inlinePieces,
+  type ParsedNotes,
+} from "./notesModel";
 import { SourcePopover } from "./SourcePopover";
 
 export interface NotesViewProps {
@@ -12,7 +16,36 @@ export interface NotesViewProps {
   playing: number | null;
   onPlay: (line: MeetingLine) => void;
   onReveal: (seq: number) => void;
+  /** The UI language, for the date of an import footer. */
+  locale?: string;
   t: Translate;
+}
+
+/** A line's text with its inline Markdown drawn, not shown as `_` and `*`. */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {inlinePieces(text).map((piece, i) =>
+        piece.strong ? (
+          <strong key={i} className="font-semibold">
+            {piece.text}
+          </strong>
+        ) : piece.em ? (
+          <em key={i}>{piece.text}</em>
+        ) : (
+          piece.text
+        ),
+      )}
+    </>
+  );
+}
+
+/** "2026-10-12" as a local calendar date in the UI language. */
+function importDate(iso: string, locale: string | undefined): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
+    new Date(year, month - 1, day),
+  );
 }
 
 /**
@@ -31,7 +64,17 @@ export function NotesView(props: NotesViewProps) {
               key={index}
               className={`pt-2 font-semibold text-text ${block.level <= 2 ? "text-base" : "text-sm"}`}
             >
-              {block.text}
+              <Inline text={block.text} />
+            </p>
+          );
+        }
+        const imported = block.generated ? null : granolaImportDate(block.text);
+        if (imported !== null) {
+          return (
+            <p key={index} className="pt-2 text-caption text-text-2 italic">
+              {t("meeting.granola.importedOn", {
+                date: importDate(imported, props.locale),
+              })}
             </p>
           );
         }
@@ -42,7 +85,7 @@ export function NotesView(props: NotesViewProps) {
               className={`text-sm ${block.generated ? "text-text-2" : "text-text"} ${block.bullet ? "pl-3 -indent-3" : ""}`}
             >
               {block.bullet && <span aria-hidden="true">• </span>}
-              {block.text}
+              {block.literal ? block.text : <Inline text={block.text} />}
             </p>
             {block.generated && (
               <button

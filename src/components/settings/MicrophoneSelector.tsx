@@ -47,6 +47,7 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
         description={t("settings.sound.microphone.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
+        anchor="microphone"
       >
         <div className="flex items-center space-x-1">
           <Dropdown

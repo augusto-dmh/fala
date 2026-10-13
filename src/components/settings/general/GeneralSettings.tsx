@@ -19,6 +19,8 @@ import { MeetingAudioSettings } from "../MeetingAudioSettings";
 import { MeetingKeySetting } from "../MeetingKeySetting";
 import { NotesContextSettings } from "../../meeting/NotesContextSettings";
 import { MeetingTemplatesSettings } from "../../meeting/TemplatesSettings";
+import { AppLanguageSelector } from "../AppLanguageSelector";
+import { ThemeSelector } from "../ThemeSelector";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -33,6 +35,10 @@ export const GeneralSettings: React.FC = () => {
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
         <ShortcutInput shortcutId="paste_last" grouped={true} />
         <ShortcutInput shortcutId="copy_last" grouped={true} />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.general.app")}>
+        <AppLanguageSelector descriptionMode="tooltip" grouped={true} />
+        <ThemeSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
       <ModelSettingsCard />
       <SettingsGroup title={t("settings.llm.title")}>
