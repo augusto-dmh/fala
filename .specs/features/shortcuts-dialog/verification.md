@@ -24,3 +24,13 @@ Not run: a second key, the meeting shortcut and restoring defaults on a real key
 | C8 | same | `shortcut::tests::a_combination_in_use_is_refused_or_taken_over ... ok` | PASS |
 
 `cargo clippy -p fala --all-targets -- -D warnings` clean; `bunx tsc --noEmit` clean. Not run: refusals on a real keyboard.
+
+## S3 (PR 3)
+
+| Check | Proof run | Evidence | Result |
+| --- | --- | --- | --- |
+| C9 | reading `GeneralSettings.tsx` | one `<KeyboardShortcuts />` row; no `ShortcutInput` left in General | PASS |
+| C10 | `bun src/components/settings/shortcuts.test.tsx` | `rows ok`, `buttons ok` | PASS |
+| C11 | same | `messages ok`, `restore ok` | PASS |
+| C12 | `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`, `bun run check:translations` | all clean | PASS |
+| C13 | manual on Windows | not run: needs a person at the keyboard | NOT RUN |

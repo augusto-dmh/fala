@@ -8,6 +8,7 @@ import {
   filterTemplates,
   shownTemplate,
   TEMPLATE_SEARCH_ABOVE,
+  TemplateMenu,
   TemplateSelect,
 } from "./TemplateSelect";
 import { TemplatesSettings } from "./TemplatesSettings";
@@ -41,32 +42,38 @@ const vendas = template("vendas", "Vendas", "user", "Ligação com cliente");
 
 // Os dois grupos só quando há template do usuário; sem ele, a lista de antes.
 {
+  const groups = (html: string) =>
+    [...html.matchAll(/role="group" aria-label="([^"]+)"/g)].map((m) => m[1]);
   const plain = renderToStaticMarkup(
-    <TemplateSelect templates={builtin} value="geral" onChange={noop} />,
+    <TemplateMenu templates={builtin} value="geral" onChange={noop} />,
   );
-  assert.ok(!plain.includes("<optgroup"), plain);
-  assert.ok(plain.includes('value="um-a-um"'));
+  assert.deepEqual(groups(plain), ["meeting.view.template"], plain);
   const grouped = renderToStaticMarkup(
-    <TemplateSelect
+    <TemplateMenu
       templates={[...builtin, vendas]}
       value="vendas"
       onChange={noop}
     />,
   );
-  const groups = [...grouped.matchAll(/<optgroup label="([^"]+)">/g)].map(
-    (m) => m[1],
+  assert.deepEqual(
+    groups(grouped),
+    ["meeting.templates.builtin", "meeting.templates.user"],
+    grouped,
   );
-  assert.equal(groups.length, 2, grouped);
-  const first = grouped.indexOf("<optgroup");
-  const second = grouped.indexOf("<optgroup", first + 1);
-  assert.ok(first < grouped.indexOf('value="geral"'), grouped);
-  assert.ok(grouped.indexOf('value="um-a-um"') < second, grouped);
-  assert.ok(second < grouped.indexOf('value="vendas"'), grouped);
+  const second = grouped.indexOf('aria-label="meeting.templates.user"');
+  assert.ok(grouped.indexOf("Um a um") < second, grouped);
+  assert.ok(second < grouped.indexOf("Vendas"), grouped);
   // Grupo vazio não aparece; um template que sumiu da pasta dá lugar ao primeiro.
   const onlyUser = renderToStaticMarkup(
-    <TemplateSelect templates={[vendas]} value="vendas" onChange={noop} />,
+    <TemplateMenu templates={[vendas]} value="vendas" onChange={noop} />,
   );
-  assert.equal(onlyUser.split("<optgroup").length, 2, onlyUser);
+  assert.deepEqual(groups(onlyUser), ["meeting.templates.user"], onlyUser);
+  // Without templates the menu says so instead of a lone heading.
+  assert.ok(
+    renderToStaticMarkup(
+      <TemplateMenu templates={[]} value="" onChange={noop} />,
+    ).includes("common.noOptionsFound"),
+  );
   assert.equal(shownTemplate(builtin, "vendas"), "geral");
   assert.equal(shownTemplate(builtin, "um-a-um"), "um-a-um");
   assert.equal(shownTemplate(builtin, null), "geral");
@@ -99,11 +106,11 @@ const vendas = template("vendas", "Vendas", "user", "Ligação com cliente");
   ]);
   assert.deepEqual(filterTemplates(many, "  ", "geral"), many);
   const searchable = renderToStaticMarkup(
-    <TemplateSelect templates={many} value="geral" onChange={noop} />,
+    <TemplateMenu templates={many} value="geral" onChange={noop} />,
   );
   assert.ok(searchable.includes('type="search"'), searchable);
   const few = renderToStaticMarkup(
-    <TemplateSelect
+    <TemplateMenu
       templates={many.slice(0, TEMPLATE_SEARCH_ABOVE)}
       value="geral"
       onChange={noop}
@@ -172,4 +179,62 @@ const vendas = template("vendas", "Vendas", "user", "Ligação com cliente");
   assert.equal(pt.meeting.templates.duplicate, "Duplicar para editar");
   assert.equal(pt.meeting.templates.open, "Abrir a pasta");
   ok("UT-i18n");
+}
+
+// QA Q29: the templates are the items of the "Generate notes" arrow, not a select in a popover:
+// one checked, the groups as headings, the search above five, and a pick closes the menu.
+{
+  const html = renderToStaticMarkup(
+    <TemplateMenu
+      templates={[...builtin, vendas]}
+      value="vendas"
+      onChange={noop}
+    />,
+  );
+  assert.ok(!html.includes("<select"), html);
+  assert.equal(html.match(/role="menuitemradio"/g)?.length, 3, html);
+  assert.equal(html.match(/aria-checked="true"/g)?.length, 1, html);
+  assert.match(html, /aria-checked="true"[^>]*>[\s\S]*?Vendas</);
+  const headings = [
+    ...html.matchAll(/<p aria-hidden="true" class="px-3[^"]*">([^<]+)<\/p>/g),
+  ].map((m) => m[1]);
+  assert.deepEqual(headings, [
+    "meeting.templates.builtin",
+    "meeting.templates.user",
+  ]);
+  const many = Array.from({ length: TEMPLATE_SEARCH_ABOVE + 1 }, (_, i) =>
+    template(`t${i}`, `T${i}`, "builtin"),
+  );
+  assert.ok(
+    renderToStaticMarkup(
+      <TemplateMenu templates={many} value="t0" onChange={noop} />,
+    ).includes('type="search"'),
+  );
+  const menu = readFileSync(
+    new URL("./TemplateSelect.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    menu,
+    /props\.onChange\(template\.id\);\s*props\.onPicked\?\.\(\);/,
+  );
+  const bar = readFileSync(
+    new URL("./SessionBar.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(bar, /\{props\.templateMenu\(close\)\}/);
+  // A pick or Esc closes from inside and gives the focus back to the button.
+  assert.match(
+    menu,
+    /if \(inside\) \{\s*box\.current\s*\?\.querySelector<HTMLButtonElement>\('\[aria-haspopup="menu"\]'\)\s*\?\.focus\(\);/,
+  );
+  // The draft and the live recorder use the same menu behind a button: no native select left.
+  for (const file of ["./TemplateSelect.tsx", "./RecorderPanel.tsx"]) {
+    assert.ok(
+      !readFileSync(new URL(file, import.meta.url), "utf8").includes("<select"),
+      file,
+    );
+  }
+  assert.match(bar, /aria-haspopup="menu"/);
+  ok("Q29");
 }

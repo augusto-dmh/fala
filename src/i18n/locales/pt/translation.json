@@ -383,6 +383,7 @@
       "noModelsMatch": "Nenhum modelo corresponde a este filtro.",
       "yourModels": "Modelos baixados",
       "availableModels": "Disponíveis para download",
+      "otherModels": "Outros modelos ({{count}}), para outros idiomas",
       "searchPlaceholder": "Buscar modelos por nome…",
       "rescan": {
         "label": "Reescanear",
@@ -983,6 +984,62 @@
           "button": "Ver no GitHub"
         }
       }
+    },
+    "shortcuts": {
+      "row": {
+        "title": "Atalhos do teclado",
+        "description": "As teclas de ditar, colar, copiar e gravar reunião.",
+        "edit": "Editar atalhos"
+      },
+      "title": "Atalhos",
+      "subtitle": "Escolha as teclas de cada ação. Cada uma aceita até duas combinações.",
+      "actions": {
+        "transcribe": {
+          "name": "Ditar",
+          "description": "Segure para falar; também durante uma reunião gravada."
+        },
+        "cancel": {
+          "name": "Cancelar o ditado",
+          "description": "Descarta o ditado em andamento."
+        },
+        "paste_last": {
+          "name": "Colar o último ditado",
+          "description": "Cola de novo o último texto ditado."
+        },
+        "copy_last": {
+          "name": "Copiar o último ditado",
+          "description": "Põe o último texto ditado na área de transferência."
+        },
+        "transcribe_with_post_process": {
+          "name": "Ditar com pós-processamento",
+          "description": "O atalho antigo que sempre aplica a IA ao ditado."
+        },
+        "meeting_toggle": {
+          "name": "Gravar ou parar reunião",
+          "description": "Começa uma reunião nova ou para a que está gravando."
+        }
+      },
+      "choose": "Clique para escolher um atalho",
+      "pressKeys": "Aperte as teclas…",
+      "edit": "Gravar de novo",
+      "remove": "Remover esta combinação",
+      "add": "Adicionar outra combinação",
+      "useHere": "Usar aqui",
+      "saved": "Atalho salvo",
+      "reset": "Restaurar padrão",
+      "restored": "Atalhos restaurados",
+      "done": "Concluir",
+      "messages": {
+        "inUse": "Já usado em “{{action}}”.",
+        "reserved": "O Windows ou outro app já usa {{keys}}.",
+        "loneKey": "Use com Ctrl, Alt, Shift ou Win: uma tecla sozinha atrapalharia a digitação.",
+        "overlap": "{{smaller}} faz parte de {{larger}} ({{action}}): segurar um pode disparar o outro.",
+        "error": "Não deu para salvar o atalho: {{error}}"
+      },
+      "resetRefused": {
+        "dictation_active": "Termine o ditado antes de restaurar os atalhos.",
+        "meeting_recording": "Pare a reunião antes de restaurar os atalhos."
+      }
     }
   },
   "footer": {
@@ -1190,7 +1247,8 @@
       "callElsewhere": "O som da chamada está saindo por {{device}}.",
       "recordFrom": "Gravar deste dispositivo",
       "consentChip": "Grave só com o consentimento de quem participa.",
-      "systemOnly": "Só o som do computador (aula, vídeo)"
+      "systemOnly": "Só o som do computador (aula, vídeo)",
+      "title": "Título"
     },
     "import": {
       "open": "Importar arquivo ou link",

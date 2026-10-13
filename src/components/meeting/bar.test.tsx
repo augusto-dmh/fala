@@ -59,6 +59,7 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
       generateDisabled={false}
       onGenerate={noop}
       templateSelect={<span>{PICKER}</span>}
+      templateMenu={() => <span>{PICKER}</span>}
       t={keys}
       {...over}
     />,
