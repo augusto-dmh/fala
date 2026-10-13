@@ -1188,7 +1188,8 @@
       "callElsewhere": "The call's sound is playing on {{device}}.",
       "recordFrom": "Record from this device",
       "consentChip": "Only record with the consent of everyone on the call.",
-      "systemOnly": "Only the computer sound (class, video)"
+      "systemOnly": "Only the computer sound (class, video)",
+      "title": "Title"
     },
     "import": {
       "open": "Import a file or link",
