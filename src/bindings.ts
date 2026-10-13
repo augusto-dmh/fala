@@ -2068,7 +2068,11 @@ discarded: boolean;
 /**
  * A long dictation where some blocks have the LLM text and others the rules ("IA parcial").
  */
-llm_partial: boolean }
+llm_partial: boolean; 
+/**
+ * Retention deleted the recording: the text stays, without a player or a retry.
+ */
+audio_deleted: boolean }
 /**
  * Qual texto o item mostra agora: o final ou, depois de desfazer, o bruto.
  */

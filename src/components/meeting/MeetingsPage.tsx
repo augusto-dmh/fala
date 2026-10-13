@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { copyToClipboard } from "../settings/history/clipboard";
 import { PageHeader } from "../PageHeader";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { SearchField } from "../ui/SearchField";
 import { ConsentNotice } from "./ConsentNotice";
 import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
@@ -192,7 +192,11 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
         if (stage.stage === "transcribing" || stage.stage === "notes")
           setFailed((ids) => withoutId(ids, id));
         if (stage.stage === "failed") setFailed((ids) => new Set(ids).add(id));
-        if (stage.stage === "transcribing") setTranscribing(id);
+        // A new transcription replaces an older notes failure: a failure now is the ASR's.
+        if (stage.stage === "transcribing") {
+          setTranscribing(id);
+          setNotesFailed((ids) => withoutId(ids, id));
+        }
         if (stage.stage === "notes") {
           setGenerating(id);
           setNotesFailed((ids) => withoutId(ids, id));
@@ -627,9 +631,8 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
       {banners}
       {strip}
       <div className="flex flex-wrap items-center gap-2">
-        <Input
+        <SearchField
           variant="compact"
-          type="search"
           className="min-w-0 flex-1"
           value={query}
           placeholder={t("meeting.list.search")}
@@ -664,6 +667,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
             [transcribing, generating].filter((id) => id !== null),
           ),
           failed,
+          notesFailed,
         }}
         onOpen={(id) => void open(id)}
       />

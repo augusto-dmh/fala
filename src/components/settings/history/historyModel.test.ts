@@ -7,7 +7,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { HistoryDictation, HistoryEntry, Result } from "@/bindings";
 import {
+  appLabel,
   appName,
+  emptyHint,
   editAction,
   groupByDay,
   partialAi,
@@ -59,6 +61,7 @@ function entry(
     paste_failed: false,
     discarded: false,
     llm_partial: false,
+    audio_deleted: false,
     ...over,
   };
 }
@@ -211,7 +214,7 @@ await (async () => {
   assert.equal(appName(entry(null)), null);
   assert.ok(screen.includes("const app = appName(entry);"));
   assert.ok(
-    /\{app && \([\s\S]{0,200}t\("settings\.history\.inApp", \{ app \}\)/.test(
+    /\{app && \([\s\S]{0,200}t\("settings\.history\.inApp", \{ app: appLabel\(app\) \}\)/.test(
       screen,
     ),
     "o app só aparece quando conhecido, por settings.history.inApp",
@@ -494,5 +497,64 @@ assert.ok(screen.includes('t("settings.history.partialAi")'));
 assert.equal(pt.settings.history.partialAi, "IA parcial");
 assert.equal(en.settings.history.partialAi, "Partial AI");
 ok("long dictation partial AI label");
+
+// T1 - a hora numa linha: sem zero à esquerda no relógio de 12 h, dois dígitos no de 24 h.
+{
+  const at = (h: number, min: number) =>
+    Math.floor(new Date(2026, 9, 9, h, min).getTime() / 1000);
+  // O ICU separa "PM" com espaço normal ou estreito, conforme a versão.
+  assert.match(timeLabel(at(15, 50), "en-US"), /^3:50\sPM$/);
+  assert.equal(timeLabel(at(15, 50), "pt-BR"), "15:50");
+  assert.equal(timeLabel(at(7, 5), "pt-BR"), "07:05");
+  assert.ok(
+    /w-16 shrink-0 whitespace-nowrap[^"]*"\s*>\s*\{timeLabel/.test(screen),
+    "a coluna da hora não quebra",
+  );
+  ok("T1");
+}
+
+// T2 - o app pelo nome que as pessoas conhecem.
+{
+  assert.equal(appLabel("winword"), "Word");
+  assert.equal(appLabel("msedge"), "Edge");
+  assert.equal(appLabel("chrome"), "Chrome");
+  assert.equal(appLabel("houston"), "Houston");
+  assert.equal(appLabel("Code"), "VS Code");
+  ok("T2");
+}
+
+// T3 - o Início vazio ensina o atalho atual; o cabeçalho do dia é o mesmo de Reuniões.
+{
+  const keyed = (key: string, options?: Record<string, unknown>) =>
+    options ? `${key}(${String(options.keys)})` : key;
+  assert.equal(
+    emptyHint("Ctrl + Space", false, keyed),
+    "settings.history.emptyHold(Ctrl + Space)",
+  );
+  assert.equal(
+    emptyHint("Ctrl + Space", true, keyed),
+    "settings.history.emptyToggle(Ctrl + Space)",
+  );
+  assert.equal(emptyHint("", false, keyed), "settings.history.empty");
+  for (const locale of [pt, en]) {
+    assert.ok(locale.settings.history.emptyHold.includes("{{keys}}"));
+    assert.ok(locale.settings.history.emptyToggle.includes("{{keys}}"));
+  }
+  assert.equal(pt.settings.history.empty, "Nenhum ditado ainda.");
+  assert.ok(
+    screen.includes("s.settings?.bindings?.transcribe?.current_binding"),
+  );
+  assert.ok(
+    screen.includes(
+      '<h2 className="px-4 text-caption font-semibold text-text-2">',
+    ),
+  );
+  assert.ok(
+    !screen.includes('t("settings.history.title")'),
+    "sem o rótulo HISTORY",
+  );
+  assert.ok(!screen.includes("uppercase"));
+  ok("T3");
+}
 
 console.log("history: all assertions passed");

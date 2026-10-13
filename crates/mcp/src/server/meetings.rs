@@ -7,7 +7,7 @@
 //! Nenhuma resposta leva áudio, `audio_retained` nem caminho de disco, e toda resposta marca o
 //! conteúdo como fala de terceiros.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, FixedOffset, SecondsFormat};
 use fala_meeting::{SessionId, SessionMode};
@@ -253,11 +253,7 @@ impl FalaMcp {
 
 /// As reuniões visíveis com a chave de ordem, do início mais recente para o mais antigo.
 fn sorted_visible(store: &Store) -> Result<Vec<(Key, MeetingRecord)>, ReadError> {
-    let trashed: HashSet<SessionId> = store
-        .trashed_meetings()?
-        .into_iter()
-        .map(|t| t.record.id)
-        .collect();
+    let trashed = store.trashed_meeting_ids()?;
     let mut meetings: Vec<_> = store
         .meetings()?
         .into_iter()

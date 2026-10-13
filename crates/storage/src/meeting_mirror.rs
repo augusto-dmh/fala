@@ -549,9 +549,17 @@ fn insert(conn: &Connection, doc: &MeetingDoc, file_name: &str) -> rusqlite::Res
     Ok(())
 }
 
-/// Se `path` é um `.md` da sessão `id` (uma cópia que uma mudança de pasta deixou).
+/// Se `path` é um `.md` da sessão `id` (uma cópia que uma mudança de pasta deixou). Lê a linha
+/// `id` do frontmatter, com `\n` ou `\r\n`.
 fn holds(path: &Path, id: SessionId) -> bool {
-    fs::read_to_string(path).is_ok_and(|content| content.contains(&format!("\nid: \"{id}\"\n")))
+    let line = format!("id: \"{id}\"");
+    fs::read_to_string(path).is_ok_and(|content| {
+        content
+            .lines()
+            .skip(1)
+            .take_while(|l| l.trim_end() != "---")
+            .any(|l| l.trim_end() == line)
+    })
 }
 
 fn not_found_ok(result: std::io::Result<()>) -> std::io::Result<()> {
@@ -638,7 +646,7 @@ impl Store {
         let stale = current
             .as_deref()
             .map(|name| other.join(name))
-            .filter(|path| path.is_file());
+            .filter(|path| holds(path, id));
         // Mudando de pasta, o nome pode estar tomado por um arquivo que não é desta sessão.
         let moving = stale.is_some()
             && current
@@ -709,18 +717,24 @@ impl Store {
         })
     }
 
-    /// Apaga o `.md` de uma sessão que está saindo do banco (dentro da transação que a apaga),
-    /// em `Reuniões/` ou na lixeira.
+    /// Apaga o `.md` de uma sessão que está saindo do banco (dentro da transação que a apaga):
+    /// o da pasta dela (`Reuniões/` ou a lixeira, por `trashed`) e, na outra, uma cópia dela que
+    /// uma mudança de pasta deixou, nunca um arquivo de outra sessão ou da pessoa.
     pub(crate) fn remove_meeting_mirror(
         &self,
         id: SessionId,
         file: Option<String>,
+        trashed: bool,
     ) -> Result<(), StorageError> {
         let Some(name) = file else {
             return Ok(());
         };
-        for dir in [self.meetings_dir(), self.trash_dir()] {
-            let path = dir.join(&name);
+        let (own, other) = match trashed {
+            true => (self.trash_dir(), self.meetings_dir()),
+            false => (self.meetings_dir(), self.trash_dir()),
+        };
+        let copy = Some(other.join(&name)).filter(|path| holds(path, id));
+        for path in std::iter::once(own.join(&name)).chain(copy) {
             not_found_ok(fs::remove_file(&path)).map_err(|source| StorageError::MeetingMirror {
                 id: id.to_string(),
                 path,
@@ -770,8 +784,15 @@ impl Store {
                 Err(reason) => report.skipped.push(Skipped { path, reason }),
             }
         }
-        // Os arquivos com o nome do título primeiro; `sort_by_key` é estável.
-        docs.sort_by_key(|(name, _, doc)| !fits(name, &file_stem(&doc.record)));
+        // Os arquivos com o nome do título primeiro; `sort_by_key` é estável. Com duas cópias
+        // (uma mudança de pasta interrompida), vale a de fora da lixeira: a purga nunca apaga uma
+        // reunião que talvez tenha sido restaurada.
+        docs.sort_by_key(|(name, _, doc)| {
+            (
+                !fits(name, &file_stem(&doc.record)),
+                doc.trashed_at.is_some(),
+            )
+        });
         let known: HashSet<SessionId> = self.meetings()?.into_iter().map(|m| m.id).collect();
         let mut seen = HashSet::new();
 

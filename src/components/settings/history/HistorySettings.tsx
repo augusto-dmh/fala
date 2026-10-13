@@ -22,12 +22,16 @@ import {
   type HistoryUpdatePayload,
 } from "@/bindings";
 import { useOsType } from "@/hooks/useOsType";
+import { formatKeyCombination } from "@/lib/utils/keyboard";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { formatDate } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
 import { copyToClipboard } from "./clipboard";
 import {
+  appLabel,
   appName,
+  emptyHint,
   editAction,
   groupByDay,
   partialAi,
@@ -93,6 +97,13 @@ const replaceIn = (list: HistoryEntry[], entry: HistoryEntry) =>
 export const HistorySettings: React.FC = () => {
   const { t, i18n } = useTranslation();
   const osType = useOsType();
+  // Only what the empty Home says: the page does not follow the rest of the settings.
+  const dictateBinding = useSettingsStore(
+    (s) => s.settings?.bindings?.transcribe?.current_binding ?? "",
+  );
+  const toggleActivation = useSettingsStore(
+    (s) => s.settings?.shortcut_activation === "toggle",
+  );
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -338,7 +349,11 @@ export const HistorySettings: React.FC = () => {
     content = (
       <div className="px-4 py-3 text-center text-text/60">
         {results === null
-          ? t("settings.history.empty")
+          ? emptyHint(
+              formatKeyCombination(dictateBinding, osType),
+              toggleActivation,
+              t,
+            )
           : t("settings.history.searchNoResults")}
       </div>
     );
@@ -349,9 +364,9 @@ export const HistorySettings: React.FC = () => {
           <div className="space-y-6">
             {groupByDay(shown, new Date()).map((group) => (
               <section key={group.key} className="space-y-2">
-                <h3 className="px-4 text-xs font-medium text-mid-gray uppercase tracking-wide">
+                <h2 className="px-4 text-caption font-semibold text-text-2">
                   {groupLabel(group)}
-                </h3>
+                </h2>
                 <div className="bg-background border border-mid-gray/20 rounded-lg divide-y divide-mid-gray/20">
                   {group.entries.map((entry) => (
                     <HistoryEntryComponent
@@ -380,9 +395,6 @@ export const HistorySettings: React.FC = () => {
   return (
     <div className="max-w-3xl w-full mx-auto space-y-4">
       <div className="px-4 flex items-center gap-3">
-        <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide shrink-0">
-          {t("settings.history.title")}
-        </h2>
         <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-mid-gray/20 bg-background focus-within:border-logo-primary">
           <Search className="w-4 h-4 text-text/40 shrink-0" />
           <input
@@ -549,14 +561,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
 
   return (
     <div className="group px-4 py-3 flex gap-4 hover:bg-mid-gray/5">
-      <span className="w-12 shrink-0 pt-0.5 text-xs text-text/50 tabular-nums">
+      <span className="w-16 shrink-0 whitespace-nowrap pt-0.5 text-xs text-text/50 tabular-nums">
         {timeLabel(entry.timestamp, i18n.language)}
       </span>
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         {text}
         {app && (
           <span className="text-xs text-text/50">
-            {t("settings.history.inApp", { app })}
+            {t("settings.history.inApp", { app: appLabel(app) })}
           </span>
         )}
         {partial && (
@@ -564,9 +576,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             {t("settings.history.partialAi")}
           </span>
         )}
-        {expanded && (
-          <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
-        )}
+        {expanded &&
+          (entry.audio_deleted ? (
+            <span className="text-xs text-text/50">
+              {t("settings.history.audioDeleted")}
+            </span>
+          ) : (
+            <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
+          ))}
       </div>
       <div
         className={`flex items-start shrink-0 transition-opacity ${
@@ -619,21 +636,23 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             fill={entry.saved ? "currentColor" : "none"}
           />
         </IconButton>
-        <IconButton
-          onClick={handleRetranscribe}
-          disabled={retrying}
-          title={t("settings.history.retranscribe")}
-        >
-          <RotateCcw
-            width={16}
-            height={16}
-            style={
-              retrying
-                ? { animation: "spin 1s linear infinite reverse" }
-                : undefined
-            }
-          />
-        </IconButton>
+        {!entry.audio_deleted && (
+          <IconButton
+            onClick={handleRetranscribe}
+            disabled={retrying}
+            title={t("settings.history.retranscribe")}
+          >
+            <RotateCcw
+              width={16}
+              height={16}
+              style={
+                retrying
+                  ? { animation: "spin 1s linear infinite reverse" }
+                  : undefined
+              }
+            />
+          </IconButton>
+        )}
         <IconButton
           onClick={handleDeleteEntry}
           disabled={retrying}

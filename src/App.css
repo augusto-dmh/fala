@@ -168,6 +168,12 @@
   }
 }
 
+/* Reserve the scrollbar's gutter on both edges so pages with and without a scrollbar line up,
+   centred like onboarding. */
+main {
+  scrollbar-gutter: stable both-edges;
+}
+
 /* Keep onboarding centered when classic scrollbars consume layout space.
    Overlay scrollbars do not reserve a gutter, so this has no effect on them. */
 :root[data-onboarding-active] {

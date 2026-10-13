@@ -1,4 +1,5 @@
 import type { MeetingSummary } from "@/bindings";
+import { formatClock } from "@/utils/dateFormat";
 import type { Translate } from "./meetingModel";
 
 /** A day of the Meetings home: sessions that started that local day, latest first. */
@@ -73,9 +74,9 @@ export function dayLabel(
   );
 }
 
-/** The local hour and minute the session started. */
+/** The local hour and minute the session started ("3:50 PM", "15:50"). */
 export const startTime = (session: MeetingSummary, locale: string): string =>
-  format(locale, { hour: "2-digit", minute: "2-digit" }, startOf(session));
+  formatClock(startOf(session), locale);
 
 /** The dot of a row: recording, transcribing or writing notes, notes ready, or failed. */
 export type RowState = "recording" | "working" | "ready" | "failed" | "idle";
@@ -87,6 +88,8 @@ export interface LiveSessions {
   working: ReadonlySet<string>;
   /** Its last transcription or notes run failed while the page was open. */
   failed: ReadonlySet<string>;
+  /** Of those, the ones where the notes step is what failed. */
+  notesFailed?: ReadonlySet<string>;
 }
 
 export function rowState(

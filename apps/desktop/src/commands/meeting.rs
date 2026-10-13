@@ -486,7 +486,10 @@ pub async fn trash_meeting(meetings: Meetings<'_>, id: String) -> Result<(), Mee
 #[tauri::command]
 #[specta::specta]
 pub async fn restore_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
-    meetings.restore(&id)
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.restore(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
 }
 
 #[tauri::command]

@@ -35,6 +35,7 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod webview_permissions;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -1196,9 +1197,20 @@ pub fn run(cli_args: CliArgs) {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
             }
 
-            // Only used on Windows, to disable WebView2 browser accelerators.
+            // Only used on Windows: the microphone grant and the WebView2 browser accelerators.
             #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
             let main_window = win_builder.build()?;
+
+            // "Test microphone" without WebView2's browser prompt (see `webview_permissions`).
+            #[cfg(target_os = "windows")]
+            {
+                let dev_url = app.config().build.dev_url.clone();
+                if let Err(error) = main_window.with_webview(move |webview| {
+                    webview_permissions::grant_own_microphone(&webview, dev_url.as_ref());
+                }) {
+                    log::warn!("Microphone permission: webview not reached: {error}");
+                }
+            }
 
             // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
             // A settings window has no use for them, and pressing F6 while

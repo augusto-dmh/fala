@@ -163,14 +163,45 @@ fn a_copy_left_in_the_other_folder_goes_on_the_next_sync() {
     let mut store = e.open();
     let id = recorded(&mut store, 1, "Contrato", "oi");
     let name = "2026-10-02 Contrato.md";
-    let old = fs::read_to_string(reunioes(&e).join(name)).unwrap();
+    // Salvo com CRLF por um editor: ainda é a cópia da sessão.
+    let old = fs::read_to_string(reunioes(&e).join(name))
+        .unwrap()
+        .replace('\n', "\r\n");
     store.trash_meeting(id, at(16, 0, 0)).unwrap();
     // O processo morreu entre escrever na lixeira e apagar o de `Reuniões/`.
-    fs::write(reunioes(&e).join(name), old).unwrap();
+    fs::write(reunioes(&e).join(name), &old).unwrap();
     assert_eq!(store.sync_meeting_mirrors().unwrap(), 1);
     assert!(md_in(&reunioes(&e)).is_empty());
     assert_eq!(md_in(&lixeira(&e)), [name]);
     assert_eq!(store.sync_meeting_mirrors().unwrap(), 0);
+
+    // Com as duas cópias, um `reindex` fica com a de fora da lixeira: nada que talvez tenha
+    // sido restaurado vai para a purga.
+    fs::write(reunioes(&e).join(name), old.replace("\r\n", "\n")).unwrap();
+    drop(store);
+    fs::remove_file(&e.db).unwrap();
+    let mut store = e.open();
+    let report = store.reindex_meetings().unwrap();
+    assert_eq!(report.indexed, 1, "{report:?}");
+    assert_eq!(store.meeting_trashed_at(id).unwrap(), None);
+}
+
+#[test]
+fn a_file_of_the_person_with_the_same_name_is_never_deleted() {
+    let e = env("meeting_trash_foreign_file");
+    let mut store = e.open();
+    let id = recorded(&mut store, 1, "Contrato", "oi");
+    let name = "2026-10-02 Contrato.md";
+    store.trash_meeting(id, at(16, 0, 0)).unwrap();
+    fs::write(reunioes(&e).join(name), "minha nota").unwrap();
+    store.sync_meeting_mirrors().unwrap();
+    store.set_meeting_title(id, "Contrato").unwrap();
+    store.delete_meeting(id).unwrap();
+    assert!(md_in(&lixeira(&e)).is_empty());
+    assert_eq!(
+        fs::read_to_string(reunioes(&e).join(name)).unwrap(),
+        "minha nota"
+    );
 }
 
 #[test]

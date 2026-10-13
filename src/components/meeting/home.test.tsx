@@ -127,6 +127,40 @@ const OPTIONS = "opções";
   ok("C3");
 }
 
+// T4: a hora numa linha e a falha dita em texto visível, branda quando só faltaram as notas.
+{
+  const live: LiveSessions = {
+    recording: null,
+    working: new Set(),
+    failed: new Set(["notes", "asr"]),
+    notesFailed: new Set(["notes"]),
+  };
+  const html = renderToStaticMarkup(
+    <MeetingList
+      sessions={[
+        at("notes", new Date(2026, 9, 12, 15, 50)),
+        // Uma nova transcrição que falhou numa reunião já transcrita.
+        at("asr", new Date(2026, 9, 12, 9, 5)),
+      ]}
+      live={live}
+      now={now}
+      onOpen={noop}
+    />,
+  );
+  assert.ok(html.includes("w-16 shrink-0 whitespace-nowrap"), html);
+  assert.ok(!html.includes("w-12"));
+  assert.ok(html.includes(">meeting.home.failedWhy.notes<"));
+  assert.ok(html.includes(">meeting.home.failedWhy.transcript<"));
+  assert.ok(!html.includes('class="sr-only">meeting.home.state.failed'));
+  assert.ok(/bg-warn[^>]*title="meeting\.home\.state\.failed"/.test(html));
+  assert.ok(/bg-danger[^>]*title="meeting\.home\.state\.failed"/.test(html));
+  assert.ok(
+    /failed,\s*notesFailed,\s*\}\}/.test(page),
+    "a página passa a etapa",
+  );
+  ok("T4");
+}
+
 // C4: sem reuniões, o convite a gravar ou arrastar; buscando, sem cabeçalhos de dia.
 {
   const empty = renderToStaticMarkup(

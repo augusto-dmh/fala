@@ -5,6 +5,8 @@
 //!
 //! Tabela aditiva, criada a cada abertura como `meeting_people`, sem subir `user_version`.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, FixedOffset};
 use fala_meeting::SessionId;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -68,14 +70,23 @@ fn parse(at: &str) -> Result<DateTime<FixedOffset>, StorageError> {
 
 impl Store {
     /// Move a sessão para a lixeira em `at`. O áudio já precisa ter saído: quem chama apaga
-    /// `audio/<id>/` antes. Uma sessão que já está na lixeira não muda.
+    /// `audio/<id>/` antes, e `audio_retained` volta a falso aqui. Uma sessão que já está na
+    /// lixeira fica com o `trashed_at` que tinha.
     pub fn trash_meeting(
-        &self,
+        &mut self,
         id: SessionId,
         at: DateTime<FixedOffset>,
     ) -> Result<(), StorageError> {
-        self.meeting(id)?;
-        insert(&self.conn, id, &at)?;
+        let tx = self.conn.transaction()?;
+        if tx.execute(
+            "UPDATE meetings SET audio_retained = 0 WHERE id = ?1",
+            [id.to_string()],
+        )? == 0
+        {
+            return Err(StorageError::NotFound(id.to_string()));
+        }
+        insert(&tx, id, &at)?;
+        tx.commit()?;
         log::debug!("reunião {id} na lixeira");
         self.after_meeting_change(id);
         Ok(())
@@ -104,6 +115,26 @@ impl Store {
         trashed_at(&self.conn, id)
     }
 
+    /// Os ids das sessões da lixeira, para quem lista as outras.
+    pub fn trashed_meeting_ids(&self) -> Result<HashSet<SessionId>, StorageError> {
+        let mut stmt = self.conn.prepare("SELECT meeting_id FROM meeting_trash")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut ids = HashSet::new();
+        for id in rows {
+            ids.insert(parse_id(&id?)?);
+        }
+        Ok(ids)
+    }
+
+    /// Se a sessão está na lixeira há [`TRASH_DAYS`] dias ou mais em `now_ms`.
+    pub fn trash_is_due(&self, id: SessionId, now_ms: i64) -> Result<bool, StorageError> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM meeting_trash WHERE meeting_id = ?1 AND trashed_ms <= ?2)",
+            params![id.to_string(), due_before(now_ms)],
+            |row| row.get(0),
+        )?)
+    }
+
     /// As sessões da lixeira, da que entrou por último para a primeira.
     pub fn trashed_meetings(&self) -> Result<Vec<TrashedMeeting>, StorageError> {
         let mut stmt = self.conn.prepare(
@@ -116,11 +147,8 @@ impl Store {
             .collect::<Result<Vec<_>, _>>()?;
         let mut out = Vec::with_capacity(rows.len());
         for (id, at) in rows {
-            let id: SessionId = id
-                .parse()
-                .map_err(|_| StorageError::Db(bad(0, format!("id de sessão inválido {id:?}"))))?;
             out.push(TrashedMeeting {
-                record: self.meeting(id)?,
+                record: self.meeting(parse_id(&id)?)?,
                 trashed_at: parse(&at)?,
             });
         }
@@ -132,18 +160,21 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT meeting_id FROM meeting_trash WHERE trashed_ms <= ?1 ORDER BY trashed_ms",
         )?;
-        let rows = stmt.query_map([now_ms.saturating_sub(TRASH_DAYS * DAY_MS)], |row| {
-            row.get::<_, String>(0)
-        })?;
+        let rows = stmt.query_map([due_before(now_ms)], |row| row.get::<_, String>(0))?;
         let mut due = Vec::new();
         for id in rows {
-            let id = id?;
-            due.push(
-                id.parse().map_err(|_| {
-                    StorageError::Db(bad(0, format!("id de sessão inválido {id:?}")))
-                })?,
-            );
+            due.push(parse_id(&id?)?);
         }
         Ok(due)
     }
+}
+
+/// O `trashed_ms` mais novo que já venceu em `now_ms`.
+fn due_before(now_ms: i64) -> i64 {
+    now_ms.saturating_sub(TRASH_DAYS * DAY_MS)
+}
+
+fn parse_id(id: &str) -> Result<SessionId, StorageError> {
+    id.parse()
+        .map_err(|_| StorageError::Db(bad(0, format!("id de sessão inválido {id:?}"))))
 }
