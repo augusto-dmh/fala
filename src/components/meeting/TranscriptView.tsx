@@ -137,6 +137,14 @@ export interface TranscriptViewProps {
   t: Translate;
 }
 
+/** The nearest line before `index` that someone speaks (markers skipped). */
+function lineBefore(lines: MeetingLine[], index: number) {
+  for (let i = index - 1; i >= 0; i--) {
+    if (!lines[i].omitted) return lines[i];
+  }
+  return undefined;
+}
+
 /**
  * The transcript as a conversation: "me" on the right, the others on the left, the speaker and
  * time only when the speaker changes, a ▶ on each bubble.
@@ -152,12 +160,27 @@ export function TranscriptView(props: TranscriptViewProps) {
   return (
     <ol className="space-y-1">
       {lines.map((line, index) => {
+        // A span of the mic a dictation zeroed (ADR-0015): a marker, not a bubble.
+        if (line.omitted) {
+          return (
+            <li
+              key={line.seq}
+              id={segmentAnchor(line.seq)}
+              data-speaker="omitted"
+              className="py-1 text-center text-caption text-text-2 italic"
+            >
+              {t("meeting.omitted")} · {clock(line.t0_ms)}
+            </li>
+          );
+        }
         const me = line.person === null;
-        // Search results are far apart: each one keeps its speaker and time.
+        // Search results are far apart: each one keeps its speaker and time. A marker is not a
+        // speaker: the turn is decided by the line before it.
+        const previous = lineBefore(lines, index);
         const turn =
-          index === 0 ||
+          previous === undefined ||
           (props.query ?? "").trim() !== "" ||
-          lines[index - 1].person !== line.person;
+          previous.person !== line.person;
         const highlighted = props.highlighted === line.seq;
         return (
           <Fragment key={line.seq}>

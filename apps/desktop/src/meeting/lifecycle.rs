@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use fala_meeting::{SessionId, UnixMillis};
+use fala_meeting::{Levels, SessionId, UnixMillis};
 use fala_retention::{audio_due, RetainedSession, RetentionPolicy};
 use fala_storage::{MeetingRecord, Store};
 use tauri::{AppHandle, Manager};
@@ -24,6 +24,13 @@ pub(crate) const SHORT_RECORDING_MS: u64 = 30_000;
 pub(crate) const LITTLE_SPEECH_MS: u64 = 5_000;
 /// A second whose louder channel reaches this RMS (≈ −40 dBFS) counts as speech.
 pub(crate) const SPEECH_RMS: f32 = 0.01;
+/// A second of the recording counts as speech: its louder channel reached `SPEECH_RMS`. A
+/// dictation zeroes the mic (ADR-0015), so then only the system channel counts.
+pub(crate) fn heard_speech(levels: Levels) -> bool {
+    let mic = if levels.mic_omitted { 0.0 } else { levels.mic };
+    mic.max(levels.system) >= SPEECH_RMS
+}
+
 /// Under this, nothing was recorded at all.
 const NOTHING_MS: u64 = 1_000;
 
@@ -392,6 +399,25 @@ mod tests {
         assert_eq!(mistake(600_000, 4_999, false), Some(Mistake::Ask));
         assert_eq!(mistake(30_000, 5_000, false), None);
         assert_eq!(mistake(3_600_000, 1_200_000, true), None);
+    }
+
+    #[test]
+    fn a_dictation_is_not_speech_of_the_meeting() {
+        let levels = |mic, system, mic_omitted| Levels {
+            mic,
+            system,
+            mic_omitted,
+        };
+        assert!(heard_speech(levels(0.2, 0.0, false)));
+        assert!(
+            !heard_speech(levels(0.2, 0.0, true)),
+            "the dictation's voice"
+        );
+        assert!(
+            heard_speech(levels(0.2, 0.2, true)),
+            "the call still speaks"
+        );
+        assert!(!heard_speech(levels(0.0, 0.0, false)));
     }
 
     #[test]

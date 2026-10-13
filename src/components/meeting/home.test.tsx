@@ -208,6 +208,7 @@ const OPTIONS = "opções";
     call_output: null,
     zero_mic: false,
     zero_system: false,
+    dictating: false,
     ...over,
   });
   const strip = (s: MeetingStatus) =>

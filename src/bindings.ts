@@ -2124,7 +2124,11 @@ channel: string; person: number | null;
 /**
  * The name applied to "Person N" from a suggestion; absent when there is none.
  */
-name?: string | null; t0_ms: number; t1_ms: number; text: string }
+name?: string | null; t0_ms: number; t1_ms: number; text: string; 
+/**
+ * The line marks a span of the mic zeroed by a dictation (ADR-0015); nobody speaks in it.
+ */
+omitted?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
@@ -2215,7 +2219,11 @@ call_output: string | null;
 /**
  * A channel in digital zero for ~3 s (the pill's dot turns amber).
  */
-zero_mic: boolean; zero_system: boolean }
+zero_mic: boolean; zero_system: boolean; 
+/**
+ * A dictation is zeroing the meeting's mic channel now (ADR-0015).
+ */
+dictating: boolean }
 /**
  * A session in the list.
  */

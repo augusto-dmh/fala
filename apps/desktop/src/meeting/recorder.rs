@@ -3,6 +3,9 @@
 //! switch of the system output while recording. A "system only" session opens no mic: the
 //! recorder fills that channel with zeros.
 //!
+//! The mic is a tap of `MIC_HUB`, the stream dictation reads too (ADR-0015): while a dictation
+//! runs, the recorder zeroes the mic channel from the dictation's pre-buffer to its end.
+//!
 //! The streams are opened on the thread that owns them (a cpal stream is not `Send` on every
 //! host). Paused time is neither written nor counted: the recorder's clock is an [`ActiveClock`]
 //! that only advances while recording. The same [`Gate`] keeps the PC awake while it records and
@@ -15,12 +18,19 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fala_audio::{
-    MeetingRecorder, MeetingWav, Mic, OutputMeter, OutputPeak, SystemAudio, MEETING_RATE,
+    MeetingRecorder, MeetingWav, MicTap, OmittedSpan, OutputMeter, OutputPeak, SystemAudio,
+    MEETING_RATE,
 };
 
+use crate::dictation_capture::MIC_HUB;
 use crate::power::{self, PowerApi, PowerGuard};
 
 const TICK: Duration = Duration::from_millis(100);
+/// How far back a dictation's interval starts: its 300 ms pre-buffer plus the time the start takes
+/// to reach this thread.
+pub(crate) const OMIT_LOOKBACK: Duration = Duration::from_millis(400);
+/// How long the interval goes on after the dictation's last sample (a second device's latency).
+pub(crate) const OMIT_MARGIN: Duration = Duration::from_millis(50);
 /// After a sleep, how long the devices have to open again before the recording ends.
 pub(crate) const WAKE_GRACE: Duration = Duration::from_secs(5);
 const WAKE_RETRY: Duration = Duration::from_millis(500);
@@ -33,6 +43,10 @@ pub(crate) enum Control {
     /// Record the system channel from this output from now on; the WAV keeps zeros for the
     /// moment without a source.
     SwitchSystem(String),
+    /// A dictation started at this instant: zero the mic channel from its pre-buffer on.
+    BeginOmit(Instant),
+    /// The dictation ended (released, cancelled or discarded).
+    EndOmit,
     /// The OS is about to sleep: stop writing, put the WAV header on disk and answer.
     Suspend(Sender<()>),
     /// The OS woke: open the devices again and go on writing, unless paused by the person.
@@ -51,7 +65,12 @@ pub(crate) enum Report {
         mic_peak: f32,
         system_peak: f32,
         outputs: Vec<OutputPeak>,
+        /// A dictation zeroed the mic for part of the period: its level counts for nothing.
+        mic_omitted: bool,
     },
+    /// Spans of the mic zeroed by a dictation, in ms of the recording (`[t0, t1)`): each one
+    /// becomes a "dictation left out" line of the transcript (ADR-0015).
+    Omitted(Vec<(u64, u64)>),
     /// The system channel now records `name`, or still records the previous output (`error`).
     SystemSwitched { name: String, error: Option<String> },
     /// The devices are open again after a sleep.
@@ -90,6 +109,12 @@ impl ActiveClock {
         if let Some(since) = self.paused_since.take() {
             self.paused_total += now.saturating_duration_since(since);
         }
+    }
+
+    /// How long the current pause has lasted; zero while recording.
+    pub(crate) fn paused_for(&self, now: Instant) -> Duration {
+        self.paused_since
+            .map_or(Duration::ZERO, |since| now.saturating_duration_since(since))
     }
 
     pub(crate) fn elapsed(&self, now: Instant) -> Duration {
@@ -152,6 +177,11 @@ impl<A: PowerApi> Gate<A> {
         self.clock.elapsed(now)
     }
 
+    /// How long the current pause (or sleep) has lasted; zero while writing.
+    pub(crate) fn paused_for(&self, now: Instant) -> Duration {
+        self.clock.paused_for(now)
+    }
+
     fn update(&mut self, now: Instant) {
         if self.writing() {
             self.clock.resume(now);
@@ -160,6 +190,14 @@ impl<A: PowerApi> Gate<A> {
         }
         self.awake.set(self.keep_awake && self.writing());
     }
+}
+
+/// The spans in ms of the recording.
+fn omitted_ms(spans: Vec<OmittedSpan>) -> Vec<(u64, u64)> {
+    spans
+        .into_iter()
+        .map(|s| (recorded_ms(s.start), recorded_ms(s.end)))
+        .collect()
 }
 
 /// Recorded milliseconds for a number of 48 kHz frames written to the WAV.
@@ -199,7 +237,7 @@ pub(crate) fn spawn(
 
 struct Capture {
     /// `None` in a "system only" session.
-    mic: Option<Mic>,
+    mic: Option<MicTap>,
     system: SystemAudio,
     /// The output `system` records, to open it again after a sleep.
     system_name: String,
@@ -213,14 +251,14 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
     if let Some(dir) = wav.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let (system, mic) = streams(system_name, with_mic)?;
-    let mic_rate = mic.as_ref().map_or(MEETING_RATE, Mic::sample_rate);
+    let (system, mic) = streams(system_name, with_mic, false)?;
+    let mic_rate = mic.as_ref().map_or(MEETING_RATE, MicTap::sample_rate);
     let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
     let recorder =
         MeetingRecorder::new(mic_rate, system.sample_rate(), file).map_err(|e| e.to_string())?;
     log::info!(
         "meeting capture open: mic {}, system {system_name}",
-        mic.as_ref().map_or("none", Mic::name)
+        mic.as_ref().map_or("none", MicTap::name)
     );
     let meter = OutputMeter::start()
         .map_err(|e| log::info!("output peaks unavailable: {e}"))
@@ -234,13 +272,61 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
     })
 }
 
-fn streams(system_name: &str, with_mic: bool) -> Result<(SystemAudio, Option<Mic>), String> {
+/// The output and, `with_mic`, the default input. `renew` asks the hub for a new mic stream
+/// instead of the one already open (after a sleep the old one rarely delivers again).
+fn streams(
+    system_name: &str,
+    with_mic: bool,
+    renew: bool,
+) -> Result<(SystemAudio, Option<MicTap>), String> {
     let system = SystemAudio::open(system_name).map_err(|e| e.to_string())?;
-    let mic = with_mic
-        .then(|| Mic::open(None))
-        .transpose()
-        .map_err(|e| e.to_string())?;
+    let mic = with_mic.then(|| open_mic(renew)).transpose()?;
     Ok((system, mic))
+}
+
+/// The default input, through the hub: when dictation uses the same device, both read one
+/// stream. With `renew` the hub drops the stream it had for it, so dictation moves too.
+fn open_mic(renew: bool) -> Result<MicTap, String> {
+    use cpal::traits::HostTrait;
+    let device = crate::audio_toolkit::get_cpal_host()
+        .default_input_device()
+        .ok_or_else(|| "no input device".to_string())?;
+    let tap = if renew {
+        MIC_HUB.renew(device, None)
+    } else {
+        MIC_HUB.open(device, None)
+    };
+    tap.map_err(|e| e.to_string())
+}
+
+/// How often a failed mic stream is reopened while recording.
+const REOPEN_EVERY: Duration = Duration::from_secs(2);
+
+/// The mic's stream failed (device reset or removed): the hub hands out a new stream of the
+/// default input, the one dictation reopens too, so both stay on a single stream. A new stream
+/// at another rate would break the recorder's clock, so the old one is kept then.
+fn reopen_mic(capture: &mut Capture) {
+    let Some(rate) = capture.mic.as_ref().map(MicTap::sample_rate) else {
+        return;
+    };
+    match open_mic(false) {
+        Ok(tap) if tap.sample_rate() == rate => {
+            log::warn!("meeting mic stream failed; reopened {}", tap.name());
+            capture.mic = Some(tap);
+        }
+        Ok(tap) => log::warn!(
+            "meeting mic stream failed; the new one runs at {} Hz, not {rate}",
+            tap.sample_rate()
+        ),
+        Err(e) => log::warn!("meeting mic stream failed and did not reopen: {e}"),
+    }
+}
+
+/// How far back from the newest sample the mic is zeroed for a dictation that started `late`
+/// ago: the pre-buffer and the delay, minus the current pause, which recorded nothing. A pause
+/// long enough leaves nothing recorded to zero.
+pub(crate) fn omit_lookback(late: Duration, paused_for: Duration) -> Duration {
+    (OMIT_LOOKBACK + late).saturating_sub(paused_for)
 }
 
 /// After a sleep the old streams rarely deliver again: both are opened anew (the output by
@@ -253,12 +339,12 @@ fn reopen(capture: &mut Capture) -> Result<Option<String>, String> {
     let deadline = started + WAKE_GRACE;
     let with_mic = capture.mic.is_some();
     let (name, (system, mic)) = loop {
-        let mut opened = streams(&capture.system_name, with_mic)
+        let mut opened = streams(&capture.system_name, with_mic, true)
             .map(|streams| (capture.system_name.clone(), streams));
         if opened.is_err() && started.elapsed() >= WAKE_GRACE / 2 {
             if let Ok(default) = SystemAudio::default_name() {
                 if default != capture.system_name {
-                    opened = streams(&default, with_mic).map(|streams| (default, streams));
+                    opened = streams(&default, with_mic, true).map(|streams| (default, streams));
                 }
             }
         }
@@ -411,7 +497,11 @@ fn run(
     let (mut mic_level, mut system_level) = (Level::default(), Level::default());
     let mut last_report = Instant::now();
     let mut error = None;
+    // A dictation is zeroing the mic now, and did at some point since the last report.
+    let (mut omitting, mut omitted) = (false, false);
+    let mut last_reopen: Option<Instant> = None;
     loop {
+        let mut omit: Option<Option<Instant>> = None;
         let finalize = match commands.recv_timeout(TICK) {
             Ok(Control::Pause) => {
                 gate.pause(Instant::now());
@@ -428,6 +518,14 @@ fn run(
                     log::warn!("meeting system output not switched to {name}: {e}");
                 }
                 on_report(Report::SystemSwitched { name, error });
+                false
+            }
+            Ok(Control::BeginOmit(at)) => {
+                omit = Some(Some(at));
+                false
+            }
+            Ok(Control::EndOmit) => {
+                omit = Some(None);
                 false
             }
             Ok(Control::Suspend(done)) => {
@@ -459,6 +557,32 @@ fn run(
             let levels = (&mut mic_level, &mut system_level);
             error = pump(&mut capture, &mut buffer, levels, writing).err();
         }
+        let failed = capture.mic.as_ref().is_some_and(MicTap::failed);
+        if failed && last_reopen.is_none_or(|at| now.duration_since(at) >= REOPEN_EVERY) {
+            last_reopen = Some(now);
+            reopen_mic(&mut capture);
+        }
+        // After the push, so the interval is measured from the newest sample.
+        match omit {
+            Some(Some(at)) => {
+                let late = now.saturating_duration_since(at);
+                capture
+                    .recorder
+                    .begin_omit(omit_lookback(late, gate.paused_for(now)));
+                (omitting, omitted) = (true, true);
+            }
+            Some(None) => {
+                // Not writing, nothing more is recorded: the interval ends where the recording did.
+                let margin = if writing { OMIT_MARGIN } else { Duration::ZERO };
+                capture.recorder.end_omit(margin);
+                omitting = false;
+            }
+            None => {}
+        }
+        let spans = capture.recorder.take_omitted();
+        if !spans.is_empty() {
+            on_report(Report::Omitted(omitted_ms(spans)));
+        }
         if finalize || error.is_some() {
             break;
         }
@@ -479,6 +603,7 @@ fn run(
                 mic_peak,
                 system_peak,
                 outputs: capture.meter.as_ref().map(|m| m.take()).unwrap_or_default(),
+                mic_omitted: std::mem::replace(&mut omitted, omitting),
             });
         }
     }
@@ -486,8 +611,13 @@ fn run(
     let recorded = gate.elapsed(Instant::now());
     // The PC may sleep again from here on: the WAV is closed below either way.
     drop(gate);
-    if let Err(e) = capture.recorder.finish(recorded) {
-        error.get_or_insert_with(|| e.to_string());
+    match capture.recorder.finish_omitted(recorded) {
+        // A dictation still running ends with the recording.
+        Ok((_, _, spans)) if !spans.is_empty() => on_report(Report::Omitted(omitted_ms(spans))),
+        Ok(_) => {}
+        Err(e) => {
+            error.get_or_insert_with(|| e.to_string());
+        }
     }
     if let Some(e) = &error {
         log::error!("meeting capture ended with an error: {e}");
@@ -564,6 +694,43 @@ mod tests {
         // Resuming twice changes nothing.
         clock.resume(at(18));
         assert_eq!(clock.elapsed(at(18)), Duration::from_secs(13));
+    }
+
+    #[test]
+    fn a_dictation_in_a_pause_zeroes_only_what_was_recorded() {
+        let ms = Duration::from_millis;
+        assert_eq!(omit_lookback(ms(0), ms(0)), OMIT_LOOKBACK);
+        assert_eq!(
+            omit_lookback(ms(30), ms(0)),
+            ms(430),
+            "a late start still covers"
+        );
+        assert_eq!(
+            omit_lookback(ms(0), ms(150)),
+            ms(250),
+            "the pre-buffer reaches back past the pause"
+        );
+        assert_eq!(omit_lookback(ms(0), Duration::from_secs(5)), Duration::ZERO);
+        let t0 = Instant::now();
+        let mut clock = ActiveClock::new(t0);
+        assert_eq!(
+            clock.paused_for(t0 + Duration::from_secs(3)),
+            Duration::ZERO
+        );
+        clock.pause(t0 + Duration::from_secs(3));
+        assert_eq!(
+            clock.paused_for(t0 + Duration::from_secs(5)),
+            Duration::from_secs(2)
+        );
+    }
+
+    #[test]
+    fn omitted_spans_are_reported_in_ms() {
+        let spans = vec![OmittedSpan {
+            start: 48_000,
+            end: 72_000,
+        }];
+        assert_eq!(omitted_ms(spans), [(1_000, 1_500)]);
     }
 
     #[test]

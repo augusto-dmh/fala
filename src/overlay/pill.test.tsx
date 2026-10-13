@@ -4,7 +4,8 @@
 // modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`) e da pílula em repouso
 // (`.specs/features/pill-idle/checks.md`, C6 a C9) e da falha de cola e do clique na reunião
 // (`.specs/features/pill-polish/checks.md`, C3 a C5) e do menu da pílula
-// (`.specs/features/pill-menu/checks.md`) e do arrasto (`.specs/features/pill-drag/checks.md`).
+// (`.specs/features/pill-menu/checks.md`) e do arrasto (`.specs/features/pill-drag/checks.md`)
+// e do aviso de ditado na reunião (`.specs/features/dictation-during-meeting/checks.md`, C4).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,7 +21,7 @@ import {
   showsModelLoading,
   toPillMode,
 } from "./pillModel";
-import { MeetingPill } from "./MeetingPill";
+import { MeetingDictationCard, MeetingPill } from "./MeetingPill";
 import { IdlePill, type IdlePillProps } from "./IdlePill";
 import {
   PASTE_FAILED_MS,
@@ -921,6 +922,24 @@ const idleCss = read("./IdlePill.css");
   );
   assert.ok(meeting.includes("{...drag}"), meeting);
   ok("pill-drag C4");
+}
+
+// Ditado durante a reunião: o cartão sobre a pílula de gravação, nos dois idiomas.
+{
+  const card = renderToStaticMarkup(
+    <MeetingDictationCard text={locale("pt").overlay.meetingDictation} />,
+  );
+  assert.equal(text(card), "Mic da reunião pausado enquanto você dita", card);
+  assert.ok(card.includes('role="status"'), card);
+  assert.ok(locale("en").overlay.meetingDictation, "en");
+  assert.ok(
+    overlaySource.includes('meetingDictation && pillMode === "recording"'),
+    "o cartão só acompanha a pílula de gravação",
+  );
+  assert.ok(
+    overlaySource.includes("setMeetingDictation(event.payload.dictating)"),
+  );
+  ok("dictation-during-meeting C4");
 }
 
 console.log("pill: all assertions passed");

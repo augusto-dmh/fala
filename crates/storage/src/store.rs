@@ -104,6 +104,7 @@ impl Store {
         metrics::apply_schema(&conn)?;
         conn.execute_batch(meeting_people::SCHEMA)?;
         conn.execute_batch(meeting_notes::SCHEMA)?;
+        conn.execute_batch(crate::meeting_omissions::SCHEMA)?;
         conn.execute_batch(meeting_mirror::SCHEMA)?;
         conn.execute_batch(meeting_search::SCHEMA)?;
         conn.execute_batch(meeting_imports::SCHEMA)?;

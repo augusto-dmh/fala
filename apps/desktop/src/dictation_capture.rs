@@ -1,19 +1,24 @@
-//! Captura do ditado pelo `fala-audio`: `Mic` abre a entrada dos settings, `DictationCapture`
+//! Captura do ditado pelo `fala-audio`: um `MicTap` do `MIC_HUB` lê a entrada dos settings (o
+//! mesmo stream que o gravador de reunião usa, ADR-0015), `DictationCapture`
 //! reamostra para 16 kHz, guarda os últimos 300 ms enquanto o stream está aberto e segmenta com o
 //! Silero v4 (ADR-0009). Com um callback de blocos, entrega também os blocos de 25-40 s do ditado
 //! longo durante a gravação (`long_dictation`). O `AudioRecordingManager` fala com o
 //! `DictationRecorder`; o `Processor` não abre mic e é o que os testes exercitam.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, LazyLock, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait};
-use fala_audio::{AudioError, DictationCapture, Mic, VoiceDetector};
+use fala_audio::{AudioError, DictationCapture, MicHub, MicTap, VoiceDetector};
 use fala_core::DictationAudio;
 
 use crate::audio_toolkit::audio::AudioVisualiser;
+
+/// Um stream por dispositivo de entrada para o app inteiro: o ditado e o gravador de reunião
+/// assinam o mesmo microfone (ADR-0015).
+pub(crate) static MIC_HUB: LazyLock<MicHub> = LazyLock::new(MicHub::new);
 
 /// Intervalo entre duas drenagens do mic.
 const TICK: Duration = Duration::from_millis(10);
@@ -265,8 +270,8 @@ enum Cmd {
     Shutdown,
 }
 
-/// O microfone do ditado. `open` sobe um worker que dona do `Mic` (o stream do `cpal` fica na
-/// thread que o criou); `start` e `stop` são comandos para ele.
+/// O microfone do ditado. `open` sobe um worker dono do `MicTap`; `start` e `stop` são comandos
+/// para ele.
 pub struct DictationRecorder {
     detector: SharedDetector,
     level_cb: Option<LevelCallback>,
@@ -350,7 +355,7 @@ impl DictationRecorder {
         let failed = Arc::clone(&self.failed);
         let worker = std::thread::spawn(move || {
             let started = Instant::now();
-            let mic = match Mic::open_device(device, channel) {
+            let mic = match MIC_HUB.open(device, channel) {
                 Ok(mic) => mic,
                 Err(e) => {
                     let _ = init_tx.send(Err(e.to_string()));
@@ -358,8 +363,8 @@ impl DictationRecorder {
                 }
             };
             let opened = started.elapsed();
-            // The mic is already capturing into its 2 s ring while the resampler and the
-            // level FFT are built (~1-2 ms): that audio lands in the pre-buffer.
+            // The tap is already receiving while the resampler and the level FFT are built
+            // (~1-2 ms): that audio lands in the pre-buffer.
             match Processor::new(mic.sample_rate(), detector, level_cb, audio_cb, block_cb) {
                 Ok(processor) => {
                     let _ = init_tx.send(Ok(()));
@@ -436,7 +441,7 @@ impl DictationRecorder {
 }
 
 fn run_worker(
-    mut mic: Mic,
+    mut mic: MicTap,
     mut processor: Processor,
     commands: &mpsc::Receiver<Cmd>,
     failed: &AtomicBool,

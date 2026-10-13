@@ -31,7 +31,7 @@ um ditado de 3 min numa call em que só a pessoa fala não arma "Ainda está gra
 Proof: `cargo test -p fala-meeting`, `cargo test -p fala --lib meeting`
 
 **C6** - O trecho omitido vira linha marcadora na transcrição, no SQLite, no `.md` e no payload das
-notas (AC 6) — PR 4
+notas (AC 6) — PR 3
 Proof: `cargo test -p fala-storage`, `cargo test -p fala-notes`, `cargo test -p fala --lib meeting`
 
 **C7** - Portões: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D

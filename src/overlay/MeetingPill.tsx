@@ -64,6 +64,18 @@ export function CallOutputCard({
   );
 }
 
+/** Over the dictation pill while a dictation zeroes the meeting's mic (ADR-0015). */
+export function MeetingDictationCard({ text }: { text: string }) {
+  return (
+    <div className="fnotice meeting_dictation" role="status">
+      <div className="fnotice-line">
+        <span className="fnotice-dot warn" />
+        <span className="fnotice-text">{text}</span>
+      </div>
+    </div>
+  );
+}
+
 /** Over the meeting pill in the first seconds of each recording: ask the others first. */
 export function ConsentCard({ text }: { text: string }) {
   return (

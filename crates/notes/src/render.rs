@@ -153,7 +153,7 @@ fn speaker_suggestions(input: &NotesInput, response: &Response) -> Vec<SpeakerSu
             Speaker::Named(name) => {
                 taken.insert(name.to_lowercase());
             }
-            Speaker::Me => {}
+            Speaker::Me | Speaker::Omitted => {}
         }
     }
     let mut out: Vec<SpeakerSuggestion> = Vec::new();
