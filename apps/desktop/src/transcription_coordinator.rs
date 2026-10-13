@@ -928,7 +928,9 @@ fn run_effect(app: &AppHandle, state: &mut CoordinatorState, effect: Effect) {
 
 /// Execute a start effect; returns whether recording actually began, so the
 /// state machine can roll back its optimistic transition on failure.
-fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str) -> bool {
+fn start(app: &AppHandle, registered_id: &str, hotkey_string: &str) -> bool {
+    // A second combination (`<id>#2`) runs its action's start.
+    let binding_id = crate::shortcut::action_id(registered_id);
     let Some(action) = ACTION_MAP.get(binding_id) else {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return false;
@@ -943,7 +945,8 @@ fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str) -> bool {
     recording
 }
 
-fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
+fn stop(app: &AppHandle, registered_id: &str, hotkey_string: &str) {
+    let binding_id = crate::shortcut::action_id(registered_id);
     let Some(action) = ACTION_MAP.get(binding_id) else {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return;
@@ -1005,6 +1008,14 @@ mod tests {
                 "transcribe_with_post_process",
                 Some("transcribe")
             ),
+            PttAction::Passthrough
+        );
+    }
+
+    #[test]
+    fn releasing_the_second_combination_does_not_end_a_hold_on_the_first() {
+        assert_eq!(
+            classify_ptt_event(None, false, true, "transcribe#2", Some("transcribe")),
             PttAction::Passthrough
         );
     }

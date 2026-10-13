@@ -1363,6 +1363,52 @@ impl ShortcutAction for CopyLastAction {
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
+/// What "Record or stop meeting" does in each meeting phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MeetingToggle {
+    /// The tray's "Record meeting": the third-party notice first if not accepted yet.
+    Start,
+    Stop,
+    /// Already stopping: nothing to do.
+    Ignore,
+}
+
+fn meeting_toggle(phase: crate::meeting::MeetingPhase) -> MeetingToggle {
+    use crate::meeting::MeetingPhase;
+    match phase {
+        MeetingPhase::Idle | MeetingPhase::Processing => MeetingToggle::Start,
+        MeetingPhase::Recording | MeetingPhase::Paused => MeetingToggle::Stop,
+        MeetingPhase::Stopping => MeetingToggle::Ignore,
+    }
+}
+
+// Record or stop a meeting on press: an explicit action, the same path and indicator as the
+// tray's items (ADR-0005).
+struct MeetingToggleAction;
+
+impl ShortcutAction for MeetingToggleAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Off the shortcut thread: opening the devices for a start takes a moment.
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let Some(meetings) = app.try_state::<Arc<crate::meeting::MeetingManager>>() else {
+                return;
+            };
+            match meeting_toggle(meetings.status().state) {
+                MeetingToggle::Start => meetings.start_from_tray(),
+                MeetingToggle::Stop => {
+                    if let Err(e) = meetings.stop() {
+                        log::warn!("meeting not stopped from the shortcut: {e}");
+                    }
+                }
+                MeetingToggle::Ignore => log::debug!("meeting_toggle ignored: stopping"),
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Test Action
 struct TestAction;
 
@@ -1412,6 +1458,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(CopyLastAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
+        "meeting_toggle".to_string(),
+        Arc::new(MeetingToggleAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
     );
@@ -1422,10 +1472,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         announce_mic, complete_unless_cancelled, deliver_unless_cancelled, is_blank_transcription,
-        should_use_streaming_overlay, start_error_kind, stop_outcome, strip_think_block,
-        StopOutcome,
+        meeting_toggle, should_use_streaming_overlay, start_error_kind, stop_outcome,
+        strip_think_block, MeetingToggle, StopOutcome,
     };
     use crate::dictation_capture::MicSignal;
+    use crate::meeting::MeetingPhase;
     use crate::settings::OverlayStyle;
     use crate::utils::NoticeKind;
     use std::future;
@@ -1433,6 +1484,21 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn meeting_shortcut_starts_without_a_meeting_and_stops_one() {
+        assert_eq!(meeting_toggle(MeetingPhase::Idle), MeetingToggle::Start);
+        assert_eq!(
+            meeting_toggle(MeetingPhase::Processing),
+            MeetingToggle::Start
+        );
+        assert_eq!(meeting_toggle(MeetingPhase::Recording), MeetingToggle::Stop);
+        assert_eq!(meeting_toggle(MeetingPhase::Paused), MeetingToggle::Stop);
+        assert_eq!(
+            meeting_toggle(MeetingPhase::Stopping),
+            MeetingToggle::Ignore
+        );
+    }
 
     #[test]
     fn failed_paste_keeps_the_pill_up_to_say_so() {

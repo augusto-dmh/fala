@@ -21,22 +21,25 @@ use crate::TranscriptionCoordinator;
 ///
 /// # Arguments
 /// * `app` - The Tauri app handle
-/// * `binding_id` - The ID of the binding (e.g., "transcribe", "cancel")
+/// * `registered_id` - The ID of the binding (e.g., "transcribe", "cancel"); an action's second
+///   combination arrives as `<id>#2` and runs the same action
 /// * `hotkey_string` - The string representation of the hotkey
 /// * `is_pressed` - Whether this is a key press (true) or release (false)
 pub fn handle_shortcut_event(
     app: &AppHandle,
-    binding_id: &str,
+    registered_id: &str,
     hotkey_string: &str,
     is_pressed: bool,
 ) {
+    let binding_id = super::action_id(registered_id);
     let settings = get_settings(app);
 
-    // Transcribe bindings are handled by the coordinator.
+    // Transcribe bindings are handled by the coordinator. It gets the registered id, so the two
+    // combinations stay two keys: releasing one never ends a hold on the other.
     if is_transcribe_binding(binding_id) {
         if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
             coordinator.send_input(
-                binding_id,
+                registered_id,
                 hotkey_string,
                 is_pressed,
                 settings.shortcut_activation,
@@ -101,5 +104,22 @@ mod tests {
                 "is_pressed={is_pressed} busy={busy}"
             );
         }
+    }
+
+    #[test]
+    fn second_combination_acts_as_the_first() {
+        use crate::actions::ACTION_MAP;
+        use crate::shortcut::action_id;
+        use crate::transcription_coordinator::is_transcribe_binding;
+
+        assert_eq!(action_id("transcribe#2"), "transcribe");
+        assert!(is_transcribe_binding(action_id("transcribe#2")));
+        assert_eq!(action_id("cancel#2"), "cancel");
+        for id in ["paste_last", "copy_last", "meeting_toggle"] {
+            let second = format!("{id}#2");
+            assert_eq!(action_id(&second), id);
+            assert!(ACTION_MAP.contains_key(action_id(&second)), "{id}");
+        }
+        assert_eq!(action_id("paste_last"), "paste_last");
     }
 }
