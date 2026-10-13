@@ -1,4 +1,5 @@
 import React, { createContext, useId } from "react";
+import type { SettingsAnchor } from "../settingsAnchor";
 
 /** The id of the row's title, so a control inside (a dropdown) can name itself after it. */
 export const SettingTitleContext = createContext<string | null>(null);
@@ -16,6 +17,8 @@ interface SettingContainerProps {
   tooltipPosition?: "top" | "bottom";
   /** Optional 20 px icon drawn to the left of the title. */
   icon?: React.ReactNode;
+  /** Where a link elsewhere in the app can jump to (`revealSettingsAnchor`). */
+  anchor?: SettingsAnchor;
 }
 
 /** A settings row drawn like a Windows 11 settings card: optional icon, title
@@ -28,6 +31,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   layout = "horizontal",
   disabled = false,
   icon,
+  anchor,
 }) => {
   const titleId = useId();
   const hasDescription = Boolean(description && description.trim());
@@ -58,7 +62,11 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
 
   if (layout === "stacked") {
     return (
-      <div className={`flex flex-col gap-3 px-4 py-3 ${card}`}>
+      <div
+        data-settings-anchor={anchor}
+        tabIndex={anchor ? -1 : undefined}
+        className={`flex flex-col gap-3 px-4 py-3 ${card}`}
+      >
         {label}
         <div className="w-full">
           <SettingTitleContext.Provider value={titleId}>
@@ -71,6 +79,8 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
 
   return (
     <div
+      data-settings-anchor={anchor}
+      tabIndex={anchor ? -1 : undefined}
       className={`flex items-center justify-between gap-4 px-4 py-2 ${
         hasDescription ? "min-h-[68px]" : "min-h-[56px]"
       } ${card}`}

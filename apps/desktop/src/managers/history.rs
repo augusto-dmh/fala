@@ -43,12 +43,14 @@ pub(crate) static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN paste_failed BOOLEAN NOT NULL DEFAULT 0;"),
     // A long dictation pasted with the LLM text in some blocks and the rules in others.
     M::up("ALTER TABLE transcription_history ADD COLUMN llm_partial BOOLEAN NOT NULL DEFAULT 0;"),
+    // Retention deleted this entry's WAV; the row and its text stay.
+    M::up("ALTER TABLE transcription_history ADD COLUMN audio_deleted BOOLEAN NOT NULL DEFAULT 0;"),
 ];
 
 /// The columns `map_history_entry` reads, in every query that returns entries.
 const ENTRY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, \
      post_processed_text, post_process_prompt, post_process_requested, dictation_id, paste_failed, \
-     llm_partial";
+     llm_partial, audio_deleted";
 
 /// The most entries a history search returns.
 const SEARCH_LIMIT: usize = 100;
@@ -93,6 +95,8 @@ pub struct HistoryEntry {
     pub discarded: bool,
     /// A long dictation where some blocks have the LLM text and others the rules ("IA parcial").
     pub llm_partial: bool,
+    /// Retention deleted the recording: the text stays, without a player or a retry.
+    pub audio_deleted: bool,
 }
 
 /// The texts of one dictation, as the pipeline produced them.
@@ -304,6 +308,7 @@ impl HistoryManager {
             paste_failed: row.get("paste_failed")?,
             discarded: false,
             llm_partial: row.get("llm_partial")?,
+            audio_deleted: row.get("audio_deleted")?,
         })
     }
 
@@ -331,8 +336,6 @@ impl HistoryManager {
 
         debug!("Saved history entry with id {}", entry.id);
 
-        self.cleanup_old_entries()?;
-
         // Emit typed event for real-time frontend updates
         if let Err(e) = (HistoryUpdatePayload::Added {
             entry: entry.clone(),
@@ -341,6 +344,9 @@ impl HistoryManager {
         {
             error!("Failed to emit history-updated event: {}", e);
         }
+
+        // After `Added`, so a limit of 0 updates the new row too.
+        self.cleanup_old_entries()?;
 
         Ok(entry)
     }
@@ -417,6 +423,7 @@ impl HistoryManager {
             paste_failed,
             discarded: false,
             llm_partial,
+            audio_deleted: false,
         };
         Self::attach_dictation(&mut entry, store);
         Ok(entry)
@@ -529,123 +536,126 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// Retention applies to the recordings only: the history keeps every dictation's text, and
+    /// `history_limit` counts the WAVs kept under `PreserveLimit`. Each row that lost its WAV
+    /// is announced as `Updated`.
     pub fn cleanup_old_entries(&self) -> Result<()> {
         let retention_period = crate::settings::get_recording_retention_period(&self.app_handle);
 
-        match retention_period {
+        let marked = match retention_period {
             crate::settings::RecordingRetentionPeriod::Never => {
                 // Don't delete anything
-                Ok(())
+                Vec::new()
             }
             crate::settings::RecordingRetentionPeriod::PreserveLimit => {
-                // Use the old count-based logic with history_limit
                 let limit = crate::settings::get_history_limit(&self.app_handle);
-                self.cleanup_by_count(limit)
+                self.cleanup_by_count(limit)?
             }
             _ => {
                 // Use time-based logic
-                self.cleanup_by_time(retention_period)
+                self.cleanup_by_time(retention_period)?
+            }
+        };
+
+        if marked.is_empty() {
+            return Ok(());
+        }
+        let conn = self.get_connection()?;
+        let store = self.lock_store();
+        for id in marked {
+            if let Some(mut entry) = Self::get_entry_by_id_with(&conn, id)? {
+                Self::attach_dictation(&mut entry, store.as_deref());
+                if let Err(e) = (HistoryUpdatePayload::Updated { entry }).emit(&self.app_handle) {
+                    error!("Failed to emit history-updated event: {}", e);
+                }
             }
         }
+        Ok(())
     }
 
-    /// Deletes each entry's dictation, row and WAV. An entry whose dictation cannot be
-    /// deleted stays for the next cleanup.
-    fn delete_entries_and_files_with(
+    /// Deletes each entry's WAV and marks `audio_deleted` on every row that points at it (two
+    /// dictations in the same second share a file name); the rows and their dictations stay.
+    /// A WAV that cannot be deleted stays unmarked for the next cleanup. Returns the marked ids.
+    fn delete_recordings_with(
         conn: &Connection,
-        store: Option<&Store>,
         recordings_dir: &Path,
-        entries: &[(i64, String, Option<String>)],
-    ) -> Result<usize> {
-        if entries.is_empty() {
-            return Ok(0);
-        }
+        entries: &[(i64, String)],
+    ) -> Result<Vec<i64>> {
+        let mut marked = Vec::new();
 
-        let mut deleted_count = 0;
-
-        for (id, file_name, dictation_id) in entries {
-            if let (Some(store), Some(dictation_id)) = (store, dictation_id) {
-                if let Err(e) = history_dictations::delete_dictation(store, dictation_id) {
-                    error!(
-                        "Keeping history entry {}: its dictation could not be deleted: {}",
-                        id, e
-                    );
+        for (_, file_name) in entries {
+            let file_path = recordings_dir.join(file_name);
+            match fs::remove_file(&file_path) {
+                Ok(()) => debug!("Deleted old WAV file: {}", file_name),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    error!("Failed to delete WAV file {}: {}", file_name, e);
                     continue;
                 }
             }
-
-            // Delete database entry
-            conn.execute(
-                "DELETE FROM transcription_history WHERE id = ?1",
-                params![id],
+            let sharing = Self::recordings_to_delete(
+                conn,
+                "SELECT id, file_name FROM transcription_history
+                 WHERE file_name = ?1 AND audio_deleted = 0",
+                params![file_name],
             )?;
-
-            // Delete WAV file
-            let file_path = recordings_dir.join(file_name);
-            if file_path.exists() {
-                if let Err(e) = fs::remove_file(&file_path) {
-                    error!("Failed to delete WAV file {}: {}", file_name, e);
-                } else {
-                    debug!("Deleted old WAV file: {}", file_name);
-                    deleted_count += 1;
-                }
-            }
+            conn.execute(
+                "UPDATE transcription_history SET audio_deleted = 1 WHERE file_name = ?1",
+                params![file_name],
+            )?;
+            marked.extend(sharing.into_iter().map(|(id, _)| id));
         }
 
-        Ok(deleted_count)
+        Ok(marked)
     }
 
-    fn cleanup_by_count(&self, limit: usize) -> Result<()> {
+    /// The `(id, file_name)` rows that `query` selects.
+    fn recordings_to_delete(
+        conn: &Connection,
+        query: &str,
+        params: impl rusqlite::Params,
+    ) -> Result<Vec<(i64, String)>> {
+        let mut stmt = conn.prepare(query)?;
+        let rows = stmt.query_map(params, |row| {
+            Ok((row.get::<_, i64>("id")?, row.get::<_, String>("file_name")?))
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn cleanup_by_count(&self, limit: usize) -> Result<Vec<i64>> {
         let conn = self.get_connection()?;
-        let store = self.lock_store();
-        Self::cleanup_by_count_with(&conn, store.as_deref(), &self.recordings_dir, limit)
+        Self::cleanup_by_count_with(&conn, &self.recordings_dir, limit)
     }
 
+    /// Keeps the WAVs of the newest `limit` unsaved entries and deletes the older ones.
+    /// Returns the ids marked `audio_deleted`.
     pub(crate) fn cleanup_by_count_with(
         conn: &Connection,
-        store: Option<&Store>,
         recordings_dir: &Path,
         limit: usize,
-    ) -> Result<()> {
-        // Get all entries that are not saved, ordered by timestamp desc
-        let mut stmt = conn.prepare(
-            "SELECT id, file_name, dictation_id FROM transcription_history WHERE saved = 0 ORDER BY timestamp DESC"
+    ) -> Result<Vec<i64>> {
+        let entries = Self::recordings_to_delete(
+            conn,
+            "SELECT id, file_name FROM transcription_history
+             WHERE saved = 0 AND audio_deleted = 0
+             ORDER BY timestamp DESC, id DESC LIMIT -1 OFFSET ?1",
+            params![i64::try_from(limit).unwrap_or(i64::MAX)],
         )?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, i64>("id")?,
-                row.get::<_, String>("file_name")?,
-                row.get::<_, Option<String>>("dictation_id")?,
-            ))
-        })?;
-
-        let mut entries: Vec<(i64, String, Option<String>)> = Vec::new();
-        for row in rows {
-            entries.push(row?);
+        let marked = Self::delete_recordings_with(conn, recordings_dir, &entries)?;
+        if !marked.is_empty() {
+            debug!(
+                "Deleted the recordings of {} old entries by count",
+                marked.len()
+            );
         }
-
-        if entries.len() > limit {
-            let entries_to_delete = &entries[limit..];
-            let deleted_count = Self::delete_entries_and_files_with(
-                conn,
-                store,
-                recordings_dir,
-                entries_to_delete,
-            )?;
-
-            if deleted_count > 0 {
-                debug!("Cleaned up {} old history entries by count", deleted_count);
-            }
-        }
-
-        Ok(())
+        Ok(marked)
     }
 
     fn cleanup_by_time(
         &self,
         retention_period: crate::settings::RecordingRetentionPeriod,
-    ) -> Result<()> {
+    ) -> Result<Vec<i64>> {
         let conn = self.get_connection()?;
 
         // Calculate cutoff timestamp (current time minus retention period)
@@ -657,50 +667,31 @@ impl HistoryManager {
             _ => unreachable!("Should not reach here"),
         };
 
-        let store = self.lock_store();
-        Self::cleanup_by_time_with(
-            &conn,
-            store.as_deref(),
-            &self.recordings_dir,
-            cutoff_timestamp,
-        )
+        Self::cleanup_by_time_with(&conn, &self.recordings_dir, cutoff_timestamp)
     }
 
+    /// Deletes the WAVs of the unsaved entries older than `cutoff_timestamp`.
+    /// Returns the ids marked `audio_deleted`.
     pub(crate) fn cleanup_by_time_with(
         conn: &Connection,
-        store: Option<&Store>,
         recordings_dir: &Path,
         cutoff_timestamp: i64,
-    ) -> Result<()> {
-        // Get all unsaved entries older than the cutoff timestamp
-        let mut stmt = conn.prepare(
-            "SELECT id, file_name, dictation_id FROM transcription_history WHERE saved = 0 AND timestamp < ?1",
+    ) -> Result<Vec<i64>> {
+        let entries = Self::recordings_to_delete(
+            conn,
+            "SELECT id, file_name FROM transcription_history
+             WHERE saved = 0 AND audio_deleted = 0 AND timestamp < ?1",
+            params![cutoff_timestamp],
         )?;
 
-        let rows = stmt.query_map(params![cutoff_timestamp], |row| {
-            Ok((
-                row.get::<_, i64>("id")?,
-                row.get::<_, String>("file_name")?,
-                row.get::<_, Option<String>>("dictation_id")?,
-            ))
-        })?;
-
-        let mut entries_to_delete: Vec<(i64, String, Option<String>)> = Vec::new();
-        for row in rows {
-            entries_to_delete.push(row?);
-        }
-
-        let deleted_count =
-            Self::delete_entries_and_files_with(conn, store, recordings_dir, &entries_to_delete)?;
-
-        if deleted_count > 0 {
+        let marked = Self::delete_recordings_with(conn, recordings_dir, &entries)?;
+        if !marked.is_empty() {
             debug!(
-                "Cleaned up {} old history entries based on retention period",
-                deleted_count
+                "Deleted the recordings of {} old entries based on retention period",
+                marked.len()
             );
         }
-
-        Ok(())
+        Ok(marked)
     }
 
     pub async fn get_history_entries(
@@ -846,7 +837,7 @@ impl HistoryManager {
         Self::get_entry_by_id_with(&conn, id)
     }
 
-    fn get_entry_by_id_with(conn: &Connection, id: i64) -> Result<Option<HistoryEntry>> {
+    pub(crate) fn get_entry_by_id_with(conn: &Connection, id: i64) -> Result<Option<HistoryEntry>> {
         let mut stmt = conn.prepare(&format!(
             "SELECT {ENTRY_COLUMNS}
              FROM transcription_history
@@ -1178,7 +1169,8 @@ mod tests {
                 post_process_requested BOOLEAN NOT NULL DEFAULT 0,
                 dictation_id TEXT,
                 paste_failed BOOLEAN NOT NULL DEFAULT 0,
-                llm_partial BOOLEAN NOT NULL DEFAULT 0
+                llm_partial BOOLEAN NOT NULL DEFAULT 0,
+                audio_deleted BOOLEAN NOT NULL DEFAULT 0
             );",
         )
         .expect("create transcription_history table");
@@ -1291,9 +1283,9 @@ mod tests {
             .expect("migrate to version 6");
         insert_entry(&conn, 100, "antes", None);
 
-        Migrations::new(MIGRATIONS.to_vec())
+        Migrations::new(MIGRATIONS[..7].to_vec())
             .to_latest(&mut conn)
-            .expect("migrate to latest");
+            .expect("migrate to version 7");
 
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -1307,10 +1299,37 @@ mod tests {
             )
             .expect("llm_partial column exists");
         assert_eq!((notnull, default.as_str()), (1, "0"));
+        let llm_partial: bool = conn
+            .query_row(
+                "SELECT llm_partial FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the old row survives");
+        assert!(!llm_partial);
+    }
+
+    #[test]
+    fn migration_eight_adds_audio_deleted() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        Migrations::new(MIGRATIONS[..7].to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to version 7");
+        insert_entry(&conn, 100, "antes", None);
+
+        Migrations::new(MIGRATIONS.to_vec())
+            .to_latest(&mut conn)
+            .expect("migrate to latest");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 8);
         let entry = HistoryManager::get_latest_entry_with_conn(&conn)
             .unwrap()
             .expect("the old row survives");
         assert!(!entry.llm_partial);
+        assert!(!entry.audio_deleted);
     }
 
     #[test]

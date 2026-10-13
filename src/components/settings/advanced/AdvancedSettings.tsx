@@ -27,6 +27,9 @@ export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
+  // The count only applies to the "keep the latest N" retention, and only to audio.
+  const keepsLatestRecordings =
+    getSetting("recording_retention_period") === "preserve_limit";
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -54,11 +57,13 @@ export const AdvancedSettings: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.history")}>
-        <HistoryLimit descriptionMode="tooltip" grouped={true} />
         <RecordingRetentionPeriodSelector
           descriptionMode="tooltip"
           grouped={true}
         />
+        {keepsLatestRecordings && (
+          <HistoryLimit descriptionMode="tooltip" grouped={true} />
+        )}
       </SettingsGroup>
 
       {experimentalEnabled && (
