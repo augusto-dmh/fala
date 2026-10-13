@@ -34,6 +34,7 @@ const status = (over: Partial<MeetingStatus> = {}): MeetingStatus => ({
   call_output: null,
   zero_mic: false,
   zero_system: false,
+  dictating: false,
   ...over,
 });
 const live = (over: Partial<MeetingStatus> = {}) => ({
