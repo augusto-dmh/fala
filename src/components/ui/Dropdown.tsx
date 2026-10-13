@@ -50,7 +50,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   onSelect,
   className = "",
   menuClassName,
-  placeholder = "Select an option...",
+  placeholder,
   disabled = false,
   onOpen,
 }) => {
@@ -193,7 +193,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         disabled={disabled}
       >
         <span id={valueId} className="truncate">
-          {selectedOption?.label || placeholder}
+          {selectedOption?.label || placeholder || t("common.selectOption")}
         </span>
         <svg
           aria-hidden="true"

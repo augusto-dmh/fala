@@ -114,7 +114,7 @@ const panel = (s: MeetingStatus, o: MeetingOutputs | null = outputs) =>
   assert.ok(elsewhere.includes('role="alert"'), elsewhere);
   assert.equal(
     pt.meeting.recorder.callElsewhere,
-    "O som da call está saindo por {{device}}.",
+    "O som da chamada está saindo por {{device}}.",
   );
   assert.equal(pt.meeting.recorder.recordFrom, "Gravar deste dispositivo");
   ok("OUT2");
