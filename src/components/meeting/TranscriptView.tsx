@@ -134,6 +134,8 @@ export interface TranscriptViewProps {
   query?: string;
   /** A name typed for "Person N"; absent, the labels are plain text. */
   onRename?: (person: number, name: string) => void;
+  /** `false` for a transcript without times or audio (a Granola import): no ▶, no `mm:ss`. */
+  timed?: boolean;
   t: Translate;
 }
 
@@ -151,6 +153,7 @@ function lineBefore(lines: MeetingLine[], index: number) {
  */
 export function TranscriptView(props: TranscriptViewProps) {
   const { lines, t } = props;
+  const timed = props.timed ?? true;
   const searching = (props.query ?? "").trim() !== "";
   const marks = searching ? new Map() : sleepMarks(lines, props.sleeps ?? []);
   const marksAt = (index: number) =>
@@ -169,7 +172,8 @@ export function TranscriptView(props: TranscriptViewProps) {
               data-speaker="omitted"
               className="py-1 text-center text-caption text-text-2 italic"
             >
-              {t("meeting.omitted")} · {clock(line.t0_ms)}
+              {t("meeting.omitted")}
+              {timed && <> · {clock(line.t0_ms)}</>}
             </li>
           );
         }
@@ -192,19 +196,21 @@ export function TranscriptView(props: TranscriptViewProps) {
             >
               {turn && (
                 <span className="px-1 text-caption text-text-2">
-                  <SpeakerName line={line} onRename={props.onRename} t={t} /> ·{" "}
-                  {clock(line.t0_ms)}
+                  <SpeakerName line={line} onRename={props.onRename} t={t} />
+                  {timed && <> · {clock(line.t0_ms)}</>}
                 </span>
               )}
               <div
                 className={`flex max-w-[85%] items-start gap-1 rounded-lg px-2 py-1 text-sm text-text ${me ? "flex-row-reverse bg-me/15" : "bg-them/15"} ${highlighted ? "ring-2 ring-accent" : ""}`}
               >
-                <PlayButton
-                  playing={props.playing === line.seq}
-                  audioAvailable={props.audioAvailable}
-                  onClick={() => props.onPlay(line)}
-                  t={t}
-                />
+                {timed && (
+                  <PlayButton
+                    playing={props.playing === line.seq}
+                    audioAvailable={props.audioAvailable}
+                    onClick={() => props.onPlay(line)}
+                    t={t}
+                  />
+                )}
                 <span>
                   {highlight(line.text, props.query ?? "").map((piece, i) =>
                     piece.hit ? (
