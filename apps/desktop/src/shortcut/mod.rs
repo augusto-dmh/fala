@@ -14,12 +14,14 @@ mod handler;
 pub mod tauri_impl;
 
 use log::{debug, error, info, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::meeting::{MeetingManager, MeetingPhase};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
@@ -28,6 +30,7 @@ use crate::settings::{
     Theme, TypingTool, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
+use crate::TranscriptionCoordinator;
 
 // Note: Commands are accessed via shortcut::fala_keys:: in lib.rs
 
@@ -188,6 +191,14 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
 // Binding Management Commands
 // ============================================================================
 
+/// Which of an action's two combinations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum BindingSlot {
+    Primary,
+    Alternate,
+}
+
 #[derive(Serialize, Type)]
 pub struct BindingResponse {
     success: bool,
@@ -195,6 +206,25 @@ pub struct BindingResponse {
     error: Option<String>,
 }
 
+impl BindingResponse {
+    fn saved(binding: ShortcutBinding) -> Self {
+        Self {
+            success: true,
+            binding: Some(binding),
+            error: None,
+        }
+    }
+
+    fn failed(error: String) -> Self {
+        Self {
+            success: false,
+            binding: None,
+            error: Some(error),
+        }
+    }
+}
+
+/// The first combination of an action.
 #[tauri::command]
 #[specta::specta]
 pub fn change_binding(
@@ -202,150 +232,321 @@ pub fn change_binding(
     id: String,
     binding: String,
 ) -> Result<BindingResponse, String> {
-    // Reject empty bindings — every shortcut should have a value
+    set_binding(app, id, BindingSlot::Primary, binding)
+}
+
+/// Saves `binding` in `slot` of action `id`.
+#[tauri::command]
+#[specta::specta]
+pub fn set_binding(
+    app: AppHandle,
+    id: String,
+    slot: BindingSlot,
+    binding: String,
+) -> Result<BindingResponse, String> {
+    // Reject empty bindings: removing one is `remove_binding`
     if binding.trim().is_empty() {
         return Err("Binding cannot be empty".to_string());
     }
+    if id == "cancel" && slot == BindingSlot::Alternate {
+        return Err("The cancel shortcut has one combination only".to_string());
+    }
 
-    let mut settings = settings::get_settings(&app);
+    let settings = settings::get_settings(&app);
 
     // Get the binding to modify, or create it from defaults if it doesn't exist
     let binding_to_modify = match settings.bindings.get(&id) {
         Some(binding) => binding.clone(),
-        None => {
-            // Try to get the default binding for this id
-            let default_settings = settings::get_default_settings();
-            match default_settings.bindings.get(&id) {
-                Some(default_binding) => {
-                    warn!(
-                        "Binding '{}' not found in settings, creating from defaults",
-                        id
-                    );
-                    default_binding.clone()
-                }
-                None => {
-                    let error_msg = format!("Binding with id '{}' not found in defaults", id);
-                    warn!("change_binding error: {}", error_msg);
-                    return Ok(BindingResponse {
-                        success: false,
-                        binding: None,
-                        error: Some(error_msg),
-                    });
-                }
+        None => match settings::get_default_settings().bindings.remove(&id) {
+            Some(default_binding) => {
+                warn!(
+                    "Binding '{}' not found in settings, creating from defaults",
+                    id
+                );
+                default_binding
             }
-        }
+            None => {
+                let error_msg = format!("Binding with id '{}' not found in defaults", id);
+                warn!("change_binding error: {}", error_msg);
+                return Ok(BindingResponse::failed(error_msg));
+            }
+        },
     };
-
-    // If this is the cancel binding, just update the settings and return
-    // It's managed dynamically, so we don't register/unregister here
-    if id == "cancel" {
-        if let Some(mut b) = settings.bindings.get(&id).cloned() {
-            b.current_binding = binding;
-            settings.bindings.insert(id.clone(), b.clone());
-            settings::write_settings(&app, settings);
-            crate::secure_input::reconcile_fallback(&app);
-            return Ok(BindingResponse {
-                success: true,
-                binding: Some(b.clone()),
-                error: None,
-            });
-        }
-    }
-
-    // Unregister the existing binding (an unset one was never registered)
-    if !binding_is_unset(&binding_to_modify) {
-        if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
-            let error_msg = format!("Failed to unregister shortcut: {}", e);
-            error!("change_binding error: {}", error_msg);
-        }
-    }
 
     // Validate the new shortcut for the current keyboard implementation
     if let Err(e) = validate_shortcut_for_implementation(&binding, settings.keyboard_implementation)
     {
         warn!("change_binding validation error: {}", e);
-        restore_registration(&app, &binding_to_modify);
         return Err(e);
     }
 
-    // Create an updated binding
-    let mut updated_binding = binding_to_modify.clone();
-    updated_binding.current_binding = binding;
+    let next = place_binding(&settings.bindings, binding_to_modify, slot, &binding);
+    if let Err(e) = apply_bindings(&app, &settings, next.clone()) {
+        error!("change_binding error: {}", e);
+        return Ok(BindingResponse::failed(e));
+    }
+    Ok(BindingResponse::saved(next[&id].clone()))
+}
 
-    // Register the new binding
-    if let Err(e) = register_shortcut(&app, updated_binding.clone()) {
-        let error_msg = format!("Failed to register shortcut: {}", e);
-        error!("change_binding error: {}", error_msg);
-        restore_registration(&app, &binding_to_modify);
-        return Ok(BindingResponse {
-            success: false,
-            binding: None,
-            error: Some(error_msg),
-        });
+/// Removes one combination; a second one becomes the first. Cancel keeps its key and dictation
+/// its last one.
+#[tauri::command]
+#[specta::specta]
+pub fn remove_binding(
+    app: AppHandle,
+    id: String,
+    slot: BindingSlot,
+) -> Result<BindingResponse, String> {
+    let settings = settings::get_settings(&app);
+    let binding = settings::get_stored_binding(&settings, &id)?;
+    if !slot_removable(&binding, slot) {
+        return Err(format!("The '{}' shortcut must keep a combination", id));
+    }
+    let removed = without_slot(&binding, slot);
+    let mut next = settings.bindings.clone();
+    next.insert(id, removed.clone());
+    apply_bindings(&app, &settings, next)?;
+    Ok(BindingResponse::saved(removed))
+}
+
+/// One action back to its default: the default as the first combination and no second one.
+#[tauri::command]
+#[specta::specta]
+pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, String> {
+    let settings = settings::get_settings(&app);
+    let binding = settings::get_stored_binding(&settings, &id)?;
+    let restored = restored(&binding, &settings::get_default_settings().bindings);
+    let mut next = settings.bindings.clone();
+    next.insert(id, restored.clone());
+    apply_bindings(&app, &settings, next)?;
+    Ok(BindingResponse::saved(restored))
+}
+
+/// Why "Restore defaults" refused, serialized as `{"kind": "..."}` for the dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
+pub enum ResetBindingsError {
+    /// A dictation is in flight: finish it first.
+    DictationActive,
+    /// A meeting records or is paused: restoring would take away the key that stops it.
+    MeetingRecording,
+    Failed(String),
+}
+
+/// "Restore defaults": every action's first combination back to its default and no second one,
+/// registered in one pass and undone if a registration fails.
+#[tauri::command]
+#[specta::specta]
+pub fn reset_all_bindings(app: AppHandle) -> Result<(), ResetBindingsError> {
+    let dictating = app
+        .try_state::<TranscriptionCoordinator>()
+        .is_some_and(|c| c.is_busy());
+    let meeting = app
+        .try_state::<Arc<MeetingManager>>()
+        .map(|m| m.status().state)
+        .unwrap_or_default();
+    if let Some(refusal) = reset_refusal(dictating, meeting) {
+        info!("Restoring the default shortcuts refused: {:?}", refusal);
+        return Err(refusal);
+    }
+    let settings = settings::get_settings(&app);
+    let next = defaults_restored(
+        &settings.bindings,
+        &settings::get_default_settings().bindings,
+    );
+    apply_bindings(&app, &settings, next).map_err(ResetBindingsError::Failed)?;
+    info!("Default shortcuts restored");
+    Ok(())
+}
+
+fn reset_refusal(dictating: bool, meeting: MeetingPhase) -> Option<ResetBindingsError> {
+    if dictating {
+        return Some(ResetBindingsError::DictationActive);
+    }
+    match meeting {
+        MeetingPhase::Recording | MeetingPhase::Paused => {
+            Some(ResetBindingsError::MeetingRecording)
+        }
+        _ => None,
+    }
+}
+
+/// The binding with today's default as its first combination and no second one. An old store
+/// may carry an outdated `default_binding`; the defaults of this version win.
+fn restored(
+    binding: &ShortcutBinding,
+    defaults: &HashMap<String, ShortcutBinding>,
+) -> ShortcutBinding {
+    let mut restored = binding.clone();
+    if let Some(default) = defaults.get(&binding.id) {
+        restored.default_binding = default.default_binding.clone();
+    }
+    restored.current_binding = restored.default_binding.clone();
+    restored.alternate_binding.clear();
+    restored
+}
+
+fn defaults_restored(
+    bindings: &HashMap<String, ShortcutBinding>,
+    defaults: &HashMap<String, ShortcutBinding>,
+) -> HashMap<String, ShortcutBinding> {
+    bindings
+        .iter()
+        .map(|(id, binding)| (id.clone(), restored(binding, defaults)))
+        .collect()
+}
+
+/// Suffix of the id a second combination is registered under.
+const ALTERNATE_SUFFIX: &str = "#2";
+
+/// The action a registered id belongs to: `<id>#2` is `<id>`'s second combination.
+pub(crate) fn action_id(registered: &str) -> &str {
+    registered
+        .strip_suffix(ALTERNATE_SUFFIX)
+        .unwrap_or(registered)
+}
+
+/// What a binding registers with a backend: the first combination under the action's id, the
+/// second under `<id>#2`. Cancel has one only; an unset combination registers nothing.
+pub(crate) fn registrations(binding: &ShortcutBinding) -> Vec<ShortcutBinding> {
+    let mut registered = Vec::new();
+    if !binding_is_unset(binding) {
+        registered.push(binding.clone());
+    }
+    if binding.id != "cancel" && !binding.alternate_binding.trim().is_empty() {
+        let mut alternate = binding.clone();
+        alternate.id = format!("{}{}", binding.id, ALTERNATE_SUFFIX);
+        alternate.current_binding = binding.alternate_binding.clone();
+        registered.push(alternate);
+    }
+    registered
+}
+
+/// Whether the action's shortcuts are registered outside a dictation: cancel only during one, the
+/// post-processing binding only with the feature on.
+pub(crate) fn registered_now(id: &str, settings: &settings::AppSettings) -> bool {
+    id != "cancel" && (id != "transcribe_with_post_process" || settings.post_process_enabled)
+}
+
+/// Cancel keeps its one combination and dictation its last.
+fn slot_removable(binding: &ShortcutBinding, slot: BindingSlot) -> bool {
+    let other = match slot {
+        BindingSlot::Primary => &binding.alternate_binding,
+        BindingSlot::Alternate => &binding.current_binding,
+    };
+    match binding.id.as_str() {
+        "cancel" => false,
+        "transcribe" => !other.trim().is_empty(),
+        _ => true,
+    }
+}
+
+/// The binding without the combination in `slot`; a second combination becomes the first.
+fn without_slot(binding: &ShortcutBinding, slot: BindingSlot) -> ShortcutBinding {
+    let mut removed = binding.clone();
+    match slot {
+        BindingSlot::Primary => {
+            removed.current_binding = std::mem::take(&mut removed.alternate_binding);
+        }
+        BindingSlot::Alternate => removed.alternate_binding.clear(),
+    }
+    removed
+}
+
+/// The bindings with `raw` in `binding`'s `slot`. A second combination without a first becomes
+/// the first.
+fn place_binding(
+    bindings: &HashMap<String, ShortcutBinding>,
+    binding: ShortcutBinding,
+    slot: BindingSlot,
+    raw: &str,
+) -> HashMap<String, ShortcutBinding> {
+    let id = binding.id.clone();
+    let mut next = bindings.clone();
+    let placed = next.entry(id).or_insert(binding);
+    match slot {
+        BindingSlot::Primary => placed.current_binding = raw.to_string(),
+        BindingSlot::Alternate => placed.alternate_binding = raw.to_string(),
+    }
+    if binding_is_unset(placed) {
+        placed.current_binding = std::mem::take(&mut placed.alternate_binding);
+    }
+    next
+}
+
+/// Saves `next` and brings the registrations in line with it: every registered action that
+/// changed is unregistered, then registered again. If a registration fails, the previous ones
+/// come back and nothing is saved, so a failure leaves the shortcuts working as before.
+fn apply_bindings(
+    app: &AppHandle,
+    settings: &settings::AppSettings,
+    next: HashMap<String, ShortcutBinding>,
+) -> Result<(), String> {
+    let mut live: Vec<&String> = next
+        .iter()
+        .filter(|(id, binding)| {
+            registered_now(id, settings)
+                && settings.bindings.get(*id).is_none_or(|old| {
+                    old.current_binding != binding.current_binding
+                        || old.alternate_binding != binding.alternate_binding
+                })
+        })
+        .map(|(id, _)| id)
+        .collect();
+    live.sort();
+
+    for id in &live {
+        let old = settings.bindings.get(*id).map(registrations);
+        for registered in old.unwrap_or_default() {
+            if let Err(e) = unregister_shortcut(app, registered) {
+                debug!("apply_bindings: could not unregister '{}': {}", id, e);
+            }
+        }
+    }
+    let mut done: Vec<ShortcutBinding> = Vec::new();
+    let mut failure = None;
+    'register: for id in &live {
+        for registered in registrations(&next[*id]) {
+            match register_shortcut(app, registered.clone()) {
+                Ok(()) => done.push(registered),
+                Err(e) => {
+                    failure = Some(format!("Failed to register shortcut: {}", e));
+                    break 'register;
+                }
+            }
+        }
+    }
+    if let Some(error) = failure {
+        for registered in done {
+            let _ = unregister_shortcut(app, registered);
+        }
+        for id in &live {
+            if let Some(old) = settings.bindings.get(*id) {
+                restore_registration(app, old);
+            }
+        }
+        return Err(error);
     }
 
-    // Update the binding in the settings
-    settings.bindings.insert(id, updated_binding.clone());
-
-    // Save the settings and synchronize any active Secure Input shadows.
-    settings::write_settings(&app, settings);
-    crate::secure_input::reconcile_fallback(&app);
-
-    // Return the updated binding
-    Ok(BindingResponse {
-        success: true,
-        binding: Some(updated_binding),
-        error: None,
-    })
+    // Read again: another setting may have changed while the backend registered.
+    let mut saved = settings::get_settings(app);
+    saved.bindings = next;
+    settings::write_settings(app, saved);
+    crate::secure_input::reconcile_fallback(app);
+    Ok(())
 }
 
 /// Best-effort re-register of the previous binding after a failed change,
 /// so a failure leaves the user's shortcut working exactly as before.
 fn restore_registration(app: &AppHandle, binding: &ShortcutBinding) {
-    if binding_is_unset(binding) {
-        return;
-    }
-    if let Err(e) = register_shortcut(app, binding.clone()) {
-        error!(
-            "Failed to restore previous binding '{}' ({}): {}",
-            binding.id, binding.current_binding, e
-        );
-    }
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, String> {
-    let binding = settings::get_stored_binding(&settings::get_settings(&app), &id)?;
-    if binding.default_binding.trim().is_empty() {
-        return clear_binding(&app, id, binding);
-    }
-    change_binding(app, id, binding.default_binding)
-}
-
-/// Resets a binding whose default is no key (the legacy post-processing one): unregisters it
-/// and leaves it unset, which `change_binding` refuses as input.
-fn clear_binding(
-    app: &AppHandle,
-    id: String,
-    binding: ShortcutBinding,
-) -> Result<BindingResponse, String> {
-    if !binding_is_unset(&binding) {
-        if let Err(e) = unregister_shortcut(app, binding.clone()) {
-            warn!("clear_binding: could not unregister '{}': {}", id, e);
+    for registered in registrations(binding) {
+        if let Err(e) = register_shortcut(app, registered.clone()) {
+            error!(
+                "Failed to restore previous binding '{}' ({}): {}",
+                registered.id, registered.current_binding, e
+            );
         }
     }
-    let mut cleared = binding;
-    cleared.current_binding.clear();
-    let mut settings = settings::get_settings(app);
-    settings.bindings.insert(id, cleared.clone());
-    settings::write_settings(app, settings);
-    crate::secure_input::reconcile_fallback(app);
-    Ok(BindingResponse {
-        success: true,
-        binding: Some(cleared),
-        error: None,
-    })
 }
 
 /// Unregister every binding while the user is recording a new shortcut in
@@ -357,11 +558,13 @@ pub fn suspend_all_shortcuts(app: &AppHandle) {
         if id == "cancel" {
             continue;
         }
-        if let Err(e) = unregister_shortcut(app, binding) {
-            debug!(
-                "suspend_all_shortcuts: could not unregister '{}': {}",
-                id, e
-            );
+        for registered in registrations(&binding) {
+            if let Err(e) = unregister_shortcut(app, registered) {
+                debug!(
+                    "suspend_all_shortcuts: could not unregister '{}': {}",
+                    id, e
+                );
+            }
         }
     }
 }
@@ -377,14 +580,13 @@ pub(crate) fn binding_is_unset(binding: &ShortcutBinding) -> bool {
 pub fn resume_all_shortcuts(app: &AppHandle) {
     let settings = get_settings(app);
     for (id, binding) in &settings.bindings {
-        if id == "cancel" || binding_is_unset(binding) {
+        if !registered_now(id, &settings) {
             continue;
         }
-        if id == "transcribe_with_post_process" && !settings.post_process_enabled {
-            continue;
-        }
-        if let Err(e) = register_shortcut(app, binding.clone()) {
-            debug!("resume_all_shortcuts: could not register '{}': {}", id, e);
+        for registered in registrations(binding) {
+            if let Err(e) = register_shortcut(app, registered) {
+                debug!("resume_all_shortcuts: could not register '{}': {}", id, e);
+            }
         }
     }
 }
@@ -542,16 +744,18 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
             continue;
         }
 
-        let result = match implementation {
-            KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-            KeyboardImplementation::FalaKeys => fala_keys::unregister_shortcut(app, binding),
-        };
+        for registered in registrations(&binding) {
+            let result = match implementation {
+                KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, registered),
+                KeyboardImplementation::FalaKeys => fala_keys::unregister_shortcut(app, registered),
+            };
 
-        if let Err(e) = result {
-            warn!(
-                "Failed to unregister shortcut '{}' during switch: {}",
-                id, e
-            );
+            if let Err(e) = result {
+                warn!(
+                    "Failed to unregister shortcut '{}' during switch: {}",
+                    id, e
+                );
+            }
         }
     }
 }
@@ -602,17 +806,46 @@ fn register_all_shortcuts_for_implementation(
             reset_bindings.push(id.clone());
         }
 
-        // Register with the appropriate implementation
-        let result = match implementation {
-            KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-            KeyboardImplementation::FalaKeys => fala_keys::register_shortcut(app, binding),
-        };
+        // A second combination the target cannot register is dropped
+        if !binding.alternate_binding.trim().is_empty() {
+            if let Err(e) =
+                validate_shortcut_for_implementation(&binding.alternate_binding, implementation)
+            {
+                info!(
+                    "Second shortcut '{}' ({}) is invalid for {:?}: {}. Removing it.",
+                    id, binding.alternate_binding, implementation, e
+                );
+                binding.alternate_binding.clear();
+                current_settings
+                    .bindings
+                    .insert(id.clone(), binding.clone());
+                if !reset_bindings.contains(id) {
+                    reset_bindings.push(id.clone());
+                }
+            }
+        }
+        // A first combination reset to no key gives way to the second; one reset to the second's
+        // key keeps it once.
+        if binding_is_unset(&binding) || binding.alternate_binding == binding.current_binding {
+            binding.current_binding = std::mem::take(&mut binding.alternate_binding);
+            current_settings
+                .bindings
+                .insert(id.clone(), binding.clone());
+        }
 
-        if let Err(e) = result {
-            error!(
-                "Failed to register shortcut '{}' for {:?}: {}",
-                id, implementation, e
-            );
+        // Register with the appropriate implementation
+        for registered in registrations(&binding) {
+            let result = match implementation {
+                KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, registered),
+                KeyboardImplementation::FalaKeys => fala_keys::register_shortcut(app, registered),
+            };
+
+            if let Err(e) = result {
+                error!(
+                    "Failed to register shortcut '{}' for {:?}: {}",
+                    id, implementation, e
+                );
+            }
         }
     }
 
@@ -1201,12 +1434,12 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
         .get("transcribe_with_post_process")
         .cloned()
     {
-        if enabled {
-            if !binding_is_unset(&binding) {
-                let _ = register_shortcut(&app, binding);
+        for registered in registrations(&binding) {
+            if enabled {
+                let _ = register_shortcut(&app, registered);
+            } else {
+                let _ = unregister_shortcut(&app, registered);
             }
-        } else {
-            let _ = unregister_shortcut(&app, binding);
         }
     }
 
@@ -1594,9 +1827,15 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 
 #[cfg(test)]
 mod tests {
-    use super::CancelKey;
+    use super::{
+        defaults_restored, place_binding, registrations, reset_refusal, slot_removable,
+        without_slot, BindingSlot, CancelKey, ResetBindingsError,
+    };
+    use crate::meeting::MeetingPhase;
+    use crate::settings::ShortcutBinding;
     use handy_keys::Hotkey;
     use std::cell::RefCell;
+    use std::collections::HashMap;
     use tauri_plugin_global_shortcut::Shortcut;
 
     /// A fake backend that records each call (`true` register, `false` unregister),
@@ -1702,6 +1941,7 @@ mod tests {
             description: String::new(),
             default_binding: String::new(),
             current_binding: current.to_string(),
+            alternate_binding: String::new(),
         };
         assert!(super::binding_is_unset(&binding("")));
         assert!(super::binding_is_unset(&binding("  ")));
@@ -1721,5 +1961,136 @@ mod tests {
             assert!(key.parse::<Shortcut>().is_ok(), "Tauri rejected {key}");
             assert!(key.parse::<Hotkey>().is_ok(), "FalaKeys rejected {key}");
         }
+    }
+
+    fn bound(id: &str, default: &str, primary: &str, alternate: &str) -> ShortcutBinding {
+        ShortcutBinding {
+            id: id.to_string(),
+            name: String::new(),
+            description: String::new(),
+            default_binding: default.to_string(),
+            current_binding: primary.to_string(),
+            alternate_binding: alternate.to_string(),
+        }
+    }
+
+    fn keys(bindings: &HashMap<String, ShortcutBinding>, id: &str) -> (String, String) {
+        let b = &bindings[id];
+        (b.current_binding.clone(), b.alternate_binding.clone())
+    }
+
+    fn pair(primary: &str, alternate: &str) -> (String, String) {
+        (primary.to_string(), alternate.to_string())
+    }
+
+    fn store() -> HashMap<String, ShortcutBinding> {
+        [
+            bound("transcribe", "ctrl+shift+space", "ctrl+shift+space", ""),
+            bound("cancel", "escape", "escape", ""),
+            bound("paste_last", "", "alt+shift+z", ""),
+            bound("copy_last", "", "alt+shift+x", "f8"),
+            bound("meeting_toggle", "", "", ""),
+        ]
+        .into_iter()
+        .map(|b| (b.id.clone(), b))
+        .collect()
+    }
+
+    fn place(
+        bindings: &HashMap<String, ShortcutBinding>,
+        id: &str,
+        slot: BindingSlot,
+        raw: &str,
+    ) -> HashMap<String, ShortcutBinding> {
+        place_binding(bindings, bindings[id].clone(), slot, raw)
+    }
+
+    #[test]
+    fn second_combination_registers_under_its_own_id() {
+        let ids = |b: &ShortcutBinding| {
+            registrations(b)
+                .into_iter()
+                .map(|r| (r.id, r.current_binding))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&bound("copy_last", "", "alt+shift+x", "f8")),
+            vec![
+                ("copy_last".to_string(), "alt+shift+x".to_string()),
+                ("copy_last#2".to_string(), "f8".to_string()),
+            ]
+        );
+        assert!(ids(&bound("meeting_toggle", "", "", "")).is_empty());
+        // Cancel has one combination only.
+        assert_eq!(
+            ids(&bound("cancel", "escape", "escape", "f8")),
+            vec![("cancel".to_string(), "escape".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_combination_goes_into_its_slot() {
+        let next = place(&store(), "paste_last", BindingSlot::Alternate, "f7");
+        assert_eq!(keys(&next, "paste_last"), pair("alt+shift+z", "f7"));
+        let next = place(&next, "paste_last", BindingSlot::Primary, "f6");
+        assert_eq!(keys(&next, "paste_last"), pair("f6", "f7"));
+        // A second combination without a first becomes the first.
+        let next = place(
+            &store(),
+            "meeting_toggle",
+            BindingSlot::Alternate,
+            "alt+shift+m",
+        );
+        assert_eq!(keys(&next, "meeting_toggle"), pair("alt+shift+m", ""));
+    }
+
+    #[test]
+    fn cancel_and_dictation_keep_a_key() {
+        let all = store();
+        assert!(!slot_removable(&all["cancel"], BindingSlot::Primary));
+        assert!(!slot_removable(&all["transcribe"], BindingSlot::Primary));
+        assert!(slot_removable(&all["paste_last"], BindingSlot::Primary));
+        let mut two = all["transcribe"].clone();
+        two.alternate_binding = "f9".to_string();
+        assert!(slot_removable(&two, BindingSlot::Primary));
+        assert!(slot_removable(&two, BindingSlot::Alternate));
+        // Removing the first promotes the second.
+        let removed = without_slot(&all["copy_last"], BindingSlot::Primary);
+        assert_eq!(
+            (removed.current_binding, removed.alternate_binding),
+            pair("f8", "")
+        );
+    }
+
+    #[test]
+    fn restoring_defaults_is_refused_while_dictating_or_recording() {
+        assert_eq!(
+            reset_refusal(true, MeetingPhase::Idle),
+            Some(ResetBindingsError::DictationActive)
+        );
+        for phase in [MeetingPhase::Recording, MeetingPhase::Paused] {
+            assert_eq!(
+                reset_refusal(false, phase),
+                Some(ResetBindingsError::MeetingRecording)
+            );
+        }
+        for phase in [
+            MeetingPhase::Idle,
+            MeetingPhase::Stopping,
+            MeetingPhase::Processing,
+        ] {
+            assert_eq!(reset_refusal(false, phase), None);
+        }
+
+        let mut all = store();
+        all.get_mut("transcribe").unwrap().current_binding = "ctrl_left+space".to_string();
+        all.get_mut("transcribe").unwrap().alternate_binding = "f9".to_string();
+        // An old store's outdated default loses to this version's.
+        all.get_mut("transcribe").unwrap().default_binding = "ctrl+space".to_string();
+        let restored = defaults_restored(&all, &store());
+        assert_eq!(keys(&restored, "transcribe"), pair("ctrl+shift+space", ""));
+        assert_eq!(keys(&restored, "copy_last"), pair("", ""));
+        assert_eq!(keys(&restored, "cancel"), pair("escape", ""));
+        assert_eq!(keys(&restored, "meeting_toggle"), pair("", ""));
     }
 }
