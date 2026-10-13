@@ -465,6 +465,10 @@
         "description": "A gravação para sozinha ao chegar nesse tempo; 10 minutos antes, o Fala avisa e oferece mais 1 hora, até 8 horas no total.",
         "hours": "{{hours}} h"
       },
+      "keepAwake": {
+        "label": "Impedir a suspensão enquanto grava",
+        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar."
+      },
       "saveFailed": "Não consegui salvar essa opção. Tente de novo."
     },
     "sound": {

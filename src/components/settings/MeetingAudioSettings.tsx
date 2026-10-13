@@ -5,6 +5,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/Button";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -72,10 +73,12 @@ export function RetentionConfirm({
   );
 }
 
-/** Settings > General > Meetings: how long the audio of a meeting stays, and the cap. */
+/** Settings > General > Meetings: how long the audio of a meeting stays, the cap, and whether
+ *  the PC may sleep while recording. */
 export const MeetingAudioSettings: React.FC = React.memo(() => {
   const { t } = useTranslation();
-  const { getSetting, refreshSettings } = useSettings();
+  const { getSetting, refreshSettings, updateSetting, isUpdating } =
+    useSettings();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState<number | null>(null);
@@ -151,6 +154,15 @@ export const MeetingAudioSettings: React.FC = React.memo(() => {
           disabled={busy}
         />
       </SettingContainer>
+      <ToggleSwitch
+        checked={getSetting("meeting_keep_awake") ?? true}
+        onChange={(enabled) => updateSetting("meeting_keep_awake", enabled)}
+        isUpdating={isUpdating("meeting_keep_awake")}
+        label={t("settings.meetings.keepAwake.label")}
+        description={t("settings.meetings.keepAwake.description")}
+        descriptionMode="tooltip"
+        grouped={true}
+      />
       {failed && (
         <p role="alert" className="px-4 pb-3 text-sm text-danger">
           {t("settings.meetings.saveFailed")}

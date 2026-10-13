@@ -242,6 +242,8 @@ const settingUpdaters: {
     commands.changePauseMediaWhileRecordingSetting(value as boolean),
   pause_media_on_meeting: (value) =>
     commands.changePauseMediaOnMeetingSetting(value as boolean),
+  meeting_keep_awake: (value) =>
+    commands.changeMeetingKeepAwakeSetting(value as boolean),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),

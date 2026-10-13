@@ -5,7 +5,8 @@
 //!
 //! The streams are opened on the thread that owns them (a cpal stream is not `Send` on every
 //! host). Paused time is neither written nor counted: the recorder's clock is an [`ActiveClock`]
-//! that only advances while recording.
+//! that only advances while recording. The same [`Gate`] keeps the PC awake while it records and
+//! lets it sleep otherwise.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -15,6 +16,8 @@ use std::time::{Duration, Instant};
 use fala_audio::{
     MeetingRecorder, MeetingWav, Mic, OutputMeter, OutputPeak, SystemAudio, MEETING_RATE,
 };
+
+use crate::power::{self, PowerApi, PowerGuard};
 
 const TICK: Duration = Duration::from_millis(100);
 /// How often levels and the recorded duration go back to the manager (UI at 4 Hz).
@@ -79,15 +82,61 @@ impl ActiveClock {
         }
     }
 
-    pub(crate) fn is_paused(&self) -> bool {
-        self.paused_since.is_some()
-    }
-
     pub(crate) fn elapsed(&self, now: Instant) -> Duration {
         let until = self.paused_since.unwrap_or(now);
         until
             .saturating_duration_since(self.started)
             .saturating_sub(self.paused_total)
+    }
+}
+
+/// When the capture writes: not paused by the person. The clock runs and, with `keep_awake`, the
+/// PC is kept awake exactly then; the guard lets go when the gate is dropped (stop, error or panic
+/// of the recorder thread).
+pub(crate) struct Gate<A: PowerApi> {
+    clock: ActiveClock,
+    paused: bool,
+    keep_awake: bool,
+    awake: PowerGuard<A>,
+}
+
+impl<A: PowerApi> Gate<A> {
+    pub(crate) fn new(now: Instant, keep_awake: bool, api: A) -> Self {
+        let mut gate = Self {
+            clock: ActiveClock::new(now),
+            paused: false,
+            keep_awake,
+            awake: PowerGuard::new(api),
+        };
+        gate.update(now);
+        gate
+    }
+
+    pub(crate) fn pause(&mut self, now: Instant) {
+        self.paused = true;
+        self.update(now);
+    }
+
+    pub(crate) fn resume(&mut self, now: Instant) {
+        self.paused = false;
+        self.update(now);
+    }
+
+    pub(crate) fn writing(&self) -> bool {
+        !self.paused
+    }
+
+    pub(crate) fn elapsed(&self, now: Instant) -> Duration {
+        self.clock.elapsed(now)
+    }
+
+    fn update(&mut self, now: Instant) {
+        if self.writing() {
+            self.clock.resume(now);
+        } else {
+            self.clock.pause(now);
+        }
+        self.awake.set(self.keep_awake && self.writing());
     }
 }
 
@@ -97,11 +146,13 @@ pub(crate) fn recorded_ms(written_frames: u64) -> u64 {
 }
 
 /// Opens the system output and, `with_mic`, the default mic on a new thread and starts writing
-/// `wav`. Returns once the streams are open (or with the reason they did not open).
+/// `wav`; with `keep_awake` the PC does not sleep while it records. Returns once the streams are
+/// open (or with the reason they did not open).
 pub(crate) fn spawn(
     system: String,
     with_mic: bool,
     wav: PathBuf,
+    keep_awake: bool,
     on_report: impl Fn(Report) + Send + 'static,
 ) -> Result<Sender<Control>, String> {
     let (control, commands) = mpsc::channel();
@@ -111,7 +162,7 @@ pub(crate) fn spawn(
         .spawn(move || match open(&system, with_mic, &wav) {
             Ok(capture) => {
                 let _ = ready_tx.send(Ok(()));
-                run(capture, commands, on_report);
+                run(capture, commands, keep_awake, on_report);
             }
             Err(e) => {
                 let _ = ready_tx.send(Err(e));
@@ -219,9 +270,13 @@ impl Level {
     }
 }
 
-fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Report)) {
-    // `meeting-power-guard` keeps the PC awake for exactly the life of this loop.
-    let mut clock = ActiveClock::new(Instant::now());
+fn run(
+    mut capture: Capture,
+    commands: Receiver<Control>,
+    keep_awake: bool,
+    on_report: impl Fn(Report),
+) {
+    let mut gate = Gate::new(Instant::now(), keep_awake, power::Os);
     let mut buffer = Vec::new();
     let (mut mic_level, mut system_level) = (Level::default(), Level::default());
     let mut last_report = Instant::now();
@@ -229,15 +284,15 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
     loop {
         let finalize = match commands.recv_timeout(TICK) {
             Ok(Control::Pause) => {
-                clock.pause(Instant::now());
+                gate.pause(Instant::now());
                 false
             }
             Ok(Control::Resume) => {
-                clock.resume(Instant::now());
+                gate.resume(Instant::now());
                 false
             }
             Ok(Control::SwitchSystem(name)) => {
-                let paused = clock.is_paused();
+                let paused = !gate.writing();
                 let error = switch_system(&mut capture, &name, paused, &mut buffer).err();
                 if let Some(e) = &error {
                     log::warn!("meeting system output not switched to {name}: {e}");
@@ -249,7 +304,7 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
             Err(RecvTimeoutError::Timeout) => false,
         };
         let now = Instant::now();
-        let paused = clock.is_paused();
+        let paused = !gate.writing();
 
         // Drained even while paused, so the paused interval is dropped instead of written later.
         buffer.clear();
@@ -275,7 +330,7 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
             break;
         }
         if !paused {
-            if let Err(e) = capture.recorder.tick(clock.elapsed(now)) {
+            if let Err(e) = capture.recorder.tick(gate.elapsed(now)) {
                 error = Some(e.to_string());
                 break;
             }
@@ -295,7 +350,9 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
         }
     }
 
-    let recorded = clock.elapsed(Instant::now());
+    let recorded = gate.elapsed(Instant::now());
+    // The PC may sleep again from here on: the WAV is closed below either way.
+    drop(gate);
     if let Err(e) = capture.recorder.finish(recorded) {
         error.get_or_insert_with(|| e.to_string());
     }
@@ -308,6 +365,37 @@ fn run(mut capture: Capture, commands: Receiver<Control>, on_report: impl Fn(Rep
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::power::tests::FakePower;
+
+    #[test]
+    fn the_pc_stays_awake_exactly_while_the_capture_writes() {
+        let fake = FakePower::default();
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        {
+            let mut gate = Gate::new(t0, true, fake.clone());
+            assert_eq!(fake.calls(), vec![true], "start");
+            gate.pause(at(10));
+            gate.pause(at(15));
+            gate.resume(at(20));
+            assert!(gate.writing());
+            assert_eq!(gate.elapsed(at(30)), Duration::from_secs(20));
+        }
+        // Pause, resume; then the stop, or an error, drops the gate.
+        assert_eq!(fake.calls(), vec![true, false, true, false]);
+    }
+
+    #[test]
+    fn with_the_setting_off_nothing_is_asked() {
+        let fake = FakePower::default();
+        let t0 = Instant::now();
+        {
+            let mut gate = Gate::new(t0, false, fake.clone());
+            gate.pause(t0);
+            gate.resume(t0);
+        }
+        assert!(fake.calls().is_empty());
+    }
 
     #[test]
     fn paused_time_is_not_counted() {

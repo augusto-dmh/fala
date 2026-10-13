@@ -186,6 +186,58 @@ fn importing_again_updates_instead_of_duplicating() {
 }
 
 #[test]
+fn importing_again_after_losing_the_db_and_reindexing_does_not_duplicate() {
+    let env = env("granola-reindex");
+    let path = env.dir.join("granola.csv");
+    std::fs::write(&path, csv("Preço com a Acme")).unwrap();
+    let mut store = env.open();
+    import_all(&mut store, &path);
+    let mut ids: Vec<_> = store.meetings().unwrap().iter().map(|m| m.id).collect();
+    ids.sort();
+    let renamed = store
+        .meetings()
+        .unwrap()
+        .into_iter()
+        .find(|m| m.title.is_empty())
+        .unwrap()
+        .id;
+    store.set_meeting_title(renamed, "Meu título").unwrap();
+    let md_names = |env: &common::Env| {
+        let mut names: Vec<String> = std::fs::read_dir(env.notes.join("Reuniões"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    let files = md_names(&env);
+
+    drop(store);
+    std::fs::remove_file(&env.db).unwrap();
+    let mut store = env.open();
+    let report = store.reindex_meetings().unwrap();
+    assert_eq!(report.indexed, 2, "{report:?}");
+    assert!(report.skipped.is_empty(), "{report:?}");
+    // O `.md` já trazia a ligação: o reindex não muda nenhum arquivo.
+    assert_eq!(store.sync_meeting_mirrors().unwrap(), 0);
+    let sources = store.meeting_import_sources().unwrap();
+    assert_eq!(sources.len(), 2);
+    assert!(sources.values().all(|s| s == GRANOLA));
+
+    // O mesmo CSV de novo: atualiza as duas, sem nenhuma reunião ou `.md` a mais.
+    assert_eq!(
+        import_all(&mut store, &path),
+        [ImportOutcome::Updated, ImportOutcome::Updated]
+    );
+    let mut again: Vec<_> = store.meetings().unwrap().iter().map(|m| m.id).collect();
+    again.sort();
+    assert_eq!(again, ids);
+    assert_eq!(md_names(&env), files);
+    // O título que a pessoa deu antes de perder o banco continua sendo dela.
+    assert_eq!(store.meeting(renamed).unwrap().title, "Meu título");
+}
+
+#[test]
 fn a_zip_named_csv_is_read_by_its_content() {
     let env = env("granola-zip");
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
