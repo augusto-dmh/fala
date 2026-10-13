@@ -754,9 +754,17 @@ pub struct AppSettings {
     /// The recording cap of a meeting in hours, 1 to 8.
     #[serde(default = "default_meeting_cap_hours")]
     pub meeting_cap_hours: u8,
+    /// The PC does not sleep for inactivity while a meeting records; the display still may.
+    #[serde(default = "default_meeting_keep_awake")]
+    pub meeting_keep_awake: bool,
 }
 
 fn default_call_prompt_enabled() -> bool {
+    true
+}
+
+/// A two-hour class nobody touches the PC through must not stop when the PC sleeps.
+fn default_meeting_keep_awake() -> bool {
     true
 }
 
@@ -1301,6 +1309,7 @@ pub fn get_default_settings() -> AppSettings {
         call_prompt_muted_apps: Vec::new(),
         meeting_audio_retention_days: None,
         meeting_cap_hours: default_meeting_cap_hours(),
+        meeting_keep_awake: default_meeting_keep_awake(),
     }
 }
 
@@ -1677,6 +1686,7 @@ mod tests {
         for settings in [stored, fresh] {
             assert_eq!(settings.meeting_audio_retention_days, None);
             assert_eq!(settings.meeting_cap_hours, 3);
+            assert!(settings.meeting_keep_awake);
         }
         let chosen: AppSettings = serde_json::from_value(serde_json::json!({
             "meeting_audio_retention_days": 30,
