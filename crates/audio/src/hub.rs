@@ -116,10 +116,8 @@ impl MicHub {
         renew: bool,
     ) -> Result<MicTap, AudioError> {
         let mut feeds = self.feeds.lock().unwrap_or_else(|e| e.into_inner());
-        if renew {
-            if let Some(feed) = feeds.get(key).and_then(Weak::upgrade) {
-                feed.shared.failed.store(true, Ordering::Relaxed);
-            }
+        if let Some(feed) = feeds.get(key).and_then(Weak::upgrade).filter(|_| renew) {
+            feed.shared.failed.store(true, Ordering::Relaxed);
         }
         feeds.retain(|_, feed| feed.strong_count() > 0);
         // Um stream com erro não serve a ninguém: o tap novo abre outro, e o velho fecha com o
