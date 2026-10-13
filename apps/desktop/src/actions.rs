@@ -942,6 +942,9 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        // The microphone that recorded, read while its stream is still open: a silent recording
+        // names it ("No sound from <mic>").
+        let microphone = rm.microphone_name();
         // The app that receives the paste, asked once on release: the LLM gets its name and
         // the history records it.
         let app_context = fala_inject::foreground_app();
@@ -976,7 +979,7 @@ impl ShortcutAction for TranscribeAction {
                     debug!("Recording heard only silence; the microphone looks muted");
                     tm.cancel_stream();
                     rm.block_queue().cancel();
-                    utils::show_notice(&ah, NoticeKind::MicMuted, None, true);
+                    utils::show_notice(&ah, NoticeKind::MicMuted, microphone, true);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else if outcome == StopOutcome::Discard {
                     debug!("Recording produced no audio samples; skipping persistence");

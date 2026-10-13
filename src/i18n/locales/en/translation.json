@@ -1067,7 +1067,7 @@
       "modelMissing": "No speech model downloaded",
       "chooseMic": "Choose microphone",
       "resolve": "Fix it",
-      "micMutedNamed": "No sound from {{device}}. Is it muted?"
+      "micMutedNamed": "Microphone muted? No sound from {{device}}."
     },
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",
