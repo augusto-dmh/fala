@@ -29,6 +29,7 @@ const NOTHING_LIVE: LiveSessions = {
   recording: null,
   working: new Set(),
   failed: new Set(),
+  notesFailed: new Set(),
 };
 
 const DOT: Record<RowState, string> = {
@@ -68,6 +69,8 @@ export function MeetingList({
   }
 
   // `stamp`: the time under a day heading, the day itself in the search results.
+  // A failed row says what is missing; notes that didn't finish (often a missing key) are a
+  // warning, a meeting without a transcript is an error.
   const row = (session: MeetingSummary, stamp: string, wide = false) => {
     const state = rowState(session, live);
     const snippet = snippets?.get(session.id);
@@ -79,12 +82,16 @@ export function MeetingList({
           onClick={() => onOpen(session.id)}
         >
           <span
-            className={`mt-2 size-2 shrink-0 rounded-full ${DOT[state]}`}
+            className={`mt-2 size-2 shrink-0 rounded-full ${
+              state === "failed" && live.notesFailed?.has(session.id)
+                ? "bg-warn"
+                : DOT[state]
+            }`}
             title={t(`meeting.home.state.${state}`)}
             aria-hidden="true"
           />
           <span
-            className={`${wide ? "w-28" : "w-12"} shrink-0 pt-px text-caption text-text-2 tabular-nums`}
+            className={`${wide ? "w-28" : "w-16"} shrink-0 whitespace-nowrap pt-px text-caption text-text-2 tabular-nums`}
           >
             {stamp}
           </span>
@@ -92,10 +99,20 @@ export function MeetingList({
             <span className="block truncate text-body">
               {titleOf(session, t)}
             </span>
-            {state !== "idle" && (
-              <span className="sr-only">
-                {t(`meeting.home.state.${state}`)}
+            {state === "failed" ? (
+              <span className="block text-caption text-text-2">
+                {t(
+                  live.notesFailed?.has(session.id)
+                    ? "meeting.home.failedWhy.notes"
+                    : "meeting.home.failedWhy.transcript",
+                )}
               </span>
+            ) : (
+              state !== "idle" && (
+                <span className="sr-only">
+                  {t(`meeting.home.state.${state}`)}
+                </span>
+              )
             )}
             {snippet !== undefined && (
               <span className="block text-caption text-text-2">
