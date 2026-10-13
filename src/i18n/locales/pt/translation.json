@@ -1182,7 +1182,8 @@
       "callElsewhere": "O som da chamada está saindo por {{device}}.",
       "recordFrom": "Gravar deste dispositivo",
       "consentChip": "Grave só com o consentimento de quem participa.",
-      "systemOnly": "Só o som do computador (aula, vídeo)"
+      "systemOnly": "Só o som do computador (aula, vídeo)",
+      "title": "Título"
     },
     "import": {
       "open": "Importar arquivo ou link",

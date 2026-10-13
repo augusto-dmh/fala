@@ -277,7 +277,8 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   );
   assert.ok(empty.includes("meeting.list.empty"), empty);
   const idle = panel(status());
-  for (const key of ["start", "online", "inPerson", "newDraft"]) {
+  // The mode is a Dropdown: closed, it shows the chosen mode only.
+  for (const key of ["start", "online", "newDraft", "mode", "title"]) {
     assert.ok(idle.includes(`meeting.recorder.${key}`), key);
   }
   ok("C36-empty");
@@ -326,8 +327,10 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   // The template waits behind the arrow of "Gerar notas"; a draft shows it next to "Gravar".
   assert.ok(opened.includes('aria-label="meeting.view.template"'));
   const agenda = view(detail({ summary: summary({ started_at: null }) }));
-  assert.ok(
-    agenda.includes("Reunião geral") && agenda.includes("1:1"),
+  // Closed, the picker shows the chosen template on its button.
+  assert.match(
+    agenda,
+    /aria-haspopup="menu"[^>]*title="Reunião geral"/,
     "seletor",
   );
   assert.equal(

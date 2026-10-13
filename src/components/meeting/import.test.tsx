@@ -77,7 +77,7 @@ const panel = (s: MeetingStatus) =>
 // O modo "só o som do computador" é uma opção do seletor e, gravando, não mostra o nível do mic.
 {
   const idle = panel(status());
-  assert.match(idle, /<option value="system_only" selected="">/);
+  assert.match(idle, /class="truncate">meeting\.recorder\.systemOnly</);
   assert.ok(idle.includes("meeting.recorder.systemOnly"));
   const live = (mode: MeetingStatus["mode"]) =>
     panel(status({ state: "recording", id: "x", mode }));

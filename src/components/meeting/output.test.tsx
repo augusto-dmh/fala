@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { MeetingOutputs, MeetingStatus } from "@/bindings";
 import { CallOutputCard, MeetingPill } from "../../overlay/MeetingPill";
-import { RecorderPanel } from "./RecorderPanel";
+import { outputOptions, RecorderPanel } from "./RecorderPanel";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -71,19 +71,35 @@ const panel = (s: MeetingStatus, o: MeetingOutputs | null = outputs) =>
 
 // OUT1: parado, o painel mostra "Som da reunião" com a saída padrão e a lista.
 {
+  // QA Q26: the app's Dropdown with its name above, the default output named in the list.
   const html = panel(status());
-  assert.ok(html.includes('aria-label="meeting.recorder.output"'), html);
-  assert.ok(html.includes("meeting.recorder.outputDefault"), html);
-  for (const d of outputs.devices) assert.ok(html.includes(d.name), html);
-  assert.ok(html.includes('<option value="" selected="">'), html);
+  // The name above labels the Dropdown's button.
+  assert.match(
+    html,
+    /<span id="([^"]+)"[^>]*>meeting\.recorder\.output<\/span><div class="relative "><button[^>]*aria-labelledby="\1 /,
+    html,
+  );
+  assert.ok(!html.includes("<select"), html);
+  // Closed, the button shows the default output.
+  assert.ok(
+    html.includes('class="truncate">meeting.recorder.outputDefault'),
+    html,
+  );
+  const options = outputOptions(outputs, (name) => `default (${name})`);
+  assert.equal(options[0].value, "");
+  assert.ok(options[0].label.startsWith("default ("));
+  for (const d of outputs.devices)
+    assert.ok(options.some((o) => o.value === d.name && o.label === d.name));
   // A escolha lembrada aparece selecionada; um fone ausente continua na lista.
   const chosen = panel(status(), {
     ...outputs,
     selected: "Fone Bluetooth",
   });
+  assert.ok(chosen.includes('class="truncate">Fone Bluetooth<'), chosen);
   assert.ok(
-    chosen.includes('<option value="Fone Bluetooth" selected="">'),
-    chosen,
+    outputOptions({ ...outputs, selected: "Fone Bluetooth" }, String).some(
+      (o) => o.value === "Fone Bluetooth",
+    ),
   );
   // Sem a lista ainda, nada de seletor vazio.
   assert.ok(!panel(status(), null).includes("meeting.recorder.output"));
