@@ -174,8 +174,11 @@ const OPTIONS = "opções";
     3,
     "só ações da pessoa abrem",
   );
-  // Gravando, o gravador; parando ou processando, só a linha de processamento.
-  assert.match(page, /\{recordingNow \? \(\s*recorder\s*\) : \(/);
+  // Gravando, níveis e avisos em cima e os controles na barra; parando, só a barra.
+  assert.match(
+    page,
+    /\{recordingThis\s*\? recordingNow && !askConsent && recorder\(false\)\s*: strip\}/,
+  );
   assert.ok(read("./RecoverBanner.tsx").includes("border-warn bg-warn/10"));
 
   const button = renderToStaticMarkup(

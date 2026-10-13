@@ -322,8 +322,11 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     menu({ deleteDisabled: true }),
     /disabled=""[^>]*>meeting\.delete\.action</,
   );
+  // The template waits behind the arrow of "Gerar notas"; a draft shows it next to "Gravar".
+  assert.ok(opened.includes('aria-label="meeting.view.template"'));
+  const agenda = view(detail({ summary: summary({ started_at: null }) }));
   assert.ok(
-    opened.includes("Reunião geral") && opened.includes("1:1"),
+    agenda.includes("Reunião geral") && agenda.includes("1:1"),
     "seletor",
   );
   assert.equal(

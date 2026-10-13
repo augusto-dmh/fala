@@ -1348,6 +1348,10 @@
       "noNotes": "As notas aparecem aqui depois de gerar.",
       "slash": "Template das notas:",
       "imported": "Importada"
+    },
+    "bar": {
+      "label": "Ações da reunião",
+      "close": "Fechar a transcrição"
     }
   }
 }

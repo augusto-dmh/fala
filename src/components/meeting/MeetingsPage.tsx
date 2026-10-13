@@ -380,8 +380,9 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
 
   const recordingNow =
     status.state === "recording" || status.state === "paused";
-  const recorder = (
+  const recorder = (controls: boolean) => (
     <RecorderPanel
+      controls={controls}
       status={status}
       mode={mode}
       title={title}
@@ -479,19 +480,8 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
             onCancel={() => void commands.cancelMeetingImport()}
           />
         )}
-        {recordingThis && !askConsent ? (
-          <div className="rounded-lg border border-border bg-surface-1">
-            {recordingNow ? (
-              recorder
-            ) : (
-              <p className="p-4 text-caption text-text-2">
-                {t("meeting.recorder.processing")}
-              </p>
-            )}
-          </div>
-        ) : (
-          strip
-        )}
+        {/* Recording this one: the levels and warnings on top, the controls in its bar. */}
+        {recordingThis ? recordingNow && !askConsent && recorder(false) : strip}
         <div className="rounded-lg border border-border bg-surface-1">
           <MeetingView
             key={selected.summary.id}
@@ -517,6 +507,16 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
               void reload(selected.summary.id);
               void refresh();
             }}
+            live={
+              recordingThis
+                ? {
+                    status,
+                    onPause: () => void act(commands.pauseMeeting),
+                    onResume: () => void act(commands.resumeMeeting),
+                    onStop: () => void act(commands.stopMeeting),
+                  }
+                : null
+            }
             deleteDisabled={
               recordingThis ||
               transcribing === selected.summary.id ||
@@ -538,7 +538,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
           <NewMeetingButton
             disabled={askConsent || recordingNow || status.state === "stopping"}
             onStart={() => void start(null)}
-            options={recorder}
+            options={recorder(true)}
             t={t}
           />
         }

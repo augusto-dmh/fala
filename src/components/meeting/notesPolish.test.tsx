@@ -194,7 +194,7 @@ const lines: MeetingLine[] = [
   // "Gerar de novo" da confirmação fica desligado como o "Gerar notas".
   assert.equal(
     viewSource.match(
-      /disabled=\{props\.recording \|\| props\.generating \|\| editing\}/g,
+      /(disabled|generateDisabled)=\{props\.recording \|\| props\.generating \|\| editing\}/g,
     )?.length,
     3,
   );
@@ -207,7 +207,10 @@ const lines: MeetingLine[] = [
   );
   // "Gerar notas", o "Gerar de novo" depois de um nome trocado e o "Tentar de novo" passam pela
   // mesma regra.
-  assert.equal(viewSource.match(/onClick=\{generate\}/g)?.length, 3);
+  assert.equal(
+    viewSource.match(/(onClick|onGenerate)=\{generate\}/g)?.length,
+    3,
+  );
   assert.equal(
     viewSource.match(/props\.onGenerate\(picked, true\)/g)?.length,
     1,
