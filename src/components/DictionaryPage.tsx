@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSettings } from "../hooks/useSettings";
 import { PageHeader } from "./PageHeader";
 import { SettingsGroup } from "./ui/SettingsGroup";
-import { Input } from "./ui/Input";
+import { SearchField } from "./ui/SearchField";
 import { CustomWords, DictionaryReplacements } from "./settings";
 
 /** The user's own words and terms, promoted out of Advanced, the spoken -> written pairs and
@@ -25,8 +25,7 @@ export const DictionaryPage: React.FC = () => {
         title={t("rail.dictionary")}
         description={t("dictionary.description")}
       />
-      <Input
-        type="search"
+      <SearchField
         className="w-full"
         value={query}
         onChange={(e) => setQuery(e.target.value)}

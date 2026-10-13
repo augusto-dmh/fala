@@ -125,3 +125,25 @@ export const formatRelativeTime = (
     return formatDateTime(timestamp, locale); // Fallback to absolute time
   }
 };
+
+// One clock formatter per locale: lists format a time per row on every render.
+const clocks = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * The local hour and minute on one short line: no leading zero on a 12-hour clock ("3:50 PM"),
+ * two digits on a 24-hour one ("07:05").
+ */
+export const formatClock = (date: Date, locale: string): string => {
+  let clock = clocks.get(locale);
+  if (!clock) {
+    const twelve =
+      new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions()
+        .hour12 === true;
+    clock = new Intl.DateTimeFormat(locale, {
+      hour: twelve ? "numeric" : "2-digit",
+      minute: "2-digit",
+    });
+    clocks.set(locale, clock);
+  }
+  return clock.format(date);
+};

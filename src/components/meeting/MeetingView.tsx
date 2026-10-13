@@ -10,7 +10,7 @@ import {
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { SearchField } from "../ui/SearchField";
 import { AnnotationsField } from "./AnnotationsField";
 import { DeleteConfirm } from "./DeleteMeeting";
 import { ClipPlayer } from "./clipPlayer";
@@ -459,9 +459,8 @@ export function MeetingView(props: MeetingViewProps) {
                   </p>
                 )}
                 <div className="flex items-center gap-2">
-                  <Input
+                  <SearchField
                     variant="compact"
-                    type="search"
                     aria-label={t("meeting.view.search")}
                     placeholder={t("meeting.view.search")}
                     value={query}
