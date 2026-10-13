@@ -748,6 +748,19 @@ pub fn emit_recording_limit_warning(app_handle: &AppHandle) {
     });
 }
 
+/// What `dictation-unheard` carries: the microphone delivered pure silence (`muted`), or sound
+/// with no speech in it (nothing kept, or a blank transcript).
+#[derive(Clone, serde::Serialize)]
+struct UnheardPayload {
+    muted: bool,
+}
+
+/// Tells the main window that a dictation ended without text because nothing was heard, so
+/// the first run's test field can say so (`ShortcutStep`). The overlay keeps its own notice.
+pub fn announce_unheard(app_handle: &AppHandle, muted: bool) {
+    let _ = app_handle.emit_to("main", "dictation-unheard", UnheardPayload { muted });
+}
+
 /// Shows a notice in the overlay window. `alone` replaces whatever the overlay shows, shows
 /// the window even with the overlay turned off (the gesture failed and nothing else says so),
 /// and hides it after the notice's duration unless a newer session showed the overlay. Without

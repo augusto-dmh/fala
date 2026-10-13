@@ -242,7 +242,9 @@
       "instructionToggle": "Press the shortcut, say “hello, Fala” and press it again.",
       "testLabel": "Test field",
       "testPlaceholder": "The dictated text shows up here",
-      "waitModel": "The test works as soon as the transcription model finishes downloading."
+      "waitModel": "The test works as soon as the transcription model finishes downloading.",
+      "noAudio": "We didn't hear anything. Check that the microphone is on and picks up your voice, then try again.",
+      "noSpeech": "We heard sound but no speech. Speak closer to the microphone and try again."
     },
     "ai": {
       "title": "AI (optional)",
@@ -373,6 +375,7 @@
       "searchPlaceholder": "Search models by name…",
       "yourModels": "Downloaded models",
       "availableModels": "Available to download",
+      "otherModels": "Other models ({{count}}), for other languages",
       "deleteConfirm": "Are you sure you want to delete {{modelName}}? You will need to download it again to use it.",
       "deleteActiveConfirm": "{{modelName}} is your active model. Deleting it will stop transcriptions until you select a new model. Are you sure?",
       "deleteTitle": "Delete model",
@@ -1242,7 +1245,8 @@
       "callElsewhere": "The call's sound is playing on {{device}}.",
       "recordFrom": "Record from this device",
       "consentChip": "Only record with the consent of everyone on the call.",
-      "systemOnly": "Only the computer sound (class, video)"
+      "systemOnly": "Only the computer sound (class, video)",
+      "title": "Title"
     },
     "import": {
       "open": "Import a file or link",
@@ -1453,11 +1457,30 @@
       "text": "I'm recording this meeting to transcribe it and take my notes. If you'd rather I didn't record, let me know."
     },
     "delete": {
-      "action": "Delete meeting",
-      "title": "Delete this meeting?",
-      "body": "The audio, transcript, typed notes and notes leave this computer for good. This cannot be undone.",
+      "title": "Delete for good?",
+      "body": "The transcript, typed notes and notes leave this computer. This cannot be undone.",
       "confirm": "Delete for good",
       "cancel": "Cancel"
+    },
+    "trash": {
+      "action": "Move to trash",
+      "confirm": {
+        "title": "Move to trash?",
+        "body": "The audio is deleted now and does not come back. The transcript, typed notes and notes stay in the trash for 30 days.",
+        "confirm": "Move to trash"
+      },
+      "moved": "Meeting moved to trash",
+      "undo": "Undo",
+      "restored": "Meeting restored",
+      "link": "Trash ({{count}})",
+      "title": "Trash",
+      "empty": "Nothing in the trash",
+      "today": "deleted today",
+      "since_one": "deleted 1 day ago",
+      "since_other": "deleted {{count}} days ago",
+      "restore": "Restore",
+      "deleteForever": "Delete for good",
+      "footer": "Meetings in the trash for more than 30 days are deleted automatically."
     },
     "recover": {
       "title": "Recover the recording from {{time}} ({{minutes}} min)?",

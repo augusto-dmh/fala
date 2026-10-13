@@ -1,9 +1,9 @@
 import { AudioLines, ChevronDown } from "lucide-react";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { MeetingStatus } from "@/bindings";
 import { Button } from "../ui/Button";
 import { clock, type Translate } from "./meetingModel";
-import { useDismiss } from "../../hooks/useDismiss";
+import { useMenuPopover } from "./TemplateSelect";
 
 /** The recording of this session, while it records, stops or is processed. */
 export interface LiveControls {
@@ -31,17 +31,17 @@ export interface SessionBarProps {
   /** Why "Gerar notas" is off, when it is for lack of something the person can fix. */
   generateHint?: string;
   onGenerate: () => void;
-  /** The notes template picker, behind the arrow of "Gerar notas" (and next to "Gravar"). */
+  /** The notes template picker next to "Gravar" in a draft. */
   templateSelect: ReactNode;
+  /** The templates as menu items behind the arrow of "Gerar notas"; `close` shuts the menu
+   *  after a pick. */
+  templateMenu: (close: () => void) => ReactNode;
   t: Translate;
 }
 
-/** "Gerar notas" with the template behind its arrow. */
+/** "Gerar notas" with the templates as the items of its arrow's menu. */
 function GenerateButton(props: SessionBarProps) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => setOpen(false), []);
-  useDismiss(open, close, box);
+  const { open, setOpen, close, box } = useMenuPopover();
   return (
     <div ref={box} className="relative flex">
       <Button
@@ -55,14 +55,15 @@ function GenerateButton(props: SessionBarProps) {
       <Button
         className="rounded-s-none border-s-on-accent/30 px-2"
         aria-label={props.t("meeting.view.template")}
+        aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <ChevronDown size={16} strokeWidth={1.5} aria-hidden="true" />
       </Button>
       {open && (
-        <div className="absolute end-0 bottom-full z-20 mb-2 rounded-xl border border-border bg-surface-1 p-3 shadow-lg">
-          {props.templateSelect}
+        <div className="absolute end-0 bottom-full z-20 mb-2 rounded-xl border border-border bg-surface-1 p-1 shadow-lg">
+          {props.templateMenu(close)}
         </div>
       )}
     </div>

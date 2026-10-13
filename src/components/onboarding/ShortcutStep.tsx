@@ -1,6 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
+import { unheardKey } from "./onboardingModel";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
 import { ShortcutInput } from "../settings/ShortcutInput";
 import { ShortcutActivationSetting } from "../settings/ShortcutActivation";
@@ -25,6 +27,19 @@ export const ShortcutStep: React.FC<ShortcutStepProps> = ({
     ? formatKeyCombination(binding, "unknown").split(" + ")
     : [];
   const toggle = getSetting("shortcut_activation") === "toggle";
+  // A test dictation that came out empty says why under the field, not only in the overlay
+  // at the bottom of the screen; the next text in the field clears it.
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (preview) return;
+    const unlisten = listen<{ muted: boolean }>(
+      "dictation-unheard",
+      ({ payload }) => setNotice(unheardKey(payload.muted)),
+    );
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [preview]);
 
   // The shortcut has to work before the main window: register it (and the
   // paste backend) now. Both commands are no-ops once done.
@@ -58,9 +73,19 @@ export const ShortcutStep: React.FC<ShortcutStepProps> = ({
           autoFocus
           rows={3}
           aria-label={t("onboarding.shortcut.testLabel")}
+          aria-describedby={notice ? "shortcut-test-notice" : undefined}
           placeholder={t("onboarding.shortcut.testPlaceholder")}
+          onInput={() => setNotice(null)}
           className="w-full resize-none rounded-md border border-border bg-surface-1 px-3 py-2 text-body text-text placeholder:text-text-3 focus:outline-none focus:border-b-accent focus:shadow-[inset_0_-1px_0_var(--color-accent)]"
         />
+        {/* Always in the page, so a screen reader announces the text when it appears. */}
+        <p
+          id="shortcut-test-notice"
+          role="status"
+          className="text-caption text-warn empty:sr-only"
+        >
+          {notice ? t(notice) : ""}
+        </p>
         {!modelReady && (
           <p className="text-caption text-text-2">
             {t("onboarding.shortcut.waitModel")}
