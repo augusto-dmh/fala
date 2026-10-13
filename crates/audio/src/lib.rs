@@ -8,7 +8,8 @@
 //! Reunião: `meeting::MeetingRecorder` grava mic e sistema (`SystemAudio`) num WAV estéreo 48 kHz
 //! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo).
 //! Um dispositivo, um stream: `MicHub` abre o `Mic` uma vez e entrega um `MicTap` a cada
-//! consumidor (ditado, gravador de reunião), cada um no seu canal (ADR-0015).
+//! consumidor (ditado, gravador de reunião), cada um no seu canal (ADR-0015). Durante um ditado, o
+//! `MeetingRecorder` zera o canal do mic no intervalo do ditado antes de escrevê-lo.
 //! Atividade: `platform_activity` diz quais processos capturam o microfone agora (só leitura), o
 //! sinal da detecção de call.
 
@@ -29,8 +30,8 @@ pub use capture::{
 };
 pub use hub::{MicHub, MicSource, MicTap};
 pub use meeting::{
-    ChannelStats, MeetingRecorder, MeetingWav, SystemAudio, FLUSH_EVERY, LAG_FRAMES,
-    MAX_BACKLOG_FRAMES, MEETING_RATE,
+    ChannelStats, MeetingRecorder, MeetingWav, OmittedSpan, SystemAudio, FLUSH_EVERY, LAG_FRAMES,
+    MAX_BACKLOG_FRAMES, MEETING_RATE, MIC_HOLD,
 };
 pub use meeting::{OutputDevice, OutputMeter, OutputPeak};
 pub use mic::Mic;
