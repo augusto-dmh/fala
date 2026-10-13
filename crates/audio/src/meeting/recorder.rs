@@ -63,6 +63,9 @@ struct Hold {
     first: u64,
     capacity: usize,
     rate: u32,
+    /// Uma amostra da fonte e o frame de saída do mic (48 kHz) que ela vira: o ponto de partida
+    /// da conta, que muda quando o mic passa a outra taxa.
+    origin: (u64, u64),
     omits: Vec<Omit>,
     closed: Vec<OmittedSpan>,
     batch: Vec<f32>,
@@ -73,12 +76,28 @@ impl Hold {
         Self {
             samples: VecDeque::new(),
             first: 0,
-            capacity: (u128::from(rate) * MIC_HOLD.as_millis() / 1_000) as usize,
+            capacity: capacity(rate),
             rate,
+            origin: (0, 0),
             omits: Vec::new(),
             closed: Vec::new(),
             batch: Vec::new(),
         }
+    }
+
+    /// O mic passa a vir em `rate`, com o hold já vazio e o resampler velho esvaziado em
+    /// `output` frames: um intervalo ainda aberto segue zerando a fonte nova.
+    fn switch_rate(&mut self, rate: u32, output: u64) {
+        let old = u128::from(self.rate.max(1));
+        let first = self.first;
+        for omit in &mut self.omits {
+            if let Some(end) = omit.end.filter(|e| *e > first) {
+                omit.end = Some(first + (u128::from(end - first) * u128::from(rate) / old) as u64);
+            }
+        }
+        self.rate = rate;
+        self.capacity = capacity(rate);
+        self.origin = (first, output);
     }
 
     /// Índice da próxima amostra a entrar.
@@ -114,9 +133,10 @@ impl Hold {
         }
     }
 
-    /// Solta para `out` o que passou do hold (tudo, com `all`), zerado onde um intervalo cobre.
-    /// `wav_of` diz em que frame do WAV cai uma amostra da fonte que sai agora.
-    fn release(&mut self, all: bool, wav_of: impl Fn(u64) -> u64) -> &[f32] {
+    /// Solta para `out` o que passou do hold (tudo, com `all`), zerado onde um intervalo cobre;
+    /// com `close`, o fim da gravação fecha os intervalos abertos. `wav_of` diz em que frame do
+    /// WAV cai uma amostra da fonte que sai agora.
+    fn release(&mut self, all: bool, close: bool, wav_of: impl Fn(u64) -> u64) -> &[f32] {
         let keep = if all { 0 } else { self.capacity };
         let n = self.samples.len().saturating_sub(keep);
         self.batch.clear();
@@ -133,7 +153,7 @@ impl Hold {
                 omit.wav_start.get_or_insert_with(|| wav_of(start));
             }
             // Fechado e todo já solto (ou no fim da gravação): vira um trecho do WAV.
-            let over = omit.end.is_some_and(|e| e <= to) || (all && omit.start < to);
+            let over = omit.end.is_some_and(|e| e <= to) || (close && omit.start < to);
             if over {
                 done += 1;
                 if let Some(wav_start) = omit.wav_start {
@@ -146,11 +166,16 @@ impl Hold {
             }
         }
         self.omits.drain(..done);
-        if all {
+        if close {
             self.omits.clear();
         }
         &self.batch
     }
+}
+
+/// Amostras do hold na taxa `rate`.
+fn capacity(rate: u32) -> usize {
+    (u128::from(rate) * MIC_HOLD.as_millis() / 1_000) as usize
 }
 
 struct Channel {
@@ -241,7 +266,7 @@ impl MeetingRecorder {
 
     pub fn push_mic(&mut self, samples: &[f32]) -> Result<(), AudioError> {
         self.hold.samples.extend(samples);
-        self.release_mic(false)
+        self.release_mic(false, false)
     }
 
     /// Um ditado começou: o canal do mic é zerado a partir de `lookback` antes da última amostra
@@ -265,16 +290,21 @@ impl MeetingRecorder {
         std::mem::take(&mut self.hold.closed)
     }
 
-    /// Solta o que passou do hold (tudo, com `all`) para o resample do mic.
-    fn release_mic(&mut self, all: bool) -> Result<(), AudioError> {
-        let rate = u128::from(self.hold.rate.max(1));
+    /// Solta o que passou do hold (tudo, com `all`) para o resample do mic; `close` como em
+    /// `Hold::release`.
+    fn release_mic(&mut self, all: bool, close: bool) -> Result<(), AudioError> {
         let front = self.mic.stats.delivered - self.mic.queue.len() as u64;
         let written = self.written;
-        let wav_of = |i: u64| {
-            let k = (u128::from(i) * u128::from(MEETING_RATE) / rate) as u64;
-            (written + k).saturating_sub(front)
+        let hold = &mut self.hold;
+        let (origin, rate) = (hold.origin, hold.rate);
+        // O frame de saída do mic (antes de ir ao WAV) que a amostra `i` da fonte vira.
+        let output_of = |i: u64| {
+            let k = u128::from(i.saturating_sub(origin.0)) * u128::from(MEETING_RATE)
+                / u128::from(rate.max(1));
+            origin.1 + k as u64
         };
-        let batch = self.hold.release(all, wav_of);
+        let wav_of = |i: u64| (written + output_of(i)).saturating_sub(front);
+        let batch = hold.release(all, close, wav_of);
         self.mic.push(batch)
     }
 
@@ -291,10 +321,13 @@ impl MeetingRecorder {
     }
 
     /// O mic reaberto (depois de uma suspensão do SO) entrega noutra taxa: igual a
-    /// [`Self::set_system_rate`].
+    /// [`Self::set_system_rate`]. O hold sai todo pelo resampler velho, já zerado, e um ditado
+    /// em curso segue zerando o mic novo.
     pub fn set_mic_rate(&mut self, rate: u32) -> Result<(), AudioError> {
+        self.release_mic(true, false)?;
         self.mic.drain_resampler()?;
         self.mic.resampler = Resampler::to(rate, MEETING_RATE)?;
+        self.hold.switch_rate(rate, self.mic.stats.delivered);
         Ok(())
     }
 
@@ -328,7 +361,7 @@ impl MeetingRecorder {
         mut self,
         now: Duration,
     ) -> Result<(ChannelStats, ChannelStats, Vec<OmittedSpan>), AudioError> {
-        self.release_mic(true)?;
+        self.release_mic(true, true)?;
         self.mic.drain_resampler()?;
         self.system.drain_resampler()?;
         self.write_to(frames_at(now))?;
@@ -798,5 +831,50 @@ mod tests {
         let edge = 480;
         assert!(zeros(&left[start + edge..end - edge]));
         assert!(left[start - 2 * edge..start - edge].iter().any(|&x| x != 0));
+    }
+
+    #[test]
+    fn a_dictation_across_a_mic_rate_switch_stays_zeroed() {
+        let path = tmp("omit-switch.wav");
+        let wav = MeetingWav::create(&path).unwrap();
+        let mut rec = MeetingRecorder::new(48_000, 48_000, wav).unwrap();
+        let tick = |rec: &mut MeetingRecorder, step: u64| {
+            rec.push_system(&vec![0.0; 480]).unwrap();
+            rec.tick(Duration::from_millis(step * 10)).unwrap();
+        };
+        // 2 s a 48 kHz, o ditado começa a 1,5 s; o mic reabre a 16 kHz e o ditado acaba a 3 s.
+        for step in 1..=200u64 {
+            rec.push_mic(&vec![0.25; 480]).unwrap();
+            if step == 150 {
+                rec.begin_omit(LOOKBACK);
+            }
+            tick(&mut rec, step);
+        }
+        rec.set_mic_rate(16_000).unwrap();
+        for step in 201..=400u64 {
+            rec.push_mic(&vec![0.25; 160]).unwrap();
+            if step == 300 {
+                rec.end_omit(MARGIN);
+            }
+            tick(&mut rec, step);
+        }
+        let (mic, _, omitted) = rec.finish_omitted(Duration::from_secs(4)).unwrap();
+        assert_eq!(mic.omit_late, 0);
+        let (left, _) = read(&path);
+        let [span] = omitted[..] else {
+            panic!("{omitted:?}")
+        };
+        let (start, end) = (72_000 - 19_200, 144_000 + 2_400);
+        assert_eq!(span.start, start as u64);
+        assert!(span.end.abs_diff(end as u64) <= 480, "{span:?}");
+        // Depois da troca o filtro de 16 kHz vaza até ~20 ms das amostras de fora na borda.
+        assert!(
+            zeros(&left[start..end - 960]),
+            "zerado dos dois lados da troca"
+        );
+        assert!(left[..start].iter().all(|&x| x == to_i16(0.25)));
+        let after = &left[end + 960..end + 24_000];
+        let want = i32::from(to_i16(0.25));
+        assert!(after.iter().all(|&x| (i32::from(x) - want).abs() <= 2));
     }
 }
