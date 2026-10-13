@@ -17,7 +17,7 @@ hotkey ─▶ audio (mic + pré-buffer) ─▶ VAD ─▶ asr ─▶ postproc �
 |---|---|---|
 | `crates/core` | `fala-core` | tipos (`Event`, `Settings`, `Utterance`, `Session`), config, dicionário pessoal, erros |
 | `crates/hotkey` | `fala-hotkey` | atalho global com press/release: trait `GlobalHotkey` e `platform_hotkey`. Windows: hook `WH_KEYBOARD_LL` do `handy-keys`. Linux: `Unsupported` até o portal GlobalShortcuts da fase 3 |
-| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013), VAD Silero, resample, gravador de reunião, quem captura o mic agora (`AudioActivity`: `IAudioSessionManager2` no Windows, `Unsupported` no Linux) |
+| `crates/audio` | `fala-audio` | captura (cpal; loopback WASAPI; monitor do PipeWire pelo plugin ALSA, ADR-0013) com um único stream por dispositivo de entrada e fan-out para o ditado e o gravador (`MicHub`, ADR-0015), VAD Silero, resample, gravador de reunião, quem captura o mic agora (`AudioActivity`: `IAudioSessionManager2` no Windows, `Unsupported` no Linux) |
 | `crates/asr` | `fala-asr` | trait `Transcriber`. Parakeet local; backends de nuvem para reunião |
 | `crates/postproc` | `fala-postproc` | trait `Formatter`. Regras pt-BR mais o LLM opcional |
 | `crates/secrets` | `fala-secrets` | chaves de API no keyring do SO (`ApiKey`, `SecretStore`), ADR-0008 |
