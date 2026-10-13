@@ -3,7 +3,8 @@
 // do limite de sessão (`.specs/features/session-limit/checks.md`, C18) e do estado de carga do
 // modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`) e da pílula em repouso
 // (`.specs/features/pill-idle/checks.md`, C6 a C9) e da falha de cola e do clique na reunião
-// (`.specs/features/pill-polish/checks.md`, C3 a C5).
+// (`.specs/features/pill-polish/checks.md`, C3 a C5) e do menu da pílula
+// (`.specs/features/pill-menu/checks.md`).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -824,6 +825,32 @@ const idleCss = read("./IdlePill.css");
     /listen<string \| null>\("open-meeting", \(event\) => \{\s*if \(event\.payload\) void open\(event\.payload\);/,
   );
   ok("pill-polish C5");
+}
+
+// pill-menu C4 - o clique direito na pílula em repouso abre o menu nativo, não o do webview, e
+// "Configurações" abre Configurações pelo evento open-settings.
+{
+  const at = overlaySource.indexOf('if (state === "idle") {');
+  const idle = overlaySource.slice(at, overlaySource.indexOf("\n  }\n", at));
+  assert.match(
+    idle,
+    /onContextMenu=\{\(event\) => \{[^}]*event\.preventDefault\(\);\s*void commands\.openPillMenu\(\);/,
+  );
+  // Só a pílula em repouso tem menu: o ditado não perde o app de destino.
+  assert.equal(overlaySource.split("onContextMenu=").length, 2);
+  const app = read("../App.tsx");
+  assert.match(
+    app,
+    /listen\("open-settings", \(\) => \{\s*setDestination\("settings"\);\s*setSettingsView\("general"\);/,
+  );
+  const rust = read("../../apps/desktop/src/lib.rs");
+  assert.match(
+    rust,
+    /tray::PILL_SETTINGS_ID => \{\s*show_main_window\(app\);\s*let _ = app\.emit_to\("main", "open-settings", \(\)\);/,
+  );
+  assert.equal(locale("pt").tray.hidePillHour, "Ocultar por 1 hora");
+  assert.equal(locale("en").tray.hidePillHour, "Hide for 1 hour");
+  ok("pill-menu C4");
 }
 
 console.log("pill: all assertions passed");

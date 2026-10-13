@@ -431,6 +431,11 @@ const RecordingOverlay: React.FC = () => {
         className={`ov-stage ${position}`}
         onMouseEnter={() => hover(true)}
         onMouseLeave={() => hover(false)}
+        onContextMenu={(event) => {
+          // The pill menu is native (`open_pill_menu`), not the webview's.
+          event.preventDefault();
+          void commands.openPillMenu();
+        }}
       >
         <IdlePill
           hover={idleHover}
