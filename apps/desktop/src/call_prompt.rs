@@ -34,6 +34,8 @@ pub const COUNTDOWN: Duration = Duration::from_secs(20);
 const MAX_ON_SCREEN: Duration = Duration::from_secs(120);
 /// "Gravou por engano?" stays a minute.
 const MISTAKE_COUNTDOWN: Duration = Duration::from_secs(60);
+/// The wake card only informs: 10 s, like the definition's pill notice.
+const WOKE_ON_SCREEN: Duration = Duration::from_secs(10);
 /// Event with the [`CallPromptPayload`], sent to the prompt window.
 const PROMPT_EVENT: &str = "call-prompt";
 
@@ -54,6 +56,8 @@ pub enum CallPromptKind {
     Mistake,
     /// "Nada foi gravado": the empty session is already gone.
     NothingRecorded,
+    /// "A gravação continuou depois da suspensão" with how long the PC slept: [Fechar].
+    Woke,
 }
 
 /// What the card shows.
@@ -67,7 +71,7 @@ pub struct CallPromptPayload {
     pub countdown_ms: u32,
     /// The session a "Gravou por engano?" is about.
     pub session_id: Option<String>,
-    /// Seconds recorded, for "Gravou por engano?".
+    /// Seconds recorded, for "Gravou por engano?"; seconds asleep, for the wake card.
     pub seconds: Option<u32>,
 }
 
@@ -162,7 +166,7 @@ pub(crate) fn answer_action(
         // Recording again is the explicit start path, consent first (ADR-0005).
         (CallPromptKind::SilenceStopped, A::RecordAgain) => Some(AnswerAction::Record),
         (
-            CallPromptKind::SilenceStopped | CallPromptKind::NothingRecorded,
+            CallPromptKind::SilenceStopped | CallPromptKind::NothingRecorded | CallPromptKind::Woke,
             A::Dismiss | A::Expired,
         ) => Some(AnswerAction::Close),
         (CallPromptKind::Mistake, A::Keep | A::Discard) => {
@@ -314,6 +318,16 @@ pub fn show_nothing_recorded(app: &AppHandle) {
         app,
         CallPromptPayload::meeting(CallPromptKind::NothingRecorded, COUNTDOWN),
     );
+}
+
+/// "The recording went on after the PC slept", for 10 s.
+pub fn show_woke(app: &AppHandle, slept: Duration) {
+    if current().is_some_and(|c| c.kind == CallPromptKind::Quit) {
+        return;
+    }
+    let mut payload = CallPromptPayload::meeting(CallPromptKind::Woke, WOKE_ON_SCREEN);
+    payload.seconds = Some(u32::try_from(slept.as_secs()).unwrap_or(u32::MAX));
+    show_payload(app, payload);
 }
 
 /// "Stop the recording? Quitting Fala stops it." for the tray's "Quit".
@@ -641,6 +655,14 @@ mod tests {
         );
         for stale in [A::Record, A::Stop, A::Discard] {
             assert_eq!(answer_action(Some(&nothing), stale), None);
+        }
+
+        let woke = CallPromptPayload::meeting(K::Woke, WOKE_ON_SCREEN);
+        for close in [A::Dismiss, A::Expired] {
+            assert_eq!(answer_action(Some(&woke), close), Some(AnswerAction::Close));
+        }
+        for stale in [A::Record, A::Stop, A::KeepRecording] {
+            assert_eq!(answer_action(Some(&woke), stale), None);
         }
     }
 
