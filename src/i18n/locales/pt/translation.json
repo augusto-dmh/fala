@@ -1,7 +1,7 @@
 {
   "tray": {
     "settings": "Configurações...",
-    "checkUpdates": "Verificar Atualizações...",
+    "checkUpdates": "Verificar atualizações...",
     "copyLastTranscript": "Copiar o último ditado",
     "pasteLastTranscript": "Colar o último ditado",
     "unloadModel": "Descarregar modelo",
@@ -94,7 +94,7 @@
     },
     "snippets": {
       "title": "Snippets",
-      "description": "Diga o gatilho e o Fala insere o texto, como está: assinatura, link da agenda, endereço. O gatilho precisa de duas palavras ou mais e vale sem diferenciar maiúsculas nem acentos. {data}, {data_extenso} e {hora} viram a data e a hora do ditado. O texto do snippet nunca vai para a IA de formatação.",
+      "description": "Diga o gatilho e o Fala insere o texto, como está: assinatura, link da agenda, endereço. O gatilho precisa de duas palavras ou mais e vale sem diferenciar maiúsculas nem acentos. {data}, {data_extenso} e {hora} viram a data, a data por extenso e a hora do ditado. O texto do snippet nunca vai para a IA de formatação.",
       "spokenPlaceholder": "minha assinatura",
       "writtenPlaceholder": "Augusto Henriques\nfala.dev",
       "spokenLabel": "Gatilho",
@@ -255,7 +255,7 @@
       "description": "Grave calls e aulas e receba as notas. Teste o som e deixe as chaves prontas, ou faça isso depois em Configurações.",
       "micLabel": "Seu microfone",
       "systemLabel": "Som do computador",
-      "systemDescription": "Toque um vídeo ou entre numa call e veja a barra subir. Nada é gravado.",
+      "systemDescription": "Toque um vídeo ou entre numa chamada e veja a barra subir. Nada é gravado.",
       "accept": "Entendi",
       "accepted": "Aviso aceito",
       "anthropicLabel": "Chave da Anthropic",
@@ -277,12 +277,12 @@
     "extractingGeneric": "Extraindo...",
     "downloading": "Baixando {{percentage}}%",
     "downloadingMultiple": "Baixando {{count}} modelos...",
-    "modelReady": "Modelo Pronto",
+    "modelReady": "Modelo pronto",
     "loading": "Carregando {{modelName}}...",
     "loadingGeneric": "Carregando...",
-    "modelError": "Erro no Modelo",
-    "modelUnloaded": "Modelo Descarregado",
-    "noModelDownloadRequired": "Sem Modelo - Download Necessário",
+    "modelError": "Erro no modelo",
+    "modelUnloaded": "Modelo descarregado",
+    "noModelDownloadRequired": "Sem modelo - download necessário",
     "deleteModel": "Excluir {{modelName}}",
     "switching": "Alternando...",
     "downloadSpeed": "{{speed}} MB/s",
@@ -316,15 +316,15 @@
         "unset": "Sem atalho",
         "bindings": {
           "transcribe": {
-            "name": "Atalho de Transcrição",
+            "name": "Atalho de transcrição",
             "description": "O atalho de teclado para gravar e transcrever sua voz."
           },
           "cancel": {
-            "name": "Atalho de Cancelar",
+            "name": "Atalho de cancelar",
             "description": "O atalho de teclado para cancelar a gravação atual."
           },
           "transcribe_with_post_process": {
-            "name": "Tecla de Pós-Processamento",
+            "name": "Tecla de pós-processamento",
             "description": "Opcional: Uma tecla de atalho dedicada que sempre aplica pós-processamento com IA à sua transcrição."
           },
           "paste_last": {
@@ -367,13 +367,13 @@
       }
     },
     "models": {
-      "title": "Modelos de Transcrição",
+      "title": "Modelos de transcrição",
       "description": "Selecione um modelo de transcrição ou baixe modelos adicionais. Diferentes modelos oferecem diferentes níveis de precisão e velocidade.",
       "deleteConfirm": "Tem certeza de que deseja excluir {{modelName}}? Você precisará baixá-lo novamente para usá-lo.",
       "deleteActiveConfirm": "{{modelName}} é o seu modelo ativo. Excluí-lo interromperá as transcrições até que você selecione um novo modelo. Tem certeza?",
-      "deleteTitle": "Excluir Modelo",
+      "deleteTitle": "Excluir modelo",
       "filters": {
-        "allLanguages": "Todos os Idiomas",
+        "allLanguages": "Todos os idiomas",
         "streaming": "Filtrar modelos compatíveis com transcrição ao vivo",
         "translation": "Filtrar modelos compatíveis com tradução para inglês"
       },
@@ -500,7 +500,7 @@
         "channel": "Canal {{n}}"
       },
       "audioFeedback": {
-        "label": "Feedback de Áudio",
+        "label": "Feedback de áudio",
         "description": "Reproduzir som quando a gravação iniciar e parar"
       },
       "pauseMediaWhileRecording": {
@@ -512,7 +512,7 @@
         "description": "Pausa a música e os vídeos que estão tocando enquanto a reunião grava, para que não entrem na gravação, e retoma só o que o Fala pausou"
       },
       "outputDevice": {
-        "title": "Dispositivo de Saída",
+        "title": "Dispositivo de saída",
         "description": "Selecione seu dispositivo de saída de áudio preferido para sons de feedback",
         "placeholder": "Selecionar dispositivo de saída...",
         "loading": "Carregando..."
@@ -520,7 +520,8 @@
       "volume": {
         "title": "Volume",
         "description": "Ajustar o volume dos sons de feedback de áudio"
-      }
+      },
+      "defaultDevice": "Automático"
     },
     "advanced": {
       "groups": {
@@ -531,7 +532,7 @@
         "experimental": "Experimental"
       },
       "experimentalToggle": {
-        "label": "Recursos Experimentais",
+        "label": "Recursos experimentais",
         "description": "Ativar recursos experimentais que ainda estão em desenvolvimento."
       },
       "lazyStreamClose": {
@@ -541,7 +542,7 @@
       "acceleration": {
         "transcribe": {
           "title": "Aceleração Whisper",
-          "description": "Aceleração por hardware para modelos Whisper. Auto usa GPU se disponível (Metal no macOS, Vulkan no Windows/Linux)."
+          "description": "Aceleração por hardware para modelos Whisper. Auto usa a GPU (Vulkan) quando houver."
         },
         "ort": {
           "title": "Aceleração ONNX",
@@ -552,11 +553,11 @@
         }
       },
       "startHidden": {
-        "label": "Iniciar Oculto",
+        "label": "Iniciar oculto",
         "description": "Iniciar na bandeja do sistema sem abrir a janela."
       },
       "autostart": {
-        "label": "Iniciar na Inicialização",
+        "label": "Iniciar na inicialização",
         "description": "Iniciar automaticamente o Fala quando você fizer login no seu computador."
       },
       "showTrayIcon": {
@@ -566,7 +567,7 @@
       "overlay": {
         "style": {
           "title": "Sobreposição",
-          "description": "Escolha a sobreposição de gravação: 'Nenhum' a oculta, 'Minimalista' mostra um indicador compacto, 'Ao vivo' mostra a transcrição em tempo real enquanto você fala (apenas modelos com suporte a streaming — procure o selo 'Streaming' no seletor de modelos). No Linux, recomenda-se 'Nenhum'.",
+          "description": "Escolha a sobreposição de gravação: 'Nenhum' a oculta, 'Minimalista' mostra um indicador compacto, 'Ao vivo' mostra a transcrição em tempo real enquanto você fala (apenas modelos com suporte a streaming — procure o selo 'Streaming' no seletor de modelos).",
           "options": {
             "none": "Nenhum",
             "minimal": "Minimalista",
@@ -574,8 +575,8 @@
           }
         },
         "position": {
-          "title": "Posição da Sobreposição",
-          "description": "Exibir sobreposição de feedback visual durante gravação e transcrição. No Linux, 'Nenhum' é recomendado.",
+          "title": "Posição da sobreposição",
+          "description": "Onde a sobreposição aparece na tela durante a gravação e a transcrição.",
           "options": {
             "bottom": "Inferior",
             "top": "Superior"
@@ -587,12 +588,12 @@
         "description": "Deixa uma pílula discreta na tela entre os ditados; passe o mouse para ver o atalho e clique para abrir o Fala. Ela some enquanto um app está em tela cheia."
       },
       "pasteMethod": {
-        "title": "Método de Colar",
+        "title": "Método de colar",
         "description": "Escolha como o texto é inserido. Direto: simula digitação via entrada do sistema. Nenhum: ignora colar, apenas atualiza histórico/área de transferência.",
         "options": {
-          "clipboard": "Área de Transferência ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "Área de Transferência (Ctrl+Shift+V)",
-          "clipboardShiftInsert": "Área de Transferência (Shift+Insert)",
+          "clipboard": "Área de transferência ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "Área de transferência (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "Área de transferência (Shift+Insert)",
           "direct": "Direto",
           "none": "Nenhum",
           "externalScript": "Script externo"
@@ -603,20 +604,20 @@
         "title": "Ferramenta de digitação",
         "description": "Escolha qual ferramenta de digitação do Linux usar para o método de colagem direta. Auto detectará e usará automaticamente a melhor ferramenta disponível para o seu sistema.",
         "options": {
-          "auto": "Auto (Recomendado)"
+          "auto": "Auto (recomendado)"
         }
       },
       "clipboardHandling": {
-        "title": "Manipulação da Área de Transferência",
+        "title": "Manipulação da área de transferência",
         "description": "Não Modificar Área de Transferência preserva o conteúdo atual da área de transferência após a transcrição. Copiar para Área de Transferência deixa o resultado da transcrição na área de transferência após colar.",
         "options": {
-          "dontModify": "Não Modificar Área de Transferência",
-          "copyToClipboard": "Copiar para Área de Transferência"
+          "dontModify": "Não modificar área de transferência",
+          "copyToClipboard": "Copiar para área de transferência"
         }
       },
       "autoSubmit": {
         "title": "Envio automático",
-        "description": "Envia automaticamente a combinação de teclas selecionada após a inserção do texto. Cmd+Enter aplica-se no macOS, enquanto Windows/Linux usam Super+Enter.",
+        "description": "Envia automaticamente a combinação de teclas escolhida depois que o texto é inserido.",
         "options": {
           "off": "Desativado",
           "enter": "Enter",
@@ -626,11 +627,11 @@
         }
       },
       "translateToEnglish": {
-        "label": "Traduzir para Inglês",
+        "label": "Traduzir para inglês",
         "description": "Traduzir automaticamente fala de outros idiomas para inglês durante a transcrição."
       },
       "modelUnload": {
-        "title": "Descarregar Modelo",
+        "title": "Descarregar modelo",
         "description": "Liberar automaticamente memória GPU/CPU quando o modelo não for usado pelo tempo especificado",
         "options": {
           "never": "Nunca",
@@ -640,7 +641,7 @@
           "min10": "Após 10 minutos",
           "min15": "Após 15 minutos",
           "hour1": "Após 1 hora",
-          "sec15": "Após 15 segundos (Depuração)"
+          "sec15": "Após 15 segundos (depuração)"
         }
       },
       "customWords": {
@@ -665,7 +666,7 @@
         "title": "Tecla de atalho"
       },
       "api": {
-        "title": "API (Compatível com OpenAI)",
+        "title": "API (compatível com OpenAI)",
         "provider": {
           "title": "Provedor",
           "description": "Selecione um provedor compatível com OpenAI."
@@ -674,7 +675,7 @@
           "unavailable": "Apple Intelligence não está disponível neste dispositivo. Requer um Mac Apple Silicon executando macOS Tahoe (26.0) ou posterior com Apple Intelligence habilitado nas Configurações do Sistema."
         },
         "baseUrl": {
-          "title": "URL Base",
+          "title": "URL base",
           "description": "URL base da API para o provedor selecionado. Apenas o provedor personalizado pode ser editado.",
           "placeholder": "https://api.openai.com/v1"
         },
@@ -695,20 +696,20 @@
       "prompts": {
         "title": "Prompt",
         "selectedPrompt": {
-          "title": "Prompt Selecionado",
+          "title": "Prompt selecionado",
           "description": "Selecione um modelo para refinar transcrições ou crie um novo. Use ${output} dentro do texto do prompt para referenciar a transcrição capturada."
         },
         "noPrompts": "Nenhum prompt disponível",
         "selectPrompt": "Selecionar um prompt",
-        "createNew": "Criar Novo Prompt",
-        "promptLabel": "Rótulo do Prompt",
+        "createNew": "Criar novo prompt",
+        "promptLabel": "Rótulo do prompt",
         "promptLabelPlaceholder": "Digite o nome do prompt",
-        "promptInstructions": "Instruções do Prompt",
+        "promptInstructions": "Instruções do prompt",
         "promptInstructionsPlaceholder": "Escreva as instruções para executar após a transcrição. Exemplo: Melhore a gramática e clareza do seguinte texto: ${output}",
         "promptTip": "Dica: Use <code>${output}</code> para inserir o texto transcrito no seu prompt.",
-        "updatePrompt": "Atualizar Prompt",
-        "deletePrompt": "Excluir Prompt",
-        "createPrompt": "Criar Prompt",
+        "updatePrompt": "Atualizar prompt",
+        "deletePrompt": "Excluir prompt",
+        "createPrompt": "Criar prompt",
         "cancel": "Cancelar",
         "selectToEdit": "Selecione um prompt acima para visualizar e editar seus detalhes.",
         "createFirst": "Clique em 'Criar Novo Prompt' acima para criar seu primeiro prompt de pós-processamento."
@@ -716,7 +717,7 @@
     },
     "history": {
       "title": "Histórico",
-      "openFolder": "Abrir Pasta de Gravações",
+      "openFolder": "Abrir pasta de gravações",
       "loading": "Carregando histórico...",
       "empty": "Nenhum ditado ainda.",
       "emptyHold": "Nenhum ditado ainda. Segure {{keys}} e fale.",
@@ -753,17 +754,17 @@
     "debug": {
       "title": "Depuração",
       "logDirectory": {
-        "title": "Diretório de Logs",
+        "title": "Diretório de logs",
         "description": "Local onde os arquivos de log são armazenados"
       },
       "logLevel": {
-        "title": "Nível de Log",
+        "title": "Nível de log",
         "description": "Definir a verbosidade do registro"
       },
       "liveLogs": {
-        "title": "Logs ao Vivo",
+        "title": "Logs ao vivo",
         "description": "Transmita os logs do aplicativo em tempo real para diagnosticar problemas sem abrir o arquivo de log. Apenas os logs emitidos enquanto este painel estiver aberto são exibidos; respeita a configuração de Nível de Log acima.",
-        "live": "Ao Vivo",
+        "live": "Ao vivo",
         "paused": "Pausado",
         "pause": "Pausar",
         "resume": "Retomar",
@@ -772,16 +773,16 @@
         "empty": "Aguardando logs… As entradas aparecem aqui à medida que o app as emite."
       },
       "updateChecks": {
-        "label": "Verificar Atualizações",
+        "label": "Verificar atualizações",
         "description": "Verificar automaticamente novas versões do Fala",
         "lockedDescription": "Desativado pela configuração do sistema (FALA_DISABLE_UPDATER)"
       },
       "soundTheme": {
-        "label": "Tema de Som",
+        "label": "Tema de som",
         "description": "Escolha um tema de som para feedback de início e parada de gravação"
       },
       "wordCorrectionThreshold": {
-        "title": "Limite de Correção de Palavras",
+        "title": "Limite de correção de palavras",
         "description": "Sensibilidade para correções de palavras personalizadas"
       },
       "historyLimit": {
@@ -800,11 +801,11 @@
         "placeholder": "Selecionar período de retenção..."
       },
       "alwaysOnMicrophone": {
-        "label": "Microfone Sempre Ativo",
+        "label": "Microfone sempre ativo",
         "description": "Manter microfone ativo para resposta mais rápida"
       },
       "clamshellMicrophone": {
-        "title": "Microfone em Modo Fechado",
+        "title": "Microfone em modo fechado",
         "description": "Microfone a usar quando a tampa do laptop está fechada"
       },
       "postProcessingToggle": {
@@ -812,20 +813,20 @@
         "description": "Habilitar refinamento de texto com IA após a transcrição"
       },
       "muteWhileRecording": {
-        "label": "Silenciar Durante Gravação",
+        "label": "Silenciar durante gravação",
         "description": "Silenciar áudio do sistema durante a gravação"
       },
       "appendTrailingSpace": {
-        "label": "Adicionar Espaço Final",
+        "label": "Adicionar espaço final",
         "description": "Adicionar um espaço após a transcrição colada"
       },
       "keyboardImplementation": {
-        "title": "Implementação do Teclado",
+        "title": "Implementação do teclado",
         "description": "Escolha o sistema responsável pelos atalhos de teclado.",
         "bindingsReset": "Os atalhos de teclado eram incompatíveis e foram redefinidos para os padrões"
       },
       "paths": {
-        "appData": "Dados do App:",
+        "appData": "Dados do app:",
         "models": "Modelos:",
         "settings": "Configurações:"
       },
@@ -842,7 +843,7 @@
         "description": "Apenas no modo Automático: por quanto tempo (em milissegundos) o atalho precisa ficar pressionado para contar como segurar em vez de um toque. Diminua se a gravação continuar ativa após pressões curtas; aumente se toques intencionais forem tratados como segurar."
       },
       "reliablePaste": {
-        "title": "Colagem confiável (Beta)",
+        "title": "Colagem confiável (beta)",
         "description": "Restaura a área de transferência somente depois que o aplicativo de destino realmente lê a transcrição, em vez de após um atraso fixo. Serve para corrigir a colagem do conteúdo antigo da área de transferência quando o sistema está sobrecarregado. Requer um método de colar via área de transferência; apenas macOS e Windows."
       },
       "recordingBuffer": {
@@ -893,11 +894,11 @@
         "description": "Versão atual do Fala"
       },
       "appDataDirectory": {
-        "title": "Diretório de Dados do App",
+        "title": "Diretório de dados do app",
         "description": "Local onde o Fala armazena seus dados"
       },
       "sourceCode": {
-        "title": "Código Fonte",
+        "title": "Código fonte",
         "description": "Visualizar código fonte e contribuir",
         "button": "Ver no GitHub"
       },
@@ -943,7 +944,7 @@
           },
           "mcp": {
             "name": "Histórico para assistentes (MCP)",
-            "sends": "Ditados que não são dos apps sem IA e, com meetings = true, as reuniões que não são só locais (sem áudio), só para leitura, quando um assistente deste computador pede. Só com o mcp.toml ligado.",
+            "sends": "Seus ditados (menos os feitos nos apps sem IA) e, se você também liberar as reuniões, as que não ficam só neste computador, nunca o áudio delas. Só para leitura, e só quando um assistente deste computador pede. Desligado até você ligar no arquivo mcp.toml, na pasta de dados do Fala.",
             "destination": "O assistente local que você configurou, que pode mandá-los ao provedor dele"
           },
           "telemetry": {
@@ -980,7 +981,7 @@
     "checkingUpdates": "Verificando atualizações...",
     "updateAvailableShort": "Atualização disponível",
     "upToDate": "Atualizado",
-    "updateCheckingDisabled": "Verificação de Atualização Desabilitada",
+    "updateCheckingDisabled": "Verificação de atualização desabilitada",
     "downloading": "Baixando... {{progress}}%",
     "installing": "Instalando...",
     "preparing": "Preparando...",
@@ -989,7 +990,7 @@
     "portableUpdateMessage": "Instalações portáteis não podem ser atualizadas automaticamente. Baixe abaixo o instalador para o seu sistema, execute-o e instale na mesma pasta — a sua pasta Data/ (configurações, modelos, gravações) é mantida.",
     "portableUpdateButton": "Baixar instalador",
     "portableUpdateBrowseMessage": "Instalações portáteis não podem ser atualizadas automaticamente. Baixe a versão mais recente para o seu sistema no GitHub Releases e instale-a na mesma pasta — a sua pasta Data/ (configurações, modelos, gravações) é mantida.",
-    "portableUpdateBrowseButton": "Abrir GitHub Releases"
+    "portableUpdateBrowseButton": "Abrir GitHub releases"
   },
   "common": {
     "loading": "Carregando...",
@@ -999,11 +1000,12 @@
     "copy": "Copiar",
     "resetToDefault": "Restaurar o padrão",
     "clear": "Limpar",
-    "noOptionsFound": "Nenhuma opção encontrada"
+    "noOptionsFound": "Nenhuma opção encontrada",
+    "selectOption": "Escolha uma opção…"
   },
   "accessibility": {
     "permissionsDescription": "O Fala precisa de permissões de acessibilidade para digitar o texto transcrito.",
-    "openSettings": "Abrir Configurações do Sistema"
+    "openSettings": "Abrir configurações do sistema"
   },
   "errors": {
     "loadDirectory": "Erro ao carregar diretório: {{error}}",
@@ -1027,7 +1029,7 @@
     "meetingInPerson": "Ditado indisponível durante uma reunião presencial (inclusive pausada): o mic é a reunião. Pare a reunião para ditar."
   },
   "appLanguage": {
-    "title": "Idioma da Aplicação",
+    "title": "Idioma do aplicativo",
     "description": "Alterar o idioma da interface do Fala"
   },
   "theme": {
@@ -1062,7 +1064,7 @@
     },
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada",
-    "callElsewhere": "O som da call está saindo por {{device}}",
+    "callElsewhere": "O som da chamada está saindo por {{device}}",
     "recordFrom": "Gravar deste dispositivo",
     "meetingConsent": "Grave só com o consentimento de quem participa.",
     "meetingDictation": "Mic da reunião pausado enquanto você dita",
@@ -1176,7 +1178,7 @@
       "output": "Som da reunião",
       "outputDefault": "Saída padrão ({{name}})",
       "outputFrom": "Som de {{device}}",
-      "callElsewhere": "O som da call está saindo por {{device}}.",
+      "callElsewhere": "O som da chamada está saindo por {{device}}.",
       "recordFrom": "Gravar deste dispositivo",
       "consentChip": "Grave só com o consentimento de quem participa.",
       "systemOnly": "Só o som do computador (aula, vídeo)"
@@ -1246,7 +1248,7 @@
       "granola": "Granola",
       "search": "Buscar no título, nas notas e na transcrição",
       "noResults": "Nenhuma reunião encontrada.",
-      "emptyHint": "Grave a próxima call ou arraste um arquivo de áudio ou vídeo aqui."
+      "emptyHint": "Grave a próxima chamada ou arraste um arquivo de áudio ou vídeo aqui."
     },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",
@@ -1260,7 +1262,7 @@
       "copy": "Copiar Markdown",
       "transcript": "Transcrição",
       "noTranscript": "Ainda sem transcrição.",
-      "notes": "Notas",
+      "notes": "Notas da IA",
       "search": "Buscar na transcrição",
       "found_one": "{{count}} trecho",
       "found_other": "{{count}} trechos",
@@ -1428,8 +1430,8 @@
       "title": "Título da reunião",
       "titleFailed": "Não deu para salvar o título.",
       "more": "Mais ações",
-      "tabs": "Anotações e notas",
-      "myNotes": "Minhas anotações",
+      "tabs": "Minhas notas e as notas da IA",
+      "myNotes": "Minhas notas",
       "noNotes": "As notas aparecem aqui depois de gerar.",
       "slash": "Template das notas:",
       "imported": "Importada"
