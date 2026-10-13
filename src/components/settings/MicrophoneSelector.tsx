@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { deviceLabel } from "@/lib/utils/deviceLabel";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ResetButton } from "../ui/ResetButton";
@@ -35,10 +36,9 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
     const handleReset = async () => {
       await resetSetting("selected_microphone");
     };
-
     const microphoneOptions = audioDevices.map((device) => ({
       value: device.name,
-      label: device.name,
+      label: deviceLabel(device.name, t),
     }));
 
     return (

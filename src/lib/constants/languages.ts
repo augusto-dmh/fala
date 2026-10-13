@@ -1,3 +1,5 @@
+import { matchesQuery } from "../utils/search";
+
 export interface Language {
   value: string;
   label: string;
@@ -181,3 +183,56 @@ export const getUniqueCapabilityLanguages = (
 export const getLanguageLabel = (languageCode: string): string | undefined =>
   LANGUAGE_LABELS.get(languageCode) ??
   LANGUAGE_LABELS.get(recognitionLanguage(languageCode));
+
+// Whisper's codes that are not the BCP 47 tag `Intl` knows.
+const DISPLAY_CODES = new Map([["jw", "jv"]]);
+const displayNames = new Map<string, Intl.DisplayNames | null>();
+
+/**
+ * The language's name in the UI language ("Português" in pt, "Portuguese" in en), capitalised
+ * like a list item; the English label when the runtime has no name for the code.
+ */
+export const languageName = (
+  languageCode: string,
+  locale: string,
+): string | undefined => {
+  const english = getLanguageLabel(languageCode);
+  if (languageCode === "auto") return english;
+  let names = displayNames.get(locale);
+  if (names === undefined) {
+    try {
+      names = new Intl.DisplayNames([locale], { type: "language" });
+    } catch {
+      names = null;
+    }
+    displayNames.set(locale, names);
+  }
+  const code = DISPLAY_CODES.get(languageCode) ?? languageCode;
+  let name: string | undefined;
+  try {
+    name = names?.of(code);
+  } catch {
+    name = undefined;
+  }
+  if (!name || name === code) return english;
+  return name.charAt(0).toLocaleUpperCase(locale) + name.slice(1);
+};
+
+/** `languages` with their names in the UI language, for a picker and its search. */
+export const localizedLanguages = (
+  languages: Language[],
+  locale: string,
+): Language[] =>
+  languages.map((language) => ({
+    ...language,
+    label: languageName(language.value, locale) ?? language.label,
+  }));
+
+/**
+ * Whether a (localized) language matches a search: its shown name or its English one, ignoring
+ * case and accents ("portugues" finds "Português", "English" finds "Inglês"), or its code.
+ */
+export const matchesLanguage = (language: Language, query: string): boolean =>
+  matchesQuery(language.label, query) ||
+  matchesQuery(getLanguageLabel(language.value) ?? "", query) ||
+  language.value.toLowerCase() === query.trim().toLowerCase();
