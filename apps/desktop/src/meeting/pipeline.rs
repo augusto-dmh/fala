@@ -98,6 +98,10 @@ pub struct MeetingDetail {
     pub notes_running: bool,
     /// Both retained Opus files are on disk, so a transcript line can be played.
     pub audio_available: bool,
+    /// Where the PC slept during the recording, for the transcript's markers.
+    #[serde(default)]
+    #[specta(optional)]
+    pub sleeps: Vec<super::sleeps::MeetingSleep>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -555,6 +559,7 @@ impl MeetingManager {
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
         let audio_available = super::clip::audio_available(&self.session_dir(id));
+        let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
         self.with_store(|store| {
             let record = store.meeting(id)?;
@@ -579,6 +584,7 @@ impl MeetingManager {
                 notes_edited: store.meeting_notes_edited(id)?,
                 notes_running,
                 audio_available,
+                sleeps,
             })
         })
     }

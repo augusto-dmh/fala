@@ -27,12 +27,12 @@ export function RecoverBanner({
 }: RecoverBannerProps) {
   if (orphans.length === 0) return null;
   return (
-    <div className="space-y-2 p-4">
+    <div className="space-y-2">
       {orphans.map((orphan) => (
         <div
           key={orphan.id}
           role="alert"
-          className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-warn bg-warn/10 p-3"
         >
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">

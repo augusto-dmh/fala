@@ -15,30 +15,30 @@ import {
   type MeetingSearchHit,
   type MeetingStatus,
   type MeetingSummary,
-  type MeetingTemplates,
   type ProgressStage,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
+import { PageHeader } from "../PageHeader";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { SettingsGroup } from "../ui/SettingsGroup";
 import { AnnotationsField } from "./AnnotationsField";
 import { ConsentNotice } from "./ConsentNotice";
 import { DeleteMeeting } from "./DeleteMeeting";
 import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
-import { KeyField } from "./KeyField";
 import { MeetingList } from "./MeetingList";
+import { NewMeetingButton, RecordingStrip } from "./MeetingHome";
 import { SEARCH_AFTER_MS, searchResults } from "./meetingSearch";
 import { MeetingView } from "./MeetingView";
-import { NotesContextSettings } from "./NotesContextSettings";
+import { useMeetingTemplates } from "./useMeetingTemplates";
 import { RecorderPanel } from "./RecorderPanel";
 import { RecoverBanner } from "./RecoverBanner";
-import { TemplatesSettings } from "./TemplatesSettings";
 import {
   errorDetail,
   errorKey,
   takeConsentRequest,
   takeOpenMeetingRequest,
+  titleOf,
 } from "./meetingModel";
 
 const IDLE: MeetingStatus = {
@@ -66,17 +66,19 @@ const withoutId = (ids: Set<string>, id: string) => {
   return next;
 };
 
-/** The Meetings page: record, the list of sessions and the open one. */
-export function MeetingsPage() {
+export interface MeetingsPageProps {
+  /** Settings, where the ElevenLabs key goes. */
+  onOpenSettings?: () => void;
+}
+
+/** The Meetings page: the sessions by day with "New meeting" on top, or the one open. */
+export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<MeetingStatus>(IDLE);
   const [sessions, setSessions] = useState<MeetingSummary[]>([]);
   const [selected, setSelected] = useState<MeetingDetail | null>(null);
   const [live, setLive] = useState<MeetingDetail | null>(null);
-  const [catalog, setCatalog] = useState<MeetingTemplates>({
-    templates: [],
-    errors: [],
-  });
+  const [catalog] = useMeetingTemplates();
   const templates = catalog.templates;
   const [keys, setKeys] = useState<MeetingKeys | null>(null);
   const [mode, setMode] = useState<MeetingMode>("meeting");
@@ -88,6 +90,8 @@ export function MeetingsPage() {
   // Sessions whose last notes generation failed; the stage before `failed` says which step.
   const [notesFailed, setNotesFailed] = useState<Set<string>>(new Set());
   const lastStage = useRef(new Map<string, string>());
+  // Sessions whose last transcription or notes run failed: the red dot in the list.
+  const [failed, setFailed] = useState<Set<string>>(new Set());
   const [error, setError] = useState<MeetingError | string | null>(null);
   const [outputs, setOutputs] = useState<MeetingOutputs | null>(null);
   const [query, setQuery] = useState("");
@@ -114,6 +118,19 @@ export function MeetingsPage() {
     else setError(result.error);
   }, []);
 
+  // Opening a session replaces the list, so a reload after a run only refreshes the session
+  // still on screen and never brings back one the person left. `orHome`: also open it on the
+  // list (an import that ends), never over another session.
+  const reload = useCallback(async (id: string, orHome = false) => {
+    const result = await commands.getMeeting(id);
+    if (result.status !== "ok") return;
+    setSelected((current) =>
+      current?.summary.id === id || (orHome && current === null)
+        ? result.data
+        : current,
+    );
+  }, []);
+
   // The search follows the box and the list: a session transcribed meanwhile is searched again.
   useEffect(() => {
     if (!query.trim()) {
@@ -133,18 +150,6 @@ export function MeetingsPage() {
       clearTimeout(timer);
     };
   }, [query, sessions]);
-
-  // The templates folder is read again on mount and whenever the app gets the focus back:
-  // the person edits the JSON in another app (no file watcher).
-  useEffect(() => {
-    const load = () =>
-      void commands
-        .meetingTemplates()
-        .then((r) => r.status === "ok" && setCatalog(r.data));
-    load();
-    window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
-  }, []);
 
   useEffect(() => {
     void commands
@@ -173,6 +178,9 @@ export function MeetingsPage() {
           if (stage.stage === "done" || stage.stage === "failed")
             setImporting(false);
         }
+        if (stage.stage === "transcribing" || stage.stage === "notes")
+          setFailed((ids) => withoutId(ids, id));
+        if (stage.stage === "failed") setFailed((ids) => new Set(ids).add(id));
         if (stage.stage === "transcribing") setTranscribing(id);
         if (stage.stage === "notes") {
           setGenerating(id);
@@ -185,10 +193,7 @@ export function MeetingsPage() {
           setTranscribing((current) => (current === id ? null : current));
           setGenerating((current) => (current === id ? null : current));
           void refresh();
-          setSelected((current) => {
-            if (current?.summary.id === id) void open(id);
-            return current;
-          });
+          void reload(id);
         }
       }),
       // The page is open: the app does not leave a request for the next mount.
@@ -207,7 +212,7 @@ export function MeetingsPage() {
     return () => {
       unlisteners.forEach((p) => void p.then((unlisten) => unlisten()));
     };
-  }, [refresh, open]);
+  }, [refresh, open, reload]);
 
   // The notes field of the session being recorded starts from what the draft already had.
   useEffect(() => {
@@ -241,8 +246,8 @@ export function MeetingsPage() {
   // The open session follows the recording: a draft that starts, a session that stops.
   const openId = selected?.summary.id ?? null;
   useEffect(() => {
-    if (openId !== null) void open(openId);
-  }, [status.state, status.id, openId, open]);
+    if (openId !== null) void reload(openId);
+  }, [status.state, status.id, openId, reload]);
 
   const start = async (draftId: string | null) => {
     setError(null);
@@ -250,6 +255,8 @@ export function MeetingsPage() {
     if (result.status === "ok") {
       setStatus(result.data);
       setTitle("");
+      // The session being recorded opens, with its notes field and the controls.
+      if (result.data.id !== null) await open(result.data.id);
     } else if (
       typeof result.error === "object" &&
       result.error.kind === "consent_required"
@@ -278,7 +285,7 @@ export function MeetingsPage() {
     const result = await commands.transcribeMeeting(id);
     setTranscribing(null);
     if (result.status === "error") setError(result.error);
-    await open(id);
+    await reload(id);
     await refresh();
   };
 
@@ -296,7 +303,7 @@ export function MeetingsPage() {
     );
     setGenerating((current) => (current === id ? null : current));
     if (result.status === "error") setError(result.error);
-    await open(id);
+    await reload(id);
     await refresh();
   };
 
@@ -314,16 +321,17 @@ export function MeetingsPage() {
     const busy = result.status === "error" && result.error.kind === "busy";
     if (!busy) setImporting(false);
     await refresh();
-    if (result.status === "ok") await open(result.data);
+    if (result.status === "ok") await reload(result.data, true);
     else if (result.error.kind !== "cancelled" && !busy) setError(result.error);
   };
 
-  // A file dropped on the window while the page is open is imported, one at a time, and
-  // never behind the consent notice, where the import line is hidden.
+  // A file dropped on the window while the list is open is imported, one at a time, and
+  // never behind the consent notice or over a session, where the import line is hidden.
   const onDrop = useRef<(path: string) => void>(() => {});
   useEffect(() => {
     onDrop.current = (path) => {
-      if (!askConsent) void importSource({ kind: "file", value: path });
+      if (!askConsent && selected === null)
+        void importSource({ kind: "file", value: path });
     };
   });
   useEffect(() => {
@@ -374,65 +382,104 @@ export function MeetingsPage() {
     await refresh();
   };
 
-  const saveKey = async (key: string) => {
-    const result = await commands.setMeetingTranscriptionKey(key);
-    if (result.status === "ok") setKeys(result.data);
-    else setError(result.error);
-  };
-
-  return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
-      <SettingsGroup title={t("meeting.title")}>
-        <RecoverBanner
-          orphans={orphans}
-          busy={recovering !== null}
-          onRecover={(id) => void recover(id)}
-          t={t}
-        />
-        {askConsent ? (
-          <ConsentNotice
-            onAccept={async () => {
-              setAskConsent(false);
-              await commands.acceptMeetingConsent();
-              await start(pendingDraft);
-            }}
-            onCancel={() => setAskConsent(false)}
-          />
-        ) : (
-          <RecorderPanel
-            status={status}
-            mode={mode}
-            title={title}
-            outputs={outputs}
-            onModeChange={setMode}
-            onTitleChange={setTitle}
-            onOutputChange={chooseOutput}
-            onSwitchOutput={(name) =>
-              void act(() => commands.switchMeetingOutput(name))
+  const recordingNow =
+    status.state === "recording" || status.state === "paused";
+  const recorder = (
+    <RecorderPanel
+      status={status}
+      mode={mode}
+      title={title}
+      outputs={outputs}
+      onModeChange={setMode}
+      onTitleChange={setTitle}
+      onOutputChange={chooseOutput}
+      onSwitchOutput={(name) =>
+        void act(() => commands.switchMeetingOutput(name))
+      }
+      onStart={() => void start(null)}
+      onNewDraft={() => void newDraft()}
+      onPause={() => void act(commands.pauseMeeting)}
+      onResume={() => void act(commands.resumeMeeting)}
+      onStop={() => void act(commands.stopMeeting)}
+      onExtend={() => void act(commands.extendMeetingCap)}
+      templates={templates}
+      template={live?.notes_template ?? null}
+      onTemplateChange={(templateId) => {
+        if (!live) return;
+        setLive({ ...live, notes_template: templateId });
+        void commands
+          .setMeetingTemplate(live.summary.id, templateId)
+          .then(() => {
+            // The same session open below follows the pick.
+            if (selected?.summary.id === live.summary.id) {
+              void reload(live.summary.id);
             }
-            onStart={() => void start(null)}
-            onNewDraft={() => void newDraft()}
-            onPause={() => void act(commands.pauseMeeting)}
-            onResume={() => void act(commands.resumeMeeting)}
-            onStop={() => void act(commands.stopMeeting)}
-            onExtend={() => void act(commands.extendMeetingCap)}
-            templates={templates}
-            template={live?.notes_template ?? null}
-            onTemplateChange={(templateId) => {
-              if (!live) return;
-              setLive({ ...live, notes_template: templateId });
-              void commands
-                .setMeetingTemplate(live.summary.id, templateId)
-                .then(() => {
-                  // The same session open below follows the pick.
-                  if (selected?.summary.id === live.summary.id) {
-                    void open(live.summary.id);
-                  }
-                });
-            }}
-          />
-        )}
-        {!askConsent && (
+          });
+      }}
+    />
+  );
+  const strip = (
+    <RecordingStrip
+      status={status}
+      title={live ? titleOf(live.summary, t) : ""}
+      onOpen={() => status.id !== null && void open(status.id)}
+      t={t}
+    />
+  );
+  // On the home and on a session alike: the notice, a recording to recover, the last error.
+  const banners = (
+    <>
+      {askConsent && (
+        <ConsentNotice
+          onAccept={async () => {
+            setAskConsent(false);
+            await commands.acceptMeetingConsent();
+            await start(pendingDraft);
+          }}
+          onCancel={() => setAskConsent(false)}
+        />
+      )}
+      <RecoverBanner
+        orphans={orphans}
+        busy={recovering !== null}
+        onRecover={(id) => void recover(id)}
+        t={t}
+      />
+      {error !== null && (
+        <p role="alert" className="text-body text-danger">
+          {t(errorKey(error), { detail: errorDetail(error) })}
+        </p>
+      )}
+    </>
+  );
+
+  // The Granola import, first in both the list and the session: React keeps it mounted (and its
+  // preview or progress) when a meeting opens or closes.
+  const granola = granolaPath !== null && (
+    <GranolaImport
+      key={granolaPath}
+      path={granolaPath}
+      onImported={() => void refresh()}
+      onClose={() => setGranolaPath(null)}
+    />
+  );
+
+  if (selected) {
+    // Recording, stopping or processing: the backend keeps the id until the pipeline takes over.
+    const recordingThis = status.id === selected.summary.id;
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4">
+        {granola}
+        <PageHeader
+          title={t("meeting.list.title")}
+          breadcrumb={{
+            parent: t("meeting.list.title"),
+            onParent: () => setSelected(null),
+            current: titleOf(selected.summary, t),
+          }}
+        />
+        {banners}
+        {importing && (
           <ImportDialog
             importing={importing}
             stage={importStage}
@@ -441,56 +488,34 @@ export function MeetingsPage() {
             onGranola={setGranolaPath}
           />
         )}
-        {granolaPath !== null && (
-          <GranolaImport
-            key={granolaPath}
-            path={granolaPath}
-            onImported={() => void refresh()}
-            onClose={() => setGranolaPath(null)}
-          />
-        )}
-        {live && (
-          <div className="p-4">
-            <AnnotationsField
-              id={live.summary.id}
-              initial={live.annotations}
-              label={t("meeting.view.annotations")}
-            />
+        {recordingThis && !askConsent ? (
+          <div className="rounded-lg border border-border bg-surface-1">
+            {recordingNow ? (
+              recorder
+            ) : (
+              <p className="p-4 text-caption text-text-2">
+                {t("meeting.recorder.processing")}
+              </p>
+            )}
+            {live && (
+              <div className="px-4 pb-4">
+                <AnnotationsField
+                  id={live.summary.id}
+                  initial={live.annotations}
+                  label={t("meeting.view.annotations")}
+                />
+              </div>
+            )}
           </div>
+        ) : (
+          strip
         )}
-        {keys && !keys.elevenlabs && (
-          <KeyField onSave={(key) => void saveKey(key)} />
-        )}
-        {error !== null && (
-          <p role="alert" className="p-4 text-sm text-red-500">
-            {t(errorKey(error), { detail: errorDetail(error) })}
-          </p>
-        )}
-      </SettingsGroup>
-      <SettingsGroup title={t("meeting.list.title")}>
-        <div className="px-4 pt-2">
-          <Input
-            variant="compact"
-            type="search"
-            value={query}
-            placeholder={t("meeting.list.search")}
-            aria-label={t("meeting.list.search")}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        <MeetingList
-          {...(hits ? searchResults(sessions, hits) : { sessions })}
-          selectedId={selected?.summary.id ?? null}
-          onOpen={(id) => void open(id)}
-        />
-      </SettingsGroup>
-      {selected && (
-        <SettingsGroup>
+        <div className="rounded-lg border border-border bg-surface-1">
           <MeetingView
             key={selected.summary.id}
             detail={selected}
             templates={templates}
-            recording={status.id === selected.summary.id}
+            recording={recordingThis}
             transcribing={transcribing === selected.summary.id}
             generating={
               generating === selected.summary.id || selected.notes_running
@@ -505,21 +530,79 @@ export function MeetingsPage() {
               void generate(selected.summary.id, templateId, replaceEdited)
             }
             onCopy={() => void copy(selected.summary.id)}
-            onNamesChanged={() => void open(selected.summary.id)}
+            onNamesChanged={() => void reload(selected.summary.id)}
           />
           <DeleteMeeting
             key={`delete-${selected.summary.id}`}
             disabled={
-              status.id === selected.summary.id ||
+              recordingThis ||
               transcribing === selected.summary.id ||
               generating === selected.summary.id
             }
             onDelete={() => void remove(selected.summary.id)}
           />
-        </SettingsGroup>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-4">
+      {granola}
+      <PageHeader
+        title={t("meeting.list.title")}
+        actions={
+          <NewMeetingButton
+            disabled={askConsent || recordingNow || status.state === "stopping"}
+            onStart={() => void start(null)}
+            options={recorder}
+            t={t}
+          />
+        }
+      />
+      {banners}
+      {strip}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          variant="compact"
+          type="search"
+          className="min-w-0 flex-1"
+          value={query}
+          placeholder={t("meeting.list.search")}
+          aria-label={t("meeting.list.search")}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {!askConsent && (
+          <ImportDialog
+            importing={importing}
+            stage={importStage}
+            onImport={(source) => void importSource(source)}
+            onCancel={() => void commands.cancelMeetingImport()}
+            onGranola={setGranolaPath}
+          />
+        )}
+      </div>
+      {keys && !keys.elevenlabs && (
+        <p className="flex flex-wrap items-center gap-2 text-caption text-text-2">
+          {t("meeting.home.noKey")}
+          {onOpenSettings && (
+            <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+              {t("meeting.home.openSettings")}
+            </Button>
+          )}
+        </p>
       )}
-      <NotesContextSettings />
-      <TemplatesSettings catalog={catalog} onChange={setCatalog} />
+      <MeetingList
+        {...(hits ? searchResults(sessions, hits) : { sessions })}
+        live={{
+          recording: recordingNow ? status.id : null,
+          working: new Set(
+            [transcribing, generating].filter((id) => id !== null),
+          ),
+          failed,
+        }}
+        onOpen={(id) => void open(id)}
+      />
     </div>
   );
 }

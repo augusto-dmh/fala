@@ -290,6 +290,20 @@ impl MeetingRecorder {
         Ok(())
     }
 
+    /// O mic reaberto (depois de uma suspensão do SO) entrega noutra taxa: igual a
+    /// [`Self::set_system_rate`].
+    pub fn set_mic_rate(&mut self, rate: u32) -> Result<(), AudioError> {
+        self.mic.drain_resampler()?;
+        self.mic.resampler = Resampler::to(rate, MEETING_RATE)?;
+        Ok(())
+    }
+
+    /// Reescreve o cabeçalho e entrega ao SO o que já foi escrito, sem esperar o próximo
+    /// `FLUSH_EVERY` (o SO vai suspender).
+    pub fn flush(&mut self) -> Result<(), AudioError> {
+        self.wav.flush()
+    }
+
     /// `now` é o tempo de parede desde o começo da gravação.
     pub fn tick(&mut self, now: Duration) -> Result<(), AudioError> {
         self.write_to(frames_at(now).saturating_sub(LAG_FRAMES))?;
@@ -582,6 +596,30 @@ mod tests {
         );
         rec.tick(Duration::from_secs(2)).unwrap();
         assert_eq!(header(), 96_000 - LAG_FRAMES as u32);
+        rec.tick(Duration::from_millis(2_500)).unwrap();
+        rec.flush().unwrap();
+        assert_eq!(
+            header(),
+            120_000 - LAG_FRAMES as u32,
+            "flush antes de suspender"
+        );
+    }
+
+    #[test]
+    fn switching_the_mic_rate_keeps_the_clock() {
+        let path = tmp("mic-rate.wav");
+        let wav = MeetingWav::create(&path).unwrap();
+        let mut rec = MeetingRecorder::new(48_000, 48_000, wav).unwrap();
+        rec.push_mic(&vec![0.1; 48_000]).unwrap();
+        rec.tick(Duration::from_secs(1)).unwrap();
+        rec.set_mic_rate(16_000).unwrap();
+        rec.push_mic(&vec![0.1; 16_000]).unwrap();
+        rec.finish(Duration::from_secs(2)).unwrap();
+        let (left, _) = read(&path);
+        assert_eq!(left.len(), 96_000);
+        // O segundo depois da troca chega reamostrado: quase todo real, não zeros.
+        let real = left[48_000..].iter().filter(|s| **s != 0).count();
+        assert!(real > 47_000, "{real}");
     }
 
     #[test]

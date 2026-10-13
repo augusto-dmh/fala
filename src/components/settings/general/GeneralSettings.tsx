@@ -16,6 +16,9 @@ import { ModelSettingsCard } from "./ModelSettingsCard";
 import { LlmSettings } from "../LlmSettings";
 import { CallPromptSettings } from "../CallPromptSettings";
 import { MeetingAudioSettings } from "../MeetingAudioSettings";
+import { MeetingKeySetting } from "../MeetingKeySetting";
+import { NotesContextSettings } from "../../meeting/NotesContextSettings";
+import { MeetingTemplatesSettings } from "../../meeting/TemplatesSettings";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -52,7 +55,10 @@ export const GeneralSettings: React.FC = () => {
       <SettingsGroup title={t("settings.meetings.title")}>
         <CallPromptSettings />
         <MeetingAudioSettings />
+        <MeetingKeySetting />
       </SettingsGroup>
+      <NotesContextSettings />
+      <MeetingTemplatesSettings />
     </div>
   );
 };

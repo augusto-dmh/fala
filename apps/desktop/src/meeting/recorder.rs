@@ -9,7 +9,8 @@
 //! The streams are opened on the thread that owns them (a cpal stream is not `Send` on every
 //! host). Paused time is neither written nor counted: the recorder's clock is an [`ActiveClock`]
 //! that only advances while recording. The same [`Gate`] keeps the PC awake while it records and
-//! lets it sleep otherwise.
+//! lets it sleep otherwise; a sleep that happens anyway is a pause the OS takes, after which the
+//! streams are opened again into the same WAV.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -30,6 +31,9 @@ const TICK: Duration = Duration::from_millis(100);
 pub(crate) const OMIT_LOOKBACK: Duration = Duration::from_millis(400);
 /// How long the interval goes on after the dictation's last sample (a second device's latency).
 pub(crate) const OMIT_MARGIN: Duration = Duration::from_millis(50);
+/// After a sleep, how long the devices have to open again before the recording ends.
+pub(crate) const WAKE_GRACE: Duration = Duration::from_secs(5);
+const WAKE_RETRY: Duration = Duration::from_millis(500);
 /// How often levels and the recorded duration go back to the manager (UI at 4 Hz).
 pub(crate) const REPORT_EVERY: Duration = Duration::from_millis(250);
 
@@ -43,6 +47,10 @@ pub(crate) enum Control {
     BeginOmit(Instant),
     /// The dictation ended (released, cancelled or discarded).
     EndOmit,
+    /// The OS is about to sleep: stop writing, put the WAV header on disk and answer.
+    Suspend(Sender<()>),
+    /// The OS woke: open the devices again and go on writing, unless paused by the person.
+    Wake,
     /// Close the WAV (header and file) and end the thread.
     Finalize,
 }
@@ -65,6 +73,8 @@ pub(crate) enum Report {
     Omitted(Vec<(u64, u64)>),
     /// The system channel now records `name`, or still records the previous output (`error`).
     SystemSwitched { name: String, error: Option<String> },
+    /// The devices are open again after a sleep.
+    Woke,
     /// The WAV is closed (or the capture failed); the thread is gone.
     Finalized {
         recorded: Duration,
@@ -115,12 +125,13 @@ impl ActiveClock {
     }
 }
 
-/// When the capture writes: not paused by the person. The clock runs and, with `keep_awake`, the
-/// PC is kept awake exactly then; the guard lets go when the gate is dropped (stop, error or panic
-/// of the recorder thread).
+/// When the capture writes: neither paused by the person nor asleep with the OS. The clock runs
+/// and, with `keep_awake`, the PC is kept awake exactly then; the guard lets go when the gate is
+/// dropped (stop, error or panic of the recorder thread).
 pub(crate) struct Gate<A: PowerApi> {
     clock: ActiveClock,
     paused: bool,
+    asleep: bool,
     keep_awake: bool,
     awake: PowerGuard<A>,
 }
@@ -130,6 +141,7 @@ impl<A: PowerApi> Gate<A> {
         let mut gate = Self {
             clock: ActiveClock::new(now),
             paused: false,
+            asleep: false,
             keep_awake,
             awake: PowerGuard::new(api),
         };
@@ -147,15 +159,25 @@ impl<A: PowerApi> Gate<A> {
         self.update(now);
     }
 
+    pub(crate) fn sleep(&mut self, now: Instant) {
+        self.asleep = true;
+        self.update(now);
+    }
+
+    pub(crate) fn wake(&mut self, now: Instant) {
+        self.asleep = false;
+        self.update(now);
+    }
+
     pub(crate) fn writing(&self) -> bool {
-        !self.paused
+        !self.paused && !self.asleep
     }
 
     pub(crate) fn elapsed(&self, now: Instant) -> Duration {
         self.clock.elapsed(now)
     }
 
-    /// How long the current pause has lasted; zero while writing.
+    /// How long the current pause (or sleep) has lasted; zero while writing.
     pub(crate) fn paused_for(&self, now: Instant) -> Duration {
         self.clock.paused_for(now)
     }
@@ -217,6 +239,8 @@ struct Capture {
     /// `None` in a "system only" session.
     mic: Option<MicTap>,
     system: SystemAudio,
+    /// The output `system` records, to open it again after a sleep.
+    system_name: String,
     recorder: MeetingRecorder,
     /// Peaks of every output, to tell "nothing plays" from "it plays elsewhere"; `None` where
     /// the OS has no meter (Linux until phase 3).
@@ -227,8 +251,7 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
     if let Some(dir) = wav.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let system = SystemAudio::open(system_name).map_err(|e| e.to_string())?;
-    let mic = with_mic.then(open_mic).transpose()?;
+    let (system, mic) = streams(system_name, with_mic, false)?;
     let mic_rate = mic.as_ref().map_or(MEETING_RATE, MicTap::sample_rate);
     let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
     let recorder =
@@ -243,18 +266,37 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
     Ok(Capture {
         mic,
         system,
+        system_name: system_name.to_string(),
         recorder,
         meter,
     })
 }
 
-/// The default input, through the hub: when dictation uses the same device, both read one stream.
-fn open_mic() -> Result<MicTap, String> {
+/// The output and, `with_mic`, the default input. `renew` asks the hub for a new mic stream
+/// instead of the one already open (after a sleep the old one rarely delivers again).
+fn streams(
+    system_name: &str,
+    with_mic: bool,
+    renew: bool,
+) -> Result<(SystemAudio, Option<MicTap>), String> {
+    let system = SystemAudio::open(system_name).map_err(|e| e.to_string())?;
+    let mic = with_mic.then(|| open_mic(renew)).transpose()?;
+    Ok((system, mic))
+}
+
+/// The default input, through the hub: when dictation uses the same device, both read one
+/// stream. With `renew` the hub drops the stream it had for it, so dictation moves too.
+fn open_mic(renew: bool) -> Result<MicTap, String> {
     use cpal::traits::HostTrait;
     let device = crate::audio_toolkit::get_cpal_host()
         .default_input_device()
         .ok_or_else(|| "no input device".to_string())?;
-    MIC_HUB.open(device, None).map_err(|e| e.to_string())
+    let tap = if renew {
+        MIC_HUB.renew(device, None)
+    } else {
+        MIC_HUB.open(device, None)
+    };
+    tap.map_err(|e| e.to_string())
 }
 
 /// How often a failed mic stream is reopened while recording.
@@ -267,7 +309,7 @@ fn reopen_mic(capture: &mut Capture) {
     let Some(rate) = capture.mic.as_ref().map(MicTap::sample_rate) else {
         return;
     };
-    match open_mic() {
+    match open_mic(false) {
         Ok(tap) if tap.sample_rate() == rate => {
             log::warn!("meeting mic stream failed; reopened {}", tap.name());
             capture.mic = Some(tap);
@@ -285,6 +327,52 @@ fn reopen_mic(capture: &mut Capture) {
 /// long enough leaves nothing recorded to zero.
 pub(crate) fn omit_lookback(late: Duration, paused_for: Duration) -> Duration {
     (OMIT_LOOKBACK + late).saturating_sub(paused_for)
+}
+
+/// After a sleep the old streams rarely deliver again: both are opened anew (the output by
+/// name, the mic as the current default), retried for [`WAKE_GRACE`]. From half of it on, an
+/// output that did not come back (a Bluetooth headset still pairing) gives way to the default
+/// one; the new name is returned then. What the old streams held is dropped: it was captured
+/// around the sleep.
+fn reopen(capture: &mut Capture) -> Result<Option<String>, String> {
+    let started = Instant::now();
+    let deadline = started + WAKE_GRACE;
+    let with_mic = capture.mic.is_some();
+    let (name, (system, mic)) = loop {
+        let mut opened = streams(&capture.system_name, with_mic, true)
+            .map(|streams| (capture.system_name.clone(), streams));
+        if opened.is_err() && started.elapsed() >= WAKE_GRACE / 2 {
+            if let Ok(default) = SystemAudio::default_name() {
+                if default != capture.system_name {
+                    opened = streams(&default, with_mic, true).map(|streams| (default, streams));
+                }
+            }
+        }
+        match opened {
+            Ok(opened) => break opened,
+            Err(e) if Instant::now() + WAKE_RETRY < deadline => {
+                log::info!("meeting capture not back after sleep yet: {e}");
+                thread::sleep(WAKE_RETRY);
+            }
+            Err(e) => return Err(format!("the capture did not come back after sleep: {e}")),
+        }
+    };
+    capture
+        .recorder
+        .set_system_rate(system.sample_rate())
+        .map_err(|e| e.to_string())?;
+    if let Some(mic) = &mic {
+        capture
+            .recorder
+            .set_mic_rate(mic.sample_rate())
+            .map_err(|e| e.to_string())?;
+    }
+    capture.system = system;
+    capture.mic = mic;
+    log::info!("meeting capture open again after sleep: {name}");
+    let switched = (name != capture.system_name).then(|| name.clone());
+    capture.system_name = name;
+    Ok(switched)
 }
 
 /// Opens `name` and, only once it is open, drops the old system stream: a failed switch keeps
@@ -309,6 +397,7 @@ fn switch_system(
         .set_system_rate(next.sample_rate())
         .map_err(|e| e.to_string())?;
     capture.system = next;
+    capture.system_name = name.to_string();
     log::info!("meeting system output switched to {name}");
     Ok(())
 }
@@ -342,6 +431,59 @@ impl Level {
         *self = Level::default();
         (rms, peak)
     }
+}
+
+/// Moves what each stream captured into the recorder. Drained even while not writing, so a paused
+/// interval is dropped instead of written later.
+fn pump(
+    capture: &mut Capture,
+    buffer: &mut Vec<f32>,
+    levels: (&mut Level, &mut Level),
+    write: bool,
+) -> Result<(), String> {
+    buffer.clear();
+    if let Some(mic) = capture.mic.as_mut() {
+        mic.drain_into(buffer);
+    }
+    if write {
+        levels.0.add(buffer);
+        capture
+            .recorder
+            .push_mic(buffer)
+            .map_err(|e| e.to_string())?;
+    }
+    buffer.clear();
+    capture.system.drain_into(buffer);
+    if write {
+        levels.1.add(buffer);
+        capture
+            .recorder
+            .push_system(buffer)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// The OS is about to sleep: what was captured up to now is written and on disk, header included.
+fn suspend<A: PowerApi>(
+    capture: &mut Capture,
+    gate: &mut Gate<A>,
+    buffer: &mut Vec<f32>,
+    levels: (&mut Level, &mut Level),
+) -> Result<(), String> {
+    let now = Instant::now();
+    let pumped = pump(capture, buffer, levels, gate.writing());
+    let written = if gate.writing() {
+        capture
+            .recorder
+            .tick(gate.elapsed(now))
+            .map_err(|e| e.to_string())
+    } else {
+        Ok(())
+    };
+    gate.sleep(now);
+    let flushed = capture.recorder.flush().map_err(|e| e.to_string());
+    pumped.and(written).and(flushed)
 }
 
 fn run(
@@ -386,27 +528,39 @@ fn run(
                 omit = Some(None);
                 false
             }
+            Ok(Control::Suspend(done)) => {
+                let levels = (&mut mic_level, &mut system_level);
+                error = suspend(&mut capture, &mut gate, &mut buffer, levels).err();
+                let _ = done.send(());
+                false
+            }
+            Ok(Control::Wake) => {
+                match reopen(&mut capture) {
+                    Ok(switched) => {
+                        if let Some(name) = switched {
+                            on_report(Report::SystemSwitched { name, error: None });
+                        }
+                        gate.wake(Instant::now());
+                        on_report(Report::Woke);
+                    }
+                    Err(e) => error = Some(e),
+                }
+                false
+            }
             Ok(Control::Finalize) | Err(RecvTimeoutError::Disconnected) => true,
             Err(RecvTimeoutError::Timeout) => false,
         };
         let now = Instant::now();
-        let paused = !gate.writing();
+        let writing = gate.writing();
 
-        // Drained even while paused, so the paused interval is dropped instead of written later.
-        buffer.clear();
-        if let Some(mic) = capture.mic.as_mut() {
-            mic.drain_into(&mut buffer);
+        if error.is_none() {
+            let levels = (&mut mic_level, &mut system_level);
+            error = pump(&mut capture, &mut buffer, levels, writing).err();
         }
         let failed = capture.mic.as_ref().is_some_and(MicTap::failed);
         if failed && last_reopen.is_none_or(|at| now.duration_since(at) >= REOPEN_EVERY) {
             last_reopen = Some(now);
             reopen_mic(&mut capture);
-        }
-        if !paused {
-            mic_level.add(&buffer);
-            if let Err(e) = capture.recorder.push_mic(&buffer) {
-                error = Some(e.to_string());
-            }
         }
         // After the push, so the interval is measured from the newest sample.
         match omit {
@@ -418,34 +572,25 @@ fn run(
                 (omitting, omitted) = (true, true);
             }
             Some(None) => {
-                // Paused, nothing more is recorded: the interval ends where the recording did.
-                let margin = if paused { Duration::ZERO } else { OMIT_MARGIN };
+                // Not writing, nothing more is recorded: the interval ends where the recording did.
+                let margin = if writing { OMIT_MARGIN } else { Duration::ZERO };
                 capture.recorder.end_omit(margin);
                 omitting = false;
             }
             None => {}
         }
-        buffer.clear();
-        capture.system.drain_into(&mut buffer);
-        if !paused {
-            system_level.add(&buffer);
-            if let Err(e) = capture.recorder.push_system(&buffer) {
-                error = Some(e.to_string());
-            }
+        let spans = capture.recorder.take_omitted();
+        if !spans.is_empty() {
+            on_report(Report::Omitted(omitted_ms(spans)));
         }
-
         if finalize || error.is_some() {
             break;
         }
-        if !paused {
+        if writing {
             if let Err(e) = capture.recorder.tick(gate.elapsed(now)) {
                 error = Some(e.to_string());
                 break;
             }
-        }
-        let spans = capture.recorder.take_omitted();
-        if !spans.is_empty() {
-            on_report(Report::Omitted(omitted_ms(spans)));
         }
         if now.duration_since(last_report) >= REPORT_EVERY {
             last_report = now;
@@ -494,13 +639,29 @@ mod tests {
             let mut gate = Gate::new(t0, true, fake.clone());
             assert_eq!(fake.calls(), vec![true], "start");
             gate.pause(at(10));
-            gate.pause(at(15));
             gate.resume(at(20));
+            gate.sleep(at(30));
+            gate.wake(at(90));
             assert!(gate.writing());
-            assert_eq!(gate.elapsed(at(30)), Duration::from_secs(20));
+            // Neither the pause nor the sleep is counted.
+            assert_eq!(gate.elapsed(at(100)), Duration::from_secs(30));
         }
-        // Pause, resume; then the stop, or an error, drops the gate.
-        assert_eq!(fake.calls(), vec![true, false, true, false]);
+        // Pause, resume, sleep, wake; then the stop, or an error, drops the gate.
+        assert_eq!(fake.calls(), vec![true, false, true, false, true, false]);
+    }
+
+    #[test]
+    fn waking_keeps_the_pause_of_the_person() {
+        let fake = FakePower::default();
+        let t0 = Instant::now();
+        let mut gate = Gate::new(t0, true, fake.clone());
+        gate.pause(t0);
+        gate.sleep(t0);
+        gate.wake(t0 + Duration::from_secs(60));
+        assert!(!gate.writing());
+        assert_eq!(fake.calls(), vec![true, false]);
+        gate.resume(t0 + Duration::from_secs(70));
+        assert_eq!(fake.calls(), vec![true, false, true]);
     }
 
     #[test]
@@ -511,6 +672,8 @@ mod tests {
             let mut gate = Gate::new(t0, false, fake.clone());
             gate.pause(t0);
             gate.resume(t0);
+            gate.sleep(t0);
+            gate.wake(t0);
         }
         assert!(fake.calls().is_empty());
     }

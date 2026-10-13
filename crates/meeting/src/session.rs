@@ -28,7 +28,7 @@ pub enum UserAction {
         free_disk_bytes: u64,
     },
     PauseRecording,
-    /// "Retomar" depois de uma pausa, ou "continuar" depois de uma suspensão do SO.
+    /// "Retomar" depois de uma pausa (ou numa suspensão cujo aviso de volta nunca chegou).
     ResumeRecording,
     StopRecording,
     /// "Mais 1 h" no aviso do teto.
@@ -58,7 +58,7 @@ pub enum Input {
     },
     /// O SO vai suspender.
     OsSuspended,
-    /// O SO voltou da suspensão.
+    /// O SO voltou da suspensão: a sessão volta ao que era antes (meeting-power-guard).
     OsResumed,
     /// O "Ainda está gravando?" apareceu na tela. Sem ele, o silêncio nunca para a gravação
     /// (ninguém foi avisado).
@@ -66,10 +66,7 @@ pub enum Input {
     /// O gravador fechou o cabeçalho e o arquivo da sessão.
     ///
     /// Contrato com o gravador: só responde assim a um [`Effect::FinalizeCapture`] pedido em
-    /// `Stopping`. O fechamento pedido pela suspensão do SO não gera resposta (em `Suspended`
-    /// esta entrada é ignorada), e parar depois de uma suspensão pede um segundo
-    /// `FinalizeCapture`, que o gravador trata como já feito e confirma. Sem esta resposta a
-    /// sessão fica em `Stopping` e `Process` não sai.
+    /// `Stopping`. Sem esta resposta a sessão fica em `Stopping` e `Process` não sai.
     CaptureFinalized,
 }
 
@@ -78,7 +75,7 @@ pub enum Input {
 pub enum IndicatorKind {
     Recording,
     Paused,
-    /// Suspensão do SO: aguardando "continuar ou parar".
+    /// O SO dormiu: a captura volta sozinha ao acordar.
     Suspended,
 }
 
@@ -121,6 +118,8 @@ pub enum SessionState {
     },
     Suspended {
         indicator: Indicator,
+        /// A pessoa tinha pausado antes de o SO dormir: ao acordar, continua pausada.
+        paused: bool,
     },
     /// Esperando o gravador fechar o arquivo.
     Stopping {
@@ -153,8 +152,10 @@ pub enum Effect {
     SilenceWarning {
         remaining: Duration,
     },
-    /// Depois da suspensão: perguntar "continuar ou parar".
-    AskContinueOrStop,
+    /// O SO vai dormir: parar de escrever e pôr o cabeçalho no disco, sem fechar o arquivo.
+    SuspendCapture,
+    /// O SO acordou: reabrir os dispositivos e continuar no mesmo arquivo.
+    WakeCapture,
     /// Entregar a sessão ao pipeline (conversão, ASR, notas).
     Process,
 }
@@ -248,7 +249,7 @@ impl MeetingSession {
         match self.state {
             SessionState::Recording { indicator }
             | SessionState::Paused { indicator }
-            | SessionState::Suspended { indicator } => Some(indicator),
+            | SessionState::Suspended { indicator, .. } => Some(indicator),
             SessionState::Idle | SessionState::Stopping { .. } | SessionState::Stopped { .. } => {
                 None
             }
@@ -292,12 +293,25 @@ impl MeetingSession {
                     Effect::ShowIndicator(IndicatorKind::Paused),
                 ])
             }
-            (S::Paused { .. } | S::Suspended { .. }, Input::User(UserAction::ResumeRecording)) => {
+            (S::Paused { .. }, Input::User(UserAction::ResumeRecording)) => {
                 self.close_gap(now);
                 self.state = S::Recording {
                     indicator: Indicator::new(IndicatorKind::Recording),
                 };
                 Ok(vec![
+                    Effect::ShowIndicator(IndicatorKind::Recording),
+                    Effect::ResumeCapture,
+                ])
+            }
+            // The wake notice never came (a sleep vetoed after PBT_APMSUSPEND): the click wakes
+            // the capture and records.
+            (S::Suspended { .. }, Input::User(UserAction::ResumeRecording)) => {
+                self.close_gap(now);
+                self.state = S::Recording {
+                    indicator: Indicator::new(IndicatorKind::Recording),
+                };
+                Ok(vec![
+                    Effect::WakeCapture,
                     Effect::ShowIndicator(IndicatorKind::Recording),
                     Effect::ResumeCapture,
                 ])
@@ -324,17 +338,37 @@ impl MeetingSession {
                 Ok(self.tick(now, recorded, levels))
             }
             (S::Recording { .. } | S::Paused { .. }, Input::OsSuspended) => {
+                let paused = matches!(self.state, S::Paused { .. });
+                // Like a pause: a warning nobody can answer while asleep never stops it after.
+                self.reset_silence();
                 self.close_gap(now);
                 self.open_gap(GapKind::Suspend, now);
                 self.state = S::Suspended {
                     indicator: Indicator::new(IndicatorKind::Suspended),
+                    paused,
                 };
                 Ok(vec![
-                    Effect::FinalizeCapture,
+                    Effect::SuspendCapture,
                     Effect::ShowIndicator(IndicatorKind::Suspended),
                 ])
             }
-            (S::Suspended { .. }, Input::OsResumed) => Ok(vec![Effect::AskContinueOrStop]),
+            // Continues only a recording the person started (ADR-0005); a pause stays a pause.
+            (S::Suspended { paused, .. }, Input::OsResumed) => {
+                self.close_gap(now);
+                let kind = if paused {
+                    self.open_gap(GapKind::Pause, now);
+                    self.state = S::Paused {
+                        indicator: Indicator::new(IndicatorKind::Paused),
+                    };
+                    IndicatorKind::Paused
+                } else {
+                    self.state = S::Recording {
+                        indicator: Indicator::new(IndicatorKind::Recording),
+                    };
+                    IndicatorKind::Recording
+                };
+                Ok(vec![Effect::WakeCapture, Effect::ShowIndicator(kind)])
+            }
             (S::Stopping { reason }, Input::CaptureFinalized) => {
                 self.state = S::Stopped { reason };
                 Ok(vec![Effect::HideIndicator, Effect::Process])
@@ -458,7 +492,8 @@ mod tests {
                 Effect::FinalizeCapture => "FinalizeCapture",
                 Effect::CapWarning { .. } => "CapWarning",
                 Effect::SilenceWarning { .. } => "SilenceWarning",
-                Effect::AskContinueOrStop => "AskContinueOrStop",
+                Effect::SuspendCapture => "SuspendCapture",
+                Effect::WakeCapture => "WakeCapture",
                 Effect::Process => "Process",
             }
         }
@@ -476,7 +511,8 @@ mod tests {
             Effect::SilenceWarning {
                 remaining: Duration::ZERO,
             },
-            Effect::AskContinueOrStop,
+            Effect::SuspendCapture,
+            Effect::WakeCapture,
             Effect::Process,
         ];
         for effect in all {

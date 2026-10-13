@@ -9,7 +9,7 @@ import {
   CallPromptCard,
   titleKey,
 } from "./CallPromptCard";
-import { mistakeBody } from "./CallPromptWindow";
+import { cardBody } from "./CallPromptWindow";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const read = (path: string) =>
@@ -91,15 +91,24 @@ assert.match(html, /scaleX\(0\.5\)/);
 console.log("C15 card ok");
 
 // "Recorded by mistake?" says why it asks: a short recording, or a long one almost silent.
-assert.deepEqual(mistakeBody("mistake", 12), [
+assert.deepEqual(cardBody("mistake", 12), [
   "callPrompt.mistake.short",
   { seconds: 12 },
 ]);
-assert.deepEqual(mistakeBody("mistake", 7_200), [
+assert.deepEqual(cardBody("mistake", 7_200), [
   "callPrompt.mistake.quiet",
   { minutes: 120 },
 ]);
-assert.deepEqual(mistakeBody("quit", null), ["callPrompt.quit.body", {}]);
+assert.deepEqual(cardBody("quit", null), ["callPrompt.quit.body", {}]);
+assert.deepEqual(cardBody("woke", 20), [
+  "callPrompt.woke.body",
+  { minutes: 1 },
+]);
+assert.deepEqual(cardBody("woke", 720), [
+  "callPrompt.woke.body",
+  { minutes: 12 },
+]);
+assert.deepEqual(CALL_PROMPT_ANSWERS.woke, ["dismiss"]);
 console.log("L4 mistake text ok");
 
 // Every key the window and the settings use exists in pt and en, with {{app}} where needed.

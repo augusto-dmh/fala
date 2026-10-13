@@ -23,17 +23,19 @@ pub(crate) mod pipeline;
 pub(crate) mod recorder;
 pub(crate) mod recovery;
 pub(crate) mod search;
+pub(crate) mod sleeps;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, Local, SecondsFormat};
 use fala_meeting::{
-    Effect, IndicatorKind, Input, Levels, MeetingSession, MuteWatch, RecordingCap, SessionConfig,
-    SessionError, SessionId, SessionMode, SessionState, StopReason, UnixMillis, UserAction,
+    Effect, GapKind, IndicatorKind, Input, Levels, MeetingSession, MuteWatch, RecordingCap,
+    SessionConfig, SessionError, SessionId, SessionMode, SessionState, StopReason, UnixMillis,
+    UserAction,
 };
 use fala_storage::{NewMeeting, StorageError, Store};
 use serde::{Deserialize, Serialize};
@@ -44,6 +46,7 @@ use tauri_specta::Event;
 use crate::audio_feedback::{self, SoundType};
 use crate::managers::audio::AudioRecordingManager;
 use crate::media_pause::{self, MediaAction, Owner};
+use crate::power::SleepEvent;
 use recorder::{Control, Report};
 
 /// The working WAV inside `audio/<id>/`; `fala-retention` turns it into `mic.opus` and
@@ -287,6 +290,10 @@ pub(crate) fn tray_start(consent: Option<&str>) -> TrayStart {
     }
 }
 
+/// How long the suspend handler waits for the WAV header to reach the disk; Windows gives it
+/// about two seconds before the PC sleeps.
+const SUSPEND_GRACE: Duration = Duration::from_millis(1_500);
+
 /// How long "Stop and quit" waits for the capture to close before quitting anyway.
 const QUIT_GRACE: Duration = Duration::from_secs(10);
 
@@ -404,6 +411,10 @@ struct Active {
     capture_failed: bool,
     /// A dictation is zeroing the mic channel (`BeginOmit` sent, `EndOmit` not yet).
     dictating: bool,
+    /// The PC woke and the devices are being opened again.
+    waking: bool,
+    /// The devices did not come back after a sleep: nobody stopped the session.
+    interrupted: bool,
 }
 
 #[derive(Default)]
@@ -412,6 +423,8 @@ struct Inner {
     /// Stopped sessions still being finished (end saved, audio retained).
     processing: Vec<SessionId>,
     status: MeetingStatus,
+    /// Answered once the recorder put the WAV header on disk before a sleep.
+    suspend_ack: Option<Receiver<()>>,
 }
 
 pub struct MeetingManager {
@@ -664,6 +677,8 @@ impl MeetingManager {
             voiced: Duration::ZERO,
             capture_failed: false,
             dictating: false,
+            waking: false,
+            interrupted: false,
         });
         inner.status = MeetingStatus {
             low_disk_bytes: low_disk,
@@ -700,6 +715,36 @@ impl MeetingManager {
             let _ = active
                 .session
                 .apply(millis(now_local()), Input::SilenceWarningShown);
+        }
+    }
+
+    /// The PC sleeps or wakes (`power::watch_sleep`): a recording goes on in the same session.
+    pub(crate) fn on_sleep(&self, event: SleepEvent) {
+        let input = match event {
+            SleepEvent::Suspending => Input::OsSuspended,
+            SleepEvent::Resumed => Input::OsResumed,
+        };
+        let ack = {
+            let mut inner = self.lock();
+            let Some(active) = inner.active.as_mut() else {
+                return;
+            };
+            if event == SleepEvent::Suspending {
+                // The silence count restarts; nobody can answer the card while asleep.
+                crate::call_prompt::hide_still_recording(&self.app);
+            }
+            match active.session.apply(millis(now_local()), input) {
+                Ok(effects) => self.run_effects(&mut inner, effects),
+                Err(e) => log::warn!("meeting: {event:?} refused: {e}"),
+            }
+            self.publish(&mut inner);
+            inner.suspend_ack.take()
+        };
+        // Outside the lock: the recorder may be reporting meanwhile.
+        if let Some(ack) = ack {
+            if ack.recv_timeout(SUSPEND_GRACE).is_err() {
+                log::warn!("meeting WAV header not flushed before sleep; it is at most 1 s behind");
+            }
         }
     }
 
@@ -852,10 +897,33 @@ impl MeetingManager {
                     crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 }
             }
+            Report::Woke => {
+                active.waking = false;
+                let id = active.session.id();
+                let sleep = active
+                    .session
+                    .gaps()
+                    .iter()
+                    .rev()
+                    .find(|gap| gap.kind == GapKind::Suspend)
+                    .and_then(sleeps::from_gap);
+                if let Some(sleep) = sleep {
+                    if let Err(e) = sleeps::append(&self.session_dir(id), sleep) {
+                        log::warn!("meeting {id}: sleep marker not saved: {e}");
+                    }
+                    if matches!(active.session.state(), SessionState::Recording { .. }) {
+                        let slept = Duration::from_millis(sleep.slept_ms);
+                        crate::call_prompt::show_woke(&self.app, slept);
+                    }
+                }
+            }
             Report::Finalized { recorded, error } => {
                 if let Some(e) = error {
                     log::error!("meeting capture failed: {e}");
                     active.capture_failed = true;
+                    // A stop asked meanwhile (the person, the cap) stays that stop.
+                    active.interrupted = active.waking
+                        && !matches!(active.session.state(), SessionState::Stopping { .. });
                 }
                 let now = millis(now_local());
                 if matches!(
@@ -910,6 +978,17 @@ impl MeetingManager {
                 Effect::PauseCapture => self.send(inner, Control::Pause),
                 Effect::ResumeCapture => self.send(inner, Control::Resume),
                 Effect::FinalizeCapture => self.send(inner, Control::Finalize),
+                Effect::SuspendCapture => {
+                    let (done, ack) = mpsc::channel();
+                    self.send(inner, Control::Suspend(done));
+                    inner.suspend_ack = Some(ack);
+                }
+                Effect::WakeCapture => {
+                    if let Some(active) = inner.active.as_mut() {
+                        active.waking = true;
+                    }
+                    self.send(inner, Control::Wake);
+                }
                 Effect::CapWarning { remaining } => {
                     inner.status.cap_remaining_ms =
                         Some(u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX));
@@ -918,8 +997,8 @@ impl MeetingManager {
                     crate::call_prompt::show_still_recording(&self.app, remaining)
                 }
                 Effect::Process => self.process(inner),
-                // Starting is done by `start`; suspension is not detected yet (TODO(windows)).
-                Effect::StartCapture | Effect::AskContinueOrStop => {
+                // Starting is done by `start`.
+                Effect::StartCapture => {
                     log::debug!("meeting: effect {effect:?} not handled here");
                 }
             }
@@ -945,16 +1024,17 @@ impl MeetingManager {
             crate::overlay::set_meeting_dictation(&self.app, false);
         }
         let id = active.session.id();
-        let reason = stop_reason(active.session.state());
+        // `None`: the capture did not come back after a sleep, recorded as interrupted (#128).
+        let reason = (!active.interrupted).then(|| stop_reason(active.session.state()));
         let recorded_ms = inner.status.recorded_ms;
         let voiced_ms = u64::try_from(active.voiced.as_millis()).unwrap_or(u64::MAX);
         // Only a stop the person clicked, or silence, may look like a mistake; never the cap or a
         // device that failed.
-        let may_be_mistake =
-            !active.capture_failed && matches!(reason, StopReason::User | StopReason::Silence);
+        let may_be_mistake = !active.capture_failed
+            && matches!(reason, Some(StopReason::User | StopReason::Silence));
         inner.processing.push(id);
         crate::call_prompt::hide_still_recording(&self.app);
-        if reason == StopReason::Silence && voiced_ms >= lifecycle::LITTLE_SPEECH_MS {
+        if reason == Some(StopReason::Silence) && voiced_ms >= lifecycle::LITTLE_SPEECH_MS {
             crate::call_prompt::show_silence_stopped(&self.app);
         }
         let app = self.app.clone();
@@ -977,15 +1057,17 @@ impl MeetingManager {
     fn finish(
         &self,
         id: SessionId,
-        reason: StopReason,
+        reason: Option<StopReason>,
         recorded_ms: u64,
         // `None` when the stop cannot be a mistake (cap, failed capture).
         voiced_ms: Option<u64>,
         dir: &Path,
     ) {
-        if let Err(e) = self
-            .with_store(|store| Ok(store.finish_meeting(id, now_local(), recorded_ms, reason)?))
-        {
+        let saved = self.with_store(|store| match reason {
+            Some(reason) => Ok(store.finish_meeting(id, now_local(), recorded_ms, reason)?),
+            None => Ok(store.recover_meeting(id, now_local(), recorded_ms)?),
+        });
+        if let Err(e) = saved {
             log::error!("meeting {id}: end not saved: {e}");
         }
         // The WAV is closed and the end saved: the next start retains and transcribes it.
