@@ -1058,7 +1058,8 @@
       "micFailed": "Não deu para abrir o microfone",
       "modelMissing": "Nenhum modelo de voz baixado",
       "chooseMic": "Escolher microfone",
-      "resolve": "Resolver"
+      "resolve": "Resolver",
+      "micMutedNamed": "Não chegou som de {{device}}. Está mudo?"
     },
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada",

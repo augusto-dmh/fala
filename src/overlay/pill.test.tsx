@@ -579,8 +579,9 @@ const idleCss = read("./IdlePill.css");
   const body = rule(idleCss, ".fpill.idle");
   has(body, "width: 40px", ".fpill.idle");
   has(body, "height: 8px", ".fpill.idle");
-  has(body, "background: rgba(0, 0, 0, 0.5)", ".fpill.idle");
-  has(body, "border: 1px solid rgba(255, 255, 255, 0.5)", ".fpill.idle");
+  // Cinza visível na barra de tarefas escura (Q46 do QA de 2026-10-13), nunca vermelho.
+  has(body, "background: rgba(64, 64, 64, 0.85)", ".fpill.idle");
+  has(body, "border: 1px solid rgba(255, 255, 255, 0.7)", ".fpill.idle");
   assert.ok(!/animation|@keyframes/.test(idleCss), "o repouso não anima");
   assert.ok(
     !/#e5322d|#d97706/i.test(idleCss),

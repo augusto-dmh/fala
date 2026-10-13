@@ -125,7 +125,7 @@ for (const kind of NOTICE_KINDS) {
 }
 assert.match(
   overlaySource,
-  /text=\{t\(noticeKey\(notice\.kind\), \{ device: notice\.device \?\? "" \}\)\}/,
+  /text=\{t\(noticeTextKey\(notice\), \{ device: notice\.device \?\? "" \}\)\}/,
 );
 for (const { lang, json } of locales) {
   for (const key of [

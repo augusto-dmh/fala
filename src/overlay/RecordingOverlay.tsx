@@ -12,7 +12,11 @@ import "./Pill.css";
 import "./Notice.css";
 import "./IdlePill.css";
 import { Notice } from "./Notice";
-import { noticeKey, type OverlayNotice } from "./noticeModel";
+import {
+  namedMicrophone,
+  noticeTextKey,
+  type OverlayNotice,
+} from "./noticeModel";
 import { Pill } from "./Pill";
 import {
   CallOutputCard,
@@ -250,7 +254,22 @@ const RecordingOverlay: React.FC = () => {
       const unlistenNotice = await listen<OverlayNotice>(
         "overlay-notice",
         (event) => {
-          setNotice(event.payload);
+          const shown = event.payload;
+          setNotice(shown);
+          // "Is your microphone muted?" says which microphone (Wispr names it): the backend sends
+          // no name for it, so read the one picked in Settings.
+          if (shown.kind === "mic_muted" && !shown.device) {
+            void commands.getAppSettings().then((result) => {
+              const device =
+                result.status === "ok"
+                  ? namedMicrophone(result.data.selected_microphone)
+                  : null;
+              if (device)
+                setNotice((current) =>
+                  current === shown ? { ...shown, device } : current,
+                );
+            });
+          }
         },
       );
 
@@ -411,7 +430,7 @@ const RecordingOverlay: React.FC = () => {
   const noticeCard = notice && (
     <Notice
       kind={notice.kind}
-      text={t(noticeKey(notice.kind), { device: notice.device ?? "" })}
+      text={t(noticeTextKey(notice), { device: notice.device ?? "" })}
       chooseLabel={t("overlay.notice.chooseMic")}
       resolveLabel={t("overlay.notice.resolve")}
       onChoose={() => commands.openMicrophoneSettings()}
