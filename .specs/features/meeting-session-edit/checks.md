@@ -13,3 +13,10 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-session-edit`
   restaurada. `cargo test -p fala --lib meeting::lifecycle`
 - **C5** o MCP não vê a lixeira. `cargo test -p fala-cli --test mcp trashed`
 - **C6** comandos e `bindings.ts` regenerado. `fala.exe --list-devices`
+
+## S2 — UI (PR 2)
+
+- **C7** confirmação só com áudio; mover mostra o toast [Desfazer] 5 s. `bun src/components/meeting/trash.test.tsx` (T1, T2)
+- **C8** tela: título, data, "apagada há N dias", Restaurar e Apagar para sempre, rodapé dos
+  30 dias, "Nada na lixeira", link "Lixeira (N)". Mesmo arquivo (T3, T4)
+- **C9** manual: mover, desfazer, restaurar e apagar para sempre no app de debug portátil

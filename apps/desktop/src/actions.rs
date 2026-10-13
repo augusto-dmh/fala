@@ -977,6 +977,7 @@ impl ShortcutAction for TranscribeAction {
                     tm.cancel_stream();
                     rm.block_queue().cancel();
                     utils::show_notice(&ah, NoticeKind::MicMuted, None, true);
+                    utils::announce_unheard(&ah, true);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else if outcome == StopOutcome::Discard {
                     debug!("Recording produced no audio samples; skipping persistence");
@@ -985,6 +986,7 @@ impl ShortcutAction for TranscribeAction {
                     tm.cancel_stream();
                     rm.block_queue().cancel();
                     utils::hide_recording_overlay(&ah);
+                    utils::announce_unheard(&ah, false);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else {
                     // Save WAV concurrently with transcription
@@ -1071,6 +1073,7 @@ impl ShortcutAction for TranscribeAction {
                                     debug!("Could not remove the empty dictation's WAV: {e}");
                                 }
                                 utils::hide_recording_overlay(&ah);
+                                utils::announce_unheard(&ah, false);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             }

@@ -308,21 +308,21 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   for (const key of ["transcribe", "generate", "transcript", "notes"]) {
     assert.ok(opened.includes(`meeting.view.${key}`), key);
   }
-  // Copy, the transcript, the participants and delete wait behind "⋯".
+  // Copy, the transcript, the participants and the trash wait behind "⋯".
   assert.ok(opened.includes('aria-label="meeting.screen.more"'));
   assert.ok(!opened.includes("meeting.view.copy<"));
   for (const key of [
     "meeting.view.copy",
     "meeting.view.copyTranscript",
     "meeting.people.participants",
-    "meeting.delete.action",
+    "meeting.trash.action",
   ]) {
     assert.ok(menu().includes(`>${key}</button>`), key);
   }
   assert.ok(!menu({ transcript: false }).includes("copyTranscript"));
   assert.match(
     menu({ deleteDisabled: true }),
-    /disabled=""[^>]*>meeting\.delete\.action</,
+    /disabled=""[^>]*>meeting\.trash\.action</,
   );
   // The template waits behind the arrow of "Gerar notas"; a draft shows it next to "Gravar".
   assert.ok(opened.includes('aria-label="meeting.view.template"'));
