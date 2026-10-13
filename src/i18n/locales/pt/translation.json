@@ -425,7 +425,7 @@
       },
       "apiKey": {
         "title": "Chave do Gemini",
-        "description": "Fica no cofre de senhas do sistema. Sem chave, só as regras locais formatam o texto.",
+        "description": "Fica no cofre do sistema. Sem chave, só as regras locais formatam o texto.",
         "placeholder": "Cole a chave da API"
       },
       "disabledApps": {
@@ -1337,10 +1337,13 @@
     },
     "key": {
       "label": "Chave da ElevenLabs",
-      "placeholder": "cole a chave",
-      "save": "Salvar no cofre do sistema",
-      "saved": "Salva no cofre do sistema. Cole outra para trocar.",
+      "saved": "Salva no cofre do sistema. As reuniões são transcritas.",
       "missing": "Sem ela, as reuniões gravam mas não são transcritas. Fica no cofre do sistema e não aparece de novo."
+    },
+    "notesKey": {
+      "label": "Chave da Anthropic",
+      "saved": "Salva no cofre do sistema. As notas saem da transcrição.",
+      "missing": "Escreve as notas a partir da transcrição. Sem ela, as reuniões ficam sem notas. Fica no cofre do sistema e não aparece de novo."
     },
     "errors": {
       "consent_required": "Aceite o aviso antes de gravar.",
@@ -1423,5 +1426,15 @@
       "label": "Ações da reunião",
       "close": "Fechar a transcrição"
     }
+  },
+  "keyField": {
+    "placeholder": "Cole a chave",
+    "save": "Salvar",
+    "saved": "Salva",
+    "replace": "Trocar",
+    "replaceNamed": "Trocar a {{name}}",
+    "remove": "Remover",
+    "removeNamed": "Remover a {{name}}",
+    "cancel": "Cancelar"
   }
 }
