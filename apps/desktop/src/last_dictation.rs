@@ -291,6 +291,7 @@ mod tests {
             paste_failed: false,
             discarded: false,
             llm_partial: false,
+            audio_deleted: false,
         }
     }
 

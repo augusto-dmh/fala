@@ -747,7 +747,8 @@
       "discarded": "This dictation was discarded.",
       "recover": "Recover",
       "recovered": "Dictation recovered and copied",
-      "recoverError": "Could not recover the dictation."
+      "recoverError": "Could not recover the dictation.",
+      "audioDeleted": "This dictation's audio was deleted; the text stays."
     },
     "debug": {
       "title": "Debug",
@@ -800,18 +801,18 @@
         "description": "Sensitivity for custom word corrections"
       },
       "historyLimit": {
-        "title": "History Limit",
-        "description": "Maximum number of history entries to keep",
-        "entries": "entries"
+        "title": "Recordings to keep",
+        "description": "How many recent audio recordings to keep. Dictation text has no limit.",
+        "entries": "recordings"
       },
       "recordingRetention": {
-        "title": "Auto-Delete Recordings",
-        "description": "Automatically delete old recordings to save space",
-        "never": "Never",
-        "preserveLimit": "Keep latest {{count}}",
-        "days3": "After 3 days",
-        "weeks2": "After 2 weeks",
-        "months3": "After 3 months",
+        "title": "Audio recordings",
+        "description": "Deletes the audio of old dictations to save space. The text stays in the history.",
+        "never": "Keep all",
+        "preserveLimit": "Keep the latest {{count}}",
+        "days3": "Delete after 3 days",
+        "weeks2": "Delete after 2 weeks",
+        "months3": "Delete after 3 months",
         "placeholder": "Select retention period..."
       },
       "alwaysOnMicrophone": {
