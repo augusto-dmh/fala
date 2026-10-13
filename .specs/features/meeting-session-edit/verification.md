@@ -20,3 +20,9 @@ Also: `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo fmt 
 The app with its UI (S1 has no UI change): move a recorded meeting to the trash and see
 `audio/<id>/` go and the `.md` land in `Reuniões/.lixeira/`, hidden in Obsidian; `fala-cli
 reindex` on a deleted database brings the trash back.
+
+## S2 (PR 2)
+
+C7, C8 PASS: `bun src/components/meeting/trash.test.tsx` → T1-T4 ok; the 15 files under
+`src/components/meeting/` pass; `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`,
+`bun run check:translations` clean. C9 open: no one clicked through the app.
