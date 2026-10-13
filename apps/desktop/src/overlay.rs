@@ -62,6 +62,13 @@ const OVERLAY_NOTICE_HEIGHT: f64 = 110.0;
 /// notice's size while it shows.
 static MEETING_CARD: AtomicBool = AtomicBool::new(false);
 
+/// A dictation runs during a meeting: the card "the meeting's mic is paused while you dictate"
+/// sits over the recording pill (ADR-0015), so the window takes a notice's size.
+static MEETING_DICTATION: AtomicBool = AtomicBool::new(false);
+
+/// The last state asked of the overlay was the recording pill (not the live streaming card).
+static RECORDING_PILL: AtomicBool = AtomicBool::new(false);
+
 // The idle pill: a 40x8 capsule (`.fpill.idle` in Pill.css) in a window just large enough to
 // hover, so the transparent area that takes clicks stays small. On hover the window grows for the
 // shortcut card (`.fpill.idle.hover`).
@@ -72,12 +79,22 @@ const OVERLAY_IDLE_HOVER_HEIGHT: f64 = 64.0;
 
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
+    sized(
+        state,
+        MEETING_CARD.load(Ordering::Relaxed),
+        MEETING_DICTATION.load(Ordering::Relaxed),
+    )
+}
+
+/// The size of `state`, with a card over the meeting pill or over a dictation's pill.
+fn sized(state: &str, meeting_card: bool, meeting_dictation: bool) -> (f64, f64) {
     match state {
         "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
         "notice" | "paste_failed" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
-        "meeting" | "meeting_paused" if MEETING_CARD.load(Ordering::Relaxed) => {
+        "meeting" | "meeting_paused" if meeting_card => {
             (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT)
         }
+        "recording" if meeting_dictation => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
         "idle" => (OVERLAY_IDLE_WIDTH, OVERLAY_IDLE_HEIGHT),
         "idle_hover" => (OVERLAY_IDLE_HOVER_WIDTH, OVERLAY_IDLE_HOVER_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
@@ -591,6 +608,7 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Whether the overlay shows at all is governed by overlay_style; position
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
     // so the common overlay-disabled case never pays for a main-thread hop.
+    RECORDING_PILL.store(state == "recording", Ordering::SeqCst);
     let settings = settings::get_settings(app_handle);
     if settings.overlay_style == OverlayStyle::None {
         return;
@@ -855,6 +873,14 @@ pub fn show_meeting_overlay(app_handle: &AppHandle) {
 pub fn set_meeting_card(app_handle: &AppHandle, on: bool) {
     if MEETING_CARD.swap(on, Ordering::SeqCst) != on {
         show_meeting_overlay(app_handle);
+    }
+}
+
+/// A dictation started or ended during a meeting. The recording pill may already show, so it is
+/// shown again at its new size; the live streaming card is left as it is.
+pub fn set_meeting_dictation(app_handle: &AppHandle, on: bool) {
+    if MEETING_DICTATION.swap(on, Ordering::SeqCst) != on && RECORDING_PILL.load(Ordering::SeqCst) {
+        show_recording_overlay(app_handle);
     }
 }
 
@@ -1562,6 +1588,18 @@ mod tests {
             Some("meeting_paused")
         );
         assert_eq!(overlay_for_meeting(MeetingIndicator::None), None);
+        // A dictation during a meeting stacks its card over the recording pill only.
+        let card = (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT);
+        assert_eq!(sized("recording", false, true), card);
+        assert_eq!(
+            sized("recording", false, false),
+            (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        );
+        assert_eq!(
+            sized("transcribing", false, true),
+            (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        );
+        assert_eq!(sized("meeting", true, false), card);
         // The meeting states use the compact pill, never the streaming card.
         assert_eq!(
             overlay_dimensions("meeting"),

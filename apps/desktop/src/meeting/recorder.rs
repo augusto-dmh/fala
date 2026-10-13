@@ -3,6 +3,9 @@
 //! switch of the system output while recording. A "system only" session opens no mic: the
 //! recorder fills that channel with zeros.
 //!
+//! The mic is a tap of `MIC_HUB`, the stream dictation reads too (ADR-0015): while a dictation
+//! runs, the recorder zeroes the mic channel from the dictation's pre-buffer to its end.
+//!
 //! The streams are opened on the thread that owns them (a cpal stream is not `Send` on every
 //! host). Paused time is neither written nor counted: the recorder's clock is an [`ActiveClock`]
 //! that only advances while recording. The same [`Gate`] keeps the PC awake while it records and
@@ -14,12 +17,18 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fala_audio::{
-    MeetingRecorder, MeetingWav, Mic, OutputMeter, OutputPeak, SystemAudio, MEETING_RATE,
+    MeetingRecorder, MeetingWav, MicTap, OutputMeter, OutputPeak, SystemAudio, MEETING_RATE,
 };
 
+use crate::dictation_capture::MIC_HUB;
 use crate::power::{self, PowerApi, PowerGuard};
 
 const TICK: Duration = Duration::from_millis(100);
+/// How far back a dictation's interval starts: its 300 ms pre-buffer plus the time the start takes
+/// to reach this thread.
+pub(crate) const OMIT_LOOKBACK: Duration = Duration::from_millis(400);
+/// How long the interval goes on after the dictation's last sample (a second device's latency).
+pub(crate) const OMIT_MARGIN: Duration = Duration::from_millis(50);
 /// How often levels and the recorded duration go back to the manager (UI at 4 Hz).
 pub(crate) const REPORT_EVERY: Duration = Duration::from_millis(250);
 
@@ -29,6 +38,10 @@ pub(crate) enum Control {
     /// Record the system channel from this output from now on; the WAV keeps zeros for the
     /// moment without a source.
     SwitchSystem(String),
+    /// A dictation started at this instant: zero the mic channel from its pre-buffer on.
+    BeginOmit(Instant),
+    /// The dictation ended (released, cancelled or discarded).
+    EndOmit,
     /// Close the WAV (header and file) and end the thread.
     Finalize,
 }
@@ -43,6 +56,8 @@ pub(crate) enum Report {
         mic_peak: f32,
         system_peak: f32,
         outputs: Vec<OutputPeak>,
+        /// A dictation zeroed the mic for part of the period: its level counts for nothing.
+        mic_omitted: bool,
     },
     /// The system channel now records `name`, or still records the previous output (`error`).
     SystemSwitched { name: String, error: Option<String> },
@@ -80,6 +95,12 @@ impl ActiveClock {
         if let Some(since) = self.paused_since.take() {
             self.paused_total += now.saturating_duration_since(since);
         }
+    }
+
+    /// How long the current pause has lasted; zero while recording.
+    pub(crate) fn paused_for(&self, now: Instant) -> Duration {
+        self.paused_since
+            .map_or(Duration::ZERO, |since| now.saturating_duration_since(since))
     }
 
     pub(crate) fn elapsed(&self, now: Instant) -> Duration {
@@ -130,6 +151,11 @@ impl<A: PowerApi> Gate<A> {
         self.clock.elapsed(now)
     }
 
+    /// How long the current pause has lasted; zero while writing.
+    pub(crate) fn paused_for(&self, now: Instant) -> Duration {
+        self.clock.paused_for(now)
+    }
+
     fn update(&mut self, now: Instant) {
         if self.writing() {
             self.clock.resume(now);
@@ -177,7 +203,7 @@ pub(crate) fn spawn(
 
 struct Capture {
     /// `None` in a "system only" session.
-    mic: Option<Mic>,
+    mic: Option<MicTap>,
     system: SystemAudio,
     recorder: MeetingRecorder,
     /// Peaks of every output, to tell "nothing plays" from "it plays elsewhere"; `None` where
@@ -190,17 +216,14 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let system = SystemAudio::open(system_name).map_err(|e| e.to_string())?;
-    let mic = with_mic
-        .then(|| Mic::open(None))
-        .transpose()
-        .map_err(|e| e.to_string())?;
-    let mic_rate = mic.as_ref().map_or(MEETING_RATE, Mic::sample_rate);
+    let mic = with_mic.then(open_mic).transpose()?;
+    let mic_rate = mic.as_ref().map_or(MEETING_RATE, MicTap::sample_rate);
     let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
     let recorder =
         MeetingRecorder::new(mic_rate, system.sample_rate(), file).map_err(|e| e.to_string())?;
     log::info!(
         "meeting capture open: mic {}, system {system_name}",
-        mic.as_ref().map_or("none", Mic::name)
+        mic.as_ref().map_or("none", MicTap::name)
     );
     let meter = OutputMeter::start()
         .map_err(|e| log::info!("output peaks unavailable: {e}"))
@@ -211,6 +234,45 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
         recorder,
         meter,
     })
+}
+
+/// The default input, through the hub: when dictation uses the same device, both read one stream.
+fn open_mic() -> Result<MicTap, String> {
+    use cpal::traits::HostTrait;
+    let device = crate::audio_toolkit::get_cpal_host()
+        .default_input_device()
+        .ok_or_else(|| "no input device".to_string())?;
+    MIC_HUB.open(device, None).map_err(|e| e.to_string())
+}
+
+/// How often a failed mic stream is reopened while recording.
+const REOPEN_EVERY: Duration = Duration::from_secs(2);
+
+/// The mic's stream failed (device reset or removed): the hub hands out a new stream of the
+/// default input, the one dictation reopens too, so both stay on a single stream. A new stream
+/// at another rate would break the recorder's clock, so the old one is kept then.
+fn reopen_mic(capture: &mut Capture) {
+    let Some(rate) = capture.mic.as_ref().map(MicTap::sample_rate) else {
+        return;
+    };
+    match open_mic() {
+        Ok(tap) if tap.sample_rate() == rate => {
+            log::warn!("meeting mic stream failed; reopened {}", tap.name());
+            capture.mic = Some(tap);
+        }
+        Ok(tap) => log::warn!(
+            "meeting mic stream failed; the new one runs at {} Hz, not {rate}",
+            tap.sample_rate()
+        ),
+        Err(e) => log::warn!("meeting mic stream failed and did not reopen: {e}"),
+    }
+}
+
+/// How far back from the newest sample the mic is zeroed for a dictation that started `late`
+/// ago: the pre-buffer and the delay, minus the current pause, which recorded nothing. A pause
+/// long enough leaves nothing recorded to zero.
+pub(crate) fn omit_lookback(late: Duration, paused_for: Duration) -> Duration {
+    (OMIT_LOOKBACK + late).saturating_sub(paused_for)
 }
 
 /// Opens `name` and, only once it is open, drops the old system stream: a failed switch keeps
@@ -281,7 +343,11 @@ fn run(
     let (mut mic_level, mut system_level) = (Level::default(), Level::default());
     let mut last_report = Instant::now();
     let mut error = None;
+    // A dictation is zeroing the mic now, and did at some point since the last report.
+    let (mut omitting, mut omitted) = (false, false);
+    let mut last_reopen: Option<Instant> = None;
     loop {
+        let mut omit: Option<Option<Instant>> = None;
         let finalize = match commands.recv_timeout(TICK) {
             Ok(Control::Pause) => {
                 gate.pause(Instant::now());
@@ -300,6 +366,14 @@ fn run(
                 on_report(Report::SystemSwitched { name, error });
                 false
             }
+            Ok(Control::BeginOmit(at)) => {
+                omit = Some(Some(at));
+                false
+            }
+            Ok(Control::EndOmit) => {
+                omit = Some(None);
+                false
+            }
             Ok(Control::Finalize) | Err(RecvTimeoutError::Disconnected) => true,
             Err(RecvTimeoutError::Timeout) => false,
         };
@@ -311,11 +385,33 @@ fn run(
         if let Some(mic) = capture.mic.as_mut() {
             mic.drain_into(&mut buffer);
         }
+        let failed = capture.mic.as_ref().is_some_and(MicTap::failed);
+        if failed && last_reopen.is_none_or(|at| now.duration_since(at) >= REOPEN_EVERY) {
+            last_reopen = Some(now);
+            reopen_mic(&mut capture);
+        }
         if !paused {
             mic_level.add(&buffer);
             if let Err(e) = capture.recorder.push_mic(&buffer) {
                 error = Some(e.to_string());
             }
+        }
+        // After the push, so the interval is measured from the newest sample.
+        match omit {
+            Some(Some(at)) => {
+                let late = now.saturating_duration_since(at);
+                capture
+                    .recorder
+                    .begin_omit(omit_lookback(late, gate.paused_for(now)));
+                (omitting, omitted) = (true, true);
+            }
+            Some(None) => {
+                // Paused, nothing more is recorded: the interval ends where the recording did.
+                let margin = if paused { Duration::ZERO } else { OMIT_MARGIN };
+                capture.recorder.end_omit(margin);
+                omitting = false;
+            }
+            None => {}
         }
         buffer.clear();
         capture.system.drain_into(&mut buffer);
@@ -346,6 +442,7 @@ fn run(
                 mic_peak,
                 system_peak,
                 outputs: capture.meter.as_ref().map(|m| m.take()).unwrap_or_default(),
+                mic_omitted: std::mem::replace(&mut omitted, omitting),
             });
         }
     }
@@ -413,6 +510,34 @@ mod tests {
         // Resuming twice changes nothing.
         clock.resume(at(18));
         assert_eq!(clock.elapsed(at(18)), Duration::from_secs(13));
+    }
+
+    #[test]
+    fn a_dictation_in_a_pause_zeroes_only_what_was_recorded() {
+        let ms = Duration::from_millis;
+        assert_eq!(omit_lookback(ms(0), ms(0)), OMIT_LOOKBACK);
+        assert_eq!(
+            omit_lookback(ms(30), ms(0)),
+            ms(430),
+            "a late start still covers"
+        );
+        assert_eq!(
+            omit_lookback(ms(0), ms(150)),
+            ms(250),
+            "the pre-buffer reaches back past the pause"
+        );
+        assert_eq!(omit_lookback(ms(0), Duration::from_secs(5)), Duration::ZERO);
+        let t0 = Instant::now();
+        let mut clock = ActiveClock::new(t0);
+        assert_eq!(
+            clock.paused_for(t0 + Duration::from_secs(3)),
+            Duration::ZERO
+        );
+        clock.pause(t0 + Duration::from_secs(3));
+        assert_eq!(
+            clock.paused_for(t0 + Duration::from_secs(5)),
+            Duration::from_secs(2)
+        );
     }
 
     #[test]

@@ -1005,7 +1005,7 @@
     "pasteFailedTitle": "Falha ao colar o texto",
     "pasteFailed": "Não foi possível colar o texto no aplicativo ativo.",
     "transcriptionFailedTitle": "Falha na transcrição",
-    "meetingActive": "Ditado indisponível durante a gravação de uma reunião (inclusive pausada). Pare a reunião para ditar."
+    "meetingInPerson": "Ditado indisponível durante uma reunião presencial (inclusive pausada): o mic é a reunião. Pare a reunião para ditar."
   },
   "appLanguage": {
     "title": "Idioma da Aplicação",
@@ -1046,6 +1046,7 @@
     "callElsewhere": "O som da call está saindo por {{device}}",
     "recordFrom": "Gravar deste dispositivo",
     "meetingConsent": "Grave só com o consentimento de quem participa.",
+    "meetingDictation": "Mic da reunião pausado enquanto você dita",
     "pasteFailed": {
       "title": "Não deu para colar.",
       "retry": "{{keys}} cola de novo · clique para copiar",

@@ -60,6 +60,7 @@ fn both_silent_leaves_it_to_the_mute_watch() {
         let levels = fala_meeting::Levels {
             mic: SILENCE_RMS * 4.0,
             system: 0.0,
+            mic_omitted: false,
         };
         muted = mute.observe(STEP * i, levels);
     }

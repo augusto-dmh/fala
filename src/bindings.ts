@@ -2202,7 +2202,11 @@ call_output: string | null;
 /**
  * A channel in digital zero for ~3 s (the pill's dot turns amber).
  */
-zero_mic: boolean; zero_system: boolean }
+zero_mic: boolean; zero_system: boolean; 
+/**
+ * A dictation is zeroing the meeting's mic channel now (ADR-0015).
+ */
+dictating: boolean }
 /**
  * A session in the list.
  */

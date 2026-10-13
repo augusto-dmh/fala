@@ -42,6 +42,9 @@ pub enum UserAction {
 pub struct Levels {
     pub mic: f32,
     pub system: f32,
+    /// Um ditado zerou o mic em parte do intervalo (ADR-0015): o nível do mic não conta nem como
+    /// silêncio nem como fala.
+    pub mic_omitted: bool,
 }
 
 /// Tudo o que move a sessão.
@@ -374,11 +377,12 @@ impl MeetingSession {
         let delta = recorded.saturating_sub(self.recorded);
         self.recorded = self.recorded.max(recorded);
 
-        let mic_silent = !self.config.mode.has_mic() || levels.mic < SILENCE_RMS;
-        if mic_silent && levels.system < SILENCE_RMS {
-            self.silent_for += delta;
-        } else {
+        let has_mic = self.config.mode.has_mic();
+        let mic_heard = has_mic && !levels.mic_omitted && levels.mic >= SILENCE_RMS;
+        if mic_heard || levels.system >= SILENCE_RMS {
             self.reset_silence();
+        } else if !(has_mic && levels.mic_omitted) {
+            self.silent_for += delta;
         }
 
         let cap = self.config.cap.duration();
