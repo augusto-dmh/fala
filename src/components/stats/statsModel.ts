@@ -185,6 +185,65 @@ export function dayBars(
   }));
 }
 
+/** The longest period whose bars each get the weekday under them and the words above. */
+export const LABELLED_PERIOD = 7;
+/** In longer periods, a date under one bar in this many, counted back from today. */
+export const DATE_STRIDE = 7;
+
+/** What the chart writes around one bar, in the UI language. */
+export interface BarText {
+  /** Under the bar: the weekday in a week; in longer periods the date, once a week counted
+   *  back from today, and null on the other bars. */
+  axis: string | null;
+  /** Above the bar: its words, only in a week and only when there are some. */
+  value: string | null;
+  /** The full date, for the tooltip and the screen reader. */
+  date: string;
+}
+
+/** `days` is the period, not the bar count: a week can show an eighth, older day (`dayBars`)
+ *  and keeps its labels. The full date carries the year only when it is not the latest bar's. */
+export function barText(
+  bars: readonly DayBar[],
+  days: number,
+  lang: string,
+): BarText[] {
+  const few = days <= LABELLED_PERIOD;
+  const lastYear =
+    bars.length > 0 ? parseDay(bars[bars.length - 1].day).getFullYear() : 0;
+  const weekday = new Intl.DateTimeFormat(lang, { weekday: "short" });
+  const short = new Intl.DateTimeFormat(lang, {
+    day: "numeric",
+    month: "short",
+  });
+  const long = new Intl.DateTimeFormat(lang, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  const longWithYear = new Intl.DateTimeFormat(lang, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return bars.map((bar, i) => {
+    const date = parseDay(bar.day);
+    const fromEnd = bars.length - 1 - i;
+    return {
+      axis: few
+        ? weekday.format(date)
+        : fromEnd % DATE_STRIDE === 0
+          ? short.format(date)
+          : null,
+      value: few && bar.words > 0 ? formatCount(bar.words, lang) : null,
+      date: (date.getFullYear() === lastYear ? long : longWithYear).format(
+        date,
+      ),
+    };
+  });
+}
+
 /** The summary as Markdown, ready for a `verification.md` or a phase handoff. */
 export function summaryMarkdown(
   stats: DictationStats,

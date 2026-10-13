@@ -65,7 +65,8 @@
     },
     "perDay": {
       "title": "Words per day",
-      "bar": "{{day}} · words: {{words}}"
+      "bar_one": "{{day}}: {{words}} word",
+      "bar_other": "{{day}}: {{words}} words"
     },
     "copy": "Copy summary",
     "copied": "Summary copied.",
