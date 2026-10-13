@@ -261,7 +261,7 @@ const view = (d: MeetingDetail, over: Record<string, unknown> = {}) =>
   assert.ok(failed.includes("meeting.view.notesFailed"), failed);
   assert.ok(failed.includes("meeting.view.retry"), failed);
   assert.ok(!view(detail()).includes("meeting.view.notesFailed"));
-  assert.ok(view(detail()).includes("meeting.view.copyTranscript"));
+  assert.match(viewSource, /transcript=\{detail\.lines\.length > 0\}/);
   assert.ok(view(detail()).includes("meeting.view.search"));
   // A página segue a geração que o parar dispara: "notes" liga o estado, "failed" logo depois
   // de "notes" é falha das notas.
