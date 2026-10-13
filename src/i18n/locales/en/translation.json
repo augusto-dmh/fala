@@ -1207,7 +1207,7 @@
       }
     },
     "annotations": {
-      "placeholder": "Type your notes. They save themselves."
+      "placeholder": "Write notes, or / for templates"
     },
     "list": {
       "title": "Meetings",
@@ -1231,7 +1231,6 @@
       "transcript": "Transcript",
       "noTranscript": "No transcript yet.",
       "notes": "Notes",
-      "notesAbove": "Recording now: this meeting's notes are in the field above.",
       "search": "Search the transcript",
       "found_one": "{{count}} match",
       "found_other": "{{count}} matches",
@@ -1386,6 +1385,16 @@
         "failed": "Failed",
         "idle": "No notes"
       }
+    },
+    "screen": {
+      "title": "Meeting title",
+      "titleFailed": "Could not save the title.",
+      "more": "More actions",
+      "tabs": "My notes and the notes",
+      "myNotes": "My notes",
+      "noNotes": "The notes show here once they are generated.",
+      "slash": "Notes template:",
+      "imported": "Imported"
     }
   }
 }

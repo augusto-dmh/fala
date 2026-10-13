@@ -17,6 +17,8 @@ export interface MeetingPeoplePanelProps {
    * transcription removes them.
    */
   reloadOn: unknown;
+  /** "Participants" was picked in the menu: the names field shows; suggestions always do. */
+  expanded?: boolean;
   /** A name was applied: the transcript labels changed. */
   onNamesChanged?: () => void;
 }
@@ -28,6 +30,7 @@ export interface MeetingPeoplePanelProps {
 export function MeetingPeoplePanel({
   id,
   reloadOn,
+  expanded = true,
   onNamesChanged,
 }: MeetingPeoplePanelProps) {
   const { t } = useTranslation();
@@ -81,21 +84,23 @@ export function MeetingPeoplePanel({
 
   return (
     <div className="space-y-2">
-      <label className="flex flex-col gap-1 text-sm">
-        <span>{t("meeting.people.participants")}</span>
-        <Input
-          value={typed}
-          placeholder={t("meeting.people.placeholder")}
-          onChange={(event) => setTyped(event.target.value)}
-          onFocus={() => {
-            editing.current = true;
-          }}
-          onBlur={() => void save()}
-        />
-        <span className="text-caption text-text-2">
-          {t("meeting.people.hint")}
-        </span>
-      </label>
+      {expanded && (
+        <label className="flex flex-col gap-1 text-sm">
+          <span>{t("meeting.people.participants")}</span>
+          <Input
+            value={typed}
+            placeholder={t("meeting.people.placeholder")}
+            onChange={(event) => setTyped(event.target.value)}
+            onFocus={() => {
+              editing.current = true;
+            }}
+            onBlur={() => void save()}
+          />
+          <span className="text-caption text-text-2">
+            {t("meeting.people.hint")}
+          </span>
+        </label>
+      )}
       {error !== null && (
         <p role="alert" className="text-sm text-red-500">
           {t(errorKey(error))}

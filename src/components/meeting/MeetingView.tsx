@@ -11,11 +11,13 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { AnnotationsField } from "./AnnotationsField";
+import { DeleteConfirm } from "./DeleteMeeting";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { NotesEditor } from "./NotesEditor";
 import { errorKey, needsConfirmation, titleOf } from "./meetingModel";
 import { NotesView } from "./NotesView";
+import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
 import { shownTemplate, TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
@@ -36,13 +38,18 @@ export interface MeetingViewProps {
   /** `replaceEdited`: the person confirmed discarding the notes they edited. */
   onGenerate: (templateId: string, replaceEdited: boolean) => void;
   onCopy: () => void;
-  /** A name was applied or typed, or the notes were edited: reload the session. */
+  /** A name or the title changed, or the notes were edited: reload the session. */
   onNamesChanged?: () => void;
+  onDelete?: () => void;
+  /** Recording, transcribing or writing notes: nothing to delete yet. */
+  deleteDisabled?: boolean;
 }
 
-/** One session: the draft's agenda, or the transcript, the typed notes and the notes. */
+export type SessionTab = "annotations" | "notes";
+
+/** One session as a note: the title, "My notes | Notes", the actions and the transcript. */
 export function MeetingView(props: MeetingViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { detail } = props;
   const [templateId, setTemplateId] = useState(
     detail.notes_template ?? props.templates[0]?.id ?? "geral",
@@ -79,6 +86,22 @@ export function MeetingView(props: MeetingViewProps) {
         : parseNotes(detail.notes_md, detail.lines),
     [detail.notes_md, detail.lines],
   );
+  // Notes that exist open on "Notes" (unless it records); notes that arrive switch to them, as
+  // in Granola. Both panels stay mounted, so switching never loses what is being typed.
+  const hasNotes = notes !== null;
+  const [tab, setTab] = useState<SessionTab>(
+    hasNotes && !props.recording ? "notes" : "annotations",
+  );
+  const hadNotes = useRef(hasNotes);
+  useEffect(() => {
+    if (hasNotes && !hadNotes.current) setTab("notes");
+    hadNotes.current = hasNotes;
+  }, [hasNotes]);
+  const [showPeople, setShowPeople] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  useEffect(() => {
+    if (props.deleteDisabled) setDeleting(false);
+  }, [props.deleteDisabled]);
 
   const play = (line: MeetingLine) => {
     setClipError(null);
@@ -157,33 +180,111 @@ export function MeetingView(props: MeetingViewProps) {
     } else scroll();
   };
 
+  const tabButton = (id: SessionTab, label: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === id}
+      onClick={() => setTab(id)}
+      className={`rounded-md px-3 py-1 text-body transition-colors focus-visible:focus-ring ${
+        tab === id
+          ? "bg-surface-1 font-semibold text-text"
+          : "text-text-2 hover:text-text"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  const annotations = (
+    <AnnotationsField
+      id={detail.summary.id}
+      initial={detail.annotations}
+      label={draft ? t("meeting.view.agenda") : t("meeting.view.annotations")}
+      labelHidden={!draft}
+      slashMenu={(clear) => (
+        <div
+          role="group"
+          aria-label={t("meeting.screen.slash")}
+          className="flex flex-wrap items-center gap-1 text-caption text-text-2"
+        >
+          {t("meeting.screen.slash")}
+          {props.templates.map((template) => (
+            <Button
+              key={template.id}
+              size="sm"
+              variant={template.id === picked ? "primary" : "secondary"}
+              onClick={() => {
+                pickTemplate(template.id);
+                clear();
+              }}
+            >
+              {template.name}
+            </Button>
+          ))}
+        </div>
+      )}
+    />
+  );
+
   return (
     <div className="space-y-4 p-4">
-      <h3 className="text-base font-semibold">{titleOf(detail.summary, t)}</h3>
-      {props.recording ? (
-        // While it records, its notes are typed in the recorder above: one field per session.
-        <p className="text-sm">{t("meeting.view.notesAbove")}</p>
-      ) : (
-        <AnnotationsField
-          id={detail.summary.id}
-          initial={detail.annotations}
-          label={
-            draft ? t("meeting.view.agenda") : t("meeting.view.annotations")
-          }
+      <header className="space-y-1">
+        <div className="flex items-start gap-2">
+          <TitleField
+            id={detail.summary.id}
+            title={detail.summary.title}
+            fallback={titleOf(detail.summary, t)}
+            onSaved={() => props.onNamesChanged?.()}
+            t={t}
+          />
+          <SessionMenu
+            transcript={detail.lines.length > 0}
+            deleteDisabled={props.deleteDisabled ?? true}
+            onCopy={props.onCopy}
+            onCopyTranscript={() =>
+              void copyToClipboard(transcriptText(detail.lines, t))
+            }
+            onPeople={() => setShowPeople(true)}
+            onDelete={() => setDeleting(true)}
+            t={t}
+          />
+        </div>
+        <p className="text-caption text-text-2 tabular-nums">
+          {metaLine(
+            detail.summary,
+            new Date(),
+            i18n.language,
+            t,
+            props.recording,
+          )}
+        </p>
+      </header>
+      {deleting && props.onDelete && (
+        <DeleteConfirm
+          onConfirm={() => {
+            setDeleting(false);
+            props.onDelete?.();
+          }}
+          onCancel={() => setDeleting(false)}
+          t={t}
         />
       )}
       <MeetingPeoplePanel
         id={detail.summary.id}
         reloadOn={detail}
+        expanded={showPeople}
         onNamesChanged={namesChanged}
       />
       {draft ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={props.onRecordDraft}>
-            {t("meeting.view.recordDraft")}
-          </Button>
-          {templateSelect}
-        </div>
+        <>
+          {annotations}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={props.onRecordDraft}>
+              {t("meeting.view.recordDraft")}
+            </Button>
+            {templateSelect}
+          </div>
+        </>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -214,19 +315,6 @@ export function MeetingView(props: MeetingViewProps) {
             >
               {props.generating ? generatingLabel : t("meeting.view.generate")}
             </Button>
-            <Button variant="secondary" onClick={props.onCopy}>
-              {t("meeting.view.copy")}
-            </Button>
-            {detail.lines.length > 0 && (
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  void copyToClipboard(transcriptText(detail.lines, t))
-                }
-              >
-                {t("meeting.view.copyTranscript")}
-              </Button>
-            )}
           </div>
           {props.notesFailed && !props.generating && (
             <div
@@ -294,6 +382,68 @@ export function MeetingView(props: MeetingViewProps) {
               </Button>
             </div>
           )}
+          <div
+            role="tablist"
+            aria-label={t("meeting.screen.tabs")}
+            className="inline-flex gap-1 rounded-lg bg-surface-2 p-1"
+          >
+            {tabButton("annotations", t("meeting.screen.myNotes"))}
+            {tabButton("notes", t("meeting.view.notes"))}
+          </div>
+          <div role="tabpanel" hidden={tab !== "annotations"}>
+            {annotations}
+          </div>
+          <div role="tabpanel" hidden={tab !== "notes"} className="space-y-1">
+            {notes === null ? (
+              <p className="text-body text-text-2">
+                {props.generating
+                  ? generatingLabel
+                  : t("meeting.screen.noNotes")}
+              </p>
+            ) : (
+              <>
+                {!editing && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={props.generating}
+                    onClick={() => {
+                      setConfirming(false);
+                      setEditing(true);
+                    }}
+                  >
+                    {t("meeting.notesEdit.edit")}
+                  </Button>
+                )}
+                {detail.summary.imported_from === "granola" && (
+                  <p className="text-caption text-text-2">
+                    {t("meeting.granola.noAnchors")}
+                  </p>
+                )}
+                {editing && detail.notes_md !== null ? (
+                  <NotesEditor
+                    id={detail.summary.id}
+                    markdown={detail.notes_md}
+                    onDone={(edited) => {
+                      setEditing(false);
+                      if (edited) setEditedHere(true);
+                      props.onNamesChanged?.();
+                    }}
+                  />
+                ) : (
+                  <NotesView
+                    notes={notes}
+                    segments={segments}
+                    audioAvailable={detail.audio_available}
+                    playing={playing}
+                    onPlay={play}
+                    onReveal={reveal}
+                    t={t}
+                  />
+                )}
+              </>
+            )}
+          </div>
           <section className="space-y-1">
             <h4 className="text-sm font-semibold">
               {t("meeting.view.transcript")}
@@ -351,54 +501,6 @@ export function MeetingView(props: MeetingViewProps) {
               </>
             )}
           </section>
-          {notes !== null && (
-            <section className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-semibold">
-                  {t("meeting.view.notes")}
-                </h4>
-                {!editing && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={props.generating}
-                    onClick={() => {
-                      setConfirming(false);
-                      setEditing(true);
-                    }}
-                  >
-                    {t("meeting.notesEdit.edit")}
-                  </Button>
-                )}
-              </div>
-              {detail.summary.imported_from === "granola" && (
-                <p className="text-caption text-text-2">
-                  {t("meeting.granola.noAnchors")}
-                </p>
-              )}
-              {editing && detail.notes_md !== null ? (
-                <NotesEditor
-                  id={detail.summary.id}
-                  markdown={detail.notes_md}
-                  onDone={(edited) => {
-                    setEditing(false);
-                    if (edited) setEditedHere(true);
-                    props.onNamesChanged?.();
-                  }}
-                />
-              ) : (
-                <NotesView
-                  notes={notes}
-                  segments={segments}
-                  audioAvailable={detail.audio_available}
-                  playing={playing}
-                  onPlay={play}
-                  onReveal={reveal}
-                  t={t}
-                />
-              )}
-            </section>
-          )}
         </>
       )}
     </div>

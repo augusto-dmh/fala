@@ -19,6 +19,7 @@ import { MeetingView } from "./MeetingView";
 import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
 import { RecorderPanel } from "./RecorderPanel";
+import { SessionMenuItems } from "./SessionHeader";
 import { SourcePopover } from "./SourcePopover";
 import { sleepMarks, TranscriptView } from "./TranscriptView";
 import { ClipPlayer, type ClipDeps } from "./clipPlayer";
@@ -121,6 +122,21 @@ const view = (detail: MeetingDetail, over: Record<string, unknown> = {}) =>
       onCancelTranscription={noop}
       onGenerate={noop}
       onCopy={noop}
+      {...over}
+    />,
+  );
+
+const keys: Translate = (key) => key;
+const menu = (over: Record<string, unknown> = {}) =>
+  renderToStaticMarkup(
+    <SessionMenuItems
+      transcript={true}
+      deleteDisabled={false}
+      onCopy={noop}
+      onCopyTranscript={noop}
+      onPeople={noop}
+      onDelete={noop}
+      t={keys}
       {...over}
     />,
   );
@@ -249,7 +265,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
       ),
     copy.slice(0, 300),
   );
-  assert.ok(view(detail()).includes("meeting.view.copy"));
+  assert.ok(menu().includes("meeting.view.copy"));
   ok("C33");
 }
 
@@ -287,9 +303,25 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   ok("C36-list");
 
   const opened = view(detail());
-  for (const key of ["transcribe", "generate", "copy", "transcript", "notes"]) {
+  for (const key of ["transcribe", "generate", "transcript", "notes"]) {
     assert.ok(opened.includes(`meeting.view.${key}`), key);
   }
+  // Copy, the transcript, the participants and delete wait behind "⋯".
+  assert.ok(opened.includes('aria-label="meeting.screen.more"'));
+  assert.ok(!opened.includes("meeting.view.copy<"));
+  for (const key of [
+    "meeting.view.copy",
+    "meeting.view.copyTranscript",
+    "meeting.people.participants",
+    "meeting.delete.action",
+  ]) {
+    assert.ok(menu().includes(`>${key}</button>`), key);
+  }
+  assert.ok(!menu({ transcript: false }).includes("copyTranscript"));
+  assert.match(
+    menu({ deleteDisabled: true }),
+    /disabled=""[^>]*>meeting\.delete\.action</,
+  );
   assert.ok(
     opened.includes("Reunião geral") && opened.includes("1:1"),
     "seletor",
@@ -374,13 +406,20 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
 // C42: one notes field per session, the open session follows the recording, and the notice
 // request is consumed when the page is already open (round 1 of the verification).
 {
+  // Recording, the note is the only notes field: the page has none of its own.
   const live = view(detail(), { recording: true });
-  assert.ok(live.includes("meeting.view.notesAbove"), live);
-  assert.ok(
-    !live.includes("<textarea"),
-    "sem segundo campo de anotações gravando",
+  assert.equal(live.match(/<textarea/g)?.length, 1, live);
+  assert.ok(!page.includes("<AnnotationsField"));
+  // Notes that exist open on "Notas"; before them, the notes field. Both panels stay mounted.
+  assert.match(
+    view(detail()),
+    /role="tabpanel" hidden=""><div[^>]*><label[^>]*><span[^>]*>[^<]*<\/span><textarea/,
   );
-  assert.ok(view(detail()).includes("<textarea"));
+  assert.match(
+    view(detail()),
+    /aria-selected="true"[^>]*>meeting\.view\.notes</,
+  );
+  assert.ok(view(detail({ notes_md: null })).includes("<textarea"));
   assert.ok(
     /\[status\.state, status\.id, openId, reload\]/.test(page),
     "a sessão aberta recarrega quando o estado da gravação muda",

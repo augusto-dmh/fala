@@ -1207,7 +1207,7 @@
       }
     },
     "annotations": {
-      "placeholder": "Digite suas anotações. Elas são salvas sozinhas."
+      "placeholder": "Escreva, ou / para templates"
     },
     "list": {
       "title": "Reuniões",
@@ -1231,7 +1231,6 @@
       "transcript": "Transcrição",
       "noTranscript": "Ainda sem transcrição.",
       "notes": "Notas",
-      "notesAbove": "Gravando agora: as anotações desta reunião ficam no campo acima.",
       "search": "Buscar na transcrição",
       "found_one": "{{count}} trecho",
       "found_other": "{{count}} trechos",
@@ -1386,6 +1385,16 @@
         "failed": "Falhou",
         "idle": "Sem notas"
       }
+    },
+    "screen": {
+      "title": "Título da reunião",
+      "titleFailed": "Não deu para salvar o título.",
+      "more": "Mais ações",
+      "tabs": "Anotações e notas",
+      "myNotes": "Minhas anotações",
+      "noNotes": "As notas aparecem aqui depois de gerar.",
+      "slash": "Template das notas:",
+      "imported": "Importada"
     }
   }
 }
