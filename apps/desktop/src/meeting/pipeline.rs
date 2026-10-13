@@ -4,7 +4,7 @@
 //! Keys come only from the OS keyring (ADR-0008): `elevenlabs` for the transcript and the
 //! `anthropic` key the post-processing settings already store, for the notes.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -205,11 +205,7 @@ pub(crate) fn summary(record: &MeetingRecord) -> MeetingSummary {
 /// The page's list: every session outside the trash, newest first.
 pub(crate) fn list_in(store: &Store) -> Result<Vec<MeetingSummary>, MeetingError> {
     let mut sources = store.meeting_import_sources()?;
-    let trashed: HashSet<SessionId> = store
-        .trashed_meetings()?
-        .into_iter()
-        .map(|t| t.record.id)
-        .collect();
+    let trashed = store.trashed_meeting_ids()?;
     Ok(store
         .meetings()?
         .iter()

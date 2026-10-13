@@ -133,10 +133,15 @@ fn mark_audio_gone(store: &Store, gone: &[SessionId]) -> Result<(), MeetingError
     Ok(())
 }
 
-/// After its audio folder is gone: the session has no audio and is in the trash from now on.
-fn move_to_trash(store: &Store, id: SessionId) -> Result<(), MeetingError> {
-    store.clear_meeting_audio_retained(id)?;
-    Ok(store.trash_meeting(id, super::now_local())?)
+/// Deletes a session whose days in the trash are up, checked again under the store lock: one
+/// restored after the purge listed it stays. Its audio went when it was moved. Returns whether
+/// it deleted.
+fn purge(store: &Store, id: SessionId, now_ms: i64) -> Result<bool, MeetingError> {
+    if !store.trash_is_due(id, now_ms)? {
+        return Ok(false);
+    }
+    store.delete_meeting(id)?;
+    Ok(true)
 }
 
 impl MeetingManager {
@@ -191,7 +196,7 @@ impl MeetingManager {
             }
             return Err(error);
         }
-        self.with_store(|store| move_to_trash(store, id))?;
+        self.with_store(|store| Ok(store.trash_meeting(id, super::now_local())?))?;
         let _ = tauri::Emitter::emit(&self.app, super::DELETED_EVENT, id.to_string());
         self.forget_orphan(id);
         log::info!("meeting {id} moved to the trash");
@@ -231,8 +236,16 @@ impl MeetingManager {
             }
         };
         for id in due {
-            match self.delete(&id.to_string()) {
-                Ok(()) => log::info!("meeting {id}: deleted after {TRASH_DAYS} days in the trash"),
+            match self.with_store(|store| purge(store, id, now)) {
+                Ok(true) => {
+                    // Normally gone since the move; a folder left behind goes too.
+                    if let Err((_, e)) = delete_audio(&self.audio_root, id) {
+                        log::warn!("meeting {id}: audio left after the trash: {e}");
+                    }
+                    let _ = tauri::Emitter::emit(&self.app, super::DELETED_EVENT, id.to_string());
+                    log::info!("meeting {id}: deleted after {TRASH_DAYS} days in the trash");
+                }
+                Ok(false) => {}
                 Err(e) => log::warn!("meeting {id}: not deleted from the trash: {e}"),
             }
         }
@@ -533,7 +546,7 @@ mod tests {
 
     #[test]
     fn trash_deletes_the_audio_now_and_the_rest_after_thirty_days() {
-        let (_dir, store, audio) = setup();
+        let (_dir, mut store, audio) = setup();
         let id = session(&store, 1, Some(at(2, 14, 0)));
         let other = session(&store, 2, Some(at(2, 15, 0)));
         for session in [id, other] {
@@ -547,7 +560,7 @@ mod tests {
         }
         // What `MeetingManager::trash` does, without the locks and the live/busy guards.
         delete_audio(&audio, id).map_err(|(_, e)| e).unwrap();
-        move_to_trash(&store, id).unwrap();
+        store.trash_meeting(id, at(3, 9, 0)).unwrap();
 
         assert!(!fala_retention::session_audio_dir(&audio, id).exists());
         assert!(fala_retention::session_audio_dir(&audio, other).exists());
@@ -562,12 +575,15 @@ mod tests {
         assert_eq!(listed, [other.to_string()]);
 
         // The purge takes the session only once its days are up, then deletes it for good.
-        let moved = store.meeting_trashed_at(id).unwrap().unwrap();
-        let day = 86_400_000;
-        let ms = moved.timestamp_millis() + TRASH_DAYS * day;
+        let ms = at(3, 9, 0).timestamp_millis() + TRASH_DAYS * 86_400_000;
         assert!(store.trash_due(ms - 3_600_000).unwrap().is_empty());
+        assert!(!purge(&store, id, ms - 3_600_000).unwrap());
         assert_eq!(store.trash_due(ms).unwrap(), [id]);
-        delete(&store, &audio, id).unwrap();
+        // Restored after the purge listed it: it stays.
+        store.restore_meeting(id).unwrap();
+        assert!(!purge(&store, id, ms).unwrap());
+        store.trash_meeting(id, at(3, 9, 0)).unwrap();
+        assert!(purge(&store, id, ms).unwrap());
         assert!(store.trashed_meetings().unwrap().is_empty());
         assert!(store.meeting(id).is_err());
     }
