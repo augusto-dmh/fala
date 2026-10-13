@@ -21,7 +21,7 @@ import {
 import { copyToClipboard } from "../settings/history/clipboard";
 import { PageHeader } from "../PageHeader";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { SearchField } from "../ui/SearchField";
 import { ConsentNotice } from "./ConsentNotice";
 import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
@@ -567,9 +567,8 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
       {banners}
       {strip}
       <div className="flex flex-wrap items-center gap-2">
-        <Input
+        <SearchField
           variant="compact"
-          type="search"
           className="min-w-0 flex-1"
           value={query}
           placeholder={t("meeting.list.search")}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingTemplate } from "@/bindings";
-import { Input } from "../ui/Input";
+import { SearchField } from "../ui/SearchField";
 import { fold } from "./transcriptSearch";
 
 /** Above this many templates the picker gets a search field. */
@@ -60,9 +60,8 @@ export function TemplateSelect(props: TemplateSelectProps) {
   return (
     <span className="inline-flex items-center gap-2">
       {props.templates.length > TEMPLATE_SEARCH_ABOVE && (
-        <Input
+        <SearchField
           variant="compact"
-          type="search"
           className="w-32"
           aria-label={t("meeting.templates.search")}
           placeholder={t("meeting.templates.search")}
