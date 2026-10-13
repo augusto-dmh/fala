@@ -1271,9 +1271,11 @@
       "folderError": "Não consegui usar a pasta de templates: {{detail}}"
     },
     "key": {
-      "label": "Chave da ElevenLabs para transcrever:",
+      "label": "Chave da ElevenLabs",
       "placeholder": "cole a chave",
-      "save": "Salvar no cofre do sistema"
+      "save": "Salvar no cofre do sistema",
+      "saved": "Salva no cofre do sistema. Cole outra para trocar.",
+      "missing": "Sem ela, as reuniões gravam mas não são transcritas. Fica no cofre do sistema e não aparece de novo."
     },
     "errors": {
       "consent_required": "Aceite o aviso antes de gravar.",
@@ -1318,6 +1320,10 @@
       "title": "Recuperar gravação de {{time}} ({{minutes}} min)?",
       "body": "O Fala fechou no meio desta gravação. O áudio até o último segundo está salvo.",
       "action": "Recuperar"
+    },
+    "home": {
+      "noKey": "As reuniões gravam, mas só são transcritas com a chave da ElevenLabs.",
+      "openSettings": "Configurar"
     }
   }
 }

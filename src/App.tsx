@@ -401,7 +401,14 @@ function App() {
               <SecureInputWarning />
               {destination === "home" && <HomePage />}
               {destination === "dictionary" && <DictionaryPage />}
-              {destination === "meetings" && <MeetingsPage />}
+              {destination === "meetings" && (
+                <MeetingsPage
+                  onOpenSettings={() => {
+                    setDestination("settings");
+                    setSettingsView("general");
+                  }}
+                />
+              )}
               {destination === "stats" && <StatsPage />}
               {destination === "settings" && (
                 <SettingsPage
