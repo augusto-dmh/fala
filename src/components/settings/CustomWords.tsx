@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useSettings } from "../../hooks/useSettings";
@@ -6,6 +6,11 @@ import { matchesQuery } from "../../lib/utils/search";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
+import {
+  entryButton,
+  neighbourAfterRemoval,
+  useFocusWhenIdle,
+} from "../../hooks/useFocusWhenIdle";
 
 interface CustomWordsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -30,8 +35,15 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
       matchesQuery(word, filter),
     );
     const normalizedWord = normalizeCustomWord(newWord);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const busy = isUpdating("custom_words");
+    const focusWhenIdle = useFocusWhenIdle(busy);
 
+    // The field stays enabled during a write, so focus and the next keystrokes stay in it; only
+    // adding waits for the write.
     const handleAddWord = () => {
+      if (busy) return;
       if (normalizedWord && normalizedWord.length <= 50) {
         const lowered = normalizedWord.toLowerCase();
         if (customWords.some((word) => word.toLowerCase() === lowered)) {
@@ -47,7 +59,17 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
       }
     };
 
-    const handleRemoveWord = (wordToRemove: string) => {
+    // From the keyboard, focus moves to the entry that takes its place (or the field), so the
+    // next removal or term needs no mouse; a click leaves focus alone.
+    const handleRemoveWord = (wordToRemove: string, fromKeyboard: boolean) => {
+      if (fromKeyboard) {
+        const next = neighbourAfterRemoval(visibleWords, wordToRemove);
+        focusWhenIdle(() =>
+          next === null
+            ? inputRef.current
+            : (entryButton(listRef.current, next) ?? inputRef.current),
+        );
+      }
       updateSetting(
         "custom_words",
         customWords.filter((word) => word !== wordToRemove),
@@ -71,6 +93,7 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
         >
           <div className="flex items-center gap-2">
             <Input
+              ref={inputRef}
               type="text"
               className="max-w-40"
               value={newWord}
@@ -78,15 +101,10 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
               onKeyDown={handleKeyPress}
               placeholder={t("settings.advanced.customWords.placeholder")}
               variant="compact"
-              disabled={isUpdating("custom_words")}
             />
             <Button
               onClick={handleAddWord}
-              disabled={
-                !normalizedWord ||
-                normalizedWord.length > 50 ||
-                isUpdating("custom_words")
-              }
+              disabled={!normalizedWord || normalizedWord.length > 50 || busy}
               variant="primary"
               size="md"
             >
@@ -96,13 +114,15 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
         </SettingContainer>
         {visibleWords.length > 0 && (
           <div
+            ref={listRef}
             className={`px-4 p-2 ${grouped ? "" : "rounded-lg border border-mid-gray/20"} flex flex-wrap gap-1`}
           >
             {visibleWords.map((word) => (
               <Button
                 key={word}
-                onClick={() => handleRemoveWord(word)}
-                disabled={isUpdating("custom_words")}
+                data-entry={word}
+                onClick={(event) => handleRemoveWord(word, event.detail === 0)}
+                disabled={busy}
                 variant="secondary"
                 size="sm"
                 className="inline-flex items-center gap-1 cursor-pointer"
