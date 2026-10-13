@@ -125,3 +125,9 @@ export const modelFooterState = (
   if (state.error) return { kind: "failed" };
   return { kind: "pending" };
 };
+
+/** What the test field of step 2 says after a dictation that came out empty
+ *  (`dictation-unheard`): a silent microphone, or sound with no speech in it. */
+export function unheardKey(muted: boolean): string {
+  return muted ? "onboarding.shortcut.noAudio" : "onboarding.shortcut.noSpeech";
+}

@@ -242,7 +242,9 @@
       "instructionToggle": "Press the shortcut, say “hello, Fala” and press it again.",
       "testLabel": "Test field",
       "testPlaceholder": "The dictated text shows up here",
-      "waitModel": "The test works as soon as the transcription model finishes downloading."
+      "waitModel": "The test works as soon as the transcription model finishes downloading.",
+      "noAudio": "We didn't hear anything. Check that the microphone is on and picks up your voice, then try again.",
+      "noSpeech": "We heard sound but no speech. Speak closer to the microphone and try again."
     },
     "ai": {
       "title": "AI (optional)",
