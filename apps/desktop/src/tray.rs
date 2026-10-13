@@ -847,10 +847,11 @@ pub const PILL_HIDE_HOUR_ID: &str = "pill_hide_hour";
 /// Menu item id for "Configurações" in the pill menu: opens the main window on Configurações.
 pub const PILL_SETTINGS_ID: &str = "pill_settings";
 
-/// The pill menu, top to bottom; `None` is a separator. The submenus and "Colar o último ditado"
-/// reuse the tray's ids, so the tray's handler in `lib.rs` runs them.
-const PILL_MENU: [Option<&str>; 7] = [
+/// The pill menu, top to bottom; `None` is a separator. The submenus, "Colar o último ditado" and
+/// "Copiar o último ditado" reuse the tray's ids, so the tray's handler in `lib.rs` runs them.
+const PILL_MENU: [Option<&str>; 8] = [
     Some("paste_last_transcript"),
+    Some("copy_last_transcript"),
     None,
     Some("pill_language_submenu"),
     Some("pill_microphone_submenu"),
@@ -883,6 +884,7 @@ pub fn build_pill_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             Some(id) => {
                 let label = match id {
                     "paste_last_transcript" => &strings.paste_last_transcript,
+                    "copy_last_transcript" => &strings.copy_last_transcript,
                     PILL_HIDE_HOUR_ID => &strings.hide_pill_hour,
                     PILL_SETTINGS_ID => &strings.settings,
                     other => {
@@ -1007,6 +1009,7 @@ mod tests {
             PILL_MENU,
             [
                 Some("paste_last_transcript"),
+                Some("copy_last_transcript"),
                 None,
                 Some("pill_language_submenu"),
                 Some("pill_microphone_submenu"),
@@ -1020,6 +1023,7 @@ mod tests {
         let handler = &lib[lib.find(".on_menu_event(").unwrap()..];
         for id in [
             "\"paste_last_transcript\" =>",
+            "\"copy_last_transcript\" =>",
             "tray::PILL_HIDE_HOUR_ID =>",
             "tray::PILL_SETTINGS_ID =>",
             "tray::LANGUAGE_ITEM_PREFIX",
@@ -1032,6 +1036,7 @@ mod tests {
         assert_eq!(strings.hide_pill_hour, "Ocultar por 1 hora");
         let strings = get_tray_translations(Some("en".to_string()));
         assert_eq!(strings.hide_pill_hour, "Hide for 1 hour");
+        assert!(!strings.copy_last_transcript.is_empty());
     }
 
     #[test]
