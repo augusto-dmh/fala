@@ -164,7 +164,7 @@ windows = { version = "0.61.3", features = [
   "Win32_UI_Shell",
   # Free disk space before a meeting recording starts.
   "Win32_Storage_FileSystem",
-  # Keep the PC awake while a meeting records.
+  # Keep the PC awake while a meeting records, and hear when it sleeps anyway.
   "Win32_System_Power",
   # Pausing and resuming media sessions (SMTC) while Fala records.
   "Foundation",

@@ -467,7 +467,7 @@
       },
       "keepAwake": {
         "label": "Impedir a suspensão enquanto grava",
-        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar."
+        "description": "O PC não dorme enquanto uma reunião grava; a tela ainda pode apagar. Se ele dormir mesmo assim, a gravação continua na mesma reunião quando ele acordar."
       },
       "saveFailed": "Não consegui salvar essa opção. Tente de novo."
     },
@@ -1093,6 +1093,10 @@
       "title": "Nada foi gravado",
       "body": "A gravação terminou sem áudio e foi descartada."
     },
+    "woke": {
+      "title": "A gravação continuou depois da suspensão",
+      "body": "O computador dormiu por {{minutes}} min."
+    },
     "recordAgain": "Gravar de novo",
     "dismiss": "Fechar",
     "keep": "Manter",
@@ -1235,7 +1239,8 @@
       "writing": "Escrevendo notas…",
       "enhancing": "Aprimorando suas notas…",
       "notesFailed": "Não deu para gerar as notas. Suas anotações e o áudio estão salvos.",
-      "retry": "Tentar de novo"
+      "retry": "Tentar de novo",
+      "slept": "O computador dormiu por {{minutes}} min"
     },
     "notesEdit": {
       "edit": "Editar",

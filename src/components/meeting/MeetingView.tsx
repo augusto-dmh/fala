@@ -334,6 +334,7 @@ export function MeetingView(props: MeetingViewProps) {
                 </div>
                 <TranscriptView
                   lines={found}
+                  sleeps={detail.sleeps ?? []}
                   query={query}
                   audioAvailable={detail.audio_available}
                   playing={playing}
