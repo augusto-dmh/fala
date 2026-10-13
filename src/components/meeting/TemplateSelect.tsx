@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "../../hooks/useDismiss";
+import { stepOption } from "../ui/Dropdown";
 import type { MeetingTemplate } from "@/bindings";
 import { SearchField } from "../ui/SearchField";
 import { fold } from "./transcriptSearch";
@@ -39,58 +42,186 @@ export function shownTemplate(
   return templates[0].id;
 }
 
+/** The shown templates split as the pickers group them: built-in, then the person's own. */
+export function templateGroups(
+  templates: MeetingTemplate[],
+  query: string,
+  picked: string,
+) {
+  const shown = filterTemplates(templates, query, picked);
+  return {
+    builtin: shown.filter((template) => template.source === "builtin"),
+    user: shown.filter((template) => template.source === "user"),
+  };
+}
+
 export interface TemplateSelectProps {
   templates: MeetingTemplate[];
   value: string;
   onChange: (id: string) => void;
 }
 
-/** The notes template picker: built-in and the person's own in two groups. */
-export function TemplateSelect(props: TemplateSelectProps) {
+export interface TemplateMenuProps extends TemplateSelectProps {
+  /** Called after a pick, to close the menu that holds the list. */
+  onPicked?: () => void;
+}
+
+/** The templates as menu items: one checked, built-in and the person's own in named groups, a
+ *  search field above five. Opened, the focus goes to the checked item; the arrows, Home and
+ *  End move it. */
+export function TemplateMenu(props: TemplateMenuProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
-  const shown = filterTemplates(props.templates, query, props.value);
-  const option = (template: MeetingTemplate) => (
-    <option key={template.id} value={template.id}>
-      {template.name}
-    </option>
+  const { builtin, user } = templateGroups(props.templates, query, props.value);
+  const list = useRef<HTMLDivElement>(null);
+  const items = () =>
+    Array.from(
+      list.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitemradio"]',
+      ) ?? [],
+    );
+  useEffect(() => {
+    const all = items();
+    (
+      all.find((item) => item.getAttribute("aria-checked") === "true") ?? all[0]
+    )?.focus();
+  }, []);
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const all = items();
+    const at = all.indexOf(document.activeElement as HTMLButtonElement);
+    const next = stepOption(
+      all.map(() => ({})),
+      at,
+      event.key,
+    );
+    if (next === null) return;
+    event.preventDefault();
+    all[next]?.focus();
+  };
+  const item = (template: MeetingTemplate) => (
+    <button
+      key={template.id}
+      type="button"
+      role="menuitemradio"
+      aria-checked={template.id === props.value}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-start text-body text-text transition-colors hover:bg-surface-2 focus-visible:focus-ring"
+      onClick={() => {
+        props.onChange(template.id);
+        props.onPicked?.();
+      }}
+    >
+      <Check
+        size={16}
+        aria-hidden="true"
+        className={template.id === props.value ? "" : "invisible"}
+      />
+      <span className="truncate">{template.name}</span>
+    </button>
   );
-  const builtin = shown.filter((template) => template.source === "builtin");
-  const user = shown.filter((template) => template.source === "user");
+  const group = (label: string, templates: MeetingTemplate[]) =>
+    templates.length > 0 && (
+      <div role="group" aria-label={label}>
+        <p
+          aria-hidden="true"
+          className="px-3 pt-2 pb-1 text-caption text-text-2"
+        >
+          {label}
+        </p>
+        {templates.map(item)}
+      </div>
+    );
+  const empty = builtin.length === 0 && user.length === 0;
   return (
-    <span className="inline-flex items-center gap-2">
+    <div className="w-64">
       {props.templates.length > TEMPLATE_SEARCH_ABOVE && (
         <SearchField
           variant="compact"
-          className="w-32"
+          className="mb-1 w-full"
           aria-label={t("meeting.templates.search")}
           placeholder={t("meeting.templates.search")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
       )}
-      <select
+      <div
+        ref={list}
+        role="menu"
         aria-label={t("meeting.view.template")}
-        title={t("meeting.view.template")}
-        className="rounded-md border border-mid-gray/80 bg-mid-gray/10 px-2 py-1 text-sm"
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        className="max-h-72 overflow-y-auto"
       >
-        {user.length === 0 ? (
-          builtin.map(option)
+        {empty ? (
+          <p className="px-3 py-1.5 text-body text-text-2">
+            {t("common.noOptionsFound")}
+          </p>
+        ) : user.length === 0 ? (
+          group(t("meeting.view.template"), builtin)
         ) : (
           <>
-            {builtin.length > 0 && (
-              <optgroup label={t("meeting.templates.builtin")}>
-                {builtin.map(option)}
-              </optgroup>
-            )}
-            <optgroup label={t("meeting.templates.user")}>
-              {user.map(option)}
-            </optgroup>
+            {group(t("meeting.templates.builtin"), builtin)}
+            {group(t("meeting.templates.user"), user)}
           </>
         )}
-      </select>
-    </span>
+      </div>
+    </div>
+  );
+}
+
+/** A popover menu behind a button; closing it from inside (a pick, Esc) returns the focus to
+ *  the button, so the keyboard never falls to the top of the page. */
+export function useMenuPopover() {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => {
+    const inside = box.current?.contains(document.activeElement) ?? false;
+    setOpen(false);
+    if (inside) {
+      box.current
+        ?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')
+        ?.focus();
+    }
+  }, []);
+  useDismiss(open, close, box);
+  return { open, setOpen, close, box };
+}
+
+export interface TemplateSelectButtonProps extends TemplateSelectProps {
+  /** Where the menu opens: above in the bar at the bottom of a meeting. */
+  placement?: "up" | "down";
+}
+
+/** The notes template picker: the chosen template's name on a button that opens the menu. */
+export function TemplateSelect(props: TemplateSelectButtonProps) {
+  const { t } = useTranslation();
+  const { open, setOpen, close, box } = useMenuPopover();
+  const current = props.templates.find(
+    (template) => template.id === props.value,
+  );
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${t("meeting.view.template")}: ${current?.name ?? ""}`}
+        title={current?.name}
+        onClick={() => setOpen(!open)}
+        className="flex max-w-56 items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-body text-text transition-colors hover:bg-text/5 focus-visible:focus-ring"
+      >
+        <span className="truncate">
+          {current?.name ?? t("meeting.view.template")}
+        </span>
+        <ChevronDown size={16} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className={`absolute end-0 z-20 rounded-xl border border-border bg-surface-1 p-1 shadow-lg ${
+            props.placement === "up" ? "bottom-full mb-2" : "top-full mt-1"
+          }`}
+        >
+          <TemplateMenu {...props} onPicked={close} />
+        </div>
+      )}
+    </div>
   );
 }

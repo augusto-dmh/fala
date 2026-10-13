@@ -6,7 +6,7 @@
 
 export const commands = {
 /**
- * The first combination of an action.
+ * The first combination of an action, without taking it from another one.
  */
 async changeBinding(id: string, binding: string) : Promise<Result<BindingResponse, string>> {
     try {
@@ -17,11 +17,12 @@ async changeBinding(id: string, binding: string) : Promise<Result<BindingRespons
 }
 },
 /**
- * Saves `binding` in `slot` of action `id`.
+ * Saves `binding` in `slot` of action `id`. A combination another action holds is refused,
+ * unless `take_over` ("use it here") takes it from that action in the same operation.
  */
-async setBinding(id: string, slot: BindingSlot, binding: string) : Promise<Result<BindingResponse, string>> {
+async setBinding(id: string, slot: BindingSlot, binding: string, takeOver: boolean) : Promise<Result<BindingResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_binding", { id, slot, binding }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_binding", { id, slot, binding, takeOver }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1928,7 +1929,15 @@ export type AppStyle = { app: string; style: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
-export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null; 
+/**
+ * Why the combination was not saved, for the shortcuts dialog to explain.
+ */
+refusal: ShortcutRefusal | null; 
+/**
+ * Saved, but holding one combination may fire another action.
+ */
+overlap: ShortcutOverlap | null }
 /**
  * Which of an action's two combinations.
  */
@@ -2504,6 +2513,28 @@ export type ShortcutBinding = { id: string; name: string; description: string; d
  * A second combination for the same action; empty is none. Never set on `cancel`.
  */
 alternate_binding?: string }
+/**
+ * Holding `smaller` (modifiers only) on the way to `larger` may fire the other action.
+ */
+export type ShortcutOverlap = { action: string; smaller: string; larger: string }
+/**
+ * Why a combination was not saved.
+ */
+export type ShortcutRefusal = 
+/**
+ * Another action, or the other slot of the same one, has it. `take_over` says whether
+ * "use it here" can take it: never when it would leave dictation or cancel without a key.
+ */
+{ kind: "in_use"; action: string; slot: BindingSlot; take_over: boolean } | 
+/**
+ * Windows or common apps own it (Ctrl+C, Alt+Tab, Win+H…).
+ */
+{ kind: "reserved" } | 
+/**
+ * A letter, digit, punctuation or editing key alone, or one modifier alone, would get in the
+ * way of typing; Esc alone only cancels.
+ */
+{ kind: "lone_key" }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
  * "Person `person`" may be `name`, because `reason`.

@@ -15,3 +15,12 @@
 | C6 | clippy workspace, fmt, tsc, lint, prettier, translations | all clean; `cargo test --workspace` before the review fixes: 986 passed, 1 timing failure in `fala-postproc` (27/27 alone) | PASS |
 
 Not run: a second key, the meeting shortcut and restoring defaults on a real keyboard.
+
+## S2 (PR 2)
+
+| Check | Proof run | Evidence | Result |
+| --- | --- | --- | --- |
+| C7 | `cargo test -p fala --lib` (558 passed, 1 ignored) | `shortcut::conflict::tests::conflict_table ... ok` (33 cases), `reserved_list_parses ... ok` (63) | PASS |
+| C8 | same | `shortcut::tests::a_combination_in_use_is_refused_or_taken_over ... ok` | PASS |
+
+`cargo clippy -p fala --all-targets -- -D warnings` clean; `bunx tsc --noEmit` clean. Not run: refusals on a real keyboard.
