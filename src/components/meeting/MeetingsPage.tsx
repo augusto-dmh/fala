@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,7 +17,9 @@ import {
   type MeetingStatus,
   type MeetingSummary,
   type ProgressStage,
+  type TrashedMeetingSummary,
 } from "@/bindings";
+import { toast } from "sonner";
 import { copyToClipboard } from "../settings/history/clipboard";
 import { PageHeader } from "../PageHeader";
 import { Button } from "../ui/Button";
@@ -32,6 +34,7 @@ import { MeetingView } from "./MeetingView";
 import { useMeetingTemplates } from "./useMeetingTemplates";
 import { RecorderPanel } from "./RecorderPanel";
 import { RecoverBanner } from "./RecoverBanner";
+import { TrashView } from "./TrashView";
 import {
   errorDetail,
   errorKey,
@@ -58,6 +61,9 @@ const IDLE: MeetingStatus = {
   dictating: false,
 };
 
+/** How long the [Undo] of "Reunião na lixeira" stays. */
+const UNDO_MS = 5_000;
+
 const withoutId = (ids: Set<string>, id: string) => {
   if (!ids.has(id)) return ids;
   const next = new Set(ids);
@@ -72,7 +78,7 @@ export interface MeetingsPageProps {
 
 /** The Meetings page: the sessions by day with "New meeting" on top, or the one open. */
 export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [status, setStatus] = useState<MeetingStatus>(IDLE);
   const [sessions, setSessions] = useState<MeetingSummary[]>([]);
   const [selected, setSelected] = useState<MeetingDetail | null>(null);
@@ -104,11 +110,17 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   const importId = useRef<string | null>(null);
   const importRunning = useRef(false);
   const [granolaPath, setGranolaPath] = useState<string | null>(null);
+  const [trashed, setTrashed] = useState<TrashedMeetingSummary[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
 
   const refresh = useCallback(async () => {
-    const list = await commands.listMeetings();
+    const [list, trash] = await Promise.all([
+      commands.listMeetings(),
+      commands.listTrashedMeetings(),
+    ]);
     if (list.status === "ok") setSessions(list.data);
     else setError(list.error);
+    if (trash.status === "ok") setTrashed(trash.data);
   }, []);
 
   const open = useCallback(async (id: string) => {
@@ -371,13 +383,49 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
     await open(id);
   };
 
+  const restore = async (id: string, offerOpen: boolean) => {
+    setError(null);
+    const result = await commands.restoreMeeting(id);
+    await refresh();
+    if (result.status === "error") {
+      setError(result.error);
+      return;
+    }
+    if (offerOpen) {
+      toast.success(t("meeting.trash.restored"), {
+        action: {
+          label: t("meeting.home.open"),
+          onClick: () => {
+            setShowTrash(false);
+            void open(id);
+          },
+        },
+      });
+    }
+  };
+
+  // "Move to trash": the audio goes now; the rest can come back with [Undo] or from the trash.
   const remove = async (id: string) => {
     setError(null);
-    const result = await commands.deleteMeeting(id);
+    const result = await commands.trashMeeting(id);
     if (result.status === "ok") {
       setSelected((current) => (current?.summary.id === id ? null : current));
       setOrphans((current) => current.filter((o) => o.id !== id));
+      toast(t("meeting.trash.moved"), {
+        duration: UNDO_MS,
+        action: {
+          label: t("meeting.trash.undo"),
+          onClick: () => void restore(id, false),
+        },
+      });
     } else setError(result.error);
+    await refresh();
+  };
+
+  const deleteForever = async (id: string) => {
+    setError(null);
+    const result = await commands.deleteMeeting(id);
+    if (result.status === "error") setError(result.error);
     await refresh();
   };
 
@@ -546,6 +594,22 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
     );
   }
 
+  if (showTrash) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4">
+        {banners}
+        <TrashView
+          trashed={trashed}
+          onBack={() => setShowTrash(false)}
+          onRestore={(id) => void restore(id, true)}
+          onDelete={(id) => void deleteForever(id)}
+          locale={i18n.language}
+          t={t}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
       {granola}
@@ -603,6 +667,16 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
         }}
         onOpen={(id) => void open(id)}
       />
+      {trashed.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowTrash(true)}
+          className="flex items-center gap-1 rounded-lg text-caption text-text-2 transition-colors hover:text-text focus-visible:focus-ring"
+        >
+          <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+          {t("meeting.trash.link", { count: trashed.length })}
+        </button>
+      )}
     </div>
   );
 }

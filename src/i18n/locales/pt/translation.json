@@ -1373,11 +1373,30 @@
       "text": "Estou gravando esta reunião para transcrever e fazer minhas notas. Se preferir que eu não grave, me avise."
     },
     "delete": {
-      "action": "Apagar reunião",
-      "title": "Apagar esta reunião?",
-      "body": "O áudio, a transcrição, as anotações e as notas saem deste computador para sempre. Não dá para desfazer.",
+      "title": "Apagar para sempre?",
+      "body": "A transcrição, as anotações e as notas saem deste computador. Não dá para desfazer.",
       "confirm": "Apagar para sempre",
       "cancel": "Cancelar"
+    },
+    "trash": {
+      "action": "Mover para a lixeira",
+      "confirm": {
+        "title": "Mover para a lixeira?",
+        "body": "O áudio é apagado agora e não volta. A transcrição, as anotações e as notas ficam 30 dias na lixeira.",
+        "confirm": "Mover para a lixeira"
+      },
+      "moved": "Reunião na lixeira",
+      "undo": "Desfazer",
+      "restored": "Reunião restaurada",
+      "link": "Lixeira ({{count}})",
+      "title": "Lixeira",
+      "empty": "Nada na lixeira",
+      "today": "apagada hoje",
+      "since_one": "apagada há 1 dia",
+      "since_other": "apagada há {{count}} dias",
+      "restore": "Restaurar",
+      "deleteForever": "Apagar para sempre",
+      "footer": "Reuniões na lixeira há mais de 30 dias são apagadas sozinhas."
     },
     "recover": {
       "title": "Recuperar gravação de {{time}} ({{minutes}} min)?",

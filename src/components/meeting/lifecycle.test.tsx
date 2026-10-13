@@ -50,12 +50,13 @@ const noop = () => {};
   );
   assert.match(html, /role="alertdialog"/);
   assert.ok(html.includes(tr("meeting.delete.body")));
-  assert.match(tr("meeting.delete.body"), /áudio.*transcrição.*desfazer/);
+  assert.match(tr("meeting.delete.body"), /transcrição.*desfazer/);
   assert.equal(html.match(/<button/g)?.length, 2);
   assert.ok(html.includes(tr("meeting.delete.confirm")));
-  // The page deletes only through the confirmation, never on the first click.
+  // The session's "⋯" moves to the trash; only the trash deletes, after its confirmation.
   assert.match(page, /onDelete=\{\(\) => void remove\(/);
   assert.equal(page.match(/commands\.deleteMeeting\(/g)?.length, 1);
+  assert.match(page, /onDelete=\{\(id\) => void deleteForever\(id\)\}/);
   ok("L1 delete confirmation");
 }
 
