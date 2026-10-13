@@ -1,7 +1,12 @@
 import type { ModelInfo, WindowsMicrophonePermissionStatus } from "@/bindings";
 
-/** The three first-run steps, in order. */
-export const ONBOARDING_STEPS = ["microphone", "shortcut", "ai"] as const;
+/** The first-run steps, in order; the last two are optional. */
+export const ONBOARDING_STEPS = [
+  "microphone",
+  "shortcut",
+  "ai",
+  "meetings",
+] as const;
 export type OnboardingStepId = (typeof ONBOARDING_STEPS)[number];
 
 /** The dictation model is fixed by ADR-0009; the wizard never asks for one. */

@@ -1,4 +1,4 @@
-// Prova dos checks do onboarding em três passos (`.specs/features/ui-onboarding/checks.md`, S1).
+// Prova dos checks do onboarding em quatro passos (`.specs/features/ui-onboarding/checks.md`, S1).
 // Rode com `bun src/components/onboarding/onboarding.test.tsx`: imprime `<check> ok` e sai com
 // erro na primeira falha.
 import assert from "node:assert/strict";
@@ -17,6 +17,7 @@ const { MicLevelMeter } = await import("./MicLevelMeter");
 const { createMicLevelSession } = await import("./micLevelSession");
 const { ShortcutStep } = await import("./ShortcutStep");
 const { AiStep } = await import("./AiStep");
+const { MeetingsStep } = await import("./MeetingsStep");
 const { ModelFooter } = await import("./ModelFooter");
 const { OnboardingPreview } = await import(
   "../settings/debug/OnboardingPreview"
@@ -56,12 +57,17 @@ const {
   footerError,
 } = model;
 
-// C1: three steps in order, and the microphone-only path ends after its step.
+// C1: four steps in order, and the microphone-only path ends after its step.
 {
-  assert.deepEqual([...ONBOARDING_STEPS], ["microphone", "shortcut", "ai"]);
+  assert.deepEqual(
+    [...ONBOARDING_STEPS],
+    ["microphone", "shortcut", "ai", "meetings"],
+  );
   assert.equal(nextStep(ONBOARDING_STEPS, "microphone"), "shortcut");
   assert.equal(nextStep(ONBOARDING_STEPS, "shortcut"), "ai");
-  assert.equal(nextStep(ONBOARDING_STEPS, "ai"), null);
+  assert.equal(nextStep(ONBOARDING_STEPS, "ai"), "meetings");
+  assert.equal(nextStep(ONBOARDING_STEPS, "meetings"), null);
+  assert.equal(previousStep(ONBOARDING_STEPS, "meetings"), "ai");
   assert.equal(previousStep(ONBOARDING_STEPS, "microphone"), null);
   assert.equal(previousStep(ONBOARDING_STEPS, "shortcut"), "microphone");
   assert.equal(previousStep(ONBOARDING_STEPS, "ai"), "shortcut");
@@ -450,7 +456,7 @@ const {
 
 // C7: the AI step says what leaves the machine, takes the Gemini key, can be skipped.
 {
-  const html = renderToStaticMarkup(<AiStep onFinish={noop} />);
+  const html = renderToStaticMarkup(<AiStep onNext={noop} />);
   for (const key of [
     "onboarding.ai.privacy",
     "onboarding.ai.skip",
@@ -471,7 +477,7 @@ const {
 
 // C8: the wizard frame: progress, step title, model footer and navigation.
 {
-  const render = (step: "microphone" | "shortcut" | "ai") =>
+  const render = (step: "microphone" | "shortcut" | "ai" | "meetings") =>
     renderToStaticMarkup(
       <Onboarding preview initialStep={step} onFinish={noop} />,
     );
@@ -489,6 +495,13 @@ const {
   assert.ok(render("microphone").includes("onboarding.nav.next"));
   assert.ok(render("shortcut").includes("onboarding.nav.next"));
   assert.ok(!render("ai").includes("onboarding.nav.next"));
+  // The optional steps carry their own skip and go-on buttons.
+  assert.ok(!render("meetings").includes("onboarding.nav.next"));
+  assert.ok(!render("meetings").includes("onboarding.nav.done"));
+  assert.match(
+    read("./Onboarding.tsx"),
+    /<AiStep onNext=\{\(\) => \(next \? setStep\(next\) : onFinish\(\)\)\} \/>/,
+  );
   ok("C8");
 }
 
@@ -666,4 +679,49 @@ const {
   const retry = wizard.slice(wizard.indexOf("const retry = () => {"));
   assert.match(retry.slice(0, retry.indexOf("};")), /setActionFailed\(false\)/);
   ok("C21");
+}
+
+// C22 (meetings-ui-redesign): the optional meetings step: both meters, the third-party notice
+// (ADR-0005) accepted only by the click, the two keys to the keyring (ADR-0008), skip or finish.
+{
+  const html = renderToStaticMarkup(<MeetingsStep preview onFinish={noop} />);
+  for (const key of [
+    "onboarding.meetings.micLabel",
+    "onboarding.meetings.systemLabel",
+    "meeting.consent.title",
+    "meeting.consent.body",
+    "onboarding.meetings.accept",
+    "meeting.key.label",
+    "onboarding.meetings.anthropicLabel",
+    "onboarding.meetings.skip",
+    "onboarding.meetings.finish",
+  ]) {
+    assert.ok(html.includes(key), key);
+  }
+  assert.equal(html.match(/role="meter"/g)?.length, 2, html);
+  assert.equal(html.match(/type="password"/g)?.length, 2, html);
+  const step = read("./MeetingsStep.tsx");
+  assert.match(step, /commands\.setMeetingTranscriptionKey\(key\)/);
+  assert.match(step, /commands\.setMeetingNotesKey\(key\)/);
+  // Accepted only by the click, and not asked again once the setting has it.
+  assert.match(step, /run\(commands\.acceptMeetingConsent, /);
+  assert.match(
+    step,
+    /const accepted = getSetting\("meeting_consent_accepted_at"\) != null;/,
+  );
+  // A command that throws shows an error instead of failing silently.
+  assert.match(step, /\} catch \(e\) \{\s*setError\(/);
+  // One start at a time, and the test stopping by itself frees the button.
+  assert.match(step, /disabled=\{starting\}/);
+  assert.match(step, /if \(payload\.ended\) setListening\(false\);/);
+  // The test stops when the step goes away, and never opens anything in the preview.
+  assert.match(
+    step,
+    /return \(\) => \{\s*void unlisten\.then\(\(stop\) => stop\(\)\);\s*void commands\.stopMeetingSoundCheck\(\);/,
+  );
+  assert.match(
+    step,
+    /if \(preview\) return;\s*setStarting\(true\);\s*const result = await commands\.startMeetingSoundCheck\(\);/,
+  );
+  ok("C22");
 }

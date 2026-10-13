@@ -249,7 +249,21 @@
       "keyLabel": "Gemini key",
       "keyDescription": "Kept in the system's password vault. You can add or change it later in Settings.",
       "skip": "Skip",
-      "finish": "Done"
+      "finish": "Continue"
+    },
+    "meetings": {
+      "title": "Meetings (optional)",
+      "description": "Record calls and classes and get the notes. Test the sound and set up the keys, or do it later in Settings.",
+      "micLabel": "Your microphone",
+      "systemLabel": "Computer sound",
+      "systemDescription": "Play a video or join a call and watch the bar move. Nothing is recorded.",
+      "accept": "Got it",
+      "accepted": "Notice accepted",
+      "anthropicLabel": "Anthropic key",
+      "anthropicDescription": "Writes the notes from the transcript. It stays in the system keyring and is never shown again.",
+      "skip": "Skip",
+      "finish": "Finish",
+      "micDescription": "What you say in the meeting. It stays on this computer until the transcription."
     }
   },
   "modelSelector": {
@@ -768,7 +782,8 @@
         "exitButton": "Exit Preview",
         "microphoneButton": "Microphone",
         "shortcutButton": "Shortcut",
-        "aiButton": "AI"
+        "aiButton": "AI",
+        "meetingsButton": "Meetings"
       },
       "soundTheme": {
         "label": "Sound Theme",

@@ -16,6 +16,11 @@ export function clock(ms: number): string {
   return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
 }
 
+/** How full a level meter is, 0 to 100: speech fills most of it. */
+export function levelPercent(rms: number): number {
+  return Math.round(Math.min(1, Math.sqrt(rms) * 2) * 100);
+}
+
 /** The i18n key of a command error: one per kind, the generic one otherwise. */
 export function errorKey(error: MeetingError | string | undefined): string {
   const kind = typeof error === "object" && error ? error.kind : undefined;

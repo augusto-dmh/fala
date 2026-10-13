@@ -10,7 +10,7 @@ import { showsConsentChip } from "../../overlay/pillModel";
 import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { clock } from "./meetingModel";
+import { clock, levelPercent } from "./meetingModel";
 import { shownTemplate, TemplateSelect } from "./TemplateSelect";
 
 export interface RecorderPanelProps {
@@ -95,7 +95,7 @@ function OutputSelect({
 }
 
 function Level({ label, value }: { label: string; value: number }) {
-  const width = Math.round(Math.min(1, Math.sqrt(value) * 2) * 100);
+  const width = levelPercent(value);
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="w-16">{label}</span>

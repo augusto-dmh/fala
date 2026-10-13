@@ -6,6 +6,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { Button } from "../ui/Button";
 import FalaTextLogo from "../icons/FalaTextLogo";
 import { AiStep } from "./AiStep";
+import { MeetingsStep } from "./MeetingsStep";
 import { MicrophoneStep } from "./MicrophoneStep";
 import { ModelFooter } from "./ModelFooter";
 import { ShortcutStep } from "./ShortcutStep";
@@ -24,7 +25,7 @@ import {
 
 interface OnboardingProps {
   onFinish: () => void;
-  /** Defaults to all three; a returning user with a denied mic sees only the first. */
+  /** Defaults to all four; a returning user with a denied mic sees only the first. */
   steps?: readonly OnboardingStepId[];
   initialStep?: OnboardingStepId;
   /** Download and select the dictation model. Off for a returning user, who
@@ -36,7 +37,7 @@ interface OnboardingProps {
 
 const MIC_POLL_MS = 1000;
 
-/** First run in three steps (microphone, shortcut, optional AI) while the
+/** First run in four steps (microphone, shortcut, optional AI and meetings) while the
  *  dictation model downloads in the background (ADR-0009: no model choice). */
 const Onboarding: React.FC<OnboardingProps> = ({
   onFinish,
@@ -145,6 +146,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
   const next = nextStep(steps, step);
   const previous = previousStep(steps, step);
   const blocked = step === "microphone" && access === "denied";
+  const optional = step === "ai" || step === "meetings";
 
   return (
     <div className="flex h-screen w-full flex-col bg-surface-0">
@@ -180,7 +182,12 @@ const Onboarding: React.FC<OnboardingProps> = ({
               preview={preview}
             />
           )}
-          {step === "ai" && <AiStep onFinish={onFinish} />}
+          {step === "ai" && (
+            <AiStep onNext={() => (next ? setStep(next) : onFinish())} />
+          )}
+          {step === "meetings" && (
+            <MeetingsStep onFinish={onFinish} preview={preview} />
+          )}
         </div>
       </div>
       <footer className="flex items-center justify-between gap-4 border-t border-border bg-surface-1 px-6 py-3 max-[840px]:px-4">
@@ -195,7 +202,8 @@ const Onboarding: React.FC<OnboardingProps> = ({
               {t("onboarding.nav.back")}
             </Button>
           )}
-          {next && (
+          {/* The optional steps carry their own skip and go-on buttons. */}
+          {next && !optional && (
             <Button
               variant="primary"
               disabled={blocked}
@@ -204,7 +212,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
               {t("onboarding.nav.next")}
             </Button>
           )}
-          {!next && step !== "ai" && (
+          {!next && !optional && (
             <Button variant="primary" disabled={blocked} onClick={onFinish}>
               {t("onboarding.nav.done")}
             </Button>

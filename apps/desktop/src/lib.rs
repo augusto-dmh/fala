@@ -242,6 +242,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(meeting_manager.clone());
+    app_handle.manage(Arc::new(meeting::sound_check::SoundCheck::default()));
     // Audio a previous run left as WAV becomes Opus; the retention runs now and once a day.
     meeting::MeetingManager::spawn_upkeep(app_handle);
     app_handle.manage(tray::TrayState::new());
@@ -923,6 +924,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::open_meeting_templates_folder,
             commands::meeting::meeting_keys,
             commands::meeting::set_meeting_transcription_key,
+            commands::meeting::set_meeting_notes_key,
+            commands::meeting::start_meeting_sound_check,
+            commands::meeting::stop_meeting_sound_check,
             commands::meeting_output::meeting_outputs,
             commands::meeting_output::set_meeting_output,
             commands::meeting_output::switch_meeting_output,
@@ -954,6 +958,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             meeting::MeetingStatus,
             meeting::pipeline::MeetingProgress,
             meeting::granola::GranolaProgress,
+            meeting::sound_check::MeetingSoundLevel,
         ])
 }
 

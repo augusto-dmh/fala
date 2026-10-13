@@ -41,6 +41,11 @@ Proof: `bun src/components/meeting/bar.test.tsx`
 **C11** - transcrição numa folha lateral (a fonte de uma nota a abre e rola até o trecho); avisos do gravador em faixas âmbar; na reunião que grava, os controles só na barra
 Proof: `bun src/components/meeting/bar.test.tsx`; `meeting.test.tsx`; `notesPolish.test.tsx`
 
+### S5 - passo "Reuniões" no onboarding (PR 5)
+
+**C12** - passo opcional depois da IA, com pular e concluir próprios: barra do microfone, barra do som do computador ao vivo (só enquanto testa, nada gravado, para sozinha em 1 min e ao sair do passo), aviso de terceiros aceito só pelo clique, chaves da ElevenLabs e da Anthropic no cofre
+Proof: `bun src/components/onboarding/onboarding.test.tsx`; `cargo test -p fala --lib meeting::`
+
 ### Todas as fatias
 
 **C6** - strings novas em pt e en; lint, tsc, format
