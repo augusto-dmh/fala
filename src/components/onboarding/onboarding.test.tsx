@@ -454,16 +454,11 @@ const {
   ok("C6");
 }
 
-// C7: the AI step says what leaves the machine, takes the Gemini key, can be skipped.
+// C7: the AI step says what leaves the machine and takes the Gemini key; the footer skips it.
 {
-  const html = renderToStaticMarkup(<AiStep onNext={noop} />);
-  for (const key of [
-    "onboarding.ai.privacy",
-    "onboarding.ai.skip",
-    "onboarding.ai.finish",
-  ]) {
-    assert.ok(html.includes(key), key);
-  }
+  const html = renderToStaticMarkup(<AiStep />);
+  assert.ok(html.includes("onboarding.ai.privacy"));
+  assert.ok(!html.includes("<button"), "no navigation inside the step");
   const step = read("./AiStep.tsx");
   assert.match(step, /<ApiKeyField/);
   assert.match(step, /updatePostProcessApiKey\(GEMINI_PROVIDER_ID/);
@@ -492,15 +487,26 @@ const {
       `${step} back`,
     );
   }
-  assert.ok(render("microphone").includes("onboarding.nav.next"));
-  assert.ok(render("shortcut").includes("onboarding.nav.next"));
-  assert.ok(!render("ai").includes("onboarding.nav.next"));
-  // The optional steps carry their own skip and go-on buttons.
-  assert.ok(!render("meetings").includes("onboarding.nav.next"));
-  assert.ok(!render("meetings").includes("onboarding.nav.done"));
+  // QA Q51: one footer in every step: [Back] [Skip] [Continue], Skip only in the optional steps.
+  const footerOf = (html: string) => html.slice(html.lastIndexOf("<footer"));
+  for (const step of ONBOARDING_STEPS) {
+    const footer = footerOf(render(step));
+    const optional = step === "ai" || step === "meetings";
+    assert.equal(footer.includes("onboarding.nav.skip"), optional, step);
+    assert.equal(
+      footer.includes("onboarding.nav.next"),
+      step !== "meetings",
+      step,
+    );
+    assert.equal(
+      footer.includes("onboarding.nav.done"),
+      step === "meetings",
+      step,
+    );
+  }
   assert.match(
     read("./Onboarding.tsx"),
-    /<AiStep onNext=\{\(\) => \(next \? setStep\(next\) : onFinish\(\)\)\} \/>/,
+    /const goOn = \(\) => \(next \? setStep\(next\) : onFinish\(\)\);/,
   );
   ok("C8");
 }
@@ -559,7 +565,7 @@ const {
 {
   const present = [
     "onboarding.progress",
-    ...["back", "next"].map((k) => `onboarding.nav.${k}`),
+    ...["back", "next", "skip"].map((k) => `onboarding.nav.${k}`),
     ...[
       "pending",
       "downloading",
@@ -577,9 +583,8 @@ const {
     ...["title", "instruction", "testLabel", "testPlaceholder"].map(
       (k) => `onboarding.shortcut.${k}`,
     ),
-    ...["title", "privacy", "keyLabel", "skip", "finish"].map(
-      (k) => `onboarding.ai.${k}`,
-    ),
+    ...["title", "privacy", "keyLabel"].map((k) => `onboarding.ai.${k}`),
+    "onboarding.meetings.testSound",
     ...["microphoneButton", "shortcutButton", "aiButton"].map(
       (k) => `settings.debug.onboardingPreview.${k}`,
     ),
@@ -684,7 +689,7 @@ const {
 // C22 (meetings-ui-redesign): the optional meetings step: both meters, the third-party notice
 // (ADR-0005) accepted only by the click, the two keys to the keyring (ADR-0008), skip or finish.
 {
-  const html = renderToStaticMarkup(<MeetingsStep preview onFinish={noop} />);
+  const html = renderToStaticMarkup(<MeetingsStep preview />);
   for (const key of [
     "onboarding.meetings.micLabel",
     "onboarding.meetings.systemLabel",
@@ -693,8 +698,8 @@ const {
     "onboarding.meetings.accept",
     "meeting.key.label",
     "onboarding.meetings.anthropicLabel",
-    "onboarding.meetings.skip",
-    "onboarding.meetings.finish",
+    // QA Q50: the computer-sound card tests the sound, not the microphone.
+    "onboarding.meetings.testSound",
   ]) {
     assert.ok(html.includes(key), key);
   }
@@ -724,4 +729,26 @@ const {
     /if \(preview\) return;\s*setStarting\(true\);\s*const result = await commands\.startMeetingSoundCheck\(\);/,
   );
   ok("C22");
+}
+
+// QA Q49 and Q52: the microphone step reads the devices itself (the app reads them only after
+// the first run), the shortcut chip stays on one line, the wordmark starts at the text's edge
+// and the page keeps its width when the scrollbar shows.
+{
+  const wizard = read("./Onboarding.tsx");
+  assert.match(
+    wizard,
+    /if \(preview \|\| !accessChecked \|\| step !== "microphone" \|\| access !== "ok"\)\s*return;\s*void refreshAudioDevices\(\);/,
+  );
+  assert.match(wizard, /setAccess\(next\);\s*setAccessChecked\(true\);/);
+  assert.match(
+    wizard,
+    /overflow-y-auto \[scrollbar-gutter:stable_both-edges\]/,
+  );
+  assert.match(read("./ShortcutStep.tsx"), /<kbd[\s\S]*?whitespace-nowrap/);
+  assert.match(
+    read("../icons/FalaTextLogo.tsx"),
+    /x="0"\s*y="250"\s*textAnchor="start"/,
+  );
+  ok("Q49-Q52");
 }

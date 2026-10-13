@@ -206,7 +206,8 @@
     "nav": {
       "back": "Back",
       "next": "Continue",
-      "done": "Done"
+      "done": "Done",
+      "skip": "Skip"
     },
     "footer": {
       "pending": "Preparing the transcription model",
@@ -247,9 +248,7 @@
       "description": "The AI fixes punctuation and formatting in what you dictated.",
       "privacy": "With the AI on, only the text of your dictation goes to Gemini; never the audio, which stays on your machine.",
       "keyLabel": "Gemini key",
-      "keyDescription": "Kept in the system's password vault. You can add or change it later in Settings.",
-      "skip": "Skip",
-      "finish": "Continue"
+      "keyDescription": "Kept in the system's password vault. You can add or change it later in Settings."
     },
     "meetings": {
       "title": "Meetings (optional)",
@@ -261,8 +260,8 @@
       "accepted": "Notice accepted",
       "anthropicLabel": "Anthropic key",
       "anthropicDescription": "Writes the notes from the transcript. It stays in the system keyring and is never shown again.",
-      "skip": "Skip",
-      "finish": "Finish",
+      "testSound": "Test sound",
+      "stopSound": "Stop",
       "micDescription": "What you say in the meeting. It stays on this computer until the transcription."
     }
   },

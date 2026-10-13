@@ -75,8 +75,8 @@ const SystemLevelMeter: React.FC<{ preview: boolean }> = ({ preview }) => {
           onClick={() => void toggle()}
         >
           {listening
-            ? t("onboarding.microphone.stop")
-            : t("onboarding.microphone.test")}
+            ? t("onboarding.meetings.stopSound")
+            : t("onboarding.meetings.testSound")}
         </Button>
       </div>
       {error !== null && (
@@ -89,17 +89,15 @@ const SystemLevelMeter: React.FC<{ preview: boolean }> = ({ preview }) => {
 };
 
 interface MeetingsStepProps {
-  onFinish: () => void;
   /** Debug preview: the sound check stays off and nothing is stored or accepted. */
   preview?: boolean;
 }
 
 /**
  * Step 4 (optional): the two meters of a meeting, the third-party notice (ADR-0005) and the
- * keys of the transcription and the notes (keyring, ADR-0008), or skip.
+ * keys of the transcription and the notes (keyring, ADR-0008); the footer skips or finishes.
  */
 export const MeetingsStep: React.FC<MeetingsStepProps> = ({
-  onFinish,
   preview = false,
 }) => {
   const { t } = useTranslation();
@@ -200,14 +198,6 @@ export const MeetingsStep: React.FC<MeetingsStepProps> = ({
           {t(errorKey(error), { detail: errorDetail(error) })}
         </p>
       )}
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onFinish}>
-          {t("onboarding.meetings.skip")}
-        </Button>
-        <Button variant="primary" onClick={onFinish}>
-          {t("onboarding.meetings.finish")}
-        </Button>
-      </div>
     </div>
   );
 };

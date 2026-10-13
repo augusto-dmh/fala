@@ -48,7 +48,7 @@ export const ShortcutStep: React.FC<ShortcutStepProps> = ({
           {keys.map((key) => (
             <kbd
               key={key}
-              className="min-w-8 rounded-lg border border-border border-b-2 bg-surface-2 px-2 py-1 text-center font-sans text-body font-semibold text-text"
+              className="min-w-8 whitespace-nowrap rounded-lg border border-border border-b-2 bg-surface-2 px-2 py-1 text-center font-sans text-body font-semibold text-text"
             >
               {key}
             </kbd>
