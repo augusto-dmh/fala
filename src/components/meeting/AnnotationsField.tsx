@@ -13,6 +13,8 @@ export interface AnnotationsFieldProps {
   labelHidden?: boolean;
   /** Shown while the field holds just "/"; `clear` empties the field. */
   slashMenu?: (clear: () => void) => ReactNode;
+  /** Every change of the text, before it is saved. */
+  onTextChange?: (text: string) => void;
 }
 
 /** The notes typed before and during the call, saved to disk within two seconds. */
@@ -22,6 +24,7 @@ export function AnnotationsField({
   label,
   labelHidden = false,
   slashMenu,
+  onTextChange,
 }: AnnotationsFieldProps) {
   const { t } = useTranslation();
   const [text, setText] = useState(initial);
@@ -41,6 +44,7 @@ export function AnnotationsField({
   }, [id]);
   const change = (value: string) => {
     setText(value);
+    onTextChange?.(value);
     saver.current?.change(value);
   };
 

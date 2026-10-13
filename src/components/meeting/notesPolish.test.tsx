@@ -193,9 +193,7 @@ const lines: MeetingLine[] = [
   );
   // "Gerar de novo" da confirmação fica desligado como o "Gerar notas".
   assert.equal(
-    viewSource.match(
-      /(disabled|generateDisabled)=\{props\.recording \|\| props\.generating \|\| editing\}/g,
-    )?.length,
+    viewSource.match(/(disabled|generateDisabled)=\{notesOff\}/g)?.length,
     3,
   );
   // Só o mesmo template pergunta; outro template é uma versão nova (como no Granola).

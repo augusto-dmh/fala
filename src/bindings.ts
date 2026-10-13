@@ -5,6 +5,9 @@
 
 
 export const commands = {
+/**
+ * The first combination of an action.
+ */
 async changeBinding(id: string, binding: string) : Promise<Result<BindingResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_binding", { id, binding }) };
@@ -13,9 +16,47 @@ async changeBinding(id: string, binding: string) : Promise<Result<BindingRespons
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Saves `binding` in `slot` of action `id`.
+ */
+async setBinding(id: string, slot: BindingSlot, binding: string) : Promise<Result<BindingResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_binding", { id, slot, binding }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Removes one combination; a second one becomes the first. Cancel keeps its key and dictation
+ * its last one.
+ */
+async removeBinding(id: string, slot: BindingSlot) : Promise<Result<BindingResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_binding", { id, slot }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * One action back to its default: the default as the first combination and no second one.
+ */
 async resetBinding(id: string) : Promise<Result<BindingResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reset_binding", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Restore defaults": every action's first combination back to its default and no second one,
+ * registered in one pass and undone if a registration fails.
+ */
+async resetAllBindings() : Promise<Result<null, ResetBindingsError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_all_bindings") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1889,6 +1930,10 @@ export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 /**
+ * Which of an action's two combinations.
+ */
+export type BindingSlot = "primary" | "alternate"
+/**
  * A call app the detector knows, for the settings list.
  */
 export type CallAppInfo = { id: string; name: string }
@@ -2385,6 +2430,18 @@ export type ProgressStage =
  */
 { stage: "transcribing"; channel: string; phase: string; done: number; total: number } | { stage: "notes" } | { stage: "done" } | { stage: "failed"; error: MeetingError }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+/**
+ * Why "Restore defaults" refused, serialized as `{"kind": "..."}` for the dialog.
+ */
+export type ResetBindingsError = 
+/**
+ * A dictation is in flight: finish it first.
+ */
+{ kind: "dictation_active" } | 
+/**
+ * A meeting records or is paused: restoring would take away the key that stops it.
+ */
+{ kind: "meeting_recording" } | { kind: "failed"; detail: string }
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 
 /**
@@ -2442,7 +2499,11 @@ export type ShortcutActivation =
  * is discarded without transcribing.
  */
 "push_to_talk_double_tap"
-export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
+export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string; 
+/**
+ * A second combination for the same action; empty is none. Never set on `cancel`.
+ */
+alternate_binding?: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
  * "Person `person`" may be `name`, because `reason`.

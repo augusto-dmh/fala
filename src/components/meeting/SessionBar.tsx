@@ -21,11 +21,15 @@ export interface SessionBarProps {
   onRecordDraft: () => void;
   transcribing: boolean;
   transcribeDisabled: boolean;
+  /** Why "Transcrever" is off, when it is for lack of something the person can fix. */
+  transcribeHint?: string;
   onTranscribe: () => void;
   onCancelTranscription: () => void;
   /** "Gerar notas", or what the notes run is doing. */
   generateLabel: string;
   generateDisabled: boolean;
+  /** Why "Gerar notas" is off, when it is for lack of something the person can fix. */
+  generateHint?: string;
   onGenerate: () => void;
   /** The notes template picker, behind the arrow of "Gerar notas" (and next to "Gravar"). */
   templateSelect: ReactNode;
@@ -43,6 +47,7 @@ function GenerateButton(props: SessionBarProps) {
       <Button
         className="rounded-e-none"
         disabled={props.generateDisabled}
+        title={props.generateHint}
         onClick={props.onGenerate}
       >
         {props.generateLabel}
@@ -123,6 +128,7 @@ export function SessionBar(props: SessionBarProps) {
         <Button
           variant="secondary"
           disabled={props.transcribeDisabled}
+          title={props.transcribeHint}
           onClick={props.onTranscribe}
         >
           {props.transcribing
@@ -152,8 +158,12 @@ export function SessionBar(props: SessionBarProps) {
           <AudioLines size={20} strokeWidth={1.5} aria-hidden="true" />
         </Button>
       )}
-      {/* Kept for "Ask about this meeting" (meeting-chat), which takes this space later. */}
-      <div className="flex-1" />
+      {/* Kept for "Ask about this meeting" (meeting-chat), which takes this space later. Until
+          then it says why a button is off: a disabled button takes no focus, so a tooltip
+          alone would not reach the keyboard or a screen reader. */}
+      <div className="min-w-0 flex-1 text-caption text-text-2">
+        {!live && !props.draft && (props.transcribeHint ?? props.generateHint)}
+      </div>
       {actions}
     </div>
   );

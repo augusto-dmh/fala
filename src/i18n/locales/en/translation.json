@@ -206,7 +206,8 @@
     "nav": {
       "back": "Back",
       "next": "Continue",
-      "done": "Done"
+      "done": "Done",
+      "skip": "Skip"
     },
     "footer": {
       "pending": "Preparing the transcription model",
@@ -247,9 +248,7 @@
       "description": "The AI fixes punctuation and formatting in what you dictated.",
       "privacy": "With the AI on, only the text of your dictation goes to Gemini; never the audio, which stays on your machine.",
       "keyLabel": "Gemini key",
-      "keyDescription": "Kept in the system's password vault. You can add or change it later in Settings.",
-      "skip": "Skip",
-      "finish": "Continue"
+      "keyDescription": "Kept in the system's password vault. You can add or change it later in Settings."
     },
     "meetings": {
       "title": "Meetings (optional)",
@@ -261,8 +260,8 @@
       "accepted": "Notice accepted",
       "anthropicLabel": "Anthropic key",
       "anthropicDescription": "Writes the notes from the transcript. It stays in the system keyring and is never shown again.",
-      "skip": "Skip",
-      "finish": "Finish",
+      "testSound": "Test sound",
+      "stopSound": "Stop",
       "micDescription": "What you say in the meeting. It stays on this computer until the transcription."
     }
   },
@@ -306,6 +305,7 @@
     },
     "general": {
       "title": "General",
+      "app": "App",
       "shortcut": {
         "title": "Fala Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
@@ -425,7 +425,7 @@
       },
       "apiKey": {
         "title": "Gemini key",
-        "description": "Kept in the system password vault. Without a key, only the local rules format the text.",
+        "description": "Stays in the system keyring. Without a key, only the local rules format the text.",
         "placeholder": "Paste the API key"
       },
       "disabledApps": {
@@ -1136,6 +1136,14 @@
     "dismiss": "Dismiss"
   },
   "meeting": {
+    "keys": {
+      "missingElevenlabs": "The ElevenLabs key is missing: meetings are transcribed with it.",
+      "missingAnthropic": "The Anthropic key is missing: notes are written with it.",
+      "add": "Add key",
+      "transcribeNeedsKey": "Add the ElevenLabs key in Settings to transcribe.",
+      "notesNeedKey": "Add the Anthropic key in Settings to write notes.",
+      "notesNeedContent": "Transcribe the meeting or type notes first."
+    },
     "title": "Meeting",
     "untitled": "Meeting on {{date}}",
     "consent": {
@@ -1210,6 +1218,8 @@
       "cancel": "Cancel",
       "done": "Meetings imported: {{created}} new and {{updated}} updated. Rows skipped: {{rejected}}.",
       "close": "Close",
+      "importedOn": "Imported from Granola on {{date}}.",
+      "noAudio": "Imported from Granola: the transcript has no audio or times.",
       "noAnchors": "No anchors: imported from Granola.",
       "errors": {
         "empty": "This file is empty.",
@@ -1338,10 +1348,13 @@
     },
     "key": {
       "label": "ElevenLabs key",
-      "placeholder": "paste the key",
-      "save": "Save to the system keyring",
-      "saved": "Saved in the system keyring. Paste another to replace it.",
+      "saved": "Saved in the system keyring. Meetings are transcribed.",
       "missing": "Without it, meetings record but are not transcribed. It stays in the system keyring and is never shown again."
+    },
+    "notesKey": {
+      "label": "Anthropic key",
+      "saved": "Saved in the system keyring. Notes are written from the transcript.",
+      "missing": "Writes the notes from the transcript. Without it, meetings get no notes. It stays in the system keyring and is never shown again."
     },
     "errors": {
       "consent_required": "Accept the notice before recording.",
@@ -1443,5 +1456,15 @@
       "label": "Meeting actions",
       "close": "Close the transcript"
     }
+  },
+  "keyField": {
+    "placeholder": "Paste the key",
+    "save": "Save",
+    "saved": "Saved",
+    "replace": "Replace",
+    "replaceNamed": "Replace the {{name}}",
+    "remove": "Remove",
+    "removeNamed": "Remove the {{name}}",
+    "cancel": "Cancel"
   }
 }
