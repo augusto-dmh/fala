@@ -1209,6 +1209,8 @@
       "cancel": "Cancelar",
       "done": "Reuniões importadas: {{created}} novas e {{updated}} atualizadas. Linhas ignoradas: {{rejected}}.",
       "close": "Fechar",
+      "importedOn": "Importado do Granola em {{date}}.",
+      "noAudio": "Importada do Granola: a transcrição não tem áudio nem tempos.",
       "noAnchors": "Sem âncoras: importada do Granola.",
       "errors": {
         "empty": "Esse arquivo está vazio.",
