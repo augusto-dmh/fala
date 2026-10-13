@@ -1,5 +1,8 @@
-import React from "react";
+import React, { createContext, useId } from "react";
 import type { SettingsAnchor } from "../settingsAnchor";
+
+/** The id of the row's title, so a control inside (a dropdown) can name itself after it. */
+export const SettingTitleContext = createContext<string | null>(null);
 
 interface SettingContainerProps {
   title: string;
@@ -30,6 +33,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   icon,
   anchor,
 }) => {
+  const titleId = useId();
   const hasDescription = Boolean(description && description.trim());
   // Inside a SettingsGroup the group draws the card; alone, the row is one.
   const card = grouped ? "" : "bg-surface-1 border border-border rounded-lg";
@@ -46,7 +50,9 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
         </span>
       )}
       <div className="min-w-0">
-        <h3 className="text-body text-text">{title}</h3>
+        <h3 className="text-body text-text" id={titleId}>
+          {title}
+        </h3>
         {hasDescription && (
           <p className="text-caption text-text-2">{description}</p>
         )}
@@ -62,7 +68,11 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
         className={`flex flex-col gap-3 px-4 py-3 ${card}`}
       >
         {label}
-        <div className="w-full">{children}</div>
+        <div className="w-full">
+          <SettingTitleContext.Provider value={titleId}>
+            {children}
+          </SettingTitleContext.Provider>
+        </div>
       </div>
     );
   }
@@ -76,7 +86,12 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
       } ${card}`}
     >
       <div className="max-w-2/3">{label}</div>
-      <div className="relative">{children}</div>
+
+      <div className="relative">
+        <SettingTitleContext.Provider value={titleId}>
+          {children}
+        </SettingTitleContext.Provider>
+      </div>
     </div>
   );
 };

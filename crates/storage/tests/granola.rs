@@ -176,6 +176,11 @@ fn importing_again_updates_instead_of_duplicating() {
         .collect();
     assert_eq!(names.len(), 2, "{names:?}");
 
+    // Na lixeira, importar de novo a traz de volta: ela não some na purga.
+    store.trash_meeting(untitled, at(22, 0, 0)).unwrap();
+    import_all(&mut store, &path);
+    assert_eq!(store.meeting_trashed_at(untitled).unwrap(), None);
+
     // Apagada no Fala, a reunião volta numa importação nova, com outra sessão.
     store.delete_meeting(id).unwrap();
     assert_eq!(

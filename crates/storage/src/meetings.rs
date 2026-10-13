@@ -388,12 +388,13 @@ impl Store {
     /// volta num `reindex`. Se o commit falhar depois, a próxima sincronização o escreve de novo.
     pub fn delete_meeting(&self, id: SessionId) -> Result<(), StorageError> {
         let file = self.meeting_file(id)?;
+        let trashed = crate::meeting_trash::trashed_at(&self.conn, id)?.is_some();
         let tx = self.conn.unchecked_transaction()?;
         if tx.execute("DELETE FROM meetings WHERE id = ?1", [id.to_string()])? == 0 {
             return Err(StorageError::NotFound(id.to_string()));
         }
         crate::meeting_search::refresh(&tx, id)?;
-        self.remove_meeting_mirror(id, file)?;
+        self.remove_meeting_mirror(id, file, trashed)?;
         tx.commit()?;
         log::debug!("reunião {id} apagada");
         Ok(())
