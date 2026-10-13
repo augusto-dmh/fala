@@ -15,3 +15,10 @@ Proof: `cargo test -p fala --lib restoring_defaults`
 **C5** - `meeting_toggle`: sem reunião inicia pela bandeja, gravando ou pausada para (AC 6)
 Proof: `cargo test -p fala --lib meeting_shortcut`
 **C6** - workspace verde: `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `bunx tsc --noEmit`, `bun run lint`
+
+## S2 - conflitos (PR 2)
+
+**C7** - tabela do `conflict.rs`: em uso (sem ordem, `ctrl` × `ctrl_left`, outro lugar da mesma ação), Ctrl+C e Win+H reservados, letra sozinha recusada, F9 aceito, Esc só no Cancelar, só modificadores aceitos, sobreposição vira aviso (AC 3)
+Proof: `cargo test -p fala --lib conflict`
+**C8** - `take_over` tira da outra ação (a 2ª sobe); recusado se Ditar ou Cancelar ficaria sem tecla (AC 4)
+Proof: `cargo test -p fala --lib a_combination_in_use_is_refused_or_taken_over`

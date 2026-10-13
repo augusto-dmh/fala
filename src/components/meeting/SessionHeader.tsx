@@ -98,7 +98,7 @@ export interface SessionMenuProps {
   t: Translate;
 }
 
-/** What "⋯" offers: copy the Markdown or the transcript, the participants, delete. */
+/** What "⋯" offers: copy the Markdown or the transcript, the participants, the trash. */
 export function SessionMenuItems(props: SessionMenuProps) {
   const { t } = props;
   const item = (label: string, onClick: () => void, disabled = false) => (
@@ -118,7 +118,7 @@ export function SessionMenuItems(props: SessionMenuProps) {
       {props.transcript &&
         item(t("meeting.view.copyTranscript"), props.onCopyTranscript)}
       {item(t("meeting.people.participants"), props.onPeople)}
-      {item(t("meeting.delete.action"), props.onDelete, props.deleteDisabled)}
+      {item(t("meeting.trash.action"), props.onDelete, props.deleteDisabled)}
     </div>
   );
 }
