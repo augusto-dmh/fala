@@ -178,6 +178,39 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     prevLoadedSrc.current = loadedSrc;
   }, [loadedSrc, autoPlay, initialSrc, onLoadRequest]);
 
+  // Asks for the src once; the effect above starts playback when it arrives. A load that
+  // is no longer wanted frees its blob URL instead of keeping the recording in memory.
+  const loadSrc = useCallback(
+    async (wanted: () => boolean = () => true) => {
+      if (!onLoadRequest) return;
+      setIsLoading(true);
+      try {
+        const newSrc = await onLoadRequest();
+        if (!wanted()) {
+          if (newSrc?.startsWith("blob:")) URL.revokeObjectURL(newSrc);
+          return;
+        }
+        if (newSrc) setLoadedSrc(newSrc);
+      } catch (error) {
+        console.error("Playback failed:", error);
+      } finally {
+        if (wanted()) setIsLoading(false);
+      }
+    },
+    [onLoadRequest],
+  );
+
+  // autoPlay without a src: load it on mount.
+  const hasSrc = loadedSrc !== null;
+  useEffect(() => {
+    if (!autoPlay || hasSrc || !onLoadRequest) return;
+    let cancelled = false;
+    void loadSrc(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [autoPlay, hasSrc, onLoadRequest, loadSrc]);
+
   // Global drag handlers
   const handleMouseUp = useCallback(() => {
     if (isDragging) {
@@ -219,15 +252,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       if (isPlaying) {
         audio.pause();
       } else {
-        // If no src loaded yet, request it
+        // If no src loaded yet, request it; playback follows from the effect above.
         if (!src && onLoadRequest) {
-          setIsLoading(true);
-          const newSrc = await onLoadRequest();
-          setIsLoading(false);
-          if (newSrc) {
-            setLoadedSrc(newSrc);
-            // Playback will be triggered by the useEffect watching loadedSrc
-          }
+          await loadSrc();
         } else if (src) {
           await audio.play();
         }

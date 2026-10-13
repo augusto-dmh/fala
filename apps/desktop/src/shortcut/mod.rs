@@ -9,9 +9,12 @@
 //! The active implementation is determined by the `keyboard_implementation`
 //! setting and can be changed at runtime.
 
+mod conflict;
 pub mod fala_keys;
 mod handler;
 pub mod tauri_impl;
+
+pub use conflict::{ShortcutOverlap, ShortcutRefusal};
 
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -204,6 +207,10 @@ pub struct BindingResponse {
     success: bool,
     binding: Option<ShortcutBinding>,
     error: Option<String>,
+    /// Why the combination was not saved, for the shortcuts dialog to explain.
+    refusal: Option<ShortcutRefusal>,
+    /// Saved, but holding one combination may fire another action.
+    overlap: Option<ShortcutOverlap>,
 }
 
 impl BindingResponse {
@@ -212,6 +219,8 @@ impl BindingResponse {
             success: true,
             binding: Some(binding),
             error: None,
+            refusal: None,
+            overlap: None,
         }
     }
 
@@ -220,11 +229,26 @@ impl BindingResponse {
             success: false,
             binding: None,
             error: Some(error),
+            refusal: None,
+            overlap: None,
+        }
+    }
+
+    /// `error` stays readable for callers that only show it; the dialog reads `refusal`.
+    fn refused(refusal: ShortcutRefusal) -> Self {
+        let error = match &refusal {
+            ShortcutRefusal::InUse { action, .. } => format!("Already used by '{action}'"),
+            ShortcutRefusal::Reserved => "Windows or another app already uses it".to_string(),
+            ShortcutRefusal::LoneKey => "Use it with Ctrl, Alt, Shift or Win".to_string(),
+        };
+        Self {
+            refusal: Some(refusal),
+            ..Self::failed(error)
         }
     }
 }
 
-/// The first combination of an action.
+/// The first combination of an action, without taking it from another one.
 #[tauri::command]
 #[specta::specta]
 pub fn change_binding(
@@ -232,10 +256,11 @@ pub fn change_binding(
     id: String,
     binding: String,
 ) -> Result<BindingResponse, String> {
-    set_binding(app, id, BindingSlot::Primary, binding)
+    set_binding(app, id, BindingSlot::Primary, binding, false)
 }
 
-/// Saves `binding` in `slot` of action `id`.
+/// Saves `binding` in `slot` of action `id`. A combination another action holds is refused,
+/// unless `take_over` ("use it here") takes it from that action in the same operation.
 #[tauri::command]
 #[specta::specta]
 pub fn set_binding(
@@ -243,6 +268,7 @@ pub fn set_binding(
     id: String,
     slot: BindingSlot,
     binding: String,
+    take_over: bool,
 ) -> Result<BindingResponse, String> {
     // Reject empty bindings: removing one is `remove_binding`
     if binding.trim().is_empty() {
@@ -280,12 +306,28 @@ pub fn set_binding(
         return Err(e);
     }
 
-    let next = place_binding(&settings.bindings, binding_to_modify, slot, &binding);
+    let placed = place_binding(
+        &settings.bindings,
+        binding_to_modify,
+        slot,
+        &binding,
+        take_over,
+    );
+    let (next, overlap) = match placed {
+        Ok(placed) => placed,
+        Err(refusal) => {
+            info!("Shortcut for '{}' refused: {:?}", id, refusal);
+            return Ok(BindingResponse::refused(refusal));
+        }
+    };
     if let Err(e) = apply_bindings(&app, &settings, next.clone()) {
         error!("change_binding error: {}", e);
         return Ok(BindingResponse::failed(e));
     }
-    Ok(BindingResponse::saved(next[&id].clone()))
+    Ok(BindingResponse {
+        overlap,
+        ..BindingResponse::saved(next[&id].clone())
+    })
 }
 
 /// Removes one combination; a second one becomes the first. Cancel keeps its key and dictation
@@ -317,7 +359,14 @@ pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, Stri
     let binding = settings::get_stored_binding(&settings, &id)?;
     let restored = restored(&binding, &settings::get_default_settings().bindings);
     let mut next = settings.bindings.clone();
-    next.insert(id, restored.clone());
+    next.insert(id.clone(), restored.clone());
+    // Another action may have taken the default meanwhile.
+    let default = &restored.current_binding;
+    if let Err(refusal @ ShortcutRefusal::InUse { .. }) =
+        conflict::check(default, &id, BindingSlot::Primary, &next)
+    {
+        return Ok(BindingResponse::refused(refusal));
+    }
     apply_bindings(&app, &settings, next)?;
     Ok(BindingResponse::saved(restored))
 }
@@ -453,25 +502,52 @@ fn without_slot(binding: &ShortcutBinding, slot: BindingSlot) -> ShortcutBinding
     removed
 }
 
-/// The bindings with `raw` in `binding`'s `slot`. A second combination without a first becomes
-/// the first.
+/// The bindings with `raw` in `binding`'s `slot`, or why not. With `take_over`, a combination
+/// another action (or the other slot) holds is taken from it, unless that would leave it without
+/// a key it must keep. A second combination without a first becomes the first.
 fn place_binding(
     bindings: &HashMap<String, ShortcutBinding>,
     binding: ShortcutBinding,
     slot: BindingSlot,
     raw: &str,
-) -> HashMap<String, ShortcutBinding> {
+    take_over: bool,
+) -> Result<(HashMap<String, ShortcutBinding>, Option<ShortcutOverlap>), ShortcutRefusal> {
     let id = binding.id.clone();
     let mut next = bindings.clone();
-    let placed = next.entry(id).or_insert(binding);
-    match slot {
-        BindingSlot::Primary => placed.current_binding = raw.to_string(),
-        BindingSlot::Alternate => placed.alternate_binding = raw.to_string(),
+    next.entry(id.clone()).or_insert(binding);
+    let overlap = loop {
+        match conflict::check(raw, &id, slot, &next) {
+            Ok(overlap) => break overlap,
+            Err(ShortcutRefusal::InUse {
+                action, slot: held, ..
+            }) => {
+                let allowed = next
+                    .get(&action)
+                    .is_some_and(|other| slot_removable(other, held));
+                if !(take_over && allowed) {
+                    return Err(ShortcutRefusal::InUse {
+                        action,
+                        slot: held,
+                        take_over: allowed,
+                    });
+                }
+                if let Some(other) = next.get_mut(&action) {
+                    *other = without_slot(other, held);
+                }
+            }
+            Err(refusal) => return Err(refusal),
+        }
+    };
+    if let Some(placed) = next.get_mut(&id) {
+        match slot {
+            BindingSlot::Primary => placed.current_binding = raw.to_string(),
+            BindingSlot::Alternate => placed.alternate_binding = raw.to_string(),
+        }
+        if binding_is_unset(placed) {
+            placed.current_binding = std::mem::take(&mut placed.alternate_binding);
+        }
     }
-    if binding_is_unset(placed) {
-        placed.current_binding = std::mem::take(&mut placed.alternate_binding);
-    }
-    next
+    Ok((next, overlap))
 }
 
 /// Saves `next` and brings the registrations in line with it: every registered action that
@@ -1829,7 +1905,7 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 mod tests {
     use super::{
         defaults_restored, place_binding, registrations, reset_refusal, slot_removable,
-        without_slot, BindingSlot, CancelKey, ResetBindingsError,
+        without_slot, BindingSlot, CancelKey, ResetBindingsError, ShortcutOverlap, ShortcutRefusal,
     };
     use crate::meeting::MeetingPhase;
     use crate::settings::ShortcutBinding;
@@ -2002,7 +2078,49 @@ mod tests {
         slot: BindingSlot,
         raw: &str,
     ) -> HashMap<String, ShortcutBinding> {
-        place_binding(bindings, bindings[id].clone(), slot, raw)
+        take(bindings, id, slot, raw, false).expect("no conflict").0
+    }
+
+    type Placed = (HashMap<String, ShortcutBinding>, Option<ShortcutOverlap>);
+
+    fn take(
+        bindings: &HashMap<String, ShortcutBinding>,
+        id: &str,
+        slot: BindingSlot,
+        raw: &str,
+        take_over: bool,
+    ) -> Result<Placed, ShortcutRefusal> {
+        place_binding(bindings, bindings[id].clone(), slot, raw, take_over)
+    }
+
+    #[test]
+    fn a_combination_in_use_is_refused_or_taken_over() {
+        use BindingSlot::{Alternate as Alt, Primary as Pri};
+        let all = store();
+        let in_use = |action: &str, take_over| ShortcutRefusal::InUse {
+            action: action.to_string(),
+            slot: Pri,
+            take_over,
+        };
+        // Dictation's only key: refused, and "use it here" cannot take it.
+        let refused = take(&all, "paste_last", Alt, "ctrl+shift+space", false);
+        assert_eq!(refused.err(), Some(in_use("transcribe", false)));
+        assert!(take(&all, "paste_last", Alt, "ctrl+shift+space", true).is_err());
+        // Copy's first key can be taken: copy keeps its second, now first.
+        let refused = take(&all, "paste_last", Alt, "alt+shift+x", false);
+        assert_eq!(refused.err(), Some(in_use("copy_last", true)));
+        let (next, _) = take(&all, "paste_last", Alt, "alt+shift+x", true).unwrap();
+        assert_eq!(
+            keys(&next, "paste_last"),
+            pair("alt+shift+z", "alt+shift+x")
+        );
+        assert_eq!(keys(&next, "copy_last"), pair("f8", ""));
+        // With a second key, dictation can give its first one away.
+        let mut two = store();
+        two.get_mut("transcribe").unwrap().alternate_binding = "f9".to_string();
+        let (next, _) = take(&two, "meeting_toggle", Pri, "ctrl+shift+space", true).unwrap();
+        assert_eq!(keys(&next, "transcribe"), pair("f9", ""));
+        assert_eq!(keys(&next, "meeting_toggle"), pair("ctrl+shift+space", ""));
     }
 
     #[test]
