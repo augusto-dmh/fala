@@ -94,6 +94,7 @@ const panel = (s: MeetingStatus) =>
       stage={null}
       onImport={noop}
       onCancel={noop}
+      onGranola={noop}
     />,
   );
   assert.ok(closed.includes("meeting.import.open"));
@@ -103,6 +104,7 @@ const panel = (s: MeetingStatus) =>
       stage={{ stage: "importing", phase: "convert", done: 5, total: 10 }}
       onImport={noop}
       onCancel={noop}
+      onGranola={noop}
     />,
   );
   assert.ok(running.includes('role="status"'));

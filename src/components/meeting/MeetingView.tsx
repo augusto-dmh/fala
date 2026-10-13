@@ -391,6 +391,11 @@ export function MeetingView(props: MeetingViewProps) {
                     {t("meeting.notesEdit.edit")}
                   </Button>
                 )}
+                {detail.summary.imported_from === "granola" && (
+                  <p className="text-caption text-text-2">
+                    {t("meeting.granola.noAnchors")}
+                  </p>
+                )}
                 {editing && detail.notes_md !== null ? (
                   <NotesEditor
                     id={detail.summary.id}
@@ -495,7 +500,12 @@ export function MeetingView(props: MeetingViewProps) {
         onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
         onRecordDraft={props.onRecordDraft}
         transcribing={props.transcribing}
-        transcribeDisabled={props.recording || props.transcribing}
+        transcribeDisabled={
+          props.recording ||
+          props.transcribing ||
+          // Granola sends no audio: there is nothing to transcribe.
+          detail.summary.imported_from === "granola"
+        }
         onTranscribe={props.onTranscribe}
         onCancelTranscription={props.onCancelTranscription}
         generateLabel={

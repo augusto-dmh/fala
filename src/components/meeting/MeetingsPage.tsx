@@ -23,6 +23,7 @@ import { PageHeader } from "../PageHeader";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ConsentNotice } from "./ConsentNotice";
+import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
 import { MeetingList } from "./MeetingList";
 import { NewMeetingButton, RecordingStrip } from "./MeetingHome";
@@ -101,6 +102,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
   // The session the running import writes, known from its first progress event.
   const importId = useRef<string | null>(null);
   const importRunning = useRef(false);
+  const [granolaPath, setGranolaPath] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await commands.listMeetings();
@@ -453,11 +455,23 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
     </>
   );
 
+  // The Granola import, first in both the list and the session: React keeps it mounted (and its
+  // preview or progress) when a meeting opens or closes.
+  const granola = granolaPath !== null && (
+    <GranolaImport
+      key={granolaPath}
+      path={granolaPath}
+      onImported={() => void refresh()}
+      onClose={() => setGranolaPath(null)}
+    />
+  );
+
   if (selected) {
     // Recording, stopping or processing: the backend keeps the id until the pipeline takes over.
     const recordingThis = status.id === selected.summary.id;
     return (
       <div className="mx-auto w-full max-w-2xl space-y-4">
+        {granola}
         <button
           type="button"
           onClick={() => setSelected(null)}
@@ -478,6 +492,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
             stage={importStage}
             onImport={(source) => void importSource(source)}
             onCancel={() => void commands.cancelMeetingImport()}
+            onGranola={setGranolaPath}
           />
         )}
         {/* Recording this one: the levels and warnings on top, the controls in its bar. */}
@@ -532,6 +547,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
+      {granola}
       <PageHeader
         title={t("meeting.list.title")}
         actions={
@@ -561,6 +577,7 @@ export function MeetingsPage({ onOpenSettings }: MeetingsPageProps) {
             stage={importStage}
             onImport={(source) => void importSource(source)}
             onCancel={() => void commands.cancelMeetingImport()}
+            onGranola={setGranolaPath}
           />
         )}
       </div>

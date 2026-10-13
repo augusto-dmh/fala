@@ -1159,7 +1159,44 @@
       "downloadingBytes": "Downloading the audio… {{mb}} MB",
       "converting": "Converting the audio… {{percent}}%",
       "saving": "Saving the audio…",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "granola": "Granola history…",
+      "granolaFiles": "Granola export (CSV or ZIP)"
+    },
+    "granola": {
+      "reading": "Reading the Granola export…",
+      "none": "No meetings in this file.",
+      "found": "Meetings in the file: {{count}}, from {{first}} to {{last}}.",
+      "duplicates": "Repeated rows (the last one of each meeting wins): {{count}}.",
+      "skipped": "Rows skipped: {{count}}.",
+      "more": "and {{count}} more",
+      "row": "row {{line}}: {{reason}}",
+      "rowIn": "{{file}}, row {{line}}: {{reason}}",
+      "reasons": {
+        "missing_id": "no document_id",
+        "invalid_date": "unrecognized date ({{detail}})",
+        "cell_too_large": "the {{detail}} column is over the limit"
+      },
+      "local": "The file is read on this computer and nothing in it is sent anywhere. Importing again updates the same meetings.",
+      "import": "Import",
+      "importing": "Importing {{done}} of {{total}}…",
+      "cancel": "Cancel",
+      "done": "Meetings imported: {{created}} new and {{updated}} updated. Rows skipped: {{rejected}}.",
+      "close": "Close",
+      "noAnchors": "No anchors: imported from Granola.",
+      "errors": {
+        "empty": "This file is empty.",
+        "not_utf8": "This file is not UTF-8 text. Use the CSV from Granola's email without opening and saving it in another program.",
+        "file_too_large": "This file is larger than 100 MB.",
+        "too_many_rows": "This file has more than 5,000 meetings, the limit of one import.",
+        "missing_columns": "This CSV does not look like a Granola export: the {{detail}} columns are missing.",
+        "no_csv_in_zip": "This ZIP has no CSV in it.",
+        "zip_mismatch": "The CSVs in this ZIP don't share the same columns.",
+        "unreadable": "Couldn't read this file: {{detail}}",
+        "busy": "Wait for the import, transcription or notes generation in progress to finish.",
+        "cancelled": "Import cancelled. The meetings saved before the click stay.",
+        "storage": "Couldn't save the meetings: {{detail}}"
+      }
     },
     "annotations": {
       "placeholder": "Write notes, or / for templates"
@@ -1168,6 +1205,7 @@
       "title": "Meetings",
       "empty": "No meetings yet",
       "draft": "draft",
+      "granola": "Granola",
       "search": "Search titles, notes and transcripts",
       "noResults": "No meetings found.",
       "emptyHint": "Record your next call, or drop an audio or video file here."
