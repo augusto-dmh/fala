@@ -999,6 +999,7 @@
     "close": "Close",
     "open": "Open",
     "copy": "Copy",
+    "resetToDefault": "Reset to default",
     "clear": "Clear",
     "noOptionsFound": "No options found"
   },

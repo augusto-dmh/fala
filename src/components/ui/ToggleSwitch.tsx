@@ -38,6 +38,8 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
       >
         <input
           type="checkbox"
+          role="switch"
+          aria-label={label}
           value=""
           className="sr-only peer"
           checked={checked}

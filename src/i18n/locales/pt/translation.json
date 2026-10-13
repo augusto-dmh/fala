@@ -996,6 +996,7 @@
     "close": "Fechar",
     "open": "Abrir",
     "copy": "Copiar",
+    "resetToDefault": "Restaurar o padrão",
     "clear": "Limpar",
     "noOptionsFound": "Nenhuma opção encontrada"
   },
