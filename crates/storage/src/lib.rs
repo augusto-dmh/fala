@@ -10,13 +10,16 @@
 //! sem subir a versão, como as métricas; `meeting_note_edits` (a nota editada à mão) também.
 //! Cada reunião tem o seu `.md` em `Reuniões/`, reescrito depois de toda mudança; o nome em uso
 //! fica em `meeting_files`, também aditiva, e `Store::reindex_meetings` reconstrói as reuniões.
-//! `granola` lê o "Historical Data Export" do Granola (CSV ou `.zip`), para importar o histórico.
+//! `granola` lê o "Historical Data Export" do Granola (CSV ou `.zip`); cada reunião vira uma
+//! sessão `import` sem áudio, e `meeting_imports`, aditiva, liga cada uma ao id de origem, para
+//! importar de novo atualizar em vez de duplicar.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
 //! `Store::metrics_summary`.
 
 mod granola;
+mod meeting_imports;
 mod meeting_mirror;
 mod meeting_notes;
 mod meeting_people;
@@ -36,6 +39,7 @@ pub use granola::{
     parse_granola_csv, parse_granola_zip, read_granola_export, GranolaError, GranolaExport,
     GranolaMeeting, RejectReason, RejectedRow,
 };
+pub use meeting_imports::{ImportOutcome, GRANOLA};
 pub use meeting_people::{MeetingSpeaker, NameSuggestion};
 pub use meeting_search::{MeetingHit, MATCH_END, MATCH_START};
 pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};

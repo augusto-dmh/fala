@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::meetings::SCHEMA_2;
 use crate::metrics::{self, DictationMetrics, MetricsSummary};
 use crate::mirror::{self, DITADOS};
-use crate::{meeting_mirror, meeting_notes, meeting_people, meeting_search};
+use crate::{meeting_imports, meeting_mirror, meeting_notes, meeting_people, meeting_search};
 use crate::{DictationRecord, ReindexReport, Showing, Skipped, StorageError};
 
 /// Versão do schema em `PRAGMA user_version`; migrações futuras sobem esse número.
@@ -106,6 +106,7 @@ impl Store {
         conn.execute_batch(meeting_notes::SCHEMA)?;
         conn.execute_batch(meeting_mirror::SCHEMA)?;
         conn.execute_batch(meeting_search::SCHEMA)?;
+        conn.execute_batch(meeting_imports::SCHEMA)?;
         Ok(Store {
             conn,
             notes_dir: notes_dir.to_path_buf(),
