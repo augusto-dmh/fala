@@ -110,9 +110,11 @@ export function MeetingList({
             )}
           </span>
           <span className="shrink-0 pt-px text-caption text-text-2 tabular-nums">
-            {session.started_at === null
-              ? t("meeting.list.draft")
-              : clock(session.recorded_ms)}
+            {session.imported_from === "granola"
+              ? t("meeting.list.granola")
+              : session.started_at === null
+                ? t("meeting.list.draft")
+                : clock(session.recorded_ms)}
           </span>
         </button>
       </li>

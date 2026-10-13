@@ -914,6 +914,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::cancel_meeting_transcription,
             commands::meeting::import_meeting,
             commands::meeting::cancel_meeting_import,
+            commands::meeting::preview_granola_import,
+            commands::meeting::run_granola_import,
             commands::meeting::generate_meeting_notes,
             commands::meeting::meeting_markdown,
             commands::meeting::meeting_templates,
@@ -951,6 +953,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
             meeting::MeetingStatus,
             meeting::pipeline::MeetingProgress,
+            meeting::granola::GranolaProgress,
         ])
 }
 

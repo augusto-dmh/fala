@@ -1159,7 +1159,44 @@
       "downloadingBytes": "Baixando o áudio… {{mb}} MB",
       "converting": "Convertendo o áudio… {{percent}}%",
       "saving": "Salvando o áudio…",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "granola": "Histórico do Granola…",
+      "granolaFiles": "Export do Granola (CSV ou ZIP)"
+    },
+    "granola": {
+      "reading": "Lendo o export do Granola…",
+      "none": "Nenhuma reunião nesse arquivo.",
+      "found": "Reuniões no arquivo: {{count}}, de {{first}} a {{last}}.",
+      "duplicates": "Linhas repetidas (vale a última de cada reunião): {{count}}.",
+      "skipped": "Linhas ignoradas: {{count}}.",
+      "more": "e mais {{count}}",
+      "row": "linha {{line}}: {{reason}}",
+      "rowIn": "{{file}}, linha {{line}}: {{reason}}",
+      "reasons": {
+        "missing_id": "sem document_id",
+        "invalid_date": "data não reconhecida ({{detail}})",
+        "cell_too_large": "a coluna {{detail}} passa do limite"
+      },
+      "local": "O arquivo é lido neste computador e nada dele é enviado. Importar de novo atualiza as mesmas reuniões.",
+      "import": "Importar",
+      "importing": "Importando {{done}} de {{total}}…",
+      "cancel": "Cancelar",
+      "done": "Reuniões importadas: {{created}} novas e {{updated}} atualizadas. Linhas ignoradas: {{rejected}}.",
+      "close": "Fechar",
+      "noAnchors": "Sem âncoras: importada do Granola.",
+      "errors": {
+        "empty": "Esse arquivo está vazio.",
+        "not_utf8": "Esse arquivo não é texto UTF-8. Use o CSV do e-mail do Granola, sem abrir e salvar em outro programa.",
+        "file_too_large": "Esse arquivo passa de 100 MB.",
+        "too_many_rows": "Esse arquivo passa de 5.000 reuniões, o limite de uma importação.",
+        "missing_columns": "Esse CSV não parece um export do Granola: faltam as colunas {{detail}}.",
+        "no_csv_in_zip": "Esse ZIP não tem nenhum CSV.",
+        "zip_mismatch": "Os CSVs desse ZIP não têm as mesmas colunas.",
+        "unreadable": "Não consegui ler esse arquivo: {{detail}}",
+        "busy": "Espere a importação, a transcrição ou a geração de notas em andamento terminar.",
+        "cancelled": "Importação cancelada. As reuniões salvas antes do clique ficaram.",
+        "storage": "Não consegui salvar as reuniões: {{detail}}"
+      }
     },
     "annotations": {
       "placeholder": "Digite suas anotações. Elas são salvas sozinhas."
@@ -1168,6 +1205,7 @@
       "title": "Reuniões",
       "empty": "Nenhuma reunião ainda",
       "draft": "rascunho",
+      "granola": "Granola",
       "search": "Buscar no título, nas notas e na transcrição",
       "noResults": "Nenhuma reunião encontrada.",
       "emptyHint": "Grave a próxima call ou arraste um arquivo de áudio ou vídeo aqui."
