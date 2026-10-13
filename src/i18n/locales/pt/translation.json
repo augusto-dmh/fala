@@ -206,7 +206,8 @@
     "nav": {
       "back": "Voltar",
       "next": "Continuar",
-      "done": "Concluir"
+      "done": "Concluir",
+      "skip": "Pular"
     },
     "footer": {
       "pending": "Preparando o modelo de transcrição",
@@ -247,9 +248,7 @@
       "description": "A IA corrige pontuação e formatação do que você ditou.",
       "privacy": "Com a IA ligada, só o texto do ditado vai para o Gemini; nunca o áudio, que fica na sua máquina.",
       "keyLabel": "Chave do Gemini",
-      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações.",
-      "skip": "Pular",
-      "finish": "Continuar"
+      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações."
     },
     "meetings": {
       "title": "Reuniões (opcional)",
@@ -261,8 +260,8 @@
       "accepted": "Aviso aceito",
       "anthropicLabel": "Chave da Anthropic",
       "anthropicDescription": "Escreve as notas a partir da transcrição. Fica no cofre do sistema e não aparece de novo.",
-      "skip": "Pular",
-      "finish": "Concluir",
+      "testSound": "Testar o som",
+      "stopSound": "Parar",
       "micDescription": "O que você fala na reunião. Fica neste computador até a transcrição."
     }
   },
