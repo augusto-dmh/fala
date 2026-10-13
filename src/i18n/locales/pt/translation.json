@@ -1108,7 +1108,8 @@
     "idle": {
       "dictate": "Ditar",
       "doubleTap": "toque duplo para travar",
-      "label": "Fala em repouso: passe o mouse para ver o atalho"
+      "label": "Fala em repouso: passe o mouse para ver o atalho",
+      "newMeeting": "Nova reunião"
     },
     "recording": "Gravando",
     "transcribing": "Transcrevendo...",

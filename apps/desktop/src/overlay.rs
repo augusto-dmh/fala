@@ -75,7 +75,8 @@ static RECORDING_PILL: AtomicBool = AtomicBool::new(false);
 const OVERLAY_IDLE_WIDTH: f64 = 64.0;
 const OVERLAY_IDLE_HEIGHT: f64 = 20.0;
 const OVERLAY_IDLE_HOVER_WIDTH: f64 = 300.0;
-const OVERLAY_IDLE_HOVER_HEIGHT: f64 = 64.0;
+/// Three rows: the shortcut, the double-tap hint and "Nova reunião", with a little room to spare.
+const OVERLAY_IDLE_HOVER_HEIGHT: f64 = 96.0;
 
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
@@ -1327,6 +1328,32 @@ pub fn open_home_from_pill(app: AppHandle) {
     let _ = app.emit_to("main", "open-home", ());
 }
 
+/// "Nova reunião" on the idle pill's hover card: an explicit click, like the tray item, and the
+/// only way the pill starts a meeting (ADR-0005). The consent card comes first when it is due.
+/// Opening the devices takes a moment, so it runs off the command's thread.
+#[tauri::command]
+#[specta::specta]
+pub fn start_meeting_from_pill(app: AppHandle) {
+    // Like the pill's other commands: only the pill at rest offers it, so a late click from a
+    // pill that already turned into a recording does nothing.
+    if !matches!(Shown::load(), Shown::Idle | Shown::IdleHover) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let Some(meetings) = app.try_state::<std::sync::Arc<crate::meeting::MeetingManager>>()
+        else {
+            return;
+        };
+        meetings.start_from_tray();
+        // No meeting started (the consent card, or a device or a dictation in the way, which the
+        // start only logs): open Reuniões, where the consent and "New meeting" say why.
+        if meetings.status().id.is_none() {
+            crate::show_main_window(&app);
+            let _ = app.emit_to("main", "open-meeting", None::<String>);
+        }
+    });
+}
+
 /// A click on the meeting pill opens the main window on Reuniões, on the session it records.
 #[tauri::command]
 #[specta::specta]
@@ -1677,7 +1704,7 @@ mod tests {
     #[test]
     fn idle_dimensions() {
         assert_eq!(overlay_dimensions("idle"), (64.0, 20.0));
-        assert_eq!(overlay_dimensions("idle_hover"), (300.0, 64.0));
+        assert_eq!(overlay_dimensions("idle_hover"), (300.0, 96.0));
         assert_eq!(overlay_dimensions("recording"), (256.0, 50.0));
         assert_eq!(overlay_dimensions("streaming"), (400.0, 120.0));
         assert_eq!(Shown::of("idle"), Shown::Idle);

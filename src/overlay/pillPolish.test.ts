@@ -57,7 +57,7 @@ const ok = (id: string) => console.log(`${id} ok`);
   const tray = read("../../apps/desktop/src/tray.rs");
   assert.match(
     tray,
-    /const PILL_MENU: \[Option<&str>; 8\] = \[\s*Some\("paste_last_transcript"\),\s*Some\("copy_last_transcript"\),/,
+    /const PILL_MENU: \[Option<&str>; 10\] = \[\s*Some\("paste_last_transcript"\),\s*Some\("copy_last_transcript"\),/,
   );
   assert.match(
     tray,

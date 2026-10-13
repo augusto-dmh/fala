@@ -1111,7 +1111,8 @@
     "idle": {
       "dictate": "Dictate",
       "doubleTap": "double-tap to lock",
-      "label": "Fala at rest: hover to see the shortcut"
+      "label": "Fala at rest: hover to see the shortcut",
+      "newMeeting": "New meeting"
     },
     "recording": "Recording",
     "transcribing": "Transcribing...",

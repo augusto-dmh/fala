@@ -1,7 +1,7 @@
 /* The pill at rest (`.specs/features/pill-idle`): a 40×8 capsule, translucent black with a light
    hairline, no bars, no red, nothing that moves, so it never reads as a recording (ADR-0005). Colours
    are literal like the pill's: the same in light and dark themes. The window is 64×20 at rest and
-   grows to 300×64 on hover (overlay.rs). */
+   grows to 300×96 on hover (overlay.rs). */
 .fpill.idle {
   width: 40px;
   height: 8px;
@@ -55,4 +55,23 @@
 .fpill.idle .idle-hint {
   color: rgba(255, 255, 255, 0.7);
   font-size: 11px;
+}
+/* "Nova reunião": a quiet button under the shortcut, grey like the card, never red: it starts a
+   meeting only when clicked (ADR-0005). */
+.fpill.idle .idle-meeting {
+  align-self: center;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.fpill.idle .idle-meeting:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.fpill.idle .idle-meeting:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
 }
