@@ -206,7 +206,8 @@
     "nav": {
       "back": "Voltar",
       "next": "Continuar",
-      "done": "Concluir"
+      "done": "Concluir",
+      "skip": "Pular"
     },
     "footer": {
       "pending": "Preparando o modelo de transcrição",
@@ -247,9 +248,7 @@
       "description": "A IA corrige pontuação e formatação do que você ditou.",
       "privacy": "Com a IA ligada, só o texto do ditado vai para o Gemini; nunca o áudio, que fica na sua máquina.",
       "keyLabel": "Chave do Gemini",
-      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações.",
-      "skip": "Pular",
-      "finish": "Continuar"
+      "keyDescription": "Fica no cofre de senhas do sistema. Dá para pôr ou trocar depois em Configurações."
     },
     "meetings": {
       "title": "Reuniões (opcional)",
@@ -261,8 +260,8 @@
       "accepted": "Aviso aceito",
       "anthropicLabel": "Chave da Anthropic",
       "anthropicDescription": "Escreve as notas a partir da transcrição. Fica no cofre do sistema e não aparece de novo.",
-      "skip": "Pular",
-      "finish": "Concluir",
+      "testSound": "Testar o som",
+      "stopSound": "Parar",
       "micDescription": "O que você fala na reunião. Fica neste computador até a transcrição."
     }
   },
@@ -425,7 +424,7 @@
       },
       "apiKey": {
         "title": "Chave do Gemini",
-        "description": "Fica no cofre de senhas do sistema. Sem chave, só as regras locais formatam o texto.",
+        "description": "Fica no cofre do sistema. Sem chave, só as regras locais formatam o texto.",
         "placeholder": "Cole a chave da API"
       },
       "disabledApps": {
@@ -747,7 +746,8 @@
       "discarded": "Este ditado foi descartado.",
       "recover": "Recuperar",
       "recovered": "Ditado recuperado e copiado",
-      "recoverError": "Não foi possível recuperar o ditado."
+      "recoverError": "Não foi possível recuperar o ditado.",
+      "audioDeleted": "O áudio deste ditado já foi apagado; o texto fica."
     },
     "debug": {
       "title": "Depuração",
@@ -784,18 +784,18 @@
         "description": "Sensibilidade para correções de palavras personalizadas"
       },
       "historyLimit": {
-        "title": "Limite de Histórico",
-        "description": "Número máximo de entradas de histórico a manter",
-        "entries": "entradas"
+        "title": "Gravações a manter",
+        "description": "Quantas gravações de áudio recentes guardar. O texto dos ditados não tem limite.",
+        "entries": "gravações"
       },
       "recordingRetention": {
-        "title": "Excluir Gravações Automaticamente",
-        "description": "Excluir automaticamente gravações antigas para economizar espaço",
-        "never": "Nunca",
+        "title": "Gravações de áudio",
+        "description": "Apaga o áudio dos ditados antigos para liberar espaço. O texto continua no histórico.",
+        "never": "Manter todas",
         "preserveLimit": "Manter as últimas {{count}}",
-        "days3": "Após 3 dias",
-        "weeks2": "Após 2 semanas",
-        "months3": "Após 3 meses",
+        "days3": "Apagar após 3 dias",
+        "weeks2": "Apagar após 2 semanas",
+        "months3": "Apagar após 3 meses",
         "placeholder": "Selecionar período de retenção..."
       },
       "alwaysOnMicrophone": {
@@ -1339,10 +1339,13 @@
     },
     "key": {
       "label": "Chave da ElevenLabs",
-      "placeholder": "cole a chave",
-      "save": "Salvar no cofre do sistema",
-      "saved": "Salva no cofre do sistema. Cole outra para trocar.",
+      "saved": "Salva no cofre do sistema. As reuniões são transcritas.",
       "missing": "Sem ela, as reuniões gravam mas não são transcritas. Fica no cofre do sistema e não aparece de novo."
+    },
+    "notesKey": {
+      "label": "Chave da Anthropic",
+      "saved": "Salva no cofre do sistema. As notas saem da transcrição.",
+      "missing": "Escreve as notas a partir da transcrição. Sem ela, as reuniões ficam sem notas. Fica no cofre do sistema e não aparece de novo."
     },
     "errors": {
       "consent_required": "Aceite o aviso antes de gravar.",
@@ -1425,5 +1428,15 @@
       "label": "Ações da reunião",
       "close": "Fechar a transcrição"
     }
+  },
+  "keyField": {
+    "placeholder": "Cole a chave",
+    "save": "Salvar",
+    "saved": "Salva",
+    "replace": "Trocar",
+    "replaceNamed": "Trocar a {{name}}",
+    "remove": "Remover",
+    "removeNamed": "Remover a {{name}}",
+    "cancel": "Cancelar"
   }
 }

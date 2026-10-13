@@ -77,6 +77,9 @@ pub async fn retry_history_entry_transcription(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("History entry {} not found", id))?;
+    if entry.audio_deleted {
+        return Err(format!("The recording of history entry {} was deleted", id));
+    }
 
     let audio_path = history_manager.get_audio_file_path(&entry.file_name);
     let samples = crate::audio_toolkit::read_wav_samples(&audio_path)
