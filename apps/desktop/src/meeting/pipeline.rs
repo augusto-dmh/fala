@@ -234,7 +234,7 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         }
         .to_string(),
         person: match segment.speaker {
-            SegmentSpeaker::Me | SegmentSpeaker::Omitted => None,
+            SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => None,
             SegmentSpeaker::Person(n) => Some(n),
         },
         name: None,
@@ -283,6 +283,7 @@ pub(crate) fn notes_segments(
             speaker: match segment.speaker {
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
                 SegmentSpeaker::Omitted => fala_notes::Speaker::Omitted,
+                SegmentSpeaker::Erased => fala_notes::Speaker::Erased,
                 SegmentSpeaker::Person(n) => match names.get(&n) {
                     Some(name) => fala_notes::Speaker::Named(name.clone()),
                     None => fala_notes::Speaker::Person(n),
@@ -575,7 +576,9 @@ impl MeetingManager {
                 .map(|segment| MeetingLine {
                     name: match segment.speaker {
                         SegmentSpeaker::Person(n) => names.get(&n).cloned(),
-                        SegmentSpeaker::Me | SegmentSpeaker::Omitted => None,
+                        SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => {
+                            None
+                        }
                     },
                     ..line(segment)
                 })

@@ -20,3 +20,11 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-session-edit`
 - **C8** tela: título, data, "apagada há N dias", Restaurar e Apagar para sempre, rodapé dos
   30 dias, "Nada na lixeira", link "Lixeira (N)". Mesmo arquivo (T3, T4)
 - **C9** manual: mover, desfazer, restaurar e apagar para sempre no app de debug portátil
+
+## S3 — apagar trecho, núcleo (PR 3)
+
+- **C10** `zero_range`: mesma contagem nos dois Opus, < -90 dBFS a 40 ms das bordas, o resto
+  correlacionado; um `.part` recusado não substitui. `cargo test -p fala-retention`
+- **C11** falas que cruzam o intervalo saem nos dois canais, marcador, renumeração, ponteiros,
+  nomes e nota editada ficam; transcrição nova e `reindex` mantêm o apagado. `cargo test -p fala-storage --test meeting_erasures`
+- **C12** `remap_pointers`. `cargo test -p fala-notes pointers`
