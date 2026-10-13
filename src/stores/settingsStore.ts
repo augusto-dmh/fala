@@ -14,6 +14,8 @@ import type {
   NotesLanguage,
 } from "@/bindings";
 import { commands } from "@/bindings";
+import i18next from "i18next";
+import { refusalText } from "../components/settings/shortcutsModel";
 
 interface SettingsStore {
   settings: Settings | null;
@@ -461,9 +463,18 @@ export const useSettingsStore = create<SettingsStore>()(
           throw new Error(result.error);
         }
 
-        // Check if the binding change was successful
+        // Check if the binding change was successful; a refusal reads in the person's language
         if (!result.data.success) {
-          throw new Error(result.data.error || "Failed to update binding");
+          const { refusal } = result.data;
+          throw new Error(
+            refusal
+              ? refusalText(
+                  (key, options) => i18next.t(key, options),
+                  refusal,
+                  binding,
+                )
+              : result.data.error || "Failed to update binding",
+          );
         }
       } catch (error) {
         console.error(`Failed to update binding ${id}:`, error);
