@@ -1008,7 +1008,7 @@
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
     "transcriptionFailedTitle": "Transcription Failed",
-    "meetingActive": "Dictation is unavailable while a meeting is being recorded, even paused. Stop the meeting to dictate."
+    "meetingInPerson": "Dictation is unavailable during an in-person meeting, even paused: the mic is the meeting. Stop the meeting to dictate."
   },
   "appLanguage": {
     "title": "Application Language",
@@ -1049,6 +1049,7 @@
     "callElsewhere": "The call's sound is playing on {{device}}",
     "recordFrom": "Record from this device",
     "meetingConsent": "Only record with the consent of everyone on the call.",
+    "meetingDictation": "Meeting mic paused while you dictate",
     "pasteFailed": {
       "title": "Couldn't paste it.",
       "retry": "{{keys}} pastes it again · click to copy",
@@ -1259,6 +1260,7 @@
       "stop": "Stop",
       "noAudio": "This meeting's audio is no longer on disk."
     },
+    "omitted": "Dictation left out",
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"

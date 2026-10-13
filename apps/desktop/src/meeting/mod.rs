@@ -7,8 +7,9 @@
 //!
 //! ADR-0005: `UserAction::StartRecording` and `ResumeRecording` are built only in
 //! [`MeetingManager::start`] and [`MeetingManager::resume`], which only the meeting commands and
-//! the tray items call. ADR-0015: without the microphone fan-out, dictation is refused while a
-//! meeting records, and the dictation stream is closed so the mic has a single stream.
+//! the tray items call. ADR-0015: dictation and the recorder read one stream per device
+//! (`MIC_HUB`), and a dictation during the recording zeroes the meeting's mic channel for its
+//! interval ([`MeetingManager::dictation_changed`]). In-person mode still refuses dictation.
 
 pub(crate) mod clip;
 pub(crate) mod context;
@@ -117,6 +118,8 @@ pub struct MeetingStatus {
     /// A channel in digital zero for ~3 s (the pill's dot turns amber).
     pub zero_mic: bool,
     pub zero_system: bool,
+    /// A dictation is zeroing the meeting's mic channel now (ADR-0015).
+    pub dictating: bool,
 }
 
 /// Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
@@ -257,11 +260,18 @@ pub(crate) fn media_action(effect: &Effect) -> Option<MediaAction> {
     }
 }
 
-/// The `recording-error` type that refuses a dictation while a meeting records, if any.
-pub(crate) fn dictation_refusal(indicator: MeetingIndicator) -> Option<&'static str> {
+/// The `recording-error` type that refuses a dictation during a meeting, if any. Only in-person
+/// mode refuses: there the mic is the meeting, and zeroing it loses what the room says.
+/// ADR-0015 allows it with the same zeroing; this stays blocked until that is confirmed.
+pub(crate) fn dictation_refusal(
+    indicator: MeetingIndicator,
+    in_person: bool,
+) -> Option<&'static str> {
     match indicator {
-        MeetingIndicator::Recording | MeetingIndicator::Paused => Some("meeting_active"),
-        MeetingIndicator::None => None,
+        MeetingIndicator::Recording | MeetingIndicator::Paused if in_person => {
+            Some("meeting_in_person")
+        }
+        _ => None,
     }
 }
 
@@ -340,6 +350,12 @@ pub(crate) enum MeetingIndicator {
 }
 
 static INDICATOR: AtomicU8 = AtomicU8::new(0);
+/// The live session records in person; read lock-free by the dictation shortcut.
+static IN_PERSON: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn in_person() -> bool {
+    IN_PERSON.load(Ordering::SeqCst)
+}
 
 pub(crate) fn indicator() -> MeetingIndicator {
     match INDICATOR.load(Ordering::SeqCst) {
@@ -362,6 +378,7 @@ fn show_indicator(app: &AppHandle, kind: IndicatorKind) {
 
 fn hide_indicator(app: &AppHandle) {
     INDICATOR.store(MeetingIndicator::None as u8, Ordering::SeqCst);
+    IN_PERSON.store(false, Ordering::SeqCst);
     crate::overlay::hide_meeting_overlay(app);
     crate::tray::refresh_tray_icon(app);
 }
@@ -392,6 +409,8 @@ struct Active {
     voiced: Duration,
     /// The capture ended on a device or disk error, not on a stop.
     capture_failed: bool,
+    /// A dictation is zeroing the mic channel (`BeginOmit` sent, `EndOmit` not yet).
+    dictating: bool,
     /// The PC woke and the devices are being opened again.
     waking: bool,
     /// The devices did not come back after a sleep: nobody stopped the session.
@@ -589,7 +608,7 @@ impl MeetingManager {
         )?;
 
         let system = output::resolve(settings.meeting_output_device.as_deref())?;
-        self.release_dictation_mic();
+        IN_PERSON.store(mode == MeetingMode::InPerson, Ordering::SeqCst);
         let mut control = None;
         let mut low_disk = None;
         for effect in effects {
@@ -613,7 +632,6 @@ impl MeetingManager {
                         }
                         Err(e) => {
                             hide_indicator(&self.app);
-                            self.restore_dictation_mic();
                             // Nothing was recorded: leave no empty `audio/<id>/` behind (only
                             // removes an empty directory).
                             let _ = std::fs::remove_dir(&dir);
@@ -658,6 +676,7 @@ impl MeetingManager {
             tick_levels: Levels::default(),
             voiced: Duration::ZERO,
             capture_failed: false,
+            dictating: false,
             waking: false,
             interrupted: false,
         });
@@ -817,20 +836,26 @@ impl MeetingManager {
                 mic_peak,
                 system_peak,
                 outputs,
+                mic_omitted,
             } => {
-                let levels = Levels { mic, system };
+                let levels = Levels {
+                    mic,
+                    system,
+                    mic_omitted,
+                };
                 let muted = active.mute.observe(recorded, levels);
                 let route = active
                     .route
                     .observe(recorded, mic_peak, system_peak, &outputs);
                 active.tick_levels.mic = active.tick_levels.mic.max(mic);
                 active.tick_levels.system = active.tick_levels.system.max(system);
+                active.tick_levels.mic_omitted |= mic_omitted;
                 let mut effects = Vec::new();
                 if recorded >= active.last_tick + Duration::from_secs(1) {
                     let elapsed = recorded - active.last_tick;
                     active.last_tick = recorded;
                     let levels = std::mem::take(&mut active.tick_levels);
-                    if levels.mic.max(levels.system) >= lifecycle::SPEECH_RMS {
+                    if lifecycle::heard_speech(levels) {
                         active.voiced += elapsed;
                     }
                     match active
@@ -850,6 +875,19 @@ impl MeetingManager {
                 // Only a change resizes the pill's window.
                 crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 self.run_effects(&mut inner, effects);
+            }
+            Report::Omitted(spans) => {
+                let id = active.session.id();
+                // Saved now, so a crash keeps the marker of every dictation already closed.
+                let saved = self.with_store(|store| {
+                    for (t0, t1) in &spans {
+                        store.add_meeting_omission(id, *t0, *t1)?;
+                    }
+                    Ok(())
+                });
+                if let Err(e) = saved {
+                    log::error!("meeting {id}: dictation span not saved: {e}");
+                }
             }
             Report::SystemSwitched { name, error } => {
                 if error.is_none() {
@@ -980,6 +1018,11 @@ impl MeetingManager {
         let Some(active) = inner.active.take() else {
             return;
         };
+        // A dictation still running goes on without a meeting: its card goes.
+        if active.dictating {
+            inner.status.dictating = false;
+            crate::overlay::set_meeting_dictation(&self.app, false);
+        }
         let id = active.session.id();
         // `None`: the capture did not come back after a sleep, recorded as interrupted (#128).
         let reason = (!active.interrupted).then(|| stop_reason(active.session.state()));
@@ -1031,7 +1074,6 @@ impl MeetingManager {
         if self.quit_if_asked(id) {
             return;
         }
-        self.restore_dictation_mic();
         self.retain(id, dir);
         if self.quit_if_asked(id) {
             return;
@@ -1104,18 +1146,26 @@ impl MeetingManager {
         }
     }
 
-    fn release_dictation_mic(&self) {
-        if let Some(rm) = self.app.try_state::<Arc<AudioRecordingManager>>() {
-            rm.release_microphone_for_meeting();
+    /// A dictation started (`true`) or ended: while it lasts, the recording's mic channel is
+    /// zeroed from the dictation's pre-buffer on (ADR-0015). Nothing to do without a mic.
+    pub(crate) fn dictation_changed(&self, dictating: bool, at: std::time::Instant) {
+        let mut inner = self.lock();
+        let Some(active) = inner.active.as_mut() else {
+            return;
+        };
+        if !active.mode.session_mode().has_mic() || active.dictating == dictating {
+            return;
         }
-    }
-
-    fn restore_dictation_mic(&self) {
-        if let Some(rm) = self.app.try_state::<Arc<AudioRecordingManager>>() {
-            if let Err(e) = rm.restore_microphone_after_meeting() {
-                log::warn!("dictation microphone not reopened after the meeting: {e}");
-            }
-        }
+        active.dictating = dictating;
+        let control = if dictating {
+            Control::BeginOmit(at)
+        } else {
+            Control::EndOmit
+        };
+        self.send(&inner, control);
+        inner.status.dictating = dictating;
+        crate::overlay::set_meeting_dictation(&self.app, dictating);
+        self.publish(&mut inner);
     }
 
     /// Refreshes the phase and id from the session, emits the status and returns it.
@@ -1283,16 +1333,17 @@ mod tests {
     }
 
     #[test]
-    fn dictation_blocked_while_recording() {
-        assert_eq!(
-            dictation_refusal(MeetingIndicator::Recording),
-            Some("meeting_active")
-        );
-        assert_eq!(
-            dictation_refusal(MeetingIndicator::Paused),
-            Some("meeting_active")
-        );
-        assert_eq!(dictation_refusal(MeetingIndicator::None), None);
+    fn dictation_is_refused_only_in_person() {
+        for indicator in [MeetingIndicator::Recording, MeetingIndicator::Paused] {
+            assert_eq!(dictation_refusal(indicator, false), None, "{indicator:?}");
+            assert_eq!(
+                dictation_refusal(indicator, true),
+                Some("meeting_in_person"),
+                "{indicator:?}"
+            );
+        }
+        assert_eq!(dictation_refusal(MeetingIndicator::None, false), None);
+        assert_eq!(dictation_refusal(MeetingIndicator::None, true), None);
     }
 
     #[test]

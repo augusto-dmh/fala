@@ -72,6 +72,32 @@ impl MicHub {
         })
     }
 
+    /// Como `open`, mas sempre com um stream novo: o que estava aberto passa a contar como com
+    /// erro, e quem ainda o lê (o ditado) reabre e vem para o novo. Depois de uma suspensão do SO
+    /// o stream velho raramente volta a entregar, sem reportar erro.
+    pub fn renew(
+        &self,
+        device: cpal::Device,
+        channel: Option<usize>,
+    ) -> Result<MicTap, AudioError> {
+        let key = device
+            .name()
+            .map_err(|e| AudioError::Device(e.to_string()))?;
+        self.renew_with(&key, channel, move || {
+            Ok(Box::new(Mic::open_device(device, None)?) as Box<dyn MicSource>)
+        })
+    }
+
+    /// `renew` com quem abre o stream dado por quem chama (os testes).
+    pub fn renew_with(
+        &self,
+        key: &str,
+        channel: Option<usize>,
+        opener: impl FnOnce() -> Result<Box<dyn MicSource>, AudioError> + Send + 'static,
+    ) -> Result<MicTap, AudioError> {
+        self.open_inner(key, channel, opener, true)
+    }
+
     /// Como `open`, com quem abre o stream do dispositivo `key` dado por quem chama (os testes).
     pub fn open_with(
         &self,
@@ -79,7 +105,20 @@ impl MicHub {
         channel: Option<usize>,
         opener: impl FnOnce() -> Result<Box<dyn MicSource>, AudioError> + Send + 'static,
     ) -> Result<MicTap, AudioError> {
+        self.open_inner(key, channel, opener, false)
+    }
+
+    fn open_inner(
+        &self,
+        key: &str,
+        channel: Option<usize>,
+        opener: impl FnOnce() -> Result<Box<dyn MicSource>, AudioError> + Send + 'static,
+        renew: bool,
+    ) -> Result<MicTap, AudioError> {
         let mut feeds = self.feeds.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(feed) = feeds.get(key).and_then(Weak::upgrade).filter(|_| renew) {
+            feed.shared.failed.store(true, Ordering::Relaxed);
+        }
         feeds.retain(|_, feed| feed.strong_count() > 0);
         // Um stream com erro não serve a ninguém: o tap novo abre outro, e o velho fecha com o
         // último tap dele.
@@ -440,6 +479,26 @@ mod tests {
         counter.failed.store(false, Ordering::Relaxed);
         let _dictation = hub.open_with("mic", None, counter.opener()).unwrap();
         assert_eq!(counter.opened.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn renew_opens_a_new_stream_and_moves_everyone_to_it() {
+        let hub = MicHub::new();
+        let counter = Counter::new();
+        let dictation = hub.open_with("mic", None, counter.opener()).unwrap();
+        let mut meeting = hub.renew_with("mic", None, counter.opener()).unwrap();
+        assert_eq!(counter.opened.load(Ordering::SeqCst), 2);
+        assert!(
+            dictation.failed(),
+            "the old stream tells its readers to reopen"
+        );
+        assert!(!meeting.failed());
+        assert!(!take(&mut meeting, 48).is_empty());
+        // The dictation reopens and lands on the new stream, not a third one.
+        drop(dictation);
+        let _again = hub.open_with("mic", None, counter.opener()).unwrap();
+        assert_eq!(counter.opened.load(Ordering::SeqCst), 2);
+        assert_eq!(counter.open.load(Ordering::SeqCst), 1, "the old one closed");
     }
 
     #[test]

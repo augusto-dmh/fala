@@ -20,6 +20,8 @@ pub enum Channel {
 pub enum Speaker {
     Me,
     Person(u32),
+    /// A linha marcadora de um trecho do mic zerado por um ditado (ADR-0015, ADR-0016).
+    Omitted,
     #[serde(rename = "name")]
     Named(String),
 }

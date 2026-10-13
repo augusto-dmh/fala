@@ -39,9 +39,9 @@ dictation-during-meeting.md` (atualizada em 2026-10-12, `research/24` § 3).
 
 | PR | Branch | Conteúdo |
 | --- | --- | --- |
-| 1 | `feat/dictation-during-meeting` | 1–3: `MicHub`, `Mic` intercalado, hold/omit no `MeetingRecorder`, Code Map |
-| 2 | `feat/dictation-during-meeting-2` | 4–6: desktop pelo hub, omit, recusa só presencial, níveis, pílula |
-| 3 | `feat/dictation-during-meeting-3` | 7: marcador de ponta a ponta |
+| 1 | `feat/dictation-during-meeting` | 1: `MicHub`, `Mic` intercalado, Code Map |
+| 2 | `feat/dictation-during-meeting-2` | 2–3: hold/omit no `MeetingRecorder` |
+| 3 | `feat/dictation-during-meeting-3` | 4–7: desktop pelo hub, omit, recusa só presencial, níveis, pílula, marcador |
 
 ## Criteria
 

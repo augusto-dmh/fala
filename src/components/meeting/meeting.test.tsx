@@ -67,6 +67,7 @@ const status = (over: Partial<MeetingStatus> = {}): MeetingStatus => ({
   call_output: null,
   zero_mic: false,
   zero_system: false,
+  dictating: false,
   ...over,
 });
 
@@ -739,6 +740,43 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   const lib = read("../../../apps/desktop/src/lib.rs");
   assert.ok(lib.includes('invoke.message.command() == "meeting_clip"'));
   ok("SP-player");
+}
+
+// Ditado durante a reunião (`.specs/features/dictation-during-meeting/checks.md`, C6): o trecho
+// omitido é um marcador centrado, sem bolha nem ▶, e não quebra o turno de quem fala.
+{
+  const line = (seq: number, person: number | null, omitted?: boolean) => ({
+    seq,
+    channel: person === null ? "mic" : "system",
+    person,
+    t0_ms: seq * 10_000,
+    t1_ms: seq * 10_000 + 5_000,
+    text: omitted ? "[trecho de ditado omitido]" : `fala ${seq}`,
+    ...(omitted ? { omitted } : {}),
+  });
+  const html = renderToStaticMarkup(
+    <TranscriptView
+      lines={[line(1, 1), line(2, null, true), line(3, 1), line(4, null)]}
+      audioAvailable={true}
+      playing={null}
+      highlighted={null}
+      onPlay={noop}
+      t={tr}
+    />,
+  );
+  assert.ok(html.includes('data-speaker="omitted"'), html);
+  assert.ok(html.includes(`${pt.meeting.omitted} · 00:20`), html);
+  assert.ok(!html.includes("[trecho de ditado omitido]"), html);
+  assert.equal(
+    html.split(`aria-label="${pt.meeting.source.play}"`).length - 1,
+    3,
+    "o marcador não toca nada",
+  );
+  assert.equal(en.meeting.omitted, "Dictation left out");
+  // O marcador não abre nem fecha turno: Pessoa 1 segue sem rótulo, "Eu" ganha o seu.
+  assert.equal((html.match(/Pessoa 1 · /g) ?? []).length, 1, html);
+  assert.ok(html.includes("Eu · 00:40"), html);
+  ok("dictation-during-meeting C6");
 }
 
 console.log("meeting: all assertions passed");

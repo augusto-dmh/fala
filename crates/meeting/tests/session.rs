@@ -52,7 +52,23 @@ fn user(action: UserAction) -> Input {
 fn tick(recorded: Duration, mic: f32, system: f32) -> Input {
     Input::Tick {
         recorded,
-        levels: Levels { mic, system },
+        levels: Levels {
+            mic,
+            system,
+            mic_omitted: false,
+        },
+    }
+}
+
+/// Um minuto em que um ditado zerou o mic: a voz do ditado não entra no nível.
+fn dictating(recorded: Duration, system: f32) -> Input {
+    Input::Tick {
+        recorded,
+        levels: Levels {
+            mic: 0.0,
+            system,
+            mic_omitted: true,
+        },
     }
 }
 
@@ -536,6 +552,38 @@ mod stop {
                 reason: StopReason::Silence
             }
         );
+    }
+
+    #[test]
+    fn a_long_dictation_neither_counts_as_silence_nor_resets_it() {
+        // Só a pessoa fala na call (o sistema mudo) e dita 3 min: sem "Ainda está gravando?".
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=12 {
+            assert!(s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap().is_empty());
+        }
+        for m in 13..=15 {
+            let effects = s.apply(at(m), dictating(mins(m), 0.0)).unwrap();
+            assert!(effects.is_empty(), "minute {m}: {effects:?}");
+        }
+        // Depois do ditado, o silêncio continua de onde estava: 12 min + 2 min avisa.
+        assert!(s
+            .apply(at(16), tick(mins(16), 0.0, 0.0))
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            s.apply(at(17), tick(mins(17), 0.0, 0.0)).unwrap(),
+            vec![Effect::SilenceWarning { remaining: MIN }]
+        );
+
+        // O sistema com som durante o ditado ainda zera a contagem.
+        let mut s = recording(SessionMode::Meeting);
+        for m in 1..=12 {
+            s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap();
+        }
+        s.apply(at(13), dictating(mins(13), 0.2)).unwrap();
+        for m in 14..=26 {
+            assert!(s.apply(at(m), tick(mins(m), 0.0, 0.0)).unwrap().is_empty());
+        }
     }
 }
 
