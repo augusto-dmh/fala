@@ -340,10 +340,34 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
 
   const key = renderToStaticMarkup(<KeyField onSave={noop} />);
   assert.ok(key.includes('type="password"') && key.includes('value=""'), key);
+  // The field lives in Settings > Meetings; without the key the page only points there.
   assert.ok(
-    /keys && !keys\.elevenlabs && \(?\s*<KeyField/.test(page),
-    "campo só sem chave",
+    read("../settings/MeetingKeySetting.tsx").includes("<KeyField onSave="),
   );
+  assert.ok(
+    /keys && !keys\.elevenlabs && \(\s*<p[\s\S]*meeting\.home\.noKey/.test(
+      page,
+    ),
+    "aviso só sem chave",
+  );
+  for (const moved of [
+    "<KeyField",
+    "<NotesContextSettings",
+    "<TemplatesSettings",
+  ]) {
+    assert.ok(!page.includes(moved), moved);
+  }
+  const general = read("../settings/general/GeneralSettings.tsx");
+  const meetings = general.slice(
+    general.indexOf('t("settings.meetings.title")'),
+  );
+  for (const moved of [
+    "<MeetingKeySetting />",
+    "<NotesContextSettings />",
+    "<MeetingTemplatesSettings />",
+  ]) {
+    assert.ok(meetings.includes(moved), moved);
+  }
   ok("C36-key");
 }
 

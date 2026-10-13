@@ -140,9 +140,19 @@ const vendas = template("vendas", "Vendas", "user", "Ligação com cliente");
     />,
   );
   assert.ok(!clean.includes('role="alert"'));
-  assert.match(page, /<TemplatesSettings catalog=\{catalog\}/);
-  assert.match(page, /addEventListener\("focus", load\)/);
-  assert.match(page, /removeEventListener\("focus", load\)/);
+  // The list lives in Settings > Meetings; the page and Settings each read the catalog.
+  assert.match(
+    read("./TemplatesSettings.tsx"),
+    /useMeetingTemplates\(\);\s*return <TemplatesSettings catalog=\{catalog\}/,
+  );
+  assert.match(
+    read("../settings/general/GeneralSettings.tsx"),
+    /<MeetingTemplatesSettings \/>/,
+  );
+  assert.match(page, /const \[catalog\] = useMeetingTemplates\(\);/);
+  const hook = read("./useMeetingTemplates.ts");
+  assert.match(hook, /addEventListener\("focus", load\)/);
+  assert.match(hook, /removeEventListener\("focus", load\)/);
   ok("UT-settings");
 }
 

@@ -12,12 +12,12 @@ export function KeyField({ onSave }: KeyFieldProps) {
   const { t } = useTranslation();
   const [key, setKey] = useState("");
   return (
-    <div className="flex flex-wrap items-center gap-2 p-4 text-sm">
-      <span>{t("meeting.key.label")}</span>
+    <div className="flex flex-wrap items-center gap-2 text-sm">
       <Input
         type="password"
         variant="compact"
         autoComplete="off"
+        aria-label={t("meeting.key.label")}
         value={key}
         placeholder={t("meeting.key.placeholder")}
         onChange={(event) => setKey(event.target.value)}
