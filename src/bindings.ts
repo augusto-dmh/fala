@@ -1600,11 +1600,41 @@ async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, str
 }
 },
 /**
- * "Delete meeting" after its confirmation: audio, transcript and notes, for good (ADR-0005).
+ * "Delete forever" after its confirmation: audio, transcript and notes, for good (ADR-0005).
  */
 async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Move to trash": the audio goes now; the rest stays 30 days in the trash.
+ */
+async trashMeeting(id: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("trash_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Restore" in the trash, or [Undo] right after moving.
+ */
+async restoreMeeting(id: string) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listTrashedMeetings() : Promise<Result<TrashedMeetingSummary[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_trashed_meetings") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2526,6 +2556,14 @@ export type TemplateSource = "builtin" |
  */
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+/**
+ * A session in the trash.
+ */
+export type TrashedMeetingSummary = { summary: MeetingSummary; 
+/**
+ * When it was moved, RFC 3339 with the local offset.
+ */
+trashed_at: string }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

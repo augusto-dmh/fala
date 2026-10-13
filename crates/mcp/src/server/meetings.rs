@@ -2,7 +2,8 @@
 //! `fala://meeting/<id>`.
 //!
 //! Só valem com `meetings = true` no `mcp.toml`, além de `enabled`. Uma sessão "só local", um
-//! rascunho que nunca gravou e uma gravação que ainda não terminou são inexistentes para o MCP.
+//! rascunho que nunca gravou, uma gravação que ainda não terminou e uma sessão na lixeira são
+//! inexistentes para o MCP.
 //! Nenhuma resposta leva áudio, `audio_retained` nem caminho de disco, e toda resposta marca o
 //! conteúdo como fala de terceiros.
 
@@ -78,7 +79,7 @@ impl FalaMcp {
         };
         let store = store.lock()?;
         let record = store.meeting(id)?;
-        if !visible(&record) {
+        if !visible(&record) || store.meeting_trashed_at(id)?.is_some() {
             return Err(ReadError::NotFound);
         }
         read(&store, &record)
@@ -252,10 +253,11 @@ impl FalaMcp {
 
 /// As reuniões visíveis com a chave de ordem, do início mais recente para o mais antigo.
 fn sorted_visible(store: &Store) -> Result<Vec<(Key, MeetingRecord)>, ReadError> {
+    let trashed = store.trashed_meeting_ids()?;
     let mut meetings: Vec<_> = store
         .meetings()?
         .into_iter()
-        .filter(visible)
+        .filter(|m| visible(m) && !trashed.contains(&m.id))
         .filter_map(|m| Some(((m.started_at?.timestamp_millis(), m.id), m)))
         .collect();
     meetings.sort_by_key(|(key, _)| std::cmp::Reverse(*key));
