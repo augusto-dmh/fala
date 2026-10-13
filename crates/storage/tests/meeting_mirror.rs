@@ -1,4 +1,5 @@
-//! O espelho `Reuniões/*.md` (ADR-0006): escrito depois do banco e apagado com a sessão.
+//! O espelho `Reuniões/*.md` (ADR-0006): escrito depois do banco, apagado com a sessão, e
+//! `reindex_meetings` reconstrói o banco a partir dele.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -11,7 +12,7 @@ use common::{at, env, Env};
 use fala_core::{Dictionary, Language};
 use fala_meeting::{SessionId, SessionMode, StopReason};
 use fala_storage::{
-    MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker, StorageError, Store,
+    MeetingSegment, NameSuggestion, NewMeeting, SegmentChannel, SegmentSpeaker, StorageError, Store,
 };
 
 fn id(n: u64) -> SessionId {
@@ -111,6 +112,18 @@ fn read(e: &Env, name: &str) -> String {
     fs::read_to_string(reunioes(e).join(name)).unwrap()
 }
 
+/// Tudo o que o banco sabe de uma sessão, para comparar antes e depois do `reindex`.
+fn snapshot(store: &Store, id: SessionId) -> String {
+    format!(
+        "{:?}\n{:?}\n{:?}\n{:?}\n{:?}",
+        store.meeting(id).unwrap(),
+        store.meeting_segments(id).unwrap(),
+        store.meeting_participants(id).unwrap(),
+        store.meeting_speakers(id).unwrap(),
+        store.meeting_notes_edited_at(id).unwrap(),
+    )
+}
+
 #[test]
 fn every_change_rewrites_the_md() {
     let e = env("meeting_mirror_every_change");
@@ -141,6 +154,46 @@ fn every_change_rewrites_the_md() {
         .unwrap();
     let md = read(&e, "2026-10-02 Planejamento.md");
     assert!(md.contains("- **[01:10] Bruno:** Concordo. ^s3\n"), "{md}");
+}
+
+#[test]
+fn round_trip_through_reindex_is_identical() {
+    let e = env("meeting_mirror_round_trip");
+    let mut store = e.open();
+    let id = full_session(&mut store, 1);
+    let draft = create(&store, 2, "");
+    store
+        .save_meeting_annotations(draft, "pauta: orçamento")
+        .unwrap();
+    let before = (snapshot(&store, id), snapshot(&store, draft));
+    let files = md_files(&e);
+    let contents: Vec<String> = files.iter().map(|f| read(&e, f)).collect();
+    assert_eq!(
+        files,
+        ["2026-10-02 Planejamento.md", "2026-10-02 Reunião.md"]
+    );
+
+    drop(store);
+    fs::remove_file(&e.db).unwrap();
+    let mut store = e.open();
+    assert!(store.meetings().unwrap().is_empty());
+    let report = store.reindex_meetings().unwrap();
+    assert_eq!(report.indexed, 2, "{report:?}");
+    assert!(report.skipped.is_empty(), "{report:?}");
+    assert_eq!((snapshot(&store, id), snapshot(&store, draft)), before);
+
+    // De volta ao `.md`: o mesmo arquivo, byte a byte, e nenhum reescrito.
+    assert_eq!(store.sync_meeting_mirrors().unwrap(), 0);
+    assert_eq!(md_files(&e), files);
+    let again: Vec<String> = files.iter().map(|f| read(&e, f)).collect();
+    assert_eq!(again, contents);
+
+    // Depois do reindex, uma mudança reescreve o mesmo arquivo.
+    store.set_meeting_title(draft, "Orçamento").unwrap();
+    assert_eq!(
+        md_files(&e),
+        ["2026-10-02 Orçamento.md", "2026-10-02 Planejamento.md"]
+    );
 }
 
 #[test]
@@ -227,6 +280,59 @@ fn deleting_a_meeting_deletes_its_md() {
     fs::remove_dir(&path).unwrap();
     store.delete_meeting(stuck).unwrap();
     assert!(store.meeting(stuck).is_err());
+
+    // O `reindex` não traz as apagadas de volta.
+    assert_eq!(store.reindex_meetings().unwrap().indexed, 0);
+    assert!(store.meeting(gone).is_err());
+}
+
+#[test]
+fn reindex_never_touches_what_the_db_has_and_reports_bad_files() {
+    let e = env("meeting_mirror_reindex_db_has");
+    let mut store = e.open();
+    let id = full_session(&mut store, 1);
+    // Uma sugestão pendente: o `.md` não a guarda, e o banco não a perde.
+    let suggestion = NameSuggestion {
+        name: "Bruno".to_string(),
+        reason: "falou do contrato".to_string(),
+    };
+    store
+        .save_speaker_suggestions(id, &[(2, suggestion)])
+        .unwrap();
+    let before = snapshot(&store, id);
+    // Um `.md` desatualizado da mesma sessão também não reescreve o banco.
+    let name = "2026-10-02 Planejamento.md";
+    let stale = read(&e, name).replace("Concordo.", "Discordo.");
+    fs::write(reunioes(&e).join(name), stale).unwrap();
+    fs::write(reunioes(&e).join("solto.md"), "sem frontmatter\n").unwrap();
+    fs::write(reunioes(&e).join("leia-me.txt"), "não é .md").unwrap();
+
+    let report = store.reindex_meetings().unwrap();
+    assert_eq!(report.indexed, 0, "{report:?}");
+    assert_eq!(report.skipped.len(), 1, "{report:?}");
+    assert!(report.skipped[0].path.ends_with("solto.md"));
+    assert_eq!(snapshot(&store, id), before);
+}
+
+#[test]
+fn reindex_prefers_the_file_named_after_the_title() {
+    let e = env("meeting_mirror_reindex_duplicate");
+    let store = e.open();
+    let id = create(&store, 1, "Original");
+    store.save_meeting_annotations(id, "a pauta certa").unwrap();
+    // Uma cópia velha que o Obsidian nomeou e que vem antes na ordem dos nomes.
+    let copy = read(&e, "2026-10-02 Original.md").replace("a pauta certa", "pauta velha");
+    fs::write(reunioes(&e).join("2026-10-02 Original 1.md"), copy).unwrap();
+    drop(store);
+    fs::remove_file(&e.db).unwrap();
+
+    let mut store = e.open();
+    let report = store.reindex_meetings().unwrap();
+    assert_eq!(report.indexed, 1);
+    assert_eq!(report.skipped.len(), 1);
+    assert!(report.skipped[0].path.ends_with("2026-10-02 Original 1.md"));
+    assert_eq!(report.skipped[0].reason, "id duplicado");
+    assert_eq!(store.meeting(id).unwrap().annotations, "a pauta certa");
 }
 
 /// O corpo do espelho é o documento que "Copiar Markdown" monta com `fala_notes::note_document`.

@@ -82,26 +82,7 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> std::io::Result<()> {
 
 /// Lê um `.md` de volta; o `Err` é o motivo legível para o `ReindexReport`.
 pub(crate) fn parse(content: &str) -> Result<DictationRecord, String> {
-    let rest = content
-        .strip_prefix("---\n")
-        .ok_or_else(|| "sem frontmatter".to_string())?;
-    let mut keys: HashMap<&str, Value> = HashMap::new();
-    let mut remaining = rest;
-    let body = loop {
-        let Some((line, tail)) = remaining.split_once('\n') else {
-            return Err("frontmatter sem a linha `---` de fechamento".to_string());
-        };
-        if line == "---" {
-            break tail;
-        }
-        let (key, raw) = line
-            .split_once(':')
-            .ok_or_else(|| "linha de frontmatter sem `chave:`".to_string())?;
-        let value: Value = serde_json::from_str(raw.trim())
-            .map_err(|e| format!("valor de `{}` não é JSON: {e}", key.trim()))?;
-        keys.insert(key.trim(), value);
-        remaining = tail;
-    };
+    let (keys, body) = frontmatter(content)?;
     let final_text = body
         .strip_suffix('\n')
         .ok_or_else(|| "corpo sem o `\\n` final".to_string())?;
@@ -154,6 +135,30 @@ pub(crate) fn parse(content: &str) -> Result<DictationRecord, String> {
         showing,
         sensitive,
     })
+}
+
+/// Separa o frontmatter (`chave: <valor JSON>` por linha, entre linhas `---`) do corpo.
+pub(crate) fn frontmatter(content: &str) -> Result<(HashMap<&str, Value>, &str), String> {
+    let rest = content
+        .strip_prefix("---\n")
+        .ok_or_else(|| "sem frontmatter".to_string())?;
+    let mut keys: HashMap<&str, Value> = HashMap::new();
+    let mut remaining = rest;
+    loop {
+        let Some((line, tail)) = remaining.split_once('\n') else {
+            return Err("frontmatter sem a linha `---` de fechamento".to_string());
+        };
+        if line == "---" {
+            return Ok((keys, tail));
+        }
+        let (key, raw) = line
+            .split_once(':')
+            .ok_or_else(|| "linha de frontmatter sem `chave:`".to_string())?;
+        let value: Value = serde_json::from_str(raw.trim())
+            .map_err(|e| format!("valor de `{}` não é JSON: {e}", key.trim()))?;
+        keys.insert(key.trim(), value);
+        remaining = tail;
+    }
 }
 
 pub(crate) fn rfc3339(record: &DictationRecord) -> String {
