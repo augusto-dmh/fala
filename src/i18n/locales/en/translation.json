@@ -1211,13 +1211,12 @@
     },
     "list": {
       "title": "Meetings",
-      "empty": "No meetings yet. Record one, or create one without recording to write the agenda.",
+      "empty": "No meetings yet",
       "draft": "draft",
-      "transcribed": "transcribed",
-      "notes": "with notes",
       "granola": "Granola",
       "search": "Search titles, notes and transcripts",
-      "noResults": "No meetings found."
+      "noResults": "No meetings found.",
+      "emptyHint": "Record your next call, or drop an audio or video file here."
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",
@@ -1370,8 +1369,23 @@
       "action": "Recover"
     },
     "home": {
+      "new": "New meeting",
+      "options": "Recording options",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "recording": "Recording: {{title}}",
+      "paused": "Paused: {{title}}",
+      "attention": "Check the warnings",
+      "open": "Open",
       "noKey": "Meetings record, but are only transcribed with the ElevenLabs key.",
-      "openSettings": "Set up"
+      "openSettings": "Set up",
+      "state": {
+        "recording": "Recording",
+        "working": "Transcribing or writing the notes",
+        "ready": "Notes ready",
+        "failed": "Failed",
+        "idle": "No notes"
+      }
     }
   }
 }

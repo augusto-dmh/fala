@@ -1211,13 +1211,12 @@
     },
     "list": {
       "title": "Reuniões",
-      "empty": "Nenhuma reunião ainda. Grave uma ou crie uma sem gravar para escrever a pauta.",
+      "empty": "Nenhuma reunião ainda",
       "draft": "rascunho",
-      "transcribed": "transcrita",
-      "notes": "com notas",
       "granola": "Granola",
       "search": "Buscar no título, nas notas e na transcrição",
-      "noResults": "Nenhuma reunião encontrada."
+      "noResults": "Nenhuma reunião encontrada.",
+      "emptyHint": "Grave a próxima call ou arraste um arquivo de áudio ou vídeo aqui."
     },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",
@@ -1370,8 +1369,23 @@
       "action": "Recuperar"
     },
     "home": {
+      "new": "Nova reunião",
+      "options": "Opções da gravação",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "recording": "Gravando: {{title}}",
+      "paused": "Pausada: {{title}}",
+      "attention": "Veja os avisos",
+      "open": "Abrir",
       "noKey": "As reuniões gravam, mas só são transcritas com a chave da ElevenLabs.",
-      "openSettings": "Configurar"
+      "openSettings": "Configurar",
+      "state": {
+        "recording": "Gravando",
+        "working": "Transcrevendo ou escrevendo as notas",
+        "ready": "Notas prontas",
+        "failed": "Falhou",
+        "idle": "Sem notas"
+      }
     }
   }
 }

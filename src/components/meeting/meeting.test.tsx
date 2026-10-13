@@ -256,7 +256,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
 // C36: estados da página.
 {
   const empty = renderToStaticMarkup(
-    <MeetingList sessions={[]} selectedId={null} onOpen={noop} />,
+    <MeetingList sessions={[]} onOpen={noop} />,
   );
   assert.ok(empty.includes("meeting.list.empty"), empty);
   const idle = panel(status());
@@ -271,7 +271,6 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
         summary({ id: "B", title: "Planejamento", has_notes: true }),
         summary({ id: "A", started_at: null, transcribed: false }),
       ]}
-      selectedId={null}
       onOpen={noop}
     />,
   );
@@ -279,9 +278,10 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     list.indexOf("Planejamento") < list.indexOf("meeting.untitled"),
     list,
   );
-  assert.ok(list.includes("2026-10-02 14:02") && list.includes("37:30"), list);
+  assert.ok(list.includes("37:30"), list);
   assert.ok(
-    list.includes("meeting.list.notes") && list.includes("meeting.list.draft"),
+    list.includes("meeting.home.state.ready") &&
+      list.includes("meeting.list.draft"),
   );
   assert.equal(titleOf(summary(), tr), "Reunião de 2026-10-02 13:50");
   ok("C36-list");
@@ -382,7 +382,7 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   );
   assert.ok(view(detail()).includes("<textarea"));
   assert.ok(
-    /\[status\.state, status\.id, openId, open\]/.test(page),
+    /\[status\.state, status\.id, openId, reload\]/.test(page),
     "a sessão aberta recarrega quando o estado da gravação muda",
   );
   const app = read("../../App.tsx");
