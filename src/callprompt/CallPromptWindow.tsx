@@ -16,11 +16,17 @@ import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const TICK_MS = 100;
 
-/** The body key: a short recording and an almost silent long one ask for different reasons. */
-export function mistakeBody(
+/** The body key and its values: a short recording and an almost silent long one ask for
+ *  different reasons; the wake card says how long the PC slept. */
+export function cardBody(
   text: string,
   seconds: number | null,
 ): [string, Record<string, unknown>] {
+  if (text === "woke" && seconds !== null)
+    return [
+      "callPrompt.woke.body",
+      { minutes: Math.max(1, Math.round(seconds / 60)) },
+    ];
   if (text !== "mistake" || seconds === null)
     return [`callPrompt.${text}.body`, {}];
   return seconds < 30
@@ -74,7 +80,7 @@ export function CallPromptWindow() {
   if (!prompt) return null;
   const app = prompt.app_name;
   const text = CALL_PROMPT_TEXT[prompt.kind];
-  const [bodyKey, bodyOptions] = mistakeBody(text, prompt.seconds);
+  const [bodyKey, bodyOptions] = cardBody(text, prompt.seconds);
   const labels: Record<CallPromptAnswer, string> = {
     record: t("callPrompt.record"),
     not_now: t("callPrompt.notNow"),
