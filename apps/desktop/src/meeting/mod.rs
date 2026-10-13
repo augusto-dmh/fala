@@ -13,6 +13,7 @@
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
+pub(crate) mod granola;
 pub(crate) mod import;
 pub(crate) mod lifecycle;
 pub(crate) mod output;
@@ -20,6 +21,7 @@ pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
 pub(crate) mod recovery;
+pub(crate) mod search;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -404,7 +406,7 @@ pub struct MeetingManager {
     work: Mutex<pipeline::Work>,
     /// Held for the whole WAV → Opus conversion, and while audio is deleted.
     retaining: Mutex<()>,
-    /// The import in flight, one at a time.
+    /// The import in flight (a file, a URL or a Granola export), one at a time.
     importing: Mutex<Option<fala_media::CancelToken>>,
     /// Recordings the last run left without an end, found at startup (`recovery`).
     orphans: Mutex<Vec<SessionId>>,

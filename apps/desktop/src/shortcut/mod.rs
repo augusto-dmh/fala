@@ -798,7 +798,10 @@ pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Resu
         }
     };
     settings.overlay_position = parsed;
+    // Choosing the edge puts the pill back at its center, wherever it was dragged.
+    settings.pill_center_x = None;
     settings::write_settings(&app, settings);
+    crate::overlay::set_pill_center(None);
 
     // Whether the overlay shows at all is owned by overlay_style now; position
     // only ever toggles Top/Bottom, so the enabled cache is untouched here.
@@ -843,6 +846,7 @@ pub fn change_pill_idle_visible_setting(app: AppHandle, enabled: bool) -> Result
     let mut settings = settings::get_settings(&app);
     settings.pill_idle_visible = enabled;
     settings::write_settings(&app, settings.clone());
+    crate::overlay::end_idle_snooze();
     crate::overlay::apply_idle_setting(&app, &settings);
     Ok(())
 }

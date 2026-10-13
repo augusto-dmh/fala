@@ -346,6 +346,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "paste_last_transcript" => {
                 last_dictation::paste_last(app, true);
             }
+            tray::PILL_HIDE_HOUR_ID => {
+                overlay::snooze_idle(app);
+            }
+            tray::PILL_SETTINGS_ID => {
+                show_main_window(app);
+                let _ = app.emit_to("main", "open-settings", ());
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {
@@ -469,6 +476,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+    // Where the pill was dragged along its edge, before anything places it.
+    overlay::set_pill_center(settings.pill_center_x);
     // Rest in the idle pill when it is on; the overlay page shows it once it listens
     // (`pill_overlay_ready`).
     overlay::apply_idle_setting(app_handle, &settings);
@@ -854,6 +863,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::open_microphone_troubleshooting,
             overlay::pill_overlay_ready,
             overlay::set_idle_pill_hover,
+            overlay::open_pill_menu,
+            overlay::start_pill_drag,
             overlay::open_home_from_pill,
             overlay::open_meeting_from_pill,
             overlay::end_paste_failed,
@@ -898,11 +909,14 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::stop_meeting,
             commands::meeting::extend_meeting_cap,
             commands::meeting::list_meetings,
+            commands::meeting::search_meetings,
             commands::meeting::get_meeting,
             commands::meeting::transcribe_meeting,
             commands::meeting::cancel_meeting_transcription,
             commands::meeting::import_meeting,
             commands::meeting::cancel_meeting_import,
+            commands::meeting::preview_granola_import,
+            commands::meeting::run_granola_import,
             commands::meeting::generate_meeting_notes,
             commands::meeting::meeting_markdown,
             commands::meeting::meeting_templates,
@@ -941,6 +955,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
             meeting::MeetingStatus,
             meeting::pipeline::MeetingProgress,
+            meeting::granola::GranolaProgress,
         ])
 }
 

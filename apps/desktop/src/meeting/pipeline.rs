@@ -56,6 +56,10 @@ pub struct MeetingSummary {
     pub audio_retained: bool,
     pub transcribed: bool,
     pub has_notes: bool,
+    /// Where the session was imported from (`granola`); absent for the rest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub imported_from: Option<String>,
 }
 
 /// One transcript line: `person` is `None` for "me" (the mic outside in-person mode).
@@ -163,7 +167,7 @@ pub enum ProgressStage {
     },
 }
 
-fn rfc3339(at: &DateTime<FixedOffset>) -> String {
+pub(crate) fn rfc3339(at: &DateTime<FixedOffset>) -> String {
     at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
 }
 
@@ -186,7 +190,16 @@ pub(crate) fn summary(record: &MeetingRecord) -> MeetingSummary {
         audio_retained: record.audio_retained,
         transcribed: record.transcribed_at.is_some(),
         has_notes: record.notes_md.is_some(),
+        imported_from: None,
     }
+}
+
+/// The summary with where the session came from, for the opened session.
+fn summary_in(store: &Store, record: &MeetingRecord) -> Result<MeetingSummary, MeetingError> {
+    Ok(MeetingSummary {
+        imported_from: store.meeting_import_source(record.id)?,
+        ..summary(record)
+    })
 }
 
 pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
@@ -449,6 +462,11 @@ impl Work {
         self.transcribing.as_ref().map(|(id, _)| *id)
     }
 
+    /// A transcription or a notes generation is running, on any session.
+    pub(crate) fn busy(&self) -> bool {
+        self.transcribing.is_some() || self.notes.is_some()
+    }
+
     /// A transcription or a notes generation is working on `id`.
     pub(crate) fn involves(&self, id: SessionId) -> bool {
         self.transcribing() == Some(id) || self.notes == Some(id)
@@ -515,7 +533,17 @@ impl MeetingManager {
     }
 
     pub fn list(&self) -> Result<Vec<MeetingSummary>, MeetingError> {
-        self.with_store(|store| Ok(store.meetings()?.iter().map(summary).collect()))
+        self.with_store(|store| {
+            let mut sources = store.meeting_import_sources()?;
+            Ok(store
+                .meetings()?
+                .iter()
+                .map(|record| MeetingSummary {
+                    imported_from: sources.remove(&record.id),
+                    ..summary(record)
+                })
+                .collect())
+        })
     }
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
@@ -537,7 +565,7 @@ impl MeetingManager {
                 })
                 .collect();
             Ok(MeetingDetail {
-                summary: summary(&record),
+                summary: summary_in(store, &record)?,
                 annotations: record.annotations,
                 lines,
                 notes_md: record.notes_md,

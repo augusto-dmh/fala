@@ -6,6 +6,7 @@ use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::meeting::granola::{GranolaImportError, GranolaImported, GranolaPreview};
 use crate::meeting::import::ImportSource;
 use crate::meeting::people::MeetingPeople;
 use crate::meeting::pipeline::{
@@ -13,6 +14,7 @@ use crate::meeting::pipeline::{
     MeetingTemplates,
 };
 use crate::meeting::recovery::MeetingOrphan;
+use crate::meeting::search::MeetingSearchHit;
 use crate::meeting::{MeetingError, MeetingManager, MeetingMode, MeetingStatus};
 use crate::settings::{self, NotesLanguage};
 
@@ -102,6 +104,16 @@ pub async fn list_meetings(meetings: Meetings<'_>) -> Result<Vec<MeetingSummary>
     meetings.list()
 }
 
+/// Sessions whose title, notes or transcript match `query`, newest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_meetings(
+    meetings: Meetings<'_>,
+    query: String,
+) -> Result<Vec<MeetingSearchHit>, MeetingError> {
+    meetings.search(&query)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_meeting(
@@ -144,6 +156,33 @@ pub async fn import_meeting(
     tauri::async_runtime::spawn_blocking(move || manager.import(source))
         .await
         .map_err(|e| MeetingError::Import(e.to_string()))?
+}
+
+/// "Granola history": reads and checks the export at `path` (a CSV or a `.zip`); saves nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_granola_import(
+    meetings: Meetings<'_>,
+    path: String,
+) -> Result<GranolaPreview, GranolaImportError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.preview_granola(&path))
+        .await
+        .map_err(|e| GranolaImportError::Unreadable(e.to_string()))?
+}
+
+/// Imports the export at `path`, one meeting at a time; `cancel_meeting_import` stops it.
+/// Progress comes as `GranolaProgress` events.
+#[tauri::command]
+#[specta::specta]
+pub async fn run_granola_import(
+    meetings: Meetings<'_>,
+    path: String,
+) -> Result<GranolaImported, GranolaImportError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.import_granola(&path))
+        .await
+        .map_err(|e| GranolaImportError::Storage(e.to_string()))?
 }
 
 #[tauri::command]

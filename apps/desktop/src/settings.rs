@@ -713,6 +713,11 @@ pub struct AppSettings {
     /// and only while `overlay_style` shows a pill.
     #[serde(default = "default_pill_idle_visible")]
     pub pill_idle_visible: bool,
+    /// Where along its edge (`overlay_position`) the pill sits, as the fraction of the monitor's
+    /// width under its center; `None` centers it. Set by dragging the pill (Windows); choosing
+    /// the edge again recenters it.
+    #[serde(default)]
+    pub pill_center_x: Option<f64>,
     /// The `transcribe` dictation is formatted by the Gemini (ADR-0004) when a key is set.
     #[serde(default = "default_llm_enabled")]
     pub llm_enabled: bool,
@@ -1292,6 +1297,7 @@ pub fn get_default_settings() -> AppSettings {
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
         pill_idle_visible: default_pill_idle_visible(),
+        pill_center_x: None,
         llm_enabled: default_llm_enabled(),
         llm_disabled_apps: default_llm_disabled_apps(),
         cleanup_level: CleanupLevel::default(),
@@ -1947,6 +1953,9 @@ mod tests {
         assert!(!get_default_settings().pill_idle_visible);
         let stored: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
         assert!(!stored.pill_idle_visible);
+        // The pill starts centered on its edge, also in stores from before the drag.
+        assert_eq!(get_default_settings().pill_center_x, None);
+        assert_eq!(stored.pill_center_x, None);
         let source = include_str!("settings.rs");
         let production = &source[..source.find("#[cfg(test)]").unwrap()];
         assert_eq!(

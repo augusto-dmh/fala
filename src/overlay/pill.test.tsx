@@ -3,7 +3,8 @@
 // do limite de sessão (`.specs/features/session-limit/checks.md`, C18) e do estado de carga do
 // modelo (`.specs/features/upstream-catchup/checks-pr2-pill-loading.md`) e da pílula em repouso
 // (`.specs/features/pill-idle/checks.md`, C6 a C9) e da falha de cola e do clique na reunião
-// (`.specs/features/pill-polish/checks.md`, C3 a C5).
+// (`.specs/features/pill-polish/checks.md`, C3 a C5) e do menu da pílula
+// (`.specs/features/pill-menu/checks.md`) e do arrasto (`.specs/features/pill-drag/checks.md`).
 // Rode com `bun src/overlay/pill.test.tsx`: imprime `<check> ok` e sai com erro na primeira falha.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -30,6 +31,11 @@ import {
   showsDoubleTapHint,
 } from "./pillModel";
 import { PasteFailedPill } from "./PasteFailedPill";
+import {
+  DRAG_THRESHOLD_PX,
+  createPillDrag,
+  passedDragThreshold,
+} from "./pillDrag";
 import {
   requestOpenMeeting,
   takeOpenMeetingRequest,
@@ -824,6 +830,97 @@ const idleCss = read("./IdlePill.css");
     /listen<string \| null>\("open-meeting", \(event\) => \{\s*if \(event\.payload\) void open\(event\.payload\);/,
   );
   ok("pill-polish C5");
+}
+
+// pill-menu C4 - o clique direito na pílula em repouso abre o menu nativo, não o do webview, e
+// "Configurações" abre Configurações pelo evento open-settings.
+{
+  const at = overlaySource.indexOf('if (state === "idle") {');
+  const idle = overlaySource.slice(at, overlaySource.indexOf("\n  }\n", at));
+  assert.match(
+    idle,
+    /onContextMenu=\{\(event\) => \{[^}]*event\.preventDefault\(\);\s*void commands\.openPillMenu\(\);/,
+  );
+  // Só a pílula em repouso tem menu: o ditado não perde o app de destino.
+  assert.equal(overlaySource.split("onContextMenu=").length, 2);
+  const app = read("../App.tsx");
+  assert.match(
+    app,
+    /listen\("open-settings", \(\) => \{\s*setDestination\("settings"\);\s*setSettingsView\("general"\);/,
+  );
+  const rust = read("../../apps/desktop/src/lib.rs");
+  assert.match(
+    rust,
+    /tray::PILL_SETTINGS_ID => \{\s*show_main_window\(app\);\s*let _ = app\.emit_to\("main", "open-settings", \(\)\);/,
+  );
+  assert.equal(locale("pt").tray.hidePillHour, "Ocultar por 1 hora");
+  assert.equal(locale("en").tray.hidePillHour, "Hide for 1 hour");
+  ok("pill-menu C4");
+}
+
+// pill-drag C4 - passados 3 px com o botão apertado, a pílula em repouso ou de reunião começa a
+// arrastar uma vez, e o clique que termina o arrasto não abre nada.
+{
+  assert.equal(DRAG_THRESHOLD_PX, 3);
+  assert.ok(!passedDragThreshold(3, 0));
+  assert.ok(passedDragThreshold(3, 1));
+  let starts = 0;
+  const drag = createPillDrag(() => starts++);
+  const at = (x: number, buttons = 1, button = 0) => ({
+    button,
+    buttons,
+    screenX: x,
+    screenY: 0,
+  });
+  let stopped = 0;
+  const click = {
+    stopPropagation: () => stopped++,
+    preventDefault: () => {},
+  };
+  // Um clique parado abre (o clique passa).
+  drag.onPointerDown(at(100));
+  drag.onPointerMove(at(102));
+  drag.onPointerUp();
+  drag.onClickCapture(click);
+  assert.equal(starts, 0);
+  assert.equal(stopped, 0);
+  // Um arrasto começa uma vez e engole o clique do fim.
+  drag.onPointerDown(at(100));
+  drag.onPointerMove(at(104));
+  drag.onPointerMove(at(140));
+  drag.onPointerUp();
+  drag.onClickCapture(click);
+  assert.equal(starts, 1);
+  assert.equal(stopped, 1);
+  // Mover sem o botão, ou com o botão direito, não arrasta.
+  drag.onPointerDown(at(100, 2, 2));
+  drag.onPointerMove(at(140, 2, 2));
+  drag.onPointerDown(at(100));
+  drag.onPointerMove(at(140, 0));
+  assert.equal(starts, 1);
+  drag.onClickCapture(click);
+  assert.equal(stopped, 1);
+  // O overlay liga os handlers só na pílula em repouso e na de reunião.
+  assert.match(
+    overlaySource,
+    /osType === "windows"\s*\? createPillDrag\(\(\) => void commands\.startPillDrag\(\)\)\s*: \{\}/,
+  );
+  assert.equal(overlaySource.split("{...drag}").length, 3);
+  const idleAt = overlaySource.indexOf('if (state === "idle") {');
+  const idle = overlaySource.slice(
+    idleAt,
+    overlaySource.indexOf("\n  }\n", idleAt),
+  );
+  assert.ok(idle.includes("{...drag}"), idle);
+  const meetingAt = overlaySource.indexOf(
+    'if (state === "meeting" || state === "meeting_paused") {',
+  );
+  const meeting = overlaySource.slice(
+    meetingAt,
+    overlaySource.indexOf("\n  }\n", meetingAt),
+  );
+  assert.ok(meeting.includes("{...drag}"), meeting);
+  ok("pill-drag C4");
 }
 
 console.log("pill: all assertions passed");
