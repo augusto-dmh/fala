@@ -306,6 +306,7 @@
     },
     "general": {
       "title": "Geral",
+      "app": "Aplicativo",
       "shortcut": {
         "title": "Atalhos do Fala",
         "description": "Configure atalhos de teclado para iniciar a gravação de voz para texto",

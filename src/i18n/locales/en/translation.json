@@ -306,6 +306,7 @@
     },
     "general": {
       "title": "General",
+      "app": "App",
       "shortcut": {
         "title": "Fala Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
