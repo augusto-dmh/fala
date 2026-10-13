@@ -111,7 +111,11 @@ const panel = (s: MeetingStatus) =>
   // Um arquivo solto na janela entra pelo mesmo caminho, nunca atrás do aviso de consentimento,
   // e só uma importação por vez sai da página.
   assert.ok(/onDragDropEvent[\s\S]*type !== "drop"/.test(page));
-  assert.ok(/if \(!askConsent\) void importSource\(\{ kind: "file"/.test(page));
+  assert.ok(
+    /if \(!askConsent && selected === null\)\s*void importSource\(\{ kind: "file"/.test(
+      page,
+    ),
+  );
   assert.ok(/if \(importRunning\.current\) return;/.test(page));
   // O avanço de outra sessão (uma gravação parada) não muda a linha da importação.
   assert.ok(/if \(id === importId\.current\) \{/.test(page));

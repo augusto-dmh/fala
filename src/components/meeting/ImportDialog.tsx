@@ -37,7 +37,7 @@ export function ImportDialog(props: ImportDialogProps) {
 
   if (props.importing) {
     return (
-      <div className="flex items-center gap-2 p-4 text-sm">
+      <div className="flex basis-full items-center gap-2 text-sm">
         <span role="status">{importLine(props.stage, t)}</span>
         <Button size="sm" variant="secondary" onClick={props.onCancel}>
           {t("meeting.import.cancel")}
@@ -47,11 +47,9 @@ export function ImportDialog(props: ImportDialogProps) {
   }
   if (!expanded) {
     return (
-      <div className="px-4 pb-4">
-        <Button variant="secondary" onClick={() => setExpanded(true)}>
-          {t("meeting.import.open")}
-        </Button>
-      </div>
+      <Button variant="secondary" onClick={() => setExpanded(true)}>
+        {t("meeting.import.open")}
+      </Button>
     );
   }
 
@@ -68,7 +66,7 @@ export function ImportDialog(props: ImportDialogProps) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-4 text-sm">
+    <div className="flex basis-full flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-1 p-4 text-sm">
       <Button onClick={() => void chooseFile()}>
         {t("meeting.import.file")}
       </Button>
