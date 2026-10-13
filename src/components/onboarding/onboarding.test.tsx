@@ -752,3 +752,38 @@ const {
   );
   ok("Q49-Q52");
 }
+
+// QA Q53: a test dictation that came out empty says why under the field of step 2. The backend
+// tells the main window from the three empty endings (silent microphone, no speech kept, blank
+// text); new text in the field clears it.
+{
+  assert.equal(model.unheardKey(true), "onboarding.shortcut.noAudio");
+  assert.equal(model.unheardKey(false), "onboarding.shortcut.noSpeech");
+  for (const locale of [pt, en]) {
+    for (const key of ["noAudio", "noSpeech"]) {
+      assert.equal(typeof at(locale, `onboarding.shortcut.${key}`), "string");
+    }
+  }
+  const step = read("./ShortcutStep.tsx");
+  assert.match(step, /listen<\{ muted: boolean \}>\(\s*"dictation-unheard"/);
+  assert.match(step, /onInput=\{\(\) => setNotice\(null\)\}/);
+  // The live region is always there; only its text changes.
+  assert.ok(!step.includes("{notice && ("));
+  assert.match(step, /role="status"[\s\S]*?\{notice \? t\(notice\) : ""\}/);
+  const rust = (file: string) =>
+    readFileSync(
+      new URL(`../../../apps/desktop/src/${file}`, import.meta.url),
+      "utf8",
+    );
+  assert.match(rust("overlay.rs"), /emit_to\("main", "dictation-unheard"/);
+  const actions = rust("actions.rs");
+  assert.equal(
+    actions.match(/utils::announce_unheard\(&ah, true\)/g)?.length,
+    1,
+  );
+  assert.equal(
+    actions.match(/utils::announce_unheard\(&ah, false\)/g)?.length,
+    2,
+  );
+  ok("Q53");
+}

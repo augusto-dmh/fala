@@ -241,7 +241,9 @@
       "instructionToggle": "Aperte o atalho, diga “olá, Fala” e aperte de novo.",
       "testLabel": "Campo de teste",
       "testPlaceholder": "O texto ditado aparece aqui",
-      "waitModel": "O teste funciona assim que o modelo de transcrição terminar de baixar."
+      "waitModel": "O teste funciona assim que o modelo de transcrição terminar de baixar.",
+      "noAudio": "Não ouvimos nada. Confira se o microfone está ligado e capta sua voz, e tente de novo.",
+      "noSpeech": "Ouvimos som, mas nenhuma fala. Fale mais perto do microfone e tente de novo."
     },
     "ai": {
       "title": "IA (opcional)",
