@@ -843,6 +843,7 @@ pub fn change_pill_idle_visible_setting(app: AppHandle, enabled: bool) -> Result
     let mut settings = settings::get_settings(&app);
     settings.pill_idle_visible = enabled;
     settings::write_settings(&app, settings.clone());
+    crate::overlay::end_idle_snooze();
     crate::overlay::apply_idle_setting(&app, &settings);
     Ok(())
 }
