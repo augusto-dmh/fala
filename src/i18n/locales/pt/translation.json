@@ -393,7 +393,8 @@
       "title": "IA",
       "enabled": {
         "label": "Formatar ditados com IA",
-        "description": "Acima de 15 palavras, o Gemini formata o texto ditado. Só o texto e o nome do app saem da máquina; o áudio nunca sai."
+        "description": "Acima de 15 palavras, o Gemini formata o texto ditado. Só o texto e o nome do app saem da máquina; o áudio nunca sai.",
+        "waitingKey": "Aguardando a chave do Gemini abaixo: nada é formatado nem enviado até ela ser salva."
       },
       "cleanup": {
         "title": "Quanto a IA mexe no texto",
@@ -965,7 +966,8 @@
           "keySet": "Chave salva",
           "keyMissing": "Sem chave",
           "unknown": "Não verificado",
-          "doesNotExist": "Não existe"
+          "doesNotExist": "Não existe",
+          "waitingForKey": "Aguardando a chave"
         },
         "keys": {
           "title": "Onde ficam as chaves",
