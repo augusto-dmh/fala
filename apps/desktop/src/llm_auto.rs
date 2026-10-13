@@ -234,7 +234,7 @@ mod tests {
     use fala_postproc::SYSTEM_PROMPT;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -256,6 +256,11 @@ mod tests {
 
     impl FakeGemini {
         fn start(delay: Duration, status: u16, body: String) -> Self {
+            Self::start_with(move || thread::sleep(delay), status, body)
+        }
+
+        /// Runs `wait` between reading a request and answering it.
+        fn start_with(mut wait: impl FnMut() + Send + 'static, status: u16, body: String) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let base_url = format!("http://{}", listener.local_addr().unwrap());
             let bodies = Arc::new(Mutex::new(Vec::new()));
@@ -281,7 +286,7 @@ mod tests {
                     seen.lock()
                         .unwrap()
                         .push(String::from_utf8_lossy(&request).into_owned());
-                    thread::sleep(delay);
+                    wait();
                     let _ = write!(
                         stream,
                         "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
@@ -293,15 +298,34 @@ mod tests {
         }
 
         fn ok(delay: Duration) -> Self {
-            let body = serde_json::json!({
-                "candidates": [{ "content": { "parts": [{ "text": LLM_TEXT }] } }]
-            });
-            Self::start(delay, 200, body.to_string())
+            Self::start(delay, 200, ok_body())
+        }
+
+        /// A Gemini that holds its answer until the sender sends (or is dropped): a test sees a
+        /// block give up on the answer without timing the wall clock, which a loaded machine
+        /// stretches.
+        fn held() -> (Self, mpsc::Sender<()>) {
+            let (release, held) = mpsc::channel::<()>();
+            let server = Self::start_with(
+                move || {
+                    let _ = held.recv();
+                },
+                200,
+                ok_body(),
+            );
+            (server, release)
         }
 
         fn requests(&self) -> usize {
             self.bodies.lock().unwrap().len()
         }
+    }
+
+    fn ok_body() -> String {
+        serde_json::json!({
+            "candidates": [{ "content": { "parts": [{ "text": LLM_TEXT }] } }]
+        })
+        .to_string()
     }
 
     fn settings_with_key() -> AppSettings {
@@ -1087,19 +1111,17 @@ Personal dictionary:
     #[test]
     fn a_slow_block_keeps_its_rules_until_the_late_answer() {
         let fast = FakeGemini::ok(Duration::ZERO);
-        let slow = FakeGemini::ok(Duration::from_secs(3));
+        // The slow answer exists only after `answer.send`, so the blocks below can only return
+        // with rules if the slow one stopped waiting first (after the 2 s, not the 10 s late
+        // deadline, or no late answer would be left to wait for). No wall-clock bound.
+        let (slow, answer) = FakeGemini::held();
         let settings = settings_with_key();
         let raw = [SIXTEEN; 3].join(" ");
-        let started = Instant::now();
         let blocks = vec![
             block(&formatter_at(&settings, true, &fast.base_url)),
             block(&formatter_at(&settings, true, &slow.base_url)),
             block(&formatter_at(&settings, true, &fast.base_url)),
         ];
-        assert!(
-            started.elapsed() < Duration::from_millis(2900),
-            "the slow block waits only the 2 s"
-        );
         let composed = crate::long_dictation::compose(&raw, blocks);
         assert_eq!(
             composed.processed.final_text,
@@ -1115,11 +1137,12 @@ Personal dictionary:
         assert!(saved.llm_partial);
         assert!(history.llm_partial(saved.id));
 
+        answer.send(()).unwrap();
         let (text, partial) = composed
             .late
             .expect("the slow block can still answer")
             .wait()
-            .expect("it answers after 3 s");
+            .expect("it answers once released");
         assert_eq!(text, [LLM_TEXT; 3].join(" "));
         assert!(!partial, "every block has the LLM text now");
         let entry = crate::managers::history::HistoryManager::apply_blocks_late_edit_with(

@@ -28,6 +28,7 @@ export const CALL_PROMPT_ANSWERS: Record<CallPromptKind, CallPromptAnswer[]> = {
   silence_stopped: ["record_again", "dismiss"],
   mistake: ["keep", "discard"],
   nothing_recorded: ["dismiss"],
+  woke: ["dismiss"],
 };
 
 /** The `callPrompt.*` group with the title and body of each card. */
@@ -39,6 +40,7 @@ export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
   silence_stopped: "silenceStopped",
   mistake: "mistake",
   nothing_recorded: "nothingRecorded",
+  woke: "woke",
 };
 
 /** The title key: a meeting in a browser names both ("Google Meet no Edge"); the cards about
