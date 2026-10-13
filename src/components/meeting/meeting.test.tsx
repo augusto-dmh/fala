@@ -20,7 +20,7 @@ import { NotesView } from "./NotesView";
 import { parseNotes } from "./notesModel";
 import { RecorderPanel } from "./RecorderPanel";
 import { SourcePopover } from "./SourcePopover";
-import { TranscriptView } from "./TranscriptView";
+import { sleepMarks, TranscriptView } from "./TranscriptView";
 import { ClipPlayer, type ClipDeps } from "./clipPlayer";
 import {
   clock,
@@ -340,10 +340,34 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
 
   const key = renderToStaticMarkup(<KeyField onSave={noop} />);
   assert.ok(key.includes('type="password"') && key.includes('value=""'), key);
+  // The field lives in Settings > Meetings; without the key the page only points there.
   assert.ok(
-    /keys && !keys\.elevenlabs && \(?\s*<KeyField/.test(page),
-    "campo só sem chave",
+    read("../settings/MeetingKeySetting.tsx").includes("<KeyField onSave="),
   );
+  assert.ok(
+    /keys && !keys\.elevenlabs && \(\s*<p[\s\S]*meeting\.home\.noKey/.test(
+      page,
+    ),
+    "aviso só sem chave",
+  );
+  for (const moved of [
+    "<KeyField",
+    "<NotesContextSettings",
+    "<TemplatesSettings",
+  ]) {
+    assert.ok(!page.includes(moved), moved);
+  }
+  const general = read("../settings/general/GeneralSettings.tsx");
+  const meetings = general.slice(
+    general.indexOf('t("settings.meetings.title")'),
+  );
+  for (const moved of [
+    "<MeetingKeySetting />",
+    "<NotesContextSettings />",
+    "<MeetingTemplatesSettings />",
+  ]) {
+    assert.ok(meetings.includes(moved), moved);
+  }
   ok("C36-key");
 }
 
@@ -571,6 +595,39 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   assert.equal((gone.match(/disabled=""/g) ?? []).length, 3);
   assert.ok(gone.includes(`title="${pt.meeting.source.noAudio}"`));
   assert.ok(chat(true, 3).includes(`aria-label="${pt.meeting.source.stop}"`));
+
+  // The PC slept: a marker before the first line spoken after it, none in a search.
+  const naps = [
+    { at_ms: 71_000, slept_ms: 720_000 },
+    { at_ms: 90_000, slept_ms: 20_000 },
+  ];
+  assert.deepEqual(
+    [...sleepMarks(lines, naps).entries()].map(([i, s]) => [i, s.length]),
+    [
+      [2, 1],
+      [3, 1],
+    ],
+  );
+  const slept = (query?: string) =>
+    renderToStaticMarkup(
+      <TranscriptView
+        lines={lines}
+        sleeps={naps}
+        query={query}
+        audioAvailable={true}
+        playing={null}
+        highlighted={null}
+        onPlay={noop}
+        t={tr}
+      />,
+    );
+  const nap = slept();
+  const mark = nap.indexOf("O computador dormiu por 12 min");
+  assert.ok(mark > nap.indexOf('id="segment-2"'));
+  assert.ok(mark < nap.indexOf('id="segment-3"'));
+  assert.ok(nap.endsWith("O computador dormiu por 1 min</li></ol>"));
+  assert.ok(!slept("sexta").includes("dormiu"));
+  ok("SP-sleep-mark");
   assert.ok(
     view(detail({ audio_available: false })).includes("meeting.source.noAudio"),
   );

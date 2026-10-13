@@ -3,7 +3,8 @@
 //! [`PowerGuard`] asks the OS not to sleep for inactivity; the display may still turn off. The
 //! request belongs to the thread that makes it (Windows' `SetThreadExecutionState`), so the
 //! meeting recorder thread holds the guard and the request ends with the thread, even on a panic.
-//! Outside Windows it is a no-op for now.
+//! [`watch_sleep`] reports a sleep that happens anyway (lid closed, power button, battery).
+//! Outside Windows both are no-ops for now.
 
 /// The OS call behind [`PowerGuard`]; tests count the calls with a fake.
 pub(crate) trait PowerApi {
@@ -68,6 +69,82 @@ impl PowerApi for Os {
     fn keep_awake(&self, _on: bool) {}
 }
 
+/// A sleep of the whole system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SleepEvent {
+    /// The system is about to sleep; the handler has about two seconds.
+    Suspending,
+    /// The system woke up. Windows may say so twice (automatic, then by the user).
+    Resumed,
+}
+
+/// The event a Windows power broadcast means, if any.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn sleep_event(broadcast: u32) -> Option<SleepEvent> {
+    // PBT_APMSUSPEND, PBT_APMRESUMESUSPEND and PBT_APMRESUMEAUTOMATIC.
+    match broadcast {
+        4 => Some(SleepEvent::Suspending),
+        7 | 18 => Some(SleepEvent::Resumed),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+static ON_SLEEP: std::sync::OnceLock<Box<dyn Fn(SleepEvent) + Send + Sync>> =
+    std::sync::OnceLock::new();
+
+#[cfg(windows)]
+unsafe extern "system" fn on_power_broadcast(
+    _context: *const core::ffi::c_void,
+    broadcast: u32,
+    _setting: *const core::ffi::c_void,
+) -> u32 {
+    if let (Some(event), Some(handler)) = (sleep_event(broadcast), ON_SLEEP.get()) {
+        log::info!("system power: {event:?}");
+        handler(event);
+    }
+    0
+}
+
+/// Calls `handler` on every sleep and wake of the system, for the life of the app. Once only.
+#[cfg(windows)]
+pub(crate) fn watch_sleep(handler: impl Fn(SleepEvent) + Send + Sync + 'static) {
+    use windows::Win32::Foundation::{ERROR_SUCCESS, HANDLE};
+    use windows::Win32::System::Power::{
+        PowerRegisterSuspendResumeNotification, DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::DEVICE_NOTIFY_CALLBACK;
+
+    if ON_SLEEP.set(Box::new(handler)).is_err() {
+        log::warn!("sleep notifications already registered");
+        return;
+    }
+    // Leaked on purpose: the registration lives as long as the process.
+    let params: &'static mut DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS =
+        Box::leak(Box::new(DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS {
+            Callback: Some(on_power_broadcast),
+            Context: std::ptr::null_mut(),
+        }));
+    let mut registration = std::ptr::null_mut();
+    // SAFETY: `params` is valid for the whole process and the callback matches the signature.
+    let result = unsafe {
+        PowerRegisterSuspendResumeNotification(
+            DEVICE_NOTIFY_CALLBACK,
+            HANDLE(std::ptr::from_mut(params).cast()),
+            &mut registration,
+        )
+    };
+    if result == ERROR_SUCCESS {
+        log::info!("listening for system sleep");
+    } else {
+        log::warn!("system sleep notifications unavailable: {result:?}");
+    }
+}
+
+/// Linux (logind's PrepareForSleep) comes with phase 3.
+#[cfg(not(windows))]
+pub(crate) fn watch_sleep(_handler: impl Fn(SleepEvent) + Send + Sync + 'static) {}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -122,5 +199,15 @@ pub(crate) mod tests {
         .join();
         assert!(result.is_err());
         assert_eq!(fake.calls(), vec![true, false]);
+    }
+
+    #[test]
+    fn power_broadcasts() {
+        assert_eq!(sleep_event(4), Some(SleepEvent::Suspending));
+        assert_eq!(sleep_event(7), Some(SleepEvent::Resumed));
+        assert_eq!(sleep_event(18), Some(SleepEvent::Resumed));
+        // PBT_POWERSETTINGCHANGE and PBT_APMPOWERSTATUSCHANGE say nothing about sleep.
+        assert_eq!(sleep_event(0x8013), None);
+        assert_eq!(sleep_event(10), None);
     }
 }
