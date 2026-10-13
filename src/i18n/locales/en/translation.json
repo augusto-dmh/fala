@@ -1060,7 +1060,8 @@
       "micFailed": "Couldn't open the microphone",
       "modelMissing": "No speech model downloaded",
       "chooseMic": "Choose microphone",
-      "resolve": "Fix it"
+      "resolve": "Fix it",
+      "micMutedNamed": "No sound from {{device}}. Is it muted?"
     },
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",

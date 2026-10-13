@@ -6,14 +6,17 @@
   width: 40px;
   height: 8px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  /* A margin of the window around the capsule is the hover target; keep it on the screen edge. */
-  margin: 0 0 6px;
+  /* A grey fill and a brighter hairline: half-transparent black vanished on a dark taskbar (QA
+     Q46). Still grey, never red. */
+  background: rgba(64, 64, 64, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  /* A margin of the window around the capsule is the hover target; 10 px keeps the capsule a
+     little above the taskbar edge, inside the 20 px window. */
+  margin: 0 0 10px;
   cursor: pointer;
 }
 .ov-stage.top .fpill.idle {
-  margin: 6px 0 0;
+  margin: 10px 0 0;
 }
 /* Hover: the capsule opens on the shortcut, black like the pill. */
 .fpill.idle.hover {
