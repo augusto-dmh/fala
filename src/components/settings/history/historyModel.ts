@@ -1,4 +1,5 @@
 import type { HistoryEntry, Result } from "@/bindings";
+import { formatClock } from "@/utils/dateFormat";
 
 /** The edit button an entry offers: undo the AI edit, or apply it (after an undo, or when the
  * AI answer arrived after the paste). */
@@ -29,6 +30,32 @@ export function appName(entry: HistoryEntry): string | null {
   return entry.dictation?.app_name ?? null;
 }
 
+// Executables whose product name is not the capitalised file name.
+const APP_LABELS: Record<string, string> = {
+  chrome: "Chrome",
+  code: "VS Code",
+  excel: "Excel",
+  explorer: "File Explorer",
+  firefox: "Firefox",
+  msedge: "Edge",
+  ms_teams: "Teams",
+  notepad: "Notepad",
+  olk: "Outlook",
+  outlook: "Outlook",
+  powerpnt: "PowerPoint",
+  slack: "Slack",
+  teams: "Teams",
+  windowsterminal: "Windows Terminal",
+  winword: "Word",
+};
+
+/** The app as people know it: `winword` -> Word, else the executable name capitalised. */
+export function appLabel(name: string): string {
+  const known = APP_LABELS[name.toLowerCase()];
+  if (known) return known;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 export interface SwitchTextDeps {
   undo: (id: number) => Promise<Result<HistoryEntry, string>>;
   redo: (id: number) => Promise<Result<HistoryEntry, string>>;
@@ -48,6 +75,19 @@ export type RowKind = "discarded" | "failed" | "normal";
 export function rowKind(entry: HistoryEntry): RowKind {
   if (entry.discarded) return "discarded";
   return shownText(entry).trim().length > 0 ? "normal" : "failed";
+}
+
+/** The empty Home: how to dictate, with the shortcut as it is set now. */
+export function emptyHint(
+  keys: string,
+  toggle: boolean,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (!keys) return t("settings.history.empty");
+  return t(
+    toggle ? "settings.history.emptyToggle" : "settings.history.emptyHold",
+    { keys },
+  );
 }
 
 /** Milliseconds between the last keystroke and the search. */
@@ -94,12 +134,9 @@ export function groupByDay(entries: HistoryEntry[], now: Date): DayGroup[] {
   return groups;
 }
 
-/** The entry's local time, hours and minutes, in the UI language. */
+/** The entry's local time, hours and minutes, in the UI language ("3:50 PM", "15:50"). */
 export function timeLabel(timestamp: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(timestamp * 1000));
+  return formatClock(new Date(timestamp * 1000), locale);
 }
 
 export interface RecoverDeps {
