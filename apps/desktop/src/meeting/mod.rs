@@ -591,7 +591,9 @@ impl MeetingManager {
                         }
                     };
                     let with_mic = mode.session_mode().has_mic();
-                    match recorder::spawn(system.clone(), with_mic, dir.join(WORK_WAV), sink) {
+                    let wav = dir.join(WORK_WAV);
+                    let awake = settings.meeting_keep_awake;
+                    match recorder::spawn(system.clone(), with_mic, wav, awake, sink) {
                         Ok(tx) => {
                             control = Some(tx);
                             self.feedback(&Effect::StartCapture);
