@@ -38,19 +38,31 @@ fn zero_range_with(
     session_dir: &Path,
     t0_ms: u64,
     t1_ms: u64,
-    validate: impl Fn(&Path, u64) -> Result<(), RetentionError>,
+    validate: impl Fn(&Path, u64) -> Result<(), RetentionError> + Sync,
 ) -> Result<(), RetentionError> {
     let range = (t0_ms.saturating_mul(PER_MS), t1_ms.saturating_mul(PER_MS));
     let files = [
         (session_dir.join(MIC_FILE), 1),
         (session_dir.join(SYSTEM_FILE), 2),
     ];
-    let mut parts: Vec<PathBuf> = Vec::new();
-    let written = files.iter().try_for_each(|(path, serial)| {
-        let part = part_path(path);
-        parts.push(part.clone());
-        let samples = rewrite_zeroed(path, &part, *serial, range)?;
-        validate(&part, samples)
+    let parts: Vec<PathBuf> = files.iter().map(|(path, _)| part_path(path)).collect();
+    // Um canal por thread: o tempo vai quase todo na validação, que decodifica o arquivo inteiro.
+    let written = std::thread::scope(|scope| {
+        let jobs: Vec<_> = files
+            .iter()
+            .zip(&parts)
+            .map(|((path, serial), part)| {
+                let validate = &validate;
+                scope.spawn(move || {
+                    let samples = rewrite_zeroed(path, part, *serial, range)?;
+                    validate(part, samples)
+                })
+            })
+            .collect();
+        jobs.into_iter().try_for_each(|job| {
+            job.join()
+                .map_err(|_| RetentionError::Opus("thread de reescrita caiu".into()))?
+        })
     });
     if let Err(e) = written {
         for part in &parts {
