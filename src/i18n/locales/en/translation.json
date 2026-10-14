@@ -1376,6 +1376,25 @@
       "noAudio": "This meeting's audio is no longer on disk."
     },
     "omitted": "Dictation left out",
+    "erased": "Erased stretch",
+    "erase": {
+      "start": "Erase stretch",
+      "running": "Erasing the stretch…",
+      "pickFirst": "Click the first line of the stretch.",
+      "pickLast": "Now click the last one.",
+      "picked_one": "1 line from {{from}} to {{to}}, both channels.",
+      "picked_other": "{{count}} lines from {{from}} to {{to}}, both channels.",
+      "tooMany": "More than {{max}} lines: pick a shorter stretch.",
+      "action": "Erase stretch",
+      "title": "Erase this stretch?",
+      "body_one": "The audio from {{from}} to {{to}} in both channels and the line in it leave this computer. This cannot be undone.",
+      "body_other": "The audio from {{from}} to {{to}} in both channels and the {{count}} lines in it leave this computer. This cannot be undone.",
+      "bodyNoAudio_one": "The line from {{from}} to {{to}} leaves this computer; the audio is already gone. This cannot be undone.",
+      "bodyNoAudio_other": "The {{count}} lines from {{from}} to {{to}} leave this computer; the audio is already gone. This cannot be undone.",
+      "changed_one": "The transcript changed. 1 line of the notes cited the erased stretch.",
+      "changed_other": "The transcript changed. {{count}} lines of the notes cited the erased stretch.",
+      "changedNone": "The transcript changed."
+    },
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"

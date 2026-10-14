@@ -1376,6 +1376,25 @@
       "noAudio": "O áudio desta reunião não está mais no disco."
     },
     "omitted": "Trecho de ditado omitido",
+    "erased": "Trecho apagado",
+    "erase": {
+      "start": "Apagar trecho",
+      "running": "Apagando o trecho…",
+      "pickFirst": "Clique na primeira fala do trecho.",
+      "pickLast": "Agora clique na última.",
+      "picked_one": "1 fala de {{from}} a {{to}}, nos dois canais.",
+      "picked_other": "{{count}} falas de {{from}} a {{to}}, nos dois canais.",
+      "tooMany": "Mais de {{max}} falas: escolha um trecho menor.",
+      "action": "Apagar trecho",
+      "title": "Apagar este trecho?",
+      "body_one": "O áudio de {{from}} a {{to}} nos dois canais e a fala desse intervalo saem deste computador. Não dá para desfazer.",
+      "body_other": "O áudio de {{from}} a {{to}} nos dois canais e as {{count}} falas desse intervalo saem deste computador. Não dá para desfazer.",
+      "bodyNoAudio_one": "A fala de {{from}} a {{to}} sai deste computador; o áudio já não está aqui. Não dá para desfazer.",
+      "bodyNoAudio_other": "As {{count}} falas de {{from}} a {{to}} saem deste computador; o áudio já não está aqui. Não dá para desfazer.",
+      "changed_one": "A transcrição mudou. 1 linha das notas citava o trecho apagado.",
+      "changed_other": "A transcrição mudou. {{count}} linhas das notas citavam o trecho apagado.",
+      "changedNone": "A transcrição mudou."
+    },
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"
