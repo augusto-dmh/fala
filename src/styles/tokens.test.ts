@@ -21,7 +21,7 @@ function walk(dir: string): string[] {
 }
 // Forward slashes on every OS, so the path patterns below also match on Windows.
 const sources = walk(srcDir)
-  .map((p) => p.replaceAll("\\", "/"))
+  .map((p) => p.split("\\").join("/"))
   .filter((p) => /\.(tsx?|css|html)$/.test(p) && !/\.test\.tsx?$/.test(p));
 assert.ok(sources.length > 100, "src walk found the sources");
 
