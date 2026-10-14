@@ -73,13 +73,15 @@ assert.deepEqual(
 );
 ok("C1");
 
-// C2: dictation = AI on/off × Gemini key present/absent; blank counts as absent.
+// C2: dictation = AI on/off × Gemini key present/absent; blank counts as absent; on without a
+// key is "waiting for the key".
 const dictationCases: [Partial<AppSettings>, string[]][] = [
   [
     { llm_enabled: true, post_process_api_keys: { gemini: "k" } },
     ["on", "keySet"],
   ],
-  [{ llm_enabled: true, post_process_api_keys: {} }, ["on", "keyMissing"]],
+  // On without the key: waiting, as the settings row says (Q37 do QA).
+  [{ llm_enabled: true, post_process_api_keys: {} }, ["waitingForKey"]],
   [
     { llm_enabled: false, post_process_api_keys: { gemini: "k" } },
     ["off", "keySet"],
@@ -89,9 +91,10 @@ const dictationCases: [Partial<AppSettings>, string[]][] = [
     ["off", "keyMissing"],
   ],
   // The backend default (`default_llm_enabled`) is on.
-  [{}, ["on", "keyMissing"]],
+  [{}, ["waitingForKey"]],
+  [{ post_process_api_keys: { gemini: "k" } }, ["on", "keySet"]],
   // Another provider's key is not the dictation key.
-  [{ post_process_api_keys: { openai: "k" } }, ["on", "keyMissing"]],
+  [{ post_process_api_keys: { openai: "k" } }, ["waitingForKey"]],
 ];
 for (const [over, want] of dictationCases) {
   assert.deepEqual(statusesOf(rowsFor(settings(over)), "dictation"), want);

@@ -10,7 +10,7 @@ export type NoticeKind =
 /** Payload of `overlay-notice`. */
 export interface OverlayNotice {
   kind: NoticeKind;
-  /** The microphone's name, for `mic_in_use` (and `mic_muted`, once the overlay knows it). */
+  /** The microphone's name, for `mic_in_use` and `mic_muted`. */
   device: string | null;
   /** Replaces the pill; otherwise the notice stacks over the recording pill. */
   alone: boolean;
@@ -42,15 +42,6 @@ export function noticeKey(kind: NoticeKind): string {
     case "model_missing":
       return "overlay.notice.modelMissing";
   }
-}
-
-/** The microphone picked in Settings by name, or `null` for the system default ("Default"). */
-export function namedMicrophone(
-  selected: string | null | undefined,
-): string | null {
-  const name = selected?.trim();
-  if (!name || name === "default" || name === "Default") return null;
-  return name;
 }
 
 /** The key of a notice's text: a muted microphone says which one when the overlay knows it. */
