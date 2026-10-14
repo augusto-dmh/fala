@@ -101,12 +101,19 @@ export interface SessionMenuProps {
 /** What "⋯" offers: copy the Markdown or the transcript, the participants, the trash. */
 export function SessionMenuItems(props: SessionMenuProps) {
   const { t } = props;
-  const item = (label: string, onClick: () => void, disabled = false) => (
+  const item = (
+    label: string,
+    onClick: () => void,
+    disabled = false,
+    danger = false,
+  ) => (
     <button
       type="button"
       role="menuitem"
       disabled={disabled}
-      className="block w-full rounded-md px-3 py-1.5 text-start text-body transition-colors hover:bg-surface-2 focus-visible:focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+      className={`block w-full rounded-md px-3 py-1.5 text-start text-body transition-colors hover:bg-surface-2 focus-visible:focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+        danger ? "text-danger" : ""
+      }`}
       onClick={onClick}
     >
       {label}
@@ -118,7 +125,14 @@ export function SessionMenuItems(props: SessionMenuProps) {
       {props.transcript &&
         item(t("meeting.view.copyTranscript"), props.onCopyTranscript)}
       {item(t("meeting.people.participants"), props.onPeople)}
-      {item(t("meeting.trash.action"), props.onDelete, props.deleteDisabled)}
+      {/* Apart and in red, like "Delete entry" in the history's menu. */}
+      <div role="separator" className="my-1 border-t border-border" />
+      {item(
+        t("meeting.trash.action"),
+        props.onDelete,
+        props.deleteDisabled,
+        true,
+      )}
     </div>
   );
 }

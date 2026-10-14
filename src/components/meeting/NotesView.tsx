@@ -7,6 +7,7 @@ import {
   inlinePieces,
   type ParsedNotes,
 } from "./notesModel";
+import { formatIsoDay } from "@/utils/dateFormat";
 import { SourcePopover } from "./SourcePopover";
 
 export interface NotesViewProps {
@@ -40,14 +41,6 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-/** "2026-10-12" as a local calendar date in the UI language. */
-function importDate(iso: string, locale: string | undefined): string {
-  const [year, month, day] = iso.split("-").map(Number);
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
-    new Date(year, month - 1, day),
-  );
-}
-
 /**
  * The notes as a document: typed lines in `text`, generated ones in `text-2` (ADR-0017), and a
  * magnifier on each generated line that opens its sources.
@@ -73,7 +66,7 @@ export function NotesView(props: NotesViewProps) {
           return (
             <p key={index} className="pt-2 text-caption text-text-2 italic">
               {t("meeting.granola.importedOn", {
-                date: importDate(imported, props.locale),
+                date: formatIsoDay(imported, props.locale ?? "pt-BR"),
               })}
             </p>
           );

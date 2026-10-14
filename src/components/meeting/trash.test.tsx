@@ -156,12 +156,16 @@ const detail = (audio: boolean, retained: boolean): MeetingDetail => ({
   assert.ok(html.includes("Nada na lixeira"), html);
   assert.ok(!html.includes("Restaurar"), html);
   assert.equal(tr("meeting.trash.link", { count: 2 }), "Lixeira (2)");
-  assert.match(page, /\{trashed\.length > 0 && \(/);
+  // The trash is a button that stays in the actions row, with the count when there is one.
+  assert.match(
+    page,
+    /aria-label=\{t\("meeting\.trash\.link", \{ count: trashed\.length \}\)\}/,
+  );
   // Restoring from the trash offers to open the session.
   assert.match(page, /onRestore=\{\(id\) => void restore\(id, "offer"\)\}/);
   // [Undo] on the open session reopens it; the trash is never left behind a session.
   assert.match(page, /if \(then === "open"\) void open\(id\);/);
   assert.match(page, /setShowTrash\(false\);\s*setSelected\(result\.data\);/);
   assert.match(page, /toast\.success\(t\("meeting\.trash\.restored"\)/);
-  ok("T4 empty trash and link");
+  ok("T4 empty trash and button");
 }

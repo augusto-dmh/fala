@@ -9,6 +9,7 @@ import {
   type GranolaRejected,
 } from "@/bindings";
 import { Button } from "../ui/Button";
+import { formatIsoDay } from "@/utils/dateFormat";
 import type { Translate } from "./meetingModel";
 
 /** Rejected rows listed under the preview; the rest is a count. */
@@ -21,8 +22,9 @@ export type GranolaPhase =
   | { kind: "done"; imported: GranolaImported }
   | { kind: "error"; error: GranolaImportError };
 
-/** `YYYY-MM-DD` in the offset Granola recorded. */
-const day = (rfc3339: string | null) => (rfc3339 ?? "").slice(0, 10);
+/** The day Granola recorded (`YYYY-MM-DD` in its offset), as a date in the UI language. */
+export const day = (rfc3339: string | null, locale: string): string =>
+  formatIsoDay(rfc3339, locale);
 
 export function rejectedLine(row: GranolaRejected, t: Translate): string {
   const reason = t(`meeting.granola.reasons.${row.reason.kind}`, {
@@ -44,6 +46,8 @@ export interface GranolaImportViewProps {
   onRun: () => void;
   onCancel: () => void;
   onClose: () => void;
+  /** The UI language, for the dates. */
+  locale: string;
   t: Translate;
 }
 
@@ -53,6 +57,7 @@ export function GranolaImportView({
   onRun,
   onCancel,
   onClose,
+  locale,
   t,
 }: GranolaImportViewProps) {
   const close = (
@@ -107,8 +112,8 @@ export function GranolaImportView({
           ? t("meeting.granola.none")
           : t("meeting.granola.found", {
               count: preview.meetings,
-              first: day(preview.first),
-              last: day(preview.last),
+              first: day(preview.first, locale),
+              last: day(preview.last, locale),
             })}
       </p>
       {preview.duplicates > 0 && (
@@ -147,7 +152,8 @@ export function GranolaImportView({
 export interface GranolaImportProps {
   /** The export the person picked: a CSV or the `.zip` from the email. */
   path: string;
-  onImported: () => void;
+  /** After a run: `finished` when it ended without an error or a cancel. */
+  onImported: (finished: boolean) => void;
   onClose: () => void;
 }
 
@@ -157,7 +163,7 @@ export function GranolaImport({
   onImported,
   onClose,
 }: GranolaImportProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [phase, setPhase] = useState<GranolaPhase>({ kind: "reading" });
 
   useEffect(() => {
@@ -189,8 +195,9 @@ export function GranolaImport({
         ? { kind: "done", imported: result.data }
         : { kind: "error", error: result.error },
     );
-    // Even a cancelled or failed run may have saved some meetings.
-    onImported();
+    // Even a cancelled or failed run may have saved some meetings; only a finished one may close
+    // its card on its own.
+    onImported(result.status === "ok");
   };
 
   return (
@@ -200,6 +207,7 @@ export function GranolaImport({
         onRun={() => void run()}
         onCancel={() => void commands.cancelMeetingImport()}
         onClose={onClose}
+        locale={i18n.language}
         t={t}
       />
     </div>

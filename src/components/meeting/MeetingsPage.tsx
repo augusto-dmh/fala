@@ -138,6 +138,9 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const importId = useRef<string | null>(null);
   const importRunning = useRef(false);
   const [granolaPath, setGranolaPath] = useState<string | null>(null);
+  // The file whose import finished: its result card gives way to the next meeting that opens. A
+  // preview, a run or an error stays; another file's card is not this one.
+  const [granolaDone, setGranolaDone] = useState<string | null>(null);
   const [trashed, setTrashed] = useState<TrashedMeetingSummary[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [tab, setTab] = useState<MeetingsTab>("meetings");
@@ -175,6 +178,18 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       setSelected(result.data);
     } else setError(result.error);
   }, []);
+  const openedId = selected?.summary.id ?? null;
+  useEffect(() => {
+    if (
+      openedId !== null &&
+      granolaDone !== null &&
+      granolaDone === granolaPath
+    ) {
+      setGranolaPath(null);
+      setGranolaDone(null);
+    }
+    // Only a meeting opening closes it, not the import finishing.
+  }, [openedId]);
   // Another meeting (or the list) does not carry the last one's error.
   const selectedId = selected?.summary.id ?? null;
   useEffect(() => {
@@ -635,7 +650,10 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     >
       <GranolaImport
         path={granolaPath}
-        onImported={() => void refresh()}
+        onImported={(finished) => {
+          if (finished) setGranolaDone(granolaPath);
+          void refresh();
+        }}
         onClose={() => setGranolaPath(null)}
       />
     </div>
@@ -790,6 +808,19 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           )}
           onChange={(event) => setQuery(event.target.value)}
         />
+        {/* Always in reach, as Granola's sidebar keeps it, with how many wait inside. */}
+        <Button
+          variant="secondary"
+          className="flex items-center gap-1.5"
+          aria-label={t("meeting.trash.link", { count: trashed.length })}
+          title={t("meeting.trash.link", { count: trashed.length })}
+          onClick={() => setShowTrash(true)}
+        >
+          <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />
+          {trashed.length > 0 && (
+            <span className="tabular-nums">{trashed.length}</span>
+          )}
+        </Button>
         {!askConsent && (
           <ImportDialog
             importing={importing}
@@ -826,16 +857,6 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           live={liveSessions}
           onOpen={(id) => void open(id)}
         />
-      )}
-      {trashed.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowTrash(true)}
-          className="flex items-center gap-1 rounded-lg text-caption text-text-2 transition-colors hover:text-text focus-visible:focus-ring"
-        >
-          <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
-          {t("meeting.trash.link", { count: trashed.length })}
-        </button>
       )}
     </div>
   );
