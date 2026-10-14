@@ -110,10 +110,17 @@ export function MeetingView(props: MeetingViewProps) {
   // Something is typed in "My notes" now, ahead of the save: notes can be written from it alone.
   // A boolean, so typing does not re-render the session on every key.
   const [typedHere, setTypedHere] = useState(false);
+  // A WAV that retention has not turned into Opus yet is audio too: it can be transcribed.
+  const audio =
+    detail.summary.imported_from === "granola"
+      ? "imported"
+      : detail.audio_available || detail.audio_pending
+        ? "kept"
+        : "deleted";
   const hints = sessionHints(props.keys ?? null, {
     transcript: detail.lines.length > 0,
     typed: typedHere || detail.annotations.trim() !== "",
-    noAudio: detail.summary.imported_from === "granola",
+    audio,
   });
   // "Gerar notas" and the buttons that write them again are off together.
   const notesOff =
@@ -751,8 +758,8 @@ export function MeetingView(props: MeetingViewProps) {
           props.recording ||
           props.transcribing ||
           hints.transcribe !== null ||
-          // Granola sends no audio: there is nothing to transcribe.
-          detail.summary.imported_from === "granola"
+          // No audio (a Granola import, or deleted): nothing to transcribe.
+          audio !== "kept"
         }
         onTranscribe={props.onTranscribe}
         onCancelTranscription={props.onCancelTranscription}

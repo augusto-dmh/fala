@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   missingKeyMessage,
   sessionHints,
+  type SessionContent,
   type Translate,
 } from "./meetingModel";
 import { SessionBar } from "./SessionBar";
@@ -66,10 +67,10 @@ const dialog = read("./ImportDialog.tsx");
 {
   const both = { elevenlabs: true, anthropic: true };
   const none = { elevenlabs: false, anthropic: false };
-  const content = (over = {}) => ({
+  const content = (over: Partial<SessionContent> = {}): SessionContent => ({
     transcript: true,
     typed: false,
-    noAudio: false,
+    audio: "kept",
     ...over,
   });
   const off = (transcribe: string | null, generate: string | null) => ({
@@ -89,10 +90,20 @@ const dialog = read("./ImportDialog.tsx");
     sessionHints(none, content()),
     off("meeting.keys.transcribeNeedsKey", "meeting.keys.notesNeedKey"),
   );
-  // Sem áudio (Granola), nenhuma chave faz transcrever: a dica não promete isso.
+  // Sem áudio, nenhuma chave faz transcrever: a dica diz por quê (Granola, ou áudio apagado pela
+  // retenção ou pela lixeira, R5 da segunda passada de QA).
+  // Com transcrição, fica quieto e a razão das notas aparece; sem ela, diz por que não há o que
+  // transcrever.
   assert.deepEqual(
-    sessionHints(none, content({ noAudio: true })),
+    sessionHints(none, content({ audio: "imported" })),
     off(null, "meeting.keys.notesNeedKey"),
+  );
+  assert.deepEqual(
+    sessionHints(
+      both,
+      content({ audio: "deleted", transcript: false, typed: true }),
+    ),
+    off("meeting.source.noAudio", null),
   );
   // Antes de saber das chaves, nada desliga por elas.
   assert.deepEqual(sessionHints(null, content()), off(null, null));
