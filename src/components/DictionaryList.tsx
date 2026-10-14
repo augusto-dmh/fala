@@ -9,6 +9,7 @@ import {
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Textarea } from "./ui/Textarea";
+import { ImportDictionary } from "./ImportDictionaryDialog";
 import {
   countByKind,
   draftOf,
@@ -331,14 +332,17 @@ export const DictionaryList: React.FC<DictionaryListProps> = ({ filter }) => {
           selectedVariant="primary-soft"
           idleVariant="ghost"
         />
-        {!adding && (
-          <Button
-            ref={addRef}
-            onClick={() => open(kindFilter === "all" ? "term" : kindFilter)}
-          >
-            {t("dictionary.list.add")}
-          </Button>
-        )}
+        <div className="flex gap-2">
+          <ImportDictionary entries={entries} disabled={busy} />
+          {!adding && (
+            <Button
+              ref={addRef}
+              onClick={() => open(kindFilter === "all" ? "term" : kindFilter)}
+            >
+              {t("dictionary.list.add")}
+            </Button>
+          )}
+        </div>
       </div>
       {form}
       {visible.length === 0 ? (

@@ -14,6 +14,7 @@
 //! sessão `import` sem áudio, e `meeting_imports`, aditiva, liga cada uma ao id de origem, para
 //! importar de novo atualizar em vez de duplicar.
 //! `meeting_erasures`, aditiva, guarda os trechos que a pessoa apagou (texto e marcador).
+//! `meeting_takes`, aditiva, guarda as gravações a mais de uma sessão retomada.
 //! `meeting_trash`, aditiva, guarda as sessões na lixeira por 30 dias; o `.md` delas fica em
 //! `Reuniões/.lixeira/`, e a lista, a busca e o MCP não as veem.
 //! `meeting_directory` junta as pessoas das reuniões por nome, sem tabela: é uma consulta sobre
@@ -34,6 +35,7 @@ mod meeting_omissions;
 mod meeting_people;
 mod meeting_search;
 mod meeting_series;
+mod meeting_takes;
 mod meeting_trash;
 mod meetings;
 mod metrics;
@@ -57,6 +59,7 @@ pub use meeting_omissions::{omitted_segment, OMITTED_TEXT};
 pub use meeting_people::{MeetingSpeaker, NameSuggestion};
 pub use meeting_search::{MeetingHit, MATCH_END, MATCH_START};
 pub use meeting_series::{series_of, Series};
+pub use meeting_takes::{on_timeline, resumed_segment, MeetingTake};
 pub use meeting_trash::{TrashedMeeting, TRASH_DAYS};
 pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};
 pub use metrics::{DayCount, DictationMetrics, MetricsSummary, Percentiles};
@@ -139,6 +142,9 @@ pub enum StorageError {
     /// A reunião já começou a gravar; um rascunho grava uma vez só.
     #[error("a reunião {0} já começou")]
     MeetingAlreadyStarted(String),
+    /// Só uma sessão gravada e encerrada, que não é importação, retoma.
+    #[error("a reunião {0} não pode ser retomada")]
+    NotResumable(String),
     #[error("o ditado {0} não tem edição para desfazer")]
     NothingToUndo(String),
     #[error("a edição tardia do ditado {0} está em branco")]

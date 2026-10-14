@@ -372,8 +372,8 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
   );
   // Com anotações, "Aprimorando suas notas" (sem elas, "Escrevendo notas").
   assert.ok(busy.includes("meeting.view.enhancing"));
-  // Transcrever, gerar e editar a nota.
-  assert.equal((busy.match(/disabled=""/g) ?? []).length, 3, busy);
+  // Transcrever, gerar, editar a nota e apagar trecho.
+  assert.equal((busy.match(/disabled=""/g) ?? []).length, 4, busy);
   assert.ok(!view(detail()).includes("meeting.view.cancel"));
   ok("C36-busy");
 
