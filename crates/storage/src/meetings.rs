@@ -99,6 +99,8 @@ pub enum SegmentSpeaker {
     Person(u32),
     /// A linha marcadora de um trecho do mic zerado por um ditado (ADR-0015); ninguém fala.
     Omitted,
+    /// A linha marcadora de um trecho que a pessoa apagou, nos dois canais.
+    Erased,
 }
 
 /// Um trecho transcrito. `seq` (1 a n, na ordem de `t0_ms`) é o id que os ponteiros `^sN` das
@@ -206,7 +208,44 @@ fn read_meeting(row: &Row<'_>) -> rusqlite::Result<MeetingRecord> {
     })
 }
 
-fn read_segment(row: &Row<'_>) -> rusqlite::Result<MeetingSegment> {
+/// Se o trecho cruza `[t0, t1]` (só encostar na borda não conta) ou cabe nele: o que se falou
+/// ali, mesmo em parte, sai com o áudio.
+pub(crate) fn overlaps(segment: &MeetingSegment, t0: u64, t1: u64) -> bool {
+    (segment.t0_ms < t1 && segment.t1_ms > t0) || (segment.t0_ms >= t0 && segment.t1_ms <= t1)
+}
+
+/// Por `t0_ms`, o mic antes do sistema no empate: a ordem que dá o `seq` 1..n.
+pub(crate) fn sort_segments(segments: &mut [MeetingSegment]) {
+    segments.sort_by_key(|s| (s.t0_ms, s.channel == SegmentChannel::System));
+}
+
+/// Grava os trechos já ordenados, com `seq` de 1 a n.
+pub(crate) fn insert_segments(
+    conn: &rusqlite::Connection,
+    id: SessionId,
+    segments: &[MeetingSegment],
+) -> Result<(), StorageError> {
+    for (index, segment) in segments.iter().enumerate() {
+        let speaker = serde_json::to_string(&segment.speaker)
+            .map_err(|e| StorageError::Db(bad(3, e.to_string())))?;
+        conn.execute(
+            "INSERT INTO meeting_segments (meeting_id, seq, channel, speaker, t0_ms, t1_ms, text)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id.to_string(),
+                index as i64 + 1,
+                channel_str(segment.channel),
+                speaker,
+                ms(segment.t0_ms),
+                ms(segment.t1_ms),
+                segment.text,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) fn read_segment(row: &Row<'_>) -> rusqlite::Result<MeetingSegment> {
     let seq: i64 = row.get(0)?;
     let channel: String = row.get(1)?;
     let speaker: String = row.get(2)?;
@@ -461,10 +500,20 @@ impl Store {
         transcribed_at: DateTime<FixedOffset>,
     ) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
-        // Os marcadores vêm da tabela do gravador, nunca de quem transcreve.
-        segments.retain(|s| s.speaker != SegmentSpeaker::Omitted);
+        // Os marcadores vêm das tabelas da sessão, nunca de quem transcreve, e nada do que o ASR
+        // devolver dentro de um trecho apagado volta.
+        let erasures = crate::meeting_erasures::erasures(&tx, id)?;
+        segments.retain(|s| {
+            !matches!(s.speaker, SegmentSpeaker::Omitted | SegmentSpeaker::Erased)
+                && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
+        });
         segments.extend(crate::meeting_omissions::omitted_segments(&tx, id)?);
-        segments.sort_by_key(|s| (s.t0_ms, s.channel == SegmentChannel::System));
+        segments.extend(
+            erasures
+                .iter()
+                .map(|&(t0, t1)| crate::meeting_erasures::erased_segment(t0, t1)),
+        );
+        sort_segments(&mut segments);
         let changed = tx.execute(
             "UPDATE meetings SET transcribed_at = ?2 WHERE id = ?1",
             params![id.to_string(), rfc3339(&transcribed_at)],
@@ -481,23 +530,7 @@ impl Store {
             "DELETE FROM meeting_speakers WHERE meeting_id = ?1",
             [id.to_string()],
         )?;
-        for (index, segment) in segments.iter().enumerate() {
-            let speaker = serde_json::to_string(&segment.speaker)
-                .map_err(|e| StorageError::Db(bad(3, e.to_string())))?;
-            tx.execute(
-                "INSERT INTO meeting_segments (meeting_id, seq, channel, speaker, t0_ms, t1_ms, text)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    id.to_string(),
-                    index as i64 + 1,
-                    channel_str(segment.channel),
-                    speaker,
-                    ms(segment.t0_ms),
-                    ms(segment.t1_ms),
-                    segment.text,
-                ],
-            )?;
-        }
+        insert_segments(&tx, id, &segments)?;
         tx.commit()?;
         log::debug!("reunião {id}: {} trechos gravados", segments.len());
         self.after_meeting_change(id);

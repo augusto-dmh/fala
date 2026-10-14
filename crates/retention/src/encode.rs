@@ -12,9 +12,9 @@ pub const SAMPLE_RATE_HZ: u32 = 48_000;
 /// Alvo do encoder por canal (ADR-0014).
 pub const BITRATE_BPS: i32 = 24_000;
 /// 20 ms a 48 kHz.
-const FRAME: usize = 960;
+pub(crate) const FRAME: usize = 960;
 /// Maior pacote que o libopus devolve.
-const MAX_PACKET: usize = 4000;
+pub(crate) const MAX_PACKET: usize = 4000;
 /// Maior quadro que um pacote decodifica (120 ms a 48 kHz).
 pub(crate) const MAX_DECODED: usize = 5760;
 /// Um page Ogg por segundo de áudio: dá pontos de busca para tocar um trecho (2.F9).
@@ -197,17 +197,17 @@ fn encode_channels(
 }
 
 /// Um stream Ogg Opus mono sendo escrito.
-struct OpusStream {
+pub(crate) struct OpusStream {
     writer: PacketWriter<'static, BufWriter<File>>,
     encoder: Encoder,
     serial: u32,
-    pre_skip: u64,
+    pub(crate) pre_skip: u64,
     packets: usize,
     out: Vec<u8>,
 }
 
 impl OpusStream {
-    fn create(path: &Path, serial: u32) -> Result<Self, RetentionError> {
+    pub(crate) fn create(path: &Path, serial: u32) -> Result<Self, RetentionError> {
         let mut encoder = new_encoder()?;
         let pre_skip = encoder.get_lookahead().map_err(opus_error)?;
         let pre_skip = u16::try_from(pre_skip)
@@ -248,7 +248,7 @@ impl OpusStream {
 
     /// Codifica um quadro de 20 ms; `granule` é a posição em amostras ao fim do pacote,
     /// contando o pre-skip.
-    fn write_frame(
+    pub(crate) fn write_frame(
         &mut self,
         frame: &[i16],
         granule: u64,
@@ -258,6 +258,16 @@ impl OpusStream {
             .encoder
             .encode(frame, &mut self.out)
             .map_err(opus_error)?;
+        self.write_packet(self.out[..len].to_vec(), granule, last)
+    }
+
+    /// Escreve um pacote já codificado, com a mesma divisão em pages de `write_frame`.
+    pub(crate) fn write_packet(
+        &mut self,
+        packet: Vec<u8>,
+        granule: u64,
+        last: bool,
+    ) -> Result<(), RetentionError> {
         self.packets += 1;
         let info = if last {
             PacketWriteEndInfo::EndStream
@@ -267,11 +277,11 @@ impl OpusStream {
             PacketWriteEndInfo::NormalPacket
         };
         self.writer
-            .write_packet(self.out[..len].to_vec(), self.serial, info, granule)
+            .write_packet(packet, self.serial, info, granule)
             .map_err(|e| RetentionError::Opus(format!("escrita Ogg: {e}")))
     }
 
-    fn finish(self, path: &Path) -> Result<(), RetentionError> {
+    pub(crate) fn finish(self, path: &Path) -> Result<(), RetentionError> {
         let mut out = self.writer.into_inner();
         out.flush().map_err(|e| RetentionError::io(path, e))?;
         let file = out
@@ -282,7 +292,7 @@ impl OpusStream {
     }
 }
 
-fn new_encoder() -> Result<Encoder, RetentionError> {
+pub(crate) fn new_encoder() -> Result<Encoder, RetentionError> {
     let mut encoder =
         Encoder::new(SAMPLE_RATE_HZ, Channels::Mono, Application::Voip).map_err(opus_error)?;
     encoder
@@ -309,19 +319,19 @@ pub(crate) fn parse_head(data: &[u8]) -> Result<u16, String> {
 /// Grava no disco os renomeios da pasta antes de o WAV sumir. Melhor esforço: onde o SO não
 /// abre uma pasta como arquivo, os dados já estão sincronizados (`OpusStream::finish`) e o pior
 /// caso de um crash aqui são `.part` íntegros com o WAV ainda no disco.
-fn sync_dir(dir: &Path) {
+pub(crate) fn sync_dir(dir: &Path) {
     if let Ok(handle) = File::open(dir) {
         let _ = handle.sync_all();
     }
 }
 
-fn part_path(path: &Path) -> PathBuf {
+pub(crate) fn part_path(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(".part");
     PathBuf::from(name)
 }
 
-fn opus_error(e: opus::Error) -> RetentionError {
+pub(crate) fn opus_error(e: opus::Error) -> RetentionError {
     RetentionError::Opus(e.to_string())
 }
 

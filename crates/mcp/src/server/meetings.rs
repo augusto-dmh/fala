@@ -311,6 +311,7 @@ fn segment(s: &MeetingSegment, names: &BTreeMap<u32, String>) -> Value {
     let (speaker, name) = match s.speaker {
         SegmentSpeaker::Me => ("me".to_string(), None),
         SegmentSpeaker::Omitted => ("omitted".to_string(), None),
+        SegmentSpeaker::Erased => ("erased".to_string(), None),
         SegmentSpeaker::Person(n) => (person(n), names.get(&n)),
     };
     json!({
@@ -417,7 +418,7 @@ pub(super) fn tools(annotations: &rmcp::model::ToolAnnotations) -> Vec<Tool> {
             "seq": { "type": "integer" },
             "start_ms": { "type": "integer" },
             "end_ms": { "type": "integer" },
-            "speaker": { "type": "string", "description": "me, or person_N for someone else" },
+            "speaker": { "type": "string", "description": "me, person_N for someone else, or omitted/erased for a line that marks a stretch left out" },
             "name": { "type": ["string", "null"], "description": "the name the user gave person_N" },
             "text": { "type": "string" },
         },
