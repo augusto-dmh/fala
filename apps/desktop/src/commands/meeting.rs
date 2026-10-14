@@ -6,6 +6,7 @@ use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::meeting::erase::MeetingErased;
 use crate::meeting::granola::{GranolaImportError, GranolaImported, GranolaPreview};
 use crate::meeting::import::ImportSource;
 use crate::meeting::lifecycle::TrashedMeetingSummary;
@@ -468,6 +469,21 @@ pub async fn recover_meeting(meetings: Meetings<'_>, id: String) -> Result<(), M
 pub async fn delete_meeting(meetings: Meetings<'_>, id: String) -> Result<(), MeetingError> {
     let manager = meetings.inner().clone();
     tauri::async_runtime::spawn_blocking(move || manager.delete(&id))
+        .await
+        .map_err(|e| MeetingError::Storage(e.to_string()))?
+}
+
+/// "Erase stretch" after its confirmation: `[t0, t1]` leaves the audio and the transcript.
+#[tauri::command]
+#[specta::specta]
+pub async fn erase_meeting_range(
+    meetings: Meetings<'_>,
+    id: String,
+    t0_ms: u64,
+    t1_ms: u64,
+) -> Result<MeetingErased, MeetingError> {
+    let manager = meetings.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.erase_range(&id, t0_ms, t1_ms))
         .await
         .map_err(|e| MeetingError::Storage(e.to_string()))?
 }
