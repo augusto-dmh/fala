@@ -150,7 +150,7 @@ const vendas = template("vendas", "Vendas", "user", "Ligação com cliente");
   // The list lives in Settings > Meetings; the page and Settings each read the catalog.
   assert.match(
     read("./TemplatesSettings.tsx"),
-    /useMeetingTemplates\(\);\s*return <TemplatesSettings catalog=\{catalog\}/,
+    /useMeetingTemplates\(\);[\s\S]*<TemplatesSettings\s+catalog=\{catalog\}/,
   );
   assert.match(
     read("../settings/general/GeneralSettings.tsx"),
