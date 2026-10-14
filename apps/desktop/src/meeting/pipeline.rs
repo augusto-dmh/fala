@@ -829,7 +829,7 @@ impl MeetingManager {
     }
 
     /// A built-in template or one of the person's own.
-    fn template(&self, id: &str) -> Result<Template, MeetingError> {
+    pub(crate) fn template(&self, id: &str) -> Result<Template, MeetingError> {
         find_template(&templates_dir(&self.app)?, id)
     }
 
