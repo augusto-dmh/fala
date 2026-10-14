@@ -3,6 +3,7 @@ import { Fragment, useRef, useState } from "react";
 import type { MeetingLine, MeetingSleep } from "@/bindings";
 import { Input } from "../ui/Input";
 import { clock, speakerOf, type Translate } from "./meetingModel";
+import { useNameSuggest } from "./nameSuggest";
 import { highlight } from "./transcriptSearch";
 
 export interface PlayButtonProps {
@@ -46,6 +47,7 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
   const [typed, setTyped] = useState<string | null>(null);
   // Enter closes the field, and a blur may follow as it unmounts: one rename per edit.
   const open = useRef(false);
+  const suggest = useNameSuggest(typed !== null, typed ?? "", setTyped);
   const person = line.person;
   if (person === null || !onRename) return <>{speakerOf(line, t)}</>;
   const current = line.name ?? "";
@@ -75,21 +77,26 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
     }
   };
   return (
-    <Input
-      variant="compact"
-      autoFocus
-      aria-label={t("meeting.rename.label", { person: label })}
-      placeholder={label}
-      value={typed}
-      onChange={(event) => setTyped(event.target.value)}
-      onBlur={() => close(true)}
-      onKeyDown={(event) => {
-        // Enter that confirms an IME composition is not the end of the name.
-        if (event.key === "Enter" && !event.nativeEvent.isComposing)
-          close(true);
-        if (event.key === "Escape") close(false);
-      }}
-    />
+    <span className="inline-flex flex-col gap-1">
+      <Input
+        variant="compact"
+        autoFocus
+        aria-label={t("meeting.rename.label", { person: label })}
+        placeholder={label}
+        value={typed}
+        onChange={(event) => setTyped(event.target.value)}
+        onBlur={() => close(true)}
+        onKeyDown={(event) => {
+          suggest.onKeyDown(event);
+          if (event.defaultPrevented) return;
+          // Enter that confirms an IME composition is not the end of the name.
+          if (event.key === "Enter" && !event.nativeEvent.isComposing)
+            close(true);
+          if (event.key === "Escape") close(false);
+        }}
+      />
+      {suggest.list}
+    </span>
   );
 }
 

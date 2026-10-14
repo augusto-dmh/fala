@@ -1334,6 +1334,32 @@
       "noResults": "No meetings found.",
       "emptyHint": "Record your next call, or drop an audio or video file here."
     },
+    "tabs": {
+      "label": "Show",
+      "meetings": "Meetings",
+      "people": "People"
+    },
+    "directory": {
+      "search": "Search people",
+      "name": "Person",
+      "last": "Last meeting",
+      "count": "Meetings",
+      "empty": "The people from your meetings show up here: the names in “Who was there” and the speakers you named.",
+      "noResults": "No one found.",
+      "meetings_one": "{{count}} meeting",
+      "meetings_other": "{{count}} meetings",
+      "none": "No meetings with this person now.",
+      "actions": "Actions",
+      "actionsOf": "Actions for {{name}}",
+      "merge": "Merge with…",
+      "rename": "Rename",
+      "newName": "New name",
+      "pick": "Choose the person",
+      "mergeAction": "Merge",
+      "cancel": "Cancel",
+      "mergeConfirm_one": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meeting.",
+      "mergeConfirm_other": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meetings."
+    },
     "view": {
       "agenda": "Agenda and notes (before recording)",
       "annotations": "Notes",
