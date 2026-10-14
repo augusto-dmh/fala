@@ -1406,6 +1406,7 @@
       "agenda": "Agenda and notes (before recording)",
       "annotations": "Notes",
       "recordDraft": "Record this meeting",
+      "continue": "Resume",
       "transcribe": "Transcribe",
       "transcribing": "Transcribing…",
       "cancel": "Cancel",
@@ -1445,6 +1446,7 @@
     },
     "omitted": "Dictation left out",
     "erased": "Erased stretch",
+    "resumed": "Recording resumed",
     "erase": {
       "start": "Erase stretch",
       "running": "Erasing the stretch…",
