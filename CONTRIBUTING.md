@@ -7,7 +7,7 @@ Este é o documento canônico de fluxo, commits e pull requests. `AGENTS.md` só
 1. `git switch -c <type>/<slug>` a partir de `main` atualizado. Nunca commite em `main`.
 2. Commits pequenos na branch; `git pull --rebase origin main` para atualizar, nunca merge de `main` para dentro.
 3. `gh pr create` com o template preenchido; CI verde; leitura do diff completo.
-4. Squash pelo mantenedor: o **título do PR vira o commit em `main`** e o corpo vira o corpo do commit.
+4. Squash pelo mantenedor ou pelo agente, só com todos os checks verdes: o **título do PR vira o commit em `main`** e o corpo vira o corpo do commit.
 5. A branch é apagada no merge; remova o worktree.
 
 Uma preocupação por PR. Se a descrição diz "also", divida.
@@ -50,7 +50,7 @@ Bons: `feat(inject): restore the clipboard after pasting`, `fix(hotkey): release
 Bem-vindo, com transparência. Você é responsável pelo que envia e precisa entender cada linha; se não consegue explicar o que a mudança faz, não a envie. Sem respostas de revisão copiadas de IA; sem agentes autônomos abrindo PRs.
 
 - Todo commit feito por agente leva o trailer `Assisted-by: <ferramenta>` (o Claude Code o gera a partir de `.claude/settings.json`). Commits escritos à mão não levam trailer.
-- A seção **AI assistance** do PR descreve extensão e propósito ("the agent wrote the code and tests from the plan; I reviewed the diff and ran the smoke test on Windows"), revisada por um humano antes do merge.
+- A seção **AI assistance** do PR descreve extensão e propósito ("the agent wrote the code and tests from the plan; I reviewed the diff and ran the smoke test on Windows"), só com o que foi de fato verificado.
 
 ## Licença
 
