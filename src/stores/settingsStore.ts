@@ -140,7 +140,12 @@ const settingUpdaters: {
   overlay_position: (value) =>
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),
-  custom_words: (value) => commands.updateCustomWords(value as string[]),
+  custom_words: async (value) => {
+    const result = await commands.updateCustomWords(value as string[]);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
   dictionary_replacements: async (value) => {
     const result = await commands.updateDictionaryReplacements(
       value as DictionaryReplacement[],
