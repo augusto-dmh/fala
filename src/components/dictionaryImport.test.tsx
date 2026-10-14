@@ -66,7 +66,8 @@ const entries = entriesOf(stored.terms, stored.replacements, [
     { kind: "replacement", spoken: "a, b", written: "c" },
   ]);
   // BOM, CRLF, linhas vazias, comentários e cabeçalho.
-  const file = "﻿falado;escrito\r\n# meus pares\r\n\r\n   \r\nobg;obrigado\r\n";
+  const file =
+    "\uFEFFfalado;escrito\r\n# meus pares\r\n\r\n   \r\nobg;obrigado\r\n";
   assert.deepEqual(previewImport(file, []), {
     error: null,
     added: [{ kind: "replacement", spoken: "obg", written: "obrigado" }],
@@ -193,7 +194,17 @@ const entries = entriesOf(stored.terms, stored.replacements, [
     dialog,
     /await updateSetting\("dictionary_replacements", lists\.replacements\);/,
   );
-  assert.match(dialog, /toast\.success\(\s*t\("dictionary\.import\.done"/);
+  // O toast conta o que o store guardou: uma gravação que falhou volta atrás sem lançar.
+  assert.match(dialog, /const count = stored\(\) - before;/);
+  assert.match(dialog, /toast\.success\(t\("dictionary\.import\.done"/);
+  assert.match(dialog, /toast\.error\(t\("dictionary\.import\.saveError"/);
+  assert.match(
+    read("../stores/settingsStore.ts"),
+    /const result = await commands\.updateCustomWords\(value as string\[\]\);\s*if \(result\.status === "error"\) \{\s*throw/,
+  );
+  // Arquivo que não é UTF-8 ou grande demais não vira prévia.
+  assert.match(dialog, /new TextDecoder\("utf-8", \{ fatal: true \}\)/);
+  assert.match(dialog, /\(await stat\(path\)\)\.size > MAX_BYTES/);
   ok("I3");
 }
 
@@ -216,6 +227,8 @@ const entries = entriesOf(stored.terms, stored.replacements, [
       "files",
       "format",
       "readError",
+      "tooBig",
+      "saveError",
       "invalidLine",
       "tooManyLines",
       "fieldTooLong",

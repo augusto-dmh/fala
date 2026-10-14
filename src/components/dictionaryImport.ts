@@ -1,5 +1,10 @@
 import type { DictionaryReplacement } from "@/bindings";
-import { LIMITS, normalizeTerm, type Entry } from "./dictionaryModel";
+import {
+  LIMITS,
+  normalizeSpoken,
+  normalizeTerm,
+  type Entry,
+} from "./dictionaryModel";
 
 /** Entry lines a file may have; above it nothing is imported. */
 export const MAX_LINES = 5000;
@@ -96,8 +101,6 @@ export function pickSeparator(lines: readonly string[]): string {
   return best;
 }
 
-const spokenOf = (text: string) => text.replace(/\s+/g, " ").trim();
-
 /**
  * What importing `text` adds to the dictionary: one entry per line, a term or a spoken →
  * written pair. Blank lines, `#` comments and a header first line are skipped.
@@ -113,7 +116,8 @@ export function previewImport(
     invalid: [],
   };
   const lines = text
-    .replace(/^﻿/, "")
+    // A BOM, when the text was decoded without dropping it.
+    .replace(/^\uFEFF/, "")
     .split(/\r?\n/)
     .map((line, index) => ({ line, number: index + 1 }))
     .filter(({ line }) => line.trim() !== "" && !line.trim().startsWith("#"));
@@ -158,7 +162,7 @@ export function previewImport(
       preview.added.push({ kind: "term", text: term });
       return;
     }
-    const spoken = spokenOf(fields[0]);
+    const spoken = normalizeSpoken(fields[0]);
     const written = fields[1].trim();
     if (!spoken || !written) return invalid("empty");
     if (

@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readFile } from "@tauri-apps/plugin-fs";
+import { readFile, stat } from "@tauri-apps/plugin-fs";
 import { toast } from "sonner";
 import { useSettings } from "../hooks/useSettings";
+import { useSettingsStore } from "../stores/settingsStore";
 import { Alert } from "./ui/Alert";
 import { Button } from "./ui/Button";
 import { Dialog } from "./ui/Dialog";
@@ -18,6 +19,8 @@ import {
 
 /** Lines of the preview: the first invalid lines and the first new entries. */
 const SHOWN = 5;
+/** 5,000 lines of two 200-character fields fit in about 2 MB. */
+const MAX_BYTES = 4 << 20;
 
 /** What the file brings, before anything is stored. */
 export const ImportPreviewBody: React.FC<{ preview: ImportPreview }> = ({
@@ -120,20 +123,27 @@ export const ImportDictionary: React.FC<ImportDictionaryProps> = ({
   const [saving, setSaving] = useState(false);
 
   const choose = async () => {
-    const path = await open({
-      multiple: false,
-      directory: false,
-      filters: [
-        {
-          name: t("dictionary.import.files"),
-          extensions: ["txt", "csv", "tsv"],
-        },
-      ],
-    });
-    if (typeof path !== "string") return;
     try {
-      // The decoder drops a UTF-8 BOM.
-      const text = new TextDecoder("utf-8").decode(await readFile(path));
+      const path = await open({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: t("dictionary.import.files"),
+            extensions: ["txt", "csv", "tsv"],
+          },
+        ],
+      });
+      if (typeof path !== "string") return;
+      // A file this big is not a word list: refuse it before reading it into the page.
+      if ((await stat(path)).size > MAX_BYTES) {
+        toast.error(t("dictionary.import.tooBig", { max: MAX_BYTES >> 20 }));
+        return;
+      }
+      // Anything that is not UTF-8 (cp1252, UTF-16) throws instead of turning into garbage.
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(
+        await readFile(path),
+      );
       const name = path.split(/[\\/]/).pop() ?? path;
       setFile({ name, preview: previewImport(text, entries) });
     } catch (error) {
@@ -144,25 +154,39 @@ export const ImportDictionary: React.FC<ImportDictionaryProps> = ({
 
   const cancel = () => setFile(null);
 
+  // The toast counts what the store holds after the writes: `updateSetting` rolls a failed
+  // write back without throwing.
   const confirm = async () => {
     if (!file) return;
+    const stored = () => {
+      const settings = useSettingsStore.getState().settings;
+      return (
+        (settings?.custom_words?.length ?? 0) +
+        (settings?.dictionary_replacements?.length ?? 0)
+      );
+    };
+    const before = stored();
+    const total = file.preview.added.length;
     setSaving(true);
-    const lists = importedLists(
-      file.preview,
-      getSetting("custom_words") ?? [],
-      getSetting("dictionary_replacements") ?? [],
-    );
-    if (lists.terms) await updateSetting("custom_words", lists.terms);
-    if (lists.replacements)
-      await updateSetting("dictionary_replacements", lists.replacements);
-    setSaving(false);
-    setFile(null);
-    toast.success(
-      t("dictionary.import.done", { count: file.preview.added.length }),
-    );
+    try {
+      const lists = importedLists(
+        file.preview,
+        getSetting("custom_words") ?? [],
+        getSetting("dictionary_replacements") ?? [],
+      );
+      if (lists.terms) await updateSetting("custom_words", lists.terms);
+      if (lists.replacements)
+        await updateSetting("dictionary_replacements", lists.replacements);
+    } finally {
+      setSaving(false);
+      setFile(null);
+    }
+    const count = stored() - before;
+    if (count === total) toast.success(t("dictionary.import.done", { count }));
+    else toast.error(t("dictionary.import.saveError", { count, total }));
   };
 
-  const count = file?.preview.error ? 0 : (file?.preview.added.length ?? 0);
+  const count = file?.preview.added.length ?? 0;
   return (
     <>
       <Button

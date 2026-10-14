@@ -130,13 +130,14 @@
       "files": "Word list (.txt, .csv)",
       "format": "One entry per line: a term, or the spoken and written forms separated by a comma, semicolon or tab. Blank lines and lines starting with # are skipped. Only new entries are added; nothing in the dictionary changes.",
       "readError": "Couldn't read the file. It must be UTF-8 text.",
+      "tooBig": "The file is over {{max}} MB; it does not look like a word list.",
       "counts": {
         "terms_one": "{{count}} new term",
         "terms_other": "{{count}} new terms",
         "replacements_one": "{{count}} new spoken → written pair",
         "replacements_other": "{{count}} new spoken → written pairs",
-        "duplicates_one": "{{count}} already in the dictionary",
-        "duplicates_other": "{{count}} already in the dictionary",
+        "duplicates_one": "{{count}} repeat (already in the dictionary or earlier in the file)",
+        "duplicates_other": "{{count}} repeats (already in the dictionary or earlier in the file)",
         "invalid_one": "{{count}} invalid line",
         "invalid_other": "{{count}} invalid lines"
       },
@@ -154,7 +155,8 @@
       "cancel": "Cancel",
       "confirm": "Import {{count}}",
       "done_one": "{{count}} entry imported",
-      "done_other": "{{count}} entries imported"
+      "done_other": "{{count}} entries imported",
+      "saveError": "Not everything was saved: {{count}} of {{total}} entries. Try again."
     }
   },
   "settingsPage": {

@@ -130,13 +130,14 @@
       "files": "Lista de termos (.txt, .csv)",
       "format": "Uma entrada por linha: um termo, ou a forma falada e a escrita separadas por vírgula, ponto e vírgula ou tab. Linhas vazias e linhas que começam com # ficam de fora. Só entra o que é novo; nada do dicionário muda.",
       "readError": "Não deu para ler o arquivo. Ele precisa ser texto em UTF-8.",
+      "tooBig": "O arquivo passa de {{max}} MB; não parece uma lista de termos.",
       "counts": {
         "terms_one": "{{count}} termo novo",
         "terms_other": "{{count}} termos novos",
         "replacements_one": "{{count}} par falado → escrito novo",
         "replacements_other": "{{count}} pares falado → escrito novos",
-        "duplicates_one": "{{count}} já está no dicionário",
-        "duplicates_other": "{{count}} já estão no dicionário",
+        "duplicates_one": "{{count}} repetida (já no dicionário ou antes no arquivo)",
+        "duplicates_other": "{{count}} repetidas (já no dicionário ou antes no arquivo)",
         "invalid_one": "{{count}} linha inválida",
         "invalid_other": "{{count}} linhas inválidas"
       },
@@ -154,7 +155,8 @@
       "cancel": "Cancelar",
       "confirm": "Importar {{count}}",
       "done_one": "{{count}} entrada importada",
-      "done_other": "{{count}} entradas importadas"
+      "done_other": "{{count}} entradas importadas",
+      "saveError": "Nem tudo foi gravado: {{count}} de {{total}} entradas. Tente de novo."
     }
   },
   "settingsPage": {
