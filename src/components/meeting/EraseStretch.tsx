@@ -16,7 +16,8 @@ export interface Stretch {
   taken: Set<number>;
 }
 
-const marker = (line: MeetingLine) => line.omitted || line.erased;
+const marker = (line: MeetingLine) =>
+  line.omitted || line.erased || line.resumed;
 
 /** Whether erasing `[t0, t1]` takes the line: it crosses it (touching an edge is not enough) or
  *  fits in it. The same rule as the app's `MeetingSegment::crosses`. */

@@ -90,6 +90,21 @@ export function emptyHint(
   );
 }
 
+/** How long a deleted dictation can still come back with the toast's "Undo". */
+export const DELETE_UNDO_MS = 5000;
+
+/** `entry` back in `list` (newest first) after an undone delete, where its time puts it. */
+export function restoreEntry(
+  list: readonly HistoryEntry[],
+  entry: HistoryEntry,
+): HistoryEntry[] {
+  if (list.some((e) => e.id === entry.id)) return [...list];
+  const at = list.findIndex((e) => e.timestamp < entry.timestamp);
+  return at < 0
+    ? [...list, entry]
+    : [...list.slice(0, at), entry, ...list.slice(at)];
+}
+
 /** Milliseconds between the last keystroke and the search. */
 export const SEARCH_DEBOUNCE_MS = 200;
 

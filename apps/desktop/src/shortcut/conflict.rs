@@ -1,7 +1,9 @@
 //! Whether a key combination may be saved for an action: not a lone typing key, not one Windows
 //! or common apps own, not already taken by another action. A combination that only contains, or
-//! is contained in, another one is saved with a warning. Pure: compares shortcut strings and never
-//! touches a backend.
+//! is contained in, another one is saved with a warning, except next to the meeting shortcut:
+//! starting a recording must never be a side effect of another shortcut (ADR-0005), so the
+//! meeting shortcut needs a key besides modifiers and may not overlap another one either way.
+//! Pure: compares shortcut strings and never touches a backend.
 //!
 //! The reserved list is data and applies on every platform (ADR-0007).
 
@@ -31,7 +33,16 @@ pub enum ShortcutRefusal {
     /// A letter, digit, punctuation or editing key alone, or one modifier alone, would get in the
     /// way of typing; Esc alone only cancels.
     LoneKey,
+    /// The meeting shortcut with modifiers only: they are held on the way to other shortcuts, and
+    /// a recording only starts on purpose (ADR-0005).
+    MeetingNeedsKey,
+    /// The combination contains, or is contained in, `action`'s, and one of the two is the meeting
+    /// shortcut: holding one on the way to the other could start or stop a recording.
+    MeetingOverlap { action: String },
 }
+
+/// The action that starts and stops a meeting recording.
+pub const MEETING_ACTION: &str = "meeting_toggle";
 
 /// Holding `smaller` (modifiers only) on the way to `larger` may fire the other action.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -177,6 +188,9 @@ pub fn check(
     if lone_key_refused(&combo, action) {
         return Err(ShortcutRefusal::LoneKey);
     }
+    if action == MEETING_ACTION && combo.key.is_none() {
+        return Err(ShortcutRefusal::MeetingNeedsKey);
+    }
     if RESERVED_COMBOS.iter().any(|r| same_keys(&combo, r)) {
         return Err(ShortcutRefusal::Reserved);
     }
@@ -199,7 +213,7 @@ pub fn check(
                 });
             }
             // Holding the action's own other combination fires the same action.
-            if overlap.is_none() && id != action {
+            if id != action {
                 let pair = if part_of(&combo, &other) {
                     Some((raw, other_raw))
                 } else if part_of(&other, &combo) {
@@ -207,6 +221,12 @@ pub fn check(
                 } else {
                     None
                 };
+                if pair.is_some() && (action == MEETING_ACTION || id == MEETING_ACTION) {
+                    return Err(ShortcutRefusal::MeetingOverlap { action: id.clone() });
+                }
+                if overlap.is_some() {
+                    continue;
+                }
                 overlap = pair.map(|(smaller, larger)| ShortcutOverlap {
                     action: id.clone(),
                     smaller: smaller.to_string(),
@@ -216,6 +236,65 @@ pub fn check(
         }
     }
     Ok(overlap)
+}
+
+/// Whether a refusal is one of the meeting rules (ADR-0005), which also apply to what is already
+/// saved: those combinations are never registered.
+pub fn is_meeting_refusal(refusal: &ShortcutRefusal) -> bool {
+    matches!(
+        refusal,
+        ShortcutRefusal::MeetingNeedsKey | ShortcutRefusal::MeetingOverlap { .. }
+    )
+}
+
+/// The meeting binding without the combinations the meeting rules refuse, so a combination saved
+/// before them (modifiers only, or one overlapping another shortcut) never starts a recording.
+/// Any other binding comes back as it is.
+pub fn registrable(
+    binding: &ShortcutBinding,
+    bindings: &HashMap<String, ShortcutBinding>,
+) -> ShortcutBinding {
+    let mut safe = binding.clone();
+    if binding.id != MEETING_ACTION {
+        return safe;
+    }
+    for (slot, raw) in slots(binding) {
+        if let Err(refusal) = check(raw, &binding.id, slot, bindings) {
+            if is_meeting_refusal(&refusal) {
+                match slot {
+                    BindingSlot::Primary => safe.current_binding.clear(),
+                    BindingSlot::Alternate => safe.alternate_binding.clear(),
+                }
+            }
+        }
+    }
+    safe
+}
+
+/// What the saved shortcuts already get wrong, slot by slot, in action order: the meeting rules
+/// they break and the overlaps they only warn about. The shortcuts dialog shows them on opening.
+pub fn standing_problems(
+    bindings: &HashMap<String, ShortcutBinding>,
+) -> Vec<(
+    String,
+    BindingSlot,
+    String,
+    Result<ShortcutOverlap, ShortcutRefusal>,
+)> {
+    let mut ids: Vec<&String> = bindings.keys().collect();
+    ids.sort();
+    let mut problems = Vec::new();
+    for id in ids {
+        for (slot, raw) in slots(&bindings[id]) {
+            let found = match check(raw, id, slot, bindings) {
+                Ok(Some(overlap)) => Ok(overlap),
+                Err(refusal) if is_meeting_refusal(&refusal) => Err(refusal),
+                _ => continue,
+            };
+            problems.push((id.clone(), slot, raw.to_string(), found));
+        }
+    }
+    problems
 }
 
 #[cfg(test)]
@@ -254,6 +333,8 @@ mod tests {
             Err(ShortcutRefusal::InUse { action, slot, .. }) => format!("in use {action} {slot:?}"),
             Err(ShortcutRefusal::Reserved) => "reserved".to_string(),
             Err(ShortcutRefusal::LoneKey) => "lone key".to_string(),
+            Err(ShortcutRefusal::MeetingNeedsKey) => "meeting needs key".to_string(),
+            Err(ShortcutRefusal::MeetingOverlap { action }) => format!("meeting overlap {action}"),
         }
     }
 
@@ -300,10 +381,16 @@ mod tests {
             "ctrl_left+space paste_last 1: ok",
             "alt+ctrl paste_last 1: ok",
             // Holding modifiers on the way to a larger combination warns, both ways.
-            "ctrl+super+alt meeting_toggle 1: overlap transcribe ctrl_left+super < ctrl+super+alt",
-            "alt+shift meeting_toggle 1: overlap copy_last alt+shift < alt+shift+x",
+            "ctrl+super+alt paste_last 1: overlap transcribe ctrl_left+super < ctrl+super+alt",
+            "alt+shift paste_last 1: overlap copy_last alt+shift < alt+shift+x",
             // The action's own other combination is no overlap.
             "ctrl+super+alt transcribe 1: ok",
+            // The meeting shortcut needs a key: modifiers alone are held on the way to others.
+            "ctrl+shift meeting_toggle 1: meeting needs key",
+            "alt+shift meeting_toggle 2: meeting needs key",
+            // And it may not overlap another shortcut, either way (ADR-0005).
+            "ctrl+super+m meeting_toggle 1: meeting overlap transcribe",
+            "ctrl+alt+m meeting_toggle 1: ok",
             // A key with more modifiers does not fire the one with fewer.
             "ctrl+shift+alt+space meeting_toggle 1: ok",
         ];
@@ -315,6 +402,87 @@ mod tests {
             let slot = if slot == "1" { Pri } else { Alt };
             assert_eq!(verdict(raw, action, slot), expected, "{input}");
         }
+    }
+
+    #[test]
+    fn meeting_overlap_is_refused_from_either_side() {
+        let mut with_meeting = bindings();
+        if let Some(meeting) = with_meeting.get_mut(MEETING_ACTION) {
+            meeting.current_binding = "ctrl+alt+m".to_string();
+        }
+        // Another action whose modifiers are held on the way to the meeting shortcut.
+        assert_eq!(
+            check(
+                "ctrl+alt",
+                "paste_last",
+                BindingSlot::Primary,
+                &with_meeting
+            ),
+            Err(ShortcutRefusal::MeetingOverlap {
+                action: MEETING_ACTION.to_string()
+            })
+        );
+        // Unrelated combinations still save, and other overlaps still only warn.
+        assert_eq!(
+            check(
+                "ctrl+alt+p",
+                "paste_last",
+                BindingSlot::Primary,
+                &with_meeting
+            ),
+            Ok(None)
+        );
+        assert!(matches!(
+            check(
+                "alt+shift",
+                "paste_last",
+                BindingSlot::Primary,
+                &with_meeting
+            ),
+            Ok(Some(_))
+        ));
+    }
+
+    #[test]
+    fn saved_meeting_combinations_that_break_the_rules_are_not_registered() {
+        let mut saved = bindings();
+        if let Some(meeting) = saved.get_mut(MEETING_ACTION) {
+            meeting.current_binding = "ctrl+super".to_string();
+            meeting.alternate_binding = "ctrl+alt+m".to_string();
+        }
+        let safe = registrable(&saved[MEETING_ACTION], &saved);
+        assert_eq!(safe.current_binding, "", "modifiers only");
+        assert_eq!(safe.alternate_binding, "ctrl+alt+m");
+        // Other actions are registered as saved.
+        let transcribe = registrable(&saved["transcribe"], &saved);
+        assert_eq!(
+            transcribe.current_binding,
+            saved["transcribe"].current_binding
+        );
+        assert_eq!(
+            transcribe.alternate_binding,
+            saved["transcribe"].alternate_binding
+        );
+
+        let problems = standing_problems(&saved);
+        let meeting: Vec<_> = problems
+            .iter()
+            .filter(|(id, ..)| id == MEETING_ACTION)
+            .map(|(_, slot, raw, found)| (*slot, raw.as_str(), found.clone()))
+            .collect();
+        assert_eq!(
+            meeting,
+            [(
+                BindingSlot::Primary,
+                "ctrl+super",
+                Err(ShortcutRefusal::MeetingNeedsKey)
+            )]
+        );
+        // Dictation's Ctrl+Win is the same keys as the meeting's Ctrl+Super: not an overlap, a
+        // duplicate the save refused; the standing list reports only rules and overlaps.
+        assert!(problems
+            .iter()
+            .all(|(_, _, _, found)| !matches!(found, Err(ShortcutRefusal::InUse { .. }))));
     }
 
     #[test]

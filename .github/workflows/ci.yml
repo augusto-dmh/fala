@@ -74,6 +74,7 @@ jobs:
       - run: bunx tsc --noEmit
       - run: bun run check:translations
       - run: bun run check:model-languages
+      - run: bun run test:ui
 
   deny:
     runs-on: ubuntu-24.04

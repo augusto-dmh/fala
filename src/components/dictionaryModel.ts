@@ -44,7 +44,9 @@ export const normalizeTerm = (word: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const normalizeSpoken = (spoken: string) => spoken.replace(/\s+/g, " ").trim();
+/** A spoken form as the dictionary keeps it: single spaces. */
+export const normalizeSpoken = (spoken: string) =>
+  spoken.replace(/\s+/g, " ").trim();
 
 /** Every entry in one list: terms, then pairs, then snippets, each in the order it was added. */
 export function entriesOf(

@@ -1,10 +1,10 @@
 import { MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { commands, type MeetingSummary } from "@/bindings";
+import { commands, type MeetingSeries, type MeetingSummary } from "@/bindings";
 import { useDismiss } from "../../hooks/useDismiss";
 import { Button } from "../ui/Button";
 import { dayLabel, startOf, startTime } from "./meetingDays";
-import { clock, type Translate } from "./meetingModel";
+import { clock, titleOf, type Translate } from "./meetingModel";
 
 const MODE_KEYS: Record<string, string> = {
   meeting: "meeting.recorder.online",
@@ -25,15 +25,71 @@ export function metaLine(
     dayLabel(startOf(summary), now, locale, t),
     startTime(summary, locale),
     // While it records the stored duration is stale; the live time is in the recorder.
+    // A Granola import has no recorded time: no "00:00".
     recording
       ? t("meeting.home.state.recording")
       : summary.started_at === null
         ? t("meeting.list.draft")
-        : clock(summary.recorded_ms),
-  ];
+        : summary.imported_from === "granola"
+          ? null
+          : clock(summary.recorded_ms),
+  ].filter((part): part is string => part !== null);
   const mode = MODE_KEYS[summary.mode];
   if (mode) parts.push(t(mode));
   return parts.join(" · ");
+}
+
+export interface SeriesLineProps {
+  series?: MeetingSeries | null;
+  onOpen: (id: string) => void;
+  /** "ver todas (N)": the list filtered by the series. */
+  onAll: (series: MeetingSeries) => void;
+  locale: string;
+  t: Translate;
+  /** "Today" for the dates; the tests pin it. */
+  now?: Date;
+}
+
+/** "Mesma série:" and the meetings before this one, by day; "ver todas (N)" when there are more. */
+export function SeriesLine({
+  series,
+  onOpen,
+  onAll,
+  locale,
+  t,
+  now = new Date(),
+}: SeriesLineProps) {
+  if (!series) return null;
+  const more = series.total > series.earlier.length + 1;
+  const days = series.earlier.map((s) => dayLabel(startOf(s), now, locale, t));
+  // Two on the same day are told apart by the time.
+  const label = (session: MeetingSummary, i: number) =>
+    days.indexOf(days[i]) === days.lastIndexOf(days[i])
+      ? days[i]
+      : `${days[i]} ${startTime(session, locale)}`;
+  const link =
+    "rounded underline decoration-dotted underline-offset-2 hover:text-text focus-visible:focus-ring";
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-caption text-text-2">
+      <span>{t("meeting.series.same")}</span>
+      {series.earlier.map((session, i) => (
+        <button
+          key={session.id}
+          type="button"
+          className={link}
+          title={titleOf(session, t)}
+          onClick={() => onOpen(session.id)}
+        >
+          {label(session, i)}
+        </button>
+      ))}
+      {more && (
+        <button type="button" className={link} onClick={() => onAll(series)}>
+          {t("meeting.series.all", { n: series.total })}
+        </button>
+      )}
+    </p>
+  );
 }
 
 export interface TitleFieldProps {

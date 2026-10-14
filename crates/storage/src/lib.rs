@@ -18,7 +18,8 @@
 //! `meeting_trash`, aditiva, guarda as sessões na lixeira por 30 dias; o `.md` delas fica em
 //! `Reuniões/.lixeira/`, e a lista, a busca e o MCP não as veem.
 //! `meeting_directory` junta as pessoas das reuniões por nome, sem tabela: é uma consulta sobre
-//! `meeting_participants` e `meeting_speakers`.
+//! `meeting_participants` e `meeting_speakers`. `meeting_series` junta as reuniões pelo título sem
+//! datas nem numeração, também sem tabela.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
@@ -33,6 +34,7 @@ mod meeting_notes;
 mod meeting_omissions;
 mod meeting_people;
 mod meeting_search;
+mod meeting_series;
 mod meeting_takes;
 mod meeting_trash;
 mod meetings;
@@ -56,6 +58,7 @@ pub use meeting_imports::{ImportOutcome, GRANOLA};
 pub use meeting_omissions::{omitted_segment, OMITTED_TEXT};
 pub use meeting_people::{MeetingSpeaker, NameSuggestion};
 pub use meeting_search::{MeetingHit, MATCH_END, MATCH_START};
+pub use meeting_series::{series_of, Series};
 pub use meeting_takes::{on_timeline, resumed_segment, MeetingTake};
 pub use meeting_trash::{TrashedMeeting, TRASH_DAYS};
 pub use meetings::{MeetingRecord, MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};

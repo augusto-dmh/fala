@@ -155,7 +155,8 @@ export interface TranscriptViewProps {
 /** The nearest line before `index` that someone speaks (markers skipped). */
 function lineBefore(lines: MeetingLine[], index: number) {
   for (let i = index - 1; i >= 0; i--) {
-    if (!lines[i].omitted && !lines[i].erased) return lines[i];
+    if (!lines[i].omitted && !lines[i].erased && !lines[i].resumed)
+      return lines[i];
   }
   return undefined;
 }
@@ -176,17 +177,24 @@ export function TranscriptView(props: TranscriptViewProps) {
   return (
     <ol className="space-y-1">
       {lines.map((line, index) => {
-        // A span of the mic a dictation zeroed (ADR-0015), or a stretch the person erased: a
-        // marker, not a bubble.
-        if (line.omitted || line.erased) {
+        // A span of the mic a dictation zeroed (ADR-0015), a stretch the person erased or where a
+        // resumed recording starts: a marker, not a bubble.
+        const kind = line.erased
+          ? "erased"
+          : line.resumed
+            ? "resumed"
+            : line.omitted
+              ? "omitted"
+              : null;
+        if (kind !== null) {
           return (
             <li
               key={line.seq}
               id={segmentAnchor(line.seq)}
-              data-speaker={line.erased ? "erased" : "omitted"}
+              data-speaker={kind}
               className="py-1 text-center text-caption text-text-2 italic"
             >
-              {t(line.erased ? "meeting.erased" : "meeting.omitted")}
+              {t(`meeting.${kind}`)}
               {timed && <> · {clock(line.t0_ms)}</>}
             </li>
           );

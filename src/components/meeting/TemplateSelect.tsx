@@ -55,10 +55,21 @@ export function templateGroups(
   };
 }
 
+/** The session's series, for "Usar sempre em “…”" under the templates. */
+export interface SeriesPick {
+  name: string;
+  /** The picked template is the one the series always uses. */
+  always: boolean;
+  /** The session has no pick of its own: the series' template is in use. */
+  inherited: boolean;
+  onAlways: () => void;
+}
+
 export interface TemplateSelectProps {
   templates: MeetingTemplate[];
   value: string;
   onChange: (id: string) => void;
+  series?: SeriesPick;
 }
 
 export interface TemplateMenuProps extends TemplateSelectProps {
@@ -77,7 +88,7 @@ export function TemplateMenu(props: TemplateMenuProps) {
   const items = () =>
     Array.from(
       list.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitemradio"]',
+        '[role="menuitemradio"], [role="menuitemcheckbox"]',
       ) ?? [],
     );
   useEffect(() => {
@@ -162,6 +173,29 @@ export function TemplateMenu(props: TemplateMenuProps) {
             {group(t("meeting.templates.user"), user)}
           </>
         )}
+        {props.series && (
+          <div className="mt-1 border-t border-border pt-1">
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={props.series.always}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-start text-body text-text transition-colors hover:bg-surface-2 focus-visible:focus-ring"
+              onClick={() => {
+                props.series?.onAlways();
+                props.onPicked?.();
+              }}
+            >
+              <Check
+                size={16}
+                aria-hidden="true"
+                className={props.series.always ? "" : "invisible"}
+              />
+              <span className="truncate">
+                {t("meeting.series.always", { name: props.series.name })}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -197,20 +231,22 @@ export function TemplateSelect(props: TemplateSelectButtonProps) {
   const current = props.templates.find(
     (template) => template.id === props.value,
   );
+  const name =
+    current && props.series?.inherited
+      ? `${current.name} ${t("meeting.series.default")}`
+      : current?.name;
   return (
     <div ref={box} className="relative">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`${t("meeting.view.template")}: ${current?.name ?? ""}`}
-        title={current?.name}
+        aria-label={`${t("meeting.view.template")}: ${name ?? ""}`}
+        title={name}
         onClick={() => setOpen(!open)}
         className="flex max-w-56 items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-body text-text transition-colors hover:bg-text/5 focus-visible:focus-ring"
       >
-        <span className="truncate">
-          {current?.name ?? t("meeting.view.template")}
-        </span>
+        <span className="truncate">{name ?? t("meeting.view.template")}</span>
         <ChevronDown size={16} strokeWidth={1.5} aria-hidden="true" />
       </button>
       {open && (
