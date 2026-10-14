@@ -122,6 +122,8 @@ fn a_take_continues_the_timeline_and_its_transcript_comes_after() {
         std::slice::from_ref(&done)
     );
 
+    // Um ditado durante a tomada, anotado já na linha do tempo da sessão.
+    store.add_meeting_omission(id, 80_000, 81_000).unwrap();
     // A transcrição da tomada, em tempos dela: a Pessoa 1 dela é outra pessoa (a 2 da sessão).
     store
         .append_meeting_segments(
@@ -157,6 +159,12 @@ fn a_take_continues_the_timeline_and_its_transcript_comes_after() {
                 SegmentSpeaker::Person(2),
                 "Eu cheguei agora.".to_string()
             ),
+            (
+                6,
+                80_000,
+                SegmentSpeaker::Omitted,
+                "[trecho de ditado omitido]".to_string()
+            ),
         ]
     );
     // O nome dado à Pessoa 1 fica.
@@ -178,8 +186,18 @@ fn a_take_continues_the_timeline_and_its_transcript_comes_after() {
             .into_iter()
             .map(|(_, _, speaker, _)| speaker)
             .collect::<Vec<_>>(),
-        [SegmentSpeaker::Resumed, SegmentSpeaker::Me]
+        [
+            SegmentSpeaker::Resumed,
+            SegmentSpeaker::Me,
+            SegmentSpeaker::Omitted
+        ]
     );
+    // Na lixeira, não retoma.
+    store.trash_meeting(id, at(17, 0, 0)).unwrap();
+    assert!(matches!(
+        store.start_meeting_take(id, at(17, 1, 0)),
+        Err(StorageError::NotResumable(_))
+    ));
 }
 
 #[test]

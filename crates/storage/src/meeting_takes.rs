@@ -12,7 +12,7 @@ use fala_meeting::{SessionId, SessionMode, StopReason};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::meetings::{
-    bad, insert_segments, mode_str, ms, overlaps, read_segment, reason_str, rfc3339, sort_segments,
+    bad, insert_segments, mode_str, ms, read_segment, reason_str, rfc3339, with_markers,
     MeetingSegment, SegmentChannel, SegmentSpeaker,
 };
 use crate::{StorageError, Store};
@@ -106,7 +106,10 @@ impl Store {
         let Some((mode, ended_at, recorded_ms)) = row else {
             return Err(StorageError::NotFound(id.to_string()));
         };
-        if ended_at.is_none() || mode == mode_str(SessionMode::Import) {
+        // Nem com uma tomada que ficou aberta (o processo morreu nela), nem na lixeira.
+        let open = takes(&tx, id)?.iter().any(|t| t.ended_at.is_none());
+        let trashed = crate::meeting_trash::trashed_at(&tx, id)?.is_some();
+        if ended_at.is_none() || mode == mode_str(SessionMode::Import) || open || trashed {
             return Err(StorageError::NotResumable(id.to_string()));
         }
         let take: u32 = tx.query_row(
@@ -181,8 +184,9 @@ impl Store {
 
     /// Acrescenta a transcrição de uma tomada (tempos dela) depois dos trechos que existem: os
     /// tempos ganham `offset_ms`, a "Pessoa N" do sistema vira a N depois da maior da sessão (os
-    /// nomes já dados ficam), e nada entra dentro de um trecho apagado. Os trechos que existem
-    /// guardam o número (as notas continuam certas).
+    /// nomes já dados ficam), e nada entra dentro de um trecho apagado. Os marcadores da sessão
+    /// voltam das tabelas, inclusive as omissões do ditado da tomada. Os trechos que existem,
+    /// todos antes do início da tomada, guardam o número.
     pub fn append_meeting_segments(
         &mut self,
         id: SessionId,
@@ -205,18 +209,12 @@ impl Store {
             )?
             .query_map([id.to_string()], read_segment)?
             .collect::<Result<_, _>>()?;
-        let erased = crate::meeting_erasures::erasures(&tx, id)?;
-        all.retain(|s| s.speaker != SegmentSpeaker::Resumed);
+        all.retain(|s| !s.speaker.is_marker());
         let spoken = segments
             .into_iter()
             .filter(|s| !s.speaker.is_marker())
             .collect();
-        let mut all = on_timeline(all, spoken, offset_ms);
-        all.retain(|s| {
-            s.speaker.is_marker() || !erased.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
-        });
-        all.extend(takes(&tx, id)?.iter().map(resumed_segment));
-        sort_segments(&mut all);
+        let all = with_markers(&tx, id, on_timeline(all, spoken, offset_ms))?;
         tx.execute(
             "DELETE FROM meeting_segments WHERE meeting_id = ?1",
             [id.to_string()],

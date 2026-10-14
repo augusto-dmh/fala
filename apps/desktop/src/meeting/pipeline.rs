@@ -569,8 +569,9 @@ impl MeetingManager {
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
-        let audio_available =
-            super::clip::session_audio_available(&self.takes_audio(id).unwrap_or_default());
+        let audio_available = self
+            .takes_audio(id)
+            .is_ok_and(|takes| super::clip::session_audio_available(&takes));
         let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
         self.with_store(|store| {
@@ -724,6 +725,11 @@ impl MeetingManager {
         for take in self.takes_audio(id)? {
             if needs_retain(&take.dir) {
                 self.retain(id, &take.dir);
+            }
+            // A take whose capture never opened has no audio: the others still transcribe.
+            if take.offset_ms > 0 && !super::clip::audio_available(&take.dir) {
+                log::warn!("meeting {id}: a take at {} ms has no audio", take.offset_ms);
+                continue;
             }
             let recording = MeetingRecording::from_session_dir(&take.dir, record.mode)?;
             let found = scribe.transcribe_session(&recording, cancel, &mut |progress| {

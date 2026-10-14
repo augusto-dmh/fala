@@ -226,6 +226,33 @@ pub(crate) fn overlaps(segment: &MeetingSegment, t0: u64, t1: u64) -> bool {
     (segment.t0_ms < t1 && segment.t1_ms > t0) || (segment.t0_ms >= t0 && segment.t1_ms <= t1)
 }
 
+/// Os trechos falados e as linhas marcadoras da sessão, ordenados: os marcadores vêm das tabelas
+/// (omissões do ditado, trechos apagados, tomadas), nunca de quem transcreve, e nada do que o
+/// ASR devolver dentro de um trecho apagado fica.
+pub(crate) fn with_markers(
+    tx: &rusqlite::Transaction<'_>,
+    id: SessionId,
+    mut segments: Vec<MeetingSegment>,
+) -> Result<Vec<MeetingSegment>, StorageError> {
+    let erasures = crate::meeting_erasures::erasures(tx, id)?;
+    segments.retain(|s| {
+        !s.speaker.is_marker() && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
+    });
+    segments.extend(crate::meeting_omissions::omitted_segments(tx, id)?);
+    segments.extend(
+        erasures
+            .iter()
+            .map(|&(t0, t1)| crate::meeting_erasures::erased_segment(t0, t1)),
+    );
+    segments.extend(
+        crate::meeting_takes::takes(tx, id)?
+            .iter()
+            .map(crate::meeting_takes::resumed_segment),
+    );
+    sort_segments(&mut segments);
+    Ok(segments)
+}
+
 /// Por `t0_ms`; no empate, o marcador de uma tomada antes de quem fala nela e o mic antes do
 /// sistema: a ordem que dá o `seq` 1..n.
 pub(crate) fn sort_segments(segments: &mut [MeetingSegment]) {
@@ -515,28 +542,11 @@ impl Store {
     pub fn replace_meeting_segments(
         &mut self,
         id: SessionId,
-        mut segments: Vec<MeetingSegment>,
+        segments: Vec<MeetingSegment>,
         transcribed_at: DateTime<FixedOffset>,
     ) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
-        // Os marcadores vêm das tabelas da sessão, nunca de quem transcreve, e nada do que o ASR
-        // devolver dentro de um trecho apagado volta.
-        let erasures = crate::meeting_erasures::erasures(&tx, id)?;
-        segments.retain(|s| {
-            !s.speaker.is_marker() && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
-        });
-        segments.extend(crate::meeting_omissions::omitted_segments(&tx, id)?);
-        segments.extend(
-            erasures
-                .iter()
-                .map(|&(t0, t1)| crate::meeting_erasures::erased_segment(t0, t1)),
-        );
-        segments.extend(
-            crate::meeting_takes::takes(&tx, id)?
-                .iter()
-                .map(crate::meeting_takes::resumed_segment),
-        );
-        sort_segments(&mut segments);
+        let segments = with_markers(&tx, id, segments)?;
         let changed = tx.execute(
             "UPDATE meetings SET transcribed_at = ?2 WHERE id = ?1",
             params![id.to_string(), rfc3339(&transcribed_at)],
