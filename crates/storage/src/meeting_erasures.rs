@@ -89,10 +89,7 @@ impl Store {
         {
             (t0_ms, t1_ms) = (t0_ms.min(a), t1_ms.max(b));
         }
-        let spoken = |s: &MeetingSegment| {
-            !matches!(s.speaker, SegmentSpeaker::Omitted | SegmentSpeaker::Erased)
-                && overlaps(s, t0_ms, t1_ms)
-        };
+        let spoken = |s: &MeetingSegment| !s.speaker.is_marker() && overlaps(s, t0_ms, t1_ms);
         let merged = |s: &MeetingSegment| {
             s.speaker == SegmentSpeaker::Erased && s.t0_ms <= t1_ms && s.t1_ms >= t0_ms
         };

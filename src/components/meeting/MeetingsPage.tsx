@@ -14,6 +14,7 @@ import {
   type MeetingOrphan,
   type MeetingOutputs,
   type MeetingPerson,
+  type MeetingSeries,
   type MeetingSearchHit,
   type MeetingStatus,
   type MeetingSummary,
@@ -101,6 +102,13 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const [title, setTitle] = useState("");
   const [askConsent, setAskConsent] = useState(takeConsentRequest);
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
+  // "Retomar" waiting for the third-party notice, like a draft.
+  const [pendingContinue, setPendingContinue] = useState<string | null>(null);
+  // Sessions with notes recording a take: when its transcript is done, offer to write them again.
+  const takesWithNotes = useRef(new Set<string>());
+  const [takeTranscribed, setTakeTranscribed] = useState<Set<string>>(
+    new Set(),
+  );
   const [transcribing, setTranscribing] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   // Sessions whose last notes generation failed; the stage before `failed` says which step.
@@ -146,12 +154,18 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const [personSessions, setPersonSessions] = useState<MeetingSummary[] | null>(
     null,
   );
-  // "Meetings" in the rail leaves the trash and the people too.
+  // "ver todas (N)" under a session's title: the list shows only that series.
+  const [series, setSeries] = useState<MeetingSeries | null>(null);
+  const [seriesSessions, setSeriesSessions] = useState<MeetingSummary[] | null>(
+    null,
+  );
+  // "Meetings" in the rail leaves the trash, the people and the series too.
   useEffect(() => {
     if (home > 0) {
       setShowTrash(false);
       setTab("meetings");
       setPerson(null);
+      setSeries(null);
     }
   }, [home]);
 
@@ -253,6 +267,23 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     };
   }, [personKey, onList, sessions, setError]);
 
+  const seriesKey = series?.key ?? null;
+  useEffect(() => {
+    if (seriesKey === null || !onList) {
+      if (seriesKey === null) setSeriesSessions(null);
+      return;
+    }
+    let current = true;
+    void commands.seriesMeetings(seriesKey).then((result) => {
+      if (!current) return;
+      if (result.status === "ok") setSeriesSessions(result.data);
+      else setError(result.error);
+    });
+    return () => {
+      current = false;
+    };
+  }, [seriesKey, onList, sessions, setError]);
+
   useEffect(() => {
     void commands
       .meetingStatus()
@@ -295,6 +326,9 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
         }
         if (stage.stage === "failed" && before === "notes") {
           setNotesFailed((ids) => new Set(ids).add(id));
+        }
+        if (stage.stage === "done" && takesWithNotes.current.delete(id)) {
+          setTakeTranscribed((current) => new Set(current).add(id));
         }
         if (stage.stage === "done" || stage.stage === "failed") {
           setTranscribing((current) => (current === id ? null : current));
@@ -359,6 +393,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
 
   const start = async (draftId: string | null) => {
     setError(null);
+    setPendingContinue(null);
     const result = await commands.startMeeting(mode, title, draftId);
     if (result.status === "ok") {
       setStatus(result.data);
@@ -370,6 +405,26 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       result.error.kind === "consent_required"
     ) {
       setPendingDraft(draftId);
+      setAskConsent(true);
+    } else {
+      setError(result.error);
+    }
+  };
+
+  // "Retomar": a new take of a finished session, from this click only (ADR-0005).
+  const continueSession = async (id: string) => {
+    setError(null);
+    const hadNotes = selected?.summary.id === id && selected.notes_md !== null;
+    const result = await commands.continueMeeting(id);
+    if (result.status === "ok") {
+      setStatus(result.data);
+      if (hadNotes) takesWithNotes.current.add(id);
+      await open(id);
+    } else if (
+      typeof result.error === "object" &&
+      result.error.kind === "consent_required"
+    ) {
+      setPendingContinue(id);
       setAskConsent(true);
     } else {
       setError(result.error);
@@ -560,7 +615,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       onStop={() => void act(commands.stopMeeting)}
       onExtend={() => void act(commands.extendMeetingCap)}
       templates={templates}
-      template={live?.notes_template ?? null}
+      template={live?.notes_template ?? live?.series?.template ?? null}
       onTemplateChange={(templateId) => {
         if (!live) return;
         setLive({ ...live, notes_template: templateId });
@@ -595,9 +650,15 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           onAccept={async () => {
             setAskConsent(false);
             await commands.acceptMeetingConsent();
-            await start(pendingDraft);
+            if (pendingContinue !== null) {
+              setPendingContinue(null);
+              await continueSession(pendingContinue);
+            } else await start(pendingDraft);
           }}
-          onCancel={() => setAskConsent(false)}
+          onCancel={() => {
+            setAskConsent(false);
+            setPendingContinue(null);
+          }}
         />
       )}
       <RecoverBanner
@@ -684,6 +745,14 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
             }
             notesFailed={notesFailed.has(selected.summary.id)}
             onRecordDraft={() => void start(selected.summary.id)}
+            onContinue={() => void continueSession(selected.summary.id)}
+            recordingElsewhere={recordingNow && !recordingThis}
+            takeTranscribed={takeTranscribed.has(selected.summary.id)}
+            onTakeSeen={() =>
+              setTakeTranscribed((current) =>
+                withoutId(current, selected.summary.id),
+              )
+            }
             onTranscribe={() => void transcribe(selected.summary.id)}
             onCancelTranscription={() =>
               void commands.cancelMeetingTranscription()
@@ -715,6 +784,14 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
               selected.notes_running
             }
             onDelete={() => void remove(selected.summary.id)}
+            onOpenMeeting={(id) => void open(id)}
+            onSeries={(picked) => {
+              setSelected(null);
+              setPerson(null);
+              setTab("meetings");
+              setSeriesSessions(null);
+              setSeries(picked);
+            }}
           />
         </div>
       </div>
@@ -820,6 +897,24 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           locale={i18n.language}
           t={t}
         />
+      ) : series ? (
+        <>
+          <p className="flex items-center gap-2 text-body">
+            {t("meeting.series.filter", { name: series.name })}
+            <Button size="sm" variant="ghost" onClick={() => setSeries(null)}>
+              {t("meeting.series.clear")}
+            </Button>
+          </p>
+          {seriesSessions && (
+            <MeetingList
+              {...(hits
+                ? searchResults(seriesSessions, hits)
+                : { sessions: seriesSessions })}
+              live={liveSessions}
+              onOpen={(id) => void open(id)}
+            />
+          )}
+        </>
       ) : (
         <MeetingList
           {...(hits ? searchResults(sessions, hits) : { sessions })}

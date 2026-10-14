@@ -1,4 +1,5 @@
 import type {
+  BindingProblem,
   BindingResponse,
   BindingSlot,
   ShortcutBinding,
@@ -90,8 +91,49 @@ export const refusalText = (
       });
     case "lone_key":
       return t("settings.shortcuts.messages.loneKey");
+    case "meeting_needs_key":
+      return t("settings.shortcuts.messages.meetingNeedsKey");
+    case "meeting_overlap":
+      return t("settings.shortcuts.messages.meetingOverlap", {
+        action: actionName(t, refusal.action),
+      });
   }
 };
+
+/** A note under a row: the message and the combination and slot it is about. */
+export interface RowNote {
+  message: RowMessage;
+  combo: string;
+  slot: BindingSlot;
+}
+
+/**
+ * What the saved shortcuts already get wrong, by action, so the dialog says it on opening and not
+ * only right after a save. The backend applies the same rules as a save (`binding_problems`); a
+ * broken meeting rule wins over an overlap that only warns.
+ */
+export function standingNotes(
+  problems: readonly BindingProblem[],
+): Record<string, RowNote> {
+  const notes: Record<string, RowNote> = {};
+  for (const problem of problems) {
+    const message: RowMessage | null = problem.refusal
+      ? { kind: "refused", refusal: problem.refusal }
+      : problem.overlap
+        ? { kind: "overlap", ...problem.overlap }
+        : null;
+    if (!message) continue;
+    const held = notes[problem.action];
+    if (held && (held.message.kind === "refused" || message.kind !== "refused"))
+      continue;
+    notes[problem.action] = {
+      message,
+      combo: problem.combo,
+      slot: problem.slot,
+    };
+  }
+  return notes;
+}
 
 export const messageText = (
   t: Translate,

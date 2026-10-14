@@ -36,6 +36,10 @@ export interface SessionBarProps {
   /** The templates as menu items behind the arrow of "Gerar notas"; `close` shuts the menu
    *  after a pick. */
   templateMenu: (close: () => void) => ReactNode;
+  /** "Retomar" on a finished session: a new take, by a click only (ADR-0005). Absent where the
+   *  session cannot take one (an import). */
+  onContinue?: () => void;
+  continueDisabled?: boolean;
   t: Translate;
 }
 
@@ -121,6 +125,17 @@ export function SessionBar(props: SessionBarProps) {
   } else {
     actions = (
       <>
+        {props.onContinue && (
+          <Button
+            variant="secondary"
+            className="flex items-center gap-2"
+            disabled={props.continueDisabled}
+            onClick={props.onContinue}
+          >
+            <span className="size-2 rounded-full bg-rec" aria-hidden="true" />
+            {t("meeting.view.continue")}
+          </Button>
+        )}
         {props.transcribing && (
           <Button variant="ghost" onClick={props.onCancelTranscription}>
             {t("meeting.view.cancel")}
