@@ -1543,6 +1543,28 @@ async meetingPeople(id: string) : Promise<Result<MeetingPeople, MeetingError>> {
 }
 },
 /**
+ * The People list: the names from "Who was there" and "Person N", latest meeting first.
+ */
+async meetingDirectory() : Promise<Result<MeetingPerson[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_directory") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The sessions with the person of `key` (a [`MeetingPerson::key`]), newest first.
+ */
+async personMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("person_meetings", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
  */
 async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {
@@ -2298,6 +2320,19 @@ export type MeetingOutputs = { devices: MeetingOutput[]; selected: string | null
  * "Who was there" of a session and the name suggestions waiting for a click.
  */
 export type MeetingPeople = { participants: string[]; suggestions: SpeakerSuggestion[] }
+/**
+ * A person of the People list: the names from "Who was there" and from "Person N", joined by
+ * [`fala_storage::person_key`].
+ */
+export type MeetingPerson = { key: string; 
+/**
+ * The spelling of the latest meeting.
+ */
+name: string; 
+/**
+ * RFC 3339: when the latest meeting with them started.
+ */
+last_meeting_at: string; meetings: number }
 export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" | 
 /**
  * The last session is being turned into retained audio (and, later, a transcript).

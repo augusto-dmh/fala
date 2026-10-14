@@ -9,7 +9,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::meeting::granola::{GranolaImportError, GranolaImported, GranolaPreview};
 use crate::meeting::import::ImportSource;
 use crate::meeting::lifecycle::TrashedMeetingSummary;
-use crate::meeting::people::MeetingPeople;
+use crate::meeting::people::{MeetingPeople, MeetingPerson};
 use crate::meeting::pipeline::{
     templates, templates_dir, MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary,
     MeetingTemplates,
@@ -374,6 +374,23 @@ pub fn change_meeting_keyterms_setting(app: AppHandle, enabled: bool) -> Result<
     settings.meeting_keyterms = enabled;
     settings::write_settings(&app, settings);
     Ok(())
+}
+
+/// The People list: the names from "Who was there" and "Person N", latest meeting first.
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_directory(meetings: Meetings<'_>) -> Result<Vec<MeetingPerson>, MeetingError> {
+    meetings.directory()
+}
+
+/// The sessions with the person of `key` (a [`MeetingPerson::key`]), newest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn person_meetings(
+    meetings: Meetings<'_>,
+    key: String,
+) -> Result<Vec<MeetingSummary>, MeetingError> {
+    meetings.person_meetings(&key)
 }
 
 /// "Who was there" of a session and the name suggestions waiting for "apply".
