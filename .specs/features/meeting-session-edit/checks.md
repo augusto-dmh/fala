@@ -20,3 +20,8 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-session-edit`
 - **C8** tela: título, data, "apagada há N dias", Restaurar e Apagar para sempre, rodapé dos
   30 dias, "Nada na lixeira", link "Lixeira (N)". Mesmo arquivo (T3, T4)
 - **C9** manual: mover, desfazer, restaurar e apagar para sempre no app de debug portátil
+
+## S5 — retomar, núcleo (PR 5)
+
+- **C15** só sessão encerrada, gravada e não importada abre tomada; a tomada começa no `recorded_ms`, fecha somando; a transcrição dela entra depois, com "Pessoa N" depois da maior, nomes mantidos, marcador "[gravação retomada às HH:MM]"; `reindex` traz as tomadas. `cargo test -p fala-storage --test meeting_takes`
+- **C16** um trecho toca da tomada dele, cortado no início da seguinte; sem o áudio de todas, sem áudio. `cargo test -p fala --lib meeting::clip`

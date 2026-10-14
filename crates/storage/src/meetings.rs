@@ -101,6 +101,18 @@ pub enum SegmentSpeaker {
     Omitted,
     /// A linha marcadora de um trecho que a pessoa apagou, nos dois canais.
     Erased,
+    /// A linha marcadora do início de uma tomada retomada.
+    Resumed,
+}
+
+impl SegmentSpeaker {
+    /// Uma linha marcadora, que vem de uma tabela da sessão e não de quem transcreve.
+    pub fn is_marker(self) -> bool {
+        matches!(
+            self,
+            SegmentSpeaker::Omitted | SegmentSpeaker::Erased | SegmentSpeaker::Resumed
+        )
+    }
 }
 
 /// Um trecho transcrito. `seq` (1 a n, na ordem de `t0_ms`) é o id que os ponteiros `^sN` das
@@ -214,9 +226,16 @@ pub(crate) fn overlaps(segment: &MeetingSegment, t0: u64, t1: u64) -> bool {
     (segment.t0_ms < t1 && segment.t1_ms > t0) || (segment.t0_ms >= t0 && segment.t1_ms <= t1)
 }
 
-/// Por `t0_ms`, o mic antes do sistema no empate: a ordem que dá o `seq` 1..n.
+/// Por `t0_ms`; no empate, o marcador de uma tomada antes de quem fala nela e o mic antes do
+/// sistema: a ordem que dá o `seq` 1..n.
 pub(crate) fn sort_segments(segments: &mut [MeetingSegment]) {
-    segments.sort_by_key(|s| (s.t0_ms, s.channel == SegmentChannel::System));
+    segments.sort_by_key(|s| {
+        (
+            s.t0_ms,
+            s.speaker != SegmentSpeaker::Resumed,
+            s.channel == SegmentChannel::System,
+        )
+    });
 }
 
 /// Grava os trechos já ordenados, com `seq` de 1 a n.
@@ -504,14 +523,18 @@ impl Store {
         // devolver dentro de um trecho apagado volta.
         let erasures = crate::meeting_erasures::erasures(&tx, id)?;
         segments.retain(|s| {
-            !matches!(s.speaker, SegmentSpeaker::Omitted | SegmentSpeaker::Erased)
-                && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
+            !s.speaker.is_marker() && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
         });
         segments.extend(crate::meeting_omissions::omitted_segments(&tx, id)?);
         segments.extend(
             erasures
                 .iter()
                 .map(|&(t0, t1)| crate::meeting_erasures::erased_segment(t0, t1)),
+        );
+        segments.extend(
+            crate::meeting_takes::takes(&tx, id)?
+                .iter()
+                .map(crate::meeting_takes::resumed_segment),
         );
         sort_segments(&mut segments);
         let changed = tx.execute(

@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
+use super::clip::TakeAudio;
 use super::context::{notes_settings, NotesSettings};
 use super::people::speaker_names;
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
@@ -234,7 +235,10 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         }
         .to_string(),
         person: match segment.speaker {
-            SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => None,
+            SegmentSpeaker::Me
+            | SegmentSpeaker::Omitted
+            | SegmentSpeaker::Erased
+            | SegmentSpeaker::Resumed => None,
             SegmentSpeaker::Person(n) => Some(n),
         },
         name: None,
@@ -284,6 +288,7 @@ pub(crate) fn notes_segments(
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
                 SegmentSpeaker::Omitted => fala_notes::Speaker::Omitted,
                 SegmentSpeaker::Erased => fala_notes::Speaker::Erased,
+                SegmentSpeaker::Resumed => fala_notes::Speaker::Resumed,
                 SegmentSpeaker::Person(n) => match names.get(&n) {
                     Some(name) => fala_notes::Speaker::Named(name.clone()),
                     None => fala_notes::Speaker::Person(n),
@@ -564,7 +569,8 @@ impl MeetingManager {
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
-        let audio_available = super::clip::audio_available(&self.session_dir(id));
+        let audio_available =
+            super::clip::session_audio_available(&self.takes_audio(id).unwrap_or_default());
         let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
         self.with_store(|store| {
@@ -576,9 +582,10 @@ impl MeetingManager {
                 .map(|segment| MeetingLine {
                     name: match segment.speaker {
                         SegmentSpeaker::Person(n) => names.get(&n).cloned(),
-                        SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => {
-                            None
-                        }
+                        SegmentSpeaker::Me
+                        | SegmentSpeaker::Omitted
+                        | SegmentSpeaker::Erased
+                        | SegmentSpeaker::Resumed => None,
                     },
                     ..line(segment)
                 })
@@ -600,7 +607,13 @@ impl MeetingManager {
     /// The WAV the ▶ of a transcript line plays: `[t0, t1]` with margins (`clip::window`).
     pub fn clip(&self, id: &str, t0_ms: u64, t1_ms: u64) -> Result<Vec<u8>, MeetingError> {
         let id = parse_id(id)?;
-        super::clip::clip_wav(&self.session_dir(id), t0_ms, t1_ms)
+        super::clip::clip_session(&self.takes_audio(id)?, t0_ms, t1_ms)
+    }
+
+    /// Where each take of the session keeps its audio (one, unless it was resumed).
+    pub(crate) fn takes_audio(&self, id: SessionId) -> Result<Vec<TakeAudio>, MeetingError> {
+        let takes = self.with_store(|store| Ok(store.meeting_takes(id)?))?;
+        Ok(super::clip::takes_audio(&self.session_dir(id), &takes))
     }
 
     /// "Copy Markdown": the note document with its transcript anchors.
@@ -703,20 +716,25 @@ impl MeetingManager {
         record: &MeetingRecord,
         cancel: &CancelToken,
     ) -> Result<Vec<MeetingLine>, MeetingError> {
-        let dir = self.session_dir(id);
-        if needs_retain(&dir) {
-            self.retain(id, &dir);
-        }
-        let recording = MeetingRecording::from_session_dir(&dir, record.mode)?;
         let key = scribe_key(self.keys.as_ref())?;
         let options = scribe_options(&crate::settings::get_settings(&self.app));
         let mut scribe = ElevenLabsScribe::new(key, options);
-        let segments = scribe.transcribe_session(&recording, cancel, &mut |progress| {
-            self.progress(id, progress_stage(progress));
-        })?;
+        // A resumed session is transcribed take by take, each on the session's timeline.
+        let mut segments = Vec::new();
+        for take in self.takes_audio(id)? {
+            if needs_retain(&take.dir) {
+                self.retain(id, &take.dir);
+            }
+            let recording = MeetingRecording::from_session_dir(&take.dir, record.mode)?;
+            let found = scribe.transcribe_session(&recording, cancel, &mut |progress| {
+                self.progress(id, progress_stage(progress));
+            })?;
+            segments =
+                fala_storage::on_timeline(segments, segments_for_store(found), take.offset_ms);
+        }
         let now = chrono::Local::now().fixed_offset();
         self.with_store(|store| {
-            store.replace_meeting_segments(id, segments_for_store(segments), now)?;
+            store.replace_meeting_segments(id, segments, now)?;
             Ok(store.meeting_segments(id)?.iter().map(line).collect())
         })
     }
