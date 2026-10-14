@@ -175,6 +175,19 @@ fn unregister_cancel_binding(app: &AppHandle, binding: &ShortcutBinding) -> Resu
 /// Register a shortcut using the appropriate implementation
 pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
     let settings = get_settings(app);
+    // A meeting combination saved before the meeting rules is left out, never registered.
+    let binding = {
+        let safe = conflict::registrable(&binding, &settings.bindings);
+        if safe.current_binding != binding.current_binding
+            || safe.alternate_binding != binding.alternate_binding
+        {
+            warn!(
+                "Not registering a meeting shortcut that a recording could start by accident: {} / {}",
+                binding.current_binding, binding.alternate_binding
+            );
+        }
+        safe
+    };
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
         KeyboardImplementation::FalaKeys => fala_keys::register_shortcut(app, binding),
@@ -240,6 +253,12 @@ impl BindingResponse {
             ShortcutRefusal::InUse { action, .. } => format!("Already used by '{action}'"),
             ShortcutRefusal::Reserved => "Windows or another app already uses it".to_string(),
             ShortcutRefusal::LoneKey => "Use it with Ctrl, Alt, Shift or Win".to_string(),
+            ShortcutRefusal::MeetingNeedsKey => {
+                "The meeting shortcut needs a key besides modifiers".to_string()
+            }
+            ShortcutRefusal::MeetingOverlap { action } => {
+                format!("Overlaps '{action}': a recording must not start by accident")
+            }
         };
         Self {
             refusal: Some(refusal),
@@ -257,6 +276,40 @@ pub fn change_binding(
     binding: String,
 ) -> Result<BindingResponse, String> {
     set_binding(app, id, BindingSlot::Primary, binding, false)
+}
+
+/// A problem a saved combination already has, for the shortcuts dialog to show on opening.
+#[derive(Debug, Serialize, Type)]
+pub struct BindingProblem {
+    action: String,
+    slot: BindingSlot,
+    combo: String,
+    /// A meeting rule it breaks (ADR-0005); the combination is not registered.
+    refusal: Option<ShortcutRefusal>,
+    /// Holding it may fire another action: saved, with a warning.
+    overlap: Option<ShortcutOverlap>,
+}
+
+/// What the saved shortcuts already get wrong, by the same rules a save applies.
+#[tauri::command]
+#[specta::specta]
+pub fn binding_problems(app: AppHandle) -> Vec<BindingProblem> {
+    conflict::standing_problems(&get_settings(&app).bindings)
+        .into_iter()
+        .map(|(action, slot, combo, found)| {
+            let (overlap, refusal) = match found {
+                Ok(overlap) => (Some(overlap), None),
+                Err(refusal) => (None, Some(refusal)),
+            };
+            BindingProblem {
+                action,
+                slot,
+                combo,
+                refusal,
+                overlap,
+            }
+        })
+        .collect()
 }
 
 /// Saves `binding` in `slot` of action `id`. A combination another action holds is refused,
@@ -362,10 +415,12 @@ pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, Stri
     next.insert(id.clone(), restored.clone());
     // Another action may have taken the default meanwhile.
     let default = &restored.current_binding;
-    if let Err(refusal @ ShortcutRefusal::InUse { .. }) =
-        conflict::check(default, &id, BindingSlot::Primary, &next)
-    {
-        return Ok(BindingResponse::refused(refusal));
+    if let Err(refusal) = conflict::check(default, &id, BindingSlot::Primary, &next) {
+        if matches!(refusal, ShortcutRefusal::InUse { .. })
+            || conflict::is_meeting_refusal(&refusal)
+        {
+            return Ok(BindingResponse::refused(refusal));
+        }
     }
     apply_bindings(&app, &settings, next)?;
     Ok(BindingResponse::saved(restored))

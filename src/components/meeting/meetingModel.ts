@@ -62,21 +62,30 @@ export interface SessionContent {
   transcript: boolean;
   /** Notes typed in "My notes", saved or not. */
   typed: boolean;
-  /** No audio to transcribe (a Granola import): no key would help. */
-  noAudio: boolean;
+  /** The audio to transcribe: kept on disk, never there (a Granola import) or deleted (by the
+   * retention, or restored from the trash without it). Without it no key would help. */
+  audio: "kept" | "imported" | "deleted";
 }
 
 /** Why "Transcrever" and "Gerar notas" are off, when the person can fix it: a missing key, or
- * notes with nothing to write from (no transcript and nothing typed). `null` when available. */
+ * notes with nothing to write from (no transcript and nothing typed). `null` when available.
+ * Without audio "Transcrever" is off anyway; it says why only while there is no transcript yet,
+ * so a transcribed meeting whose audio expired stays quiet and the notes' reason shows. */
 export function sessionHints(
   keys: MeetingKeys | null,
   content: SessionContent,
 ): { transcribe: string | null; generate: string | null } {
   return {
     transcribe:
-      keys && !keys.elevenlabs && !content.noAudio
-        ? "meeting.keys.transcribeNeedsKey"
-        : null,
+      content.audio !== "kept"
+        ? content.transcript
+          ? null
+          : content.audio === "imported"
+            ? "meeting.granola.noAudio"
+            : "meeting.source.noAudio"
+        : keys && !keys.elevenlabs
+          ? "meeting.keys.transcribeNeedsKey"
+          : null,
     generate:
       keys && !keys.anthropic
         ? "meeting.keys.notesNeedKey"

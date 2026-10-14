@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -10,7 +11,7 @@ const theme = read("./theme.css");
 const app = read("../App.css");
 const overlayCss = read("../overlay/RecordingOverlay.css");
 const appTsx = read("../App.tsx");
-const srcDir = new URL("..", import.meta.url).pathname;
+const srcDir = fileURLToPath(new URL("..", import.meta.url));
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -18,9 +19,10 @@ function walk(dir: string): string[] {
     return statSync(path).isDirectory() ? walk(path) : [path];
   });
 }
-const sources = walk(srcDir).filter(
-  (p) => /\.(tsx?|css|html)$/.test(p) && !/\.test\.tsx?$/.test(p),
-);
+// Forward slashes on every OS, so the path patterns below also match on Windows.
+const sources = walk(srcDir)
+  .map((p) => p.split("\\").join("/"))
+  .filter((p) => /\.(tsx?|css|html)$/.test(p) && !/\.test\.tsx?$/.test(p));
 assert.ok(sources.length > 100, "src walk found the sources");
 
 /** Body of the first rule `selector {` at or after `from` (no nested braces). */
@@ -297,7 +299,9 @@ ok("C13");
 
 // The checks below belong to the ADR on the UI identity
 // (`.specs/features/ui-onboarding/checks.md`, S3).
-const decisionsDir = new URL("../../docs/decisions/", import.meta.url).pathname;
+const decisionsDir = fileURLToPath(
+  new URL("../../docs/decisions/", import.meta.url),
+);
 const designDoc = read("../../docs/design/ui.md");
 
 // C17: ADR-0017 is proposed, follows the template and carries the three rules.

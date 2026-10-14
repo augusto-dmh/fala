@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,15 +15,10 @@ import {
   messageText,
   responseMessage,
   rowView,
-  type RowMessage,
+  standingNotes,
+  type RowNote,
 } from "./shortcutsModel";
 import { useComboRecorder, type RecordingTarget } from "./useComboRecorder";
-
-interface RowNote {
-  message: RowMessage;
-  combo: string;
-  slot: BindingSlot;
-}
 
 /** The keys of a combination as chips, with the names the shortcut inputs already show. */
 export const KeyChips: React.FC<{ combo: string; osType: OSType }> = ({
@@ -189,6 +184,21 @@ export const ShortcutsDialog: React.FC<ShortcutsDialogProps> = ({
   const bindings = getSetting("bindings") ?? {};
   const [notes, setNotes] = useState<Record<string, RowNote | undefined>>({});
 
+  // On opening too, not only after a save (R11 of the second QA pass): asked again whenever the
+  // saved shortcuts change.
+  const [standing, setStanding] = useState<Record<string, RowNote>>({});
+  const bindingsKey = JSON.stringify(bindings);
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    void commands.bindingProblems().then((problems) => {
+      if (current) setStanding(standingNotes(problems));
+    });
+    return () => {
+      current = false;
+    };
+  }, [open, bindingsKey]);
+
   const setNote = (id: string, note: RowNote | undefined) =>
     setNotes((prev) => ({ ...prev, [id]: note }));
 
@@ -210,10 +220,10 @@ export const ShortcutsDialog: React.FC<ShortcutsDialogProps> = ({
       }
       await refreshSettings();
       const message = responseMessage(result.data);
-      setNote(
-        target.actionId,
-        message ? { message, combo, slot: target.slot } : undefined,
-      );
+      const note = message ? { message, combo, slot: target.slot } : undefined;
+      // A save changes what the other rows overlap: their old notes give way to the standing ones.
+      if (result.data.success) setNotes({ [target.actionId]: note });
+      else setNote(target.actionId, note);
       if (result.data.success) toast.success(t("settings.shortcuts.saved"));
     },
     [refreshSettings, t],
@@ -294,6 +304,8 @@ export const ShortcutsDialog: React.FC<ShortcutsDialogProps> = ({
     >
       <ul>
         {dialogActions(osType === "linux").map((id) => {
+          // A save's own note first; otherwise what the saved shortcuts already get wrong.
+          const note = notes[id] ?? standing[id];
           const binding = bindings[id];
           if (!binding) return null;
           return (
@@ -303,7 +315,7 @@ export const ShortcutsDialog: React.FC<ShortcutsDialogProps> = ({
               osType={osType}
               recording={recorder.target}
               recordedKeys={recorder.keys}
-              note={notes[id]}
+              note={note}
               onRecord={(slot) => void record(id, slot)}
               onRemove={(slot) => void remove(id, slot)}
               onTakeOver={(note) =>
