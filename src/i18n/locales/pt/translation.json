@@ -1494,6 +1494,7 @@
       "import": "Não consegui importar esse arquivo: {{detail}}",
       "import_no_audio": "Esse arquivo não tem trilha de áudio.",
       "import_too_long": "Esse arquivo passa de 12 horas, o limite da importação.",
+      "erase_too_long": "Trecho grande demais: até 500 falas por vez.",
       "generic": "Algo deu errado. Veja o log."
     },
     "notice": {

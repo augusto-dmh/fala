@@ -1494,6 +1494,7 @@
       "import": "Could not import that file: {{detail}}",
       "import_no_audio": "That file has no audio track.",
       "import_too_long": "That file is longer than 12 hours, the import limit.",
+      "erase_too_long": "Stretch too long: up to 500 lines at a time.",
       "generic": "Something went wrong. See the log."
     },
     "notice": {

@@ -5,7 +5,7 @@
 //! `sys.opus`, com o `mic.opus` em silêncio. O WAV só é apagado depois de os dois
 //! arquivos decodificarem com a contagem exata de amostras. A política de retenção decide, com
 //! o relógio do chamador, quais sessões têm o áudio vencido. `decode_range` devolve um trecho
-//! para tocar. `zero_range` apaga um trecho zerando as amostras, sem mudar a
+//! para tocar. `zero_range` e `zero_wav` apagam um trecho zerando as amostras, sem mudar a
 //! duração. Sem `cfg` de plataforma nem `tauri`.
 
 mod decode;
@@ -21,7 +21,7 @@ use fala_meeting::SessionId;
 pub use decode::{decode_range, PREROLL_SAMPLES};
 pub use encode::{retain_wav, validate_opus, RetainedAudio, BITRATE_BPS, SAMPLE_RATE_HZ};
 pub use policy::{audio_due, RetainedSession, RetentionDays, RetentionPolicy};
-pub use zero::zero_range;
+pub use zero::{zero_range, zero_wav};
 
 /// Nome do arquivo do canal do mic (L do WAV) dentro da pasta da sessão.
 pub const MIC_FILE: &str = "mic.opus";
