@@ -15,3 +15,11 @@ Decisions (PR 2): juntar = renomear a chave da origem para a grafia do destino; 
 lixeira e rascunhos (restaurar não traz a grafia velha) e a sugestão pendente; a contagem dita é
 a de Pessoas; só a pessoa renomeada perde repetidos; renomear para o nome de outra pessoa pede a
 confirmação de juntar.
+
+Decisions (PR 3): a série vem do título em toda abertura da sessão (nada guardado); "anteriores"
+= começaram antes desta; "ver todas" filtra a lista da página com "Série “…”" [Limpar]; datas
+inválidas (mês 0, dia 32) não saem do título ("Release 2.0" fica); "1:1" sozinho é série.
+
+Decisions (PR 4): o mapa guarda também o nome da série (para a lista); "Usar sempre" grava o
+template mostrado e, marcado de novo, esquece; a sessão sem template próprio abre com o da série
+e o botão gera com ele; escolher outro grava só na sessão (como hoje).

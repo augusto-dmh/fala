@@ -1,14 +1,24 @@
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands, type MeetingTemplates } from "@/bindings";
+import {
+  commands,
+  type MeetingTemplates,
+  type SeriesTemplate,
+} from "@/bindings";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { errorDetail } from "./meetingModel";
 import { useMeetingTemplates } from "./useMeetingTemplates";
+import { useSettings } from "../../hooks/useSettings";
 
 export interface TemplatesSettingsProps {
   catalog: MeetingTemplates;
+  /** "Por série": the series key to its name and template (`meeting_series_templates`). */
+  series?: Partial<Record<string, SeriesTemplate>>;
+  /** 🗑 of a series: its meetings go back to choosing. */
+  onForgetSeries?: (key: string, name: string) => void;
   /** The list after a duplicate; the page reloads it on focus too. */
   onChange: (catalog: MeetingTemplates) => void;
 }
@@ -69,6 +79,29 @@ export function TemplatesSettings(props: TemplatesSettingsProps) {
           )}
         </SettingContainer>
       ))}
+      {Object.entries(props.series ?? {}).map(
+        ([key, series]) =>
+          series && (
+            <SettingContainer
+              key={key}
+              title={t("meeting.series.bySeries", { name: series.name })}
+              description={
+                props.catalog.templates.find((x) => x.id === series.template)
+                  ?.name ?? series.template
+              }
+              grouped
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={t("meeting.series.forget", { name: series.name })}
+                onClick={() => props.onForgetSeries?.(key, series.name)}
+              >
+                <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+              </Button>
+            </SettingContainer>
+          ),
+      )}
       {(props.catalog.errors.length > 0 || error !== null) && (
         <div role="alert" className="space-y-1 p-4 text-sm text-red-500">
           {props.catalog.errors.map((file) => (
@@ -86,5 +119,17 @@ export function TemplatesSettings(props: TemplatesSettingsProps) {
 /** Settings > Meetings: the templates, with their own copy of the catalog. */
 export function MeetingTemplatesSettings() {
   const [catalog, setCatalog] = useMeetingTemplates();
-  return <TemplatesSettings catalog={catalog} onChange={setCatalog} />;
+  const { getSetting, refreshSettings } = useSettings();
+  return (
+    <TemplatesSettings
+      catalog={catalog}
+      onChange={setCatalog}
+      series={getSetting("meeting_series_templates")}
+      onForgetSeries={(key, name) =>
+        void commands
+          .setMeetingSeriesTemplate(key, name, null)
+          .then(() => refreshSettings())
+      }
+    />
+  );
 }

@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
@@ -161,6 +161,14 @@ pub enum PasteMethod {
     ShiftInsert,
     CtrlShiftV,
     ExternalScript,
+}
+
+/// The notes template of every meeting of a series that has none of its own.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct SeriesTemplate {
+    /// The series as typed ("Weekly produto"), for the list in Settings.
+    pub name: String,
+    pub template: String,
 }
 
 /// The language meeting notes are written in (ADR-0016): pt-BR unless chosen, even when the
@@ -619,6 +627,10 @@ pub struct AppSettings {
     /// session, nor for a short call).
     #[serde(default = "default_meeting_auto_notes")]
     pub meeting_auto_notes: bool,
+    /// Series key (`fala_storage::series_of`) to its template. Out of the database, so a
+    /// reindex neither loses nor rebuilds it.
+    #[serde(default)]
+    pub meeting_series_templates: BTreeMap<String, SeriesTemplate>,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -1269,6 +1281,7 @@ pub fn get_default_settings() -> AppSettings {
         notes_language: NotesLanguage::default(),
         meeting_keyterms: default_meeting_keyterms(),
         meeting_auto_notes: default_meeting_auto_notes(),
+        meeting_series_templates: BTreeMap::new(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),

@@ -24,7 +24,7 @@ use serde_json::Value;
 use crate::meeting_imports::{self, ImportLink};
 use crate::meetings::{channel_str, mode_str, ms, parse_mode, parse_reason, reason_str, rfc3339};
 use crate::mirror::{frontmatter, write_atomic};
-use crate::{meeting_search, meeting_trash};
+use crate::{meeting_search, meeting_takes, meeting_trash, MeetingTake};
 use crate::{
     MeetingRecord, MeetingSegment, ReindexReport, SegmentChannel, SegmentSpeaker, Skipped,
     StorageError, Store,
@@ -65,6 +65,8 @@ pub(crate) struct MeetingDoc {
     pub import: Option<ImportLink>,
     /// Quando a sessão foi para a lixeira, se está nela.
     pub trashed_at: Option<DateTime<FixedOffset>>,
+    /// As tomadas 2.. de uma sessão retomada.
+    pub takes: Vec<MeetingTake>,
 }
 
 /// As notas que entram no corpo: aparadas, e só se não estão em branco.
@@ -144,6 +146,7 @@ fn label(speaker: SegmentSpeaker, names: &BTreeMap<u32, String>) -> String {
     match speaker {
         SegmentSpeaker::Me | SegmentSpeaker::Omitted => "Eu".to_string(),
         SegmentSpeaker::Erased => "Trecho apagado".to_string(),
+        SegmentSpeaker::Resumed => "Gravação retomada".to_string(),
         SegmentSpeaker::Person(n) => names
             .get(&n)
             .map(|name| one_line(name))
@@ -235,6 +238,10 @@ pub(crate) fn render(doc: &MeetingDoc) -> String {
     if let Some(at) = &doc.trashed_at {
         out.push_str(&format!("trashed_at: {}\n", Value::from(rfc3339(at))));
     }
+    if !doc.takes.is_empty() {
+        let takes: Vec<Value> = doc.takes.iter().map(MeetingTake::to_json).collect();
+        out.push_str(&format!("takes: {}\n", Value::from(takes)));
+    }
     out.push_str("---\n");
 
     out.push_str(&header(r));
@@ -264,6 +271,7 @@ pub(crate) fn render(doc: &MeetingDoc) -> String {
             SegmentSpeaker::Me => "me".to_string(),
             SegmentSpeaker::Omitted => "omitted".to_string(),
             SegmentSpeaker::Erased => "erased".to_string(),
+            SegmentSpeaker::Resumed => "resumed".to_string(),
             SegmentSpeaker::Person(n) => n.to_string(),
         };
         out.push_str(&format!(
@@ -380,7 +388,24 @@ pub(crate) fn parse(content: &str) -> Result<MeetingDoc, String> {
         notes_edited_at: optional_time("notes_edited_at")?,
         import: import_link(&keys, imported, id),
         trashed_at: trashed_at(&keys, id),
+        takes: takes(&keys, id),
     })
+}
+
+/// `takes` do frontmatter. Uma tomada inválida fica de fora, com a sessão no `reindex`.
+fn takes(keys: &HashMap<&str, Value>, id: SessionId) -> Vec<MeetingTake> {
+    let Some(list) = keys.get("takes").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|v| {
+            let take = MeetingTake::from_json(v);
+            if take.is_none() {
+                log::warn!("reindex: {id} tem uma tomada inválida em `takes`");
+            }
+            take
+        })
+        .collect()
 }
 
 /// `trashed_at` do frontmatter. Inválido, fica de fora e a pasta decide (ver `reindex_meetings`),
@@ -451,6 +476,7 @@ fn parse_segments(
                 "me" => SegmentSpeaker::Me,
                 "omitted" => SegmentSpeaker::Omitted,
                 "erased" => SegmentSpeaker::Erased,
+                "resumed" => SegmentSpeaker::Resumed,
                 n => SegmentSpeaker::Person(n.parse().map_err(|_| bad())?),
             },
             t0_ms: t0.parse().map_err(|_| bad())?,
@@ -551,6 +577,9 @@ fn insert(conn: &Connection, doc: &MeetingDoc, file_name: &str) -> rusqlite::Res
     if let Some(at) = &doc.trashed_at {
         meeting_trash::insert(conn, r.id, at)?;
     }
+    for take in &doc.takes {
+        meeting_takes::insert(conn, r.id, take)?;
+    }
     conn.execute(
         "INSERT INTO meeting_files (meeting_id, file_name) VALUES (?1, ?2)",
         params![id, file_name],
@@ -612,6 +641,7 @@ impl Store {
             notes_edited_at: self.meeting_notes_edited_at(id)?,
             import: meeting_imports::link(&self.conn, id)?,
             trashed_at: meeting_trash::trashed_at(&self.conn, id)?,
+            takes: meeting_takes::takes(&self.conn, id)?,
         })
     }
 
@@ -880,9 +910,10 @@ mod tests {
         MeetingSegment {
             seq,
             channel: match speaker {
-                SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => {
-                    SegmentChannel::Mic
-                }
+                SegmentSpeaker::Me
+                | SegmentSpeaker::Omitted
+                | SegmentSpeaker::Erased
+                | SegmentSpeaker::Resumed => SegmentChannel::Mic,
                 SegmentSpeaker::Person(_) => SegmentChannel::System,
             },
             speaker,
@@ -916,6 +947,7 @@ mod tests {
             notes_edited_at: Some(at("2026-10-12T15:00:00-03:00")),
             import: None,
             trashed_at: None,
+            takes: Vec::new(),
         }
     }
 

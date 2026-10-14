@@ -5,8 +5,10 @@ import {
   commands,
   type MeetingDetail,
   type MeetingError,
+  type MeetingErased,
   type MeetingKeys,
   type MeetingLine,
+  type MeetingSeries,
   type MeetingTemplate,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
@@ -14,6 +16,12 @@ import { Button } from "../ui/Button";
 import { SearchField } from "../ui/SearchField";
 import { AnnotationsField } from "./AnnotationsField";
 import { DeleteConfirm, trashNeedsConfirm } from "./DeleteMeeting";
+import {
+  EraseBar,
+  EraseConfirm,
+  stretchOf,
+  type Stretch,
+} from "./EraseStretch";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { NotesEditor } from "./NotesEditor";
@@ -24,9 +32,14 @@ import {
   titleOf,
 } from "./meetingModel";
 import { NotesView } from "./NotesView";
-import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
+import { metaLine, SeriesLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
-import { shownTemplate, TemplateMenu, TemplateSelect } from "./TemplateSelect";
+import {
+  shownTemplate,
+  TemplateMenu,
+  TemplateSelect,
+  type SeriesPick,
+} from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
 import { SessionBar, type LiveControls } from "./SessionBar";
 import { searchLines, transcriptText } from "./transcriptSearch";
@@ -46,16 +59,27 @@ export interface MeetingViewProps {
   /** `replaceEdited`: the person confirmed discarding the notes they edited. */
   onGenerate: (templateId: string, replaceEdited: boolean) => void;
   onCopy: () => void;
-  /** A name or the title changed, or the notes were edited: reload the session. */
+  /** A name or the title changed, the notes were edited or a stretch erased: reload the session. */
   onNamesChanged?: () => void;
   /** "Move to trash", after the confirmation when there is audio to lose. */
   onDelete?: () => void;
+  /** A meeting of the same series, from "Mesma série:". */
+  onOpenMeeting?: (id: string) => void;
+  /** "ver todas (N)" of the series. */
+  onSeries?: (series: MeetingSeries) => void;
   /** Recording, transcribing or writing notes: nothing to move yet. */
   deleteDisabled?: boolean;
   /** This session's recording: the bar's pause and stop, or the processing line. */
   live?: LiveControls | null;
   /** Which meeting keys are saved; `null` until known (nothing is turned off meanwhile). */
   keys?: MeetingKeys | null;
+  /** "Retomar": record a new take of this finished session (absent: it cannot take one). */
+  onContinue?: () => void;
+  /** Another meeting records now: "Retomar" waits for it. */
+  recordingElsewhere?: boolean;
+  /** A take was just transcribed after notes existed: offer to write them again. */
+  takeTranscribed?: boolean;
+  onTakeSeen?: () => void;
 }
 
 export type SessionTab = "annotations" | "notes";
@@ -65,7 +89,10 @@ export function MeetingView(props: MeetingViewProps) {
   const { t, i18n } = useTranslation();
   const { detail } = props;
   const [templateId, setTemplateId] = useState(
-    detail.notes_template ?? props.templates[0]?.id ?? "geral",
+    detail.notes_template ??
+      detail.series?.template ??
+      props.templates[0]?.id ??
+      "geral",
   );
   // A user template deleted or broken after the pick: show and use the one the select shows.
   const picked = shownTemplate(props.templates, templateId);
@@ -141,9 +168,30 @@ export function MeetingView(props: MeetingViewProps) {
     return () => document.removeEventListener("keydown", escape);
   }, [transcriptOpen]);
   const [deleting, setDeleting] = useState(false);
+  // "Erase stretch": the lines picked so far (`null`: not picking), the stretch to confirm, and
+  // what the last erase did, for the "transcript changed" line.
+  const [chosen, setChosen] = useState<number[] | null>(null);
+  const [erasing, setErasing] = useState<Stretch | null>(null);
+  const [erased, setErased] = useState<MeetingErased | null>(null);
+  const [eraseError, setEraseError] = useState<MeetingError | null>(null);
+  const [erasingNow, setErasingNow] = useState(false);
+  const stretch = chosen === null ? null : stretchOf(detail.lines, chosen);
   useEffect(() => {
-    if (props.deleteDisabled) setDeleting(false);
+    if (props.deleteDisabled) {
+      setDeleting(false);
+      setChosen(null);
+      setErasing(null);
+    }
   }, [props.deleteDisabled]);
+  // A third click starts over from that line.
+  const pick = (line: MeetingLine) =>
+    setChosen((current) =>
+      current === null || current.includes(line.seq)
+        ? current
+        : current.length >= 2
+          ? [line.seq]
+          : [...current, line.seq],
+    );
 
   const play = (line: MeetingLine) => {
     setClipError(null);
@@ -178,8 +226,26 @@ export function MeetingView(props: MeetingViewProps) {
     setNameError(result.status === "error" ? result.error : null);
     if (result.status === "ok") namesChanged();
   };
+  const erase = async (stretch: Stretch) => {
+    setErasing(null);
+    setChosen(null);
+    setErasingNow(true);
+    const result = await commands.eraseMeetingRange(
+      detail.summary.id,
+      stretch.t0_ms,
+      stretch.t1_ms,
+    );
+    if (!mounted.current) return;
+    setErasingNow(false);
+    setEraseError(result.status === "error" ? result.error : null);
+    if (result.status === "ok") {
+      setErased(result.data);
+      props.onNamesChanged?.();
+    }
+  };
   const generate = () => {
     setOfferRegenerate(false);
+    setErased(null);
     const edited = detail.notes_edited || editedHere;
     if (needsConfirmation({ ...detail, notes_edited: edited }, picked)) {
       setConfirming(true);
@@ -189,9 +255,32 @@ export function MeetingView(props: MeetingViewProps) {
   };
   // The template stored with the session (picked in the recorder, or the one that wrote the
   // notes) wins over the local pick when the session reloads.
+  // Without one, the series' template ("Usar sempre em …").
+  const seriesTemplate = detail.series?.template ?? null;
   useEffect(() => {
-    if (detail.notes_template) setTemplateId(detail.notes_template);
-  }, [detail.notes_template]);
+    const stored = detail.notes_template ?? seriesTemplate;
+    if (stored) setTemplateId(stored);
+  }, [detail.notes_template, seriesTemplate]);
+  const series = detail.series;
+  const seriesPick: SeriesPick | undefined = series
+    ? {
+        name: series.name,
+        always: seriesTemplate === picked,
+        inherited: detail.notes_template === null && seriesTemplate === picked,
+        onAlways: () => {
+          const always = seriesTemplate === picked;
+          // Unticked where it was inherited: the session keeps the template it shows.
+          if (always && detail.notes_template === null) pickTemplate(picked);
+          void commands
+            .setMeetingSeriesTemplate(
+              series.key,
+              series.name,
+              always ? null : picked,
+            )
+            .then(() => props.onNamesChanged?.());
+        },
+      }
+    : undefined;
   // Before the notes exist, the pick goes with the session: the notes after the stop use it.
   const pickTemplate = (id: string) => {
     setTemplateId(id);
@@ -205,6 +294,7 @@ export function MeetingView(props: MeetingViewProps) {
       templates={props.templates}
       value={picked}
       onChange={pickTemplate}
+      series={seriesPick}
     />
   );
   const generatingLabel = detail.annotations.trim()
@@ -305,6 +395,15 @@ export function MeetingView(props: MeetingViewProps) {
             props.recording,
           )}
         </p>
+        {props.onOpenMeeting && props.onSeries && (
+          <SeriesLine
+            series={detail.series}
+            onOpen={props.onOpenMeeting}
+            onAll={props.onSeries}
+            locale={i18n.language}
+            t={t}
+          />
+        )}
       </header>
       {deleting && props.onDelete && (
         <DeleteConfirm
@@ -340,6 +439,51 @@ export function MeetingView(props: MeetingViewProps) {
                 onClick={generate}
               >
                 {t("meeting.view.retry")}
+              </Button>
+            </div>
+          )}
+          {props.takeTranscribed && detail.notes_md !== null && !confirming && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.erase.changedNone")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={notesOff}
+                onClick={() => {
+                  props.onTakeSeen?.();
+                  generate();
+                }}
+              >
+                {t("meeting.rename.generate")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={props.onTakeSeen}>
+                {t("meeting.rename.dismiss")}
+              </Button>
+            </div>
+          )}
+          {erased !== null && detail.notes_md !== null && !confirming && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>
+                {erased.notes_lines > 0
+                  ? t("meeting.erase.changed", { count: erased.notes_lines })
+                  : t("meeting.erase.changedNone")}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={notesOff}
+                onClick={generate}
+              >
+                {t("meeting.rename.generate")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setErased(null)}>
+                {t("meeting.rename.dismiss")}
               </Button>
             </div>
           )}
@@ -499,11 +643,54 @@ export function MeetingView(props: MeetingViewProps) {
                     {t(errorKey(nameError))}
                   </p>
                 )}
+                {eraseError !== null && (
+                  <p role="alert" className="text-caption text-danger">
+                    {t(errorKey(eraseError))}
+                  </p>
+                )}
+                {erasingNow ? (
+                  <p role="status" className="text-caption text-text-2">
+                    {t("meeting.erase.running")}
+                  </p>
+                ) : erasing !== null ? (
+                  <EraseConfirm
+                    stretch={erasing}
+                    audio={detail.audio_available || !!detail.audio_pending}
+                    onConfirm={() => void erase(erasing)}
+                    onCancel={() => setErasing(null)}
+                    t={t}
+                  />
+                ) : chosen !== null ? (
+                  <EraseBar
+                    picked={chosen.length}
+                    stretch={stretch}
+                    onErase={() => setErasing(stretch)}
+                    onCancel={() => setChosen(null)}
+                    t={t}
+                  />
+                ) : (
+                  !granola && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={props.deleteDisabled ?? true}
+                      onClick={() => {
+                        setQuery("");
+                        setEraseError(null);
+                        setChosen([]);
+                      }}
+                    >
+                      {t("meeting.erase.start")}
+                    </Button>
+                  )
+                )}
                 <div className="flex items-center gap-2">
                   <SearchField
                     variant="compact"
                     aria-label={t("meeting.view.search")}
                     placeholder={t("meeting.view.search")}
+                    // Picking shows every line: a stretch never takes one out of sight.
+                    disabled={chosen !== null}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                   />
@@ -514,7 +701,7 @@ export function MeetingView(props: MeetingViewProps) {
                   )}
                 </div>
                 <TranscriptView
-                  lines={found}
+                  lines={chosen === null ? found : detail.lines}
                   sleeps={detail.sleeps ?? []}
                   query={query}
                   audioAvailable={detail.audio_available}
@@ -522,6 +709,15 @@ export function MeetingView(props: MeetingViewProps) {
                   highlighted={highlighted}
                   onPlay={play}
                   timed={!granola}
+                  picking={
+                    chosen === null
+                      ? undefined
+                      : {
+                          picked: chosen,
+                          taken: stretch?.taken ?? new Set(),
+                          onPick: pick,
+                        }
+                  }
                   // A new transcript renumbers "Person N" and drops the names.
                   onRename={
                     props.transcribing
@@ -541,6 +737,21 @@ export function MeetingView(props: MeetingViewProps) {
         transcriptOpen={transcriptOpen}
         onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
         onRecordDraft={props.onRecordDraft}
+        onContinue={
+          props.onContinue &&
+          !draft &&
+          !granola &&
+          detail.summary.mode !== "import" &&
+          detail.summary.ended_at !== null
+            ? props.onContinue
+            : undefined
+        }
+        continueDisabled={
+          props.recording ||
+          props.transcribing ||
+          props.generating ||
+          props.recordingElsewhere
+        }
         transcribing={props.transcribing}
         transcribeHint={hints.transcribe ? t(hints.transcribe) : undefined}
         transcribeDisabled={
@@ -564,6 +775,7 @@ export function MeetingView(props: MeetingViewProps) {
             templates={props.templates}
             value={picked}
             onChange={pickTemplate}
+            series={seriesPick}
             onPicked={close}
           />
         )}

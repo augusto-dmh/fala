@@ -7,10 +7,11 @@ use std::path::Path;
 
 use fala_core::Language;
 use fala_meeting::SessionId;
-use fala_storage::{SegmentSpeaker, Store};
+use fala_storage::Store;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use super::clip::TakeAudio;
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
 
 /// The most lines one stretch takes (Granola's limit).
@@ -39,10 +40,7 @@ fn span(
         return Err(MeetingError::NotFound);
     }
     let segments = store.meeting_segments(id)?;
-    let spoken: Vec<_> = segments
-        .iter()
-        .filter(|s| !matches!(s.speaker, SegmentSpeaker::Omitted | SegmentSpeaker::Erased))
-        .collect();
+    let spoken: Vec<_> = segments.iter().filter(|s| !s.speaker.is_marker()).collect();
     loop {
         let taken: Vec<_> = spoken.iter().filter(|s| s.crosses(t0_ms, t1_ms)).collect();
         if taken.len() > MAX_LINES {
@@ -75,6 +73,21 @@ fn zero_audio(dir: &Path, t0_ms: u64, t1_ms: u64) -> Result<bool, MeetingError> 
         fala_retention::zero_range(dir, t0_ms, t1_ms).map_err(failed)?;
     }
     Ok(wav_found || opus)
+}
+
+/// Zeroes `[t0, t1]` (on the session's timeline) in each take it crosses, in that take's own
+/// time. Returns whether any take had audio.
+fn zero_takes(takes: &[TakeAudio], t0_ms: u64, t1_ms: u64) -> Result<bool, MeetingError> {
+    let mut audio = false;
+    for (index, take) in takes.iter().enumerate() {
+        let end = takes.get(index + 1).map_or(u64::MAX, |next| next.offset_ms);
+        if t1_ms <= take.offset_ms || t0_ms >= end {
+            continue;
+        }
+        let local = |ms: u64| ms.clamp(take.offset_ms, end) - take.offset_ms;
+        audio |= zero_audio(&take.dir, local(t0_ms), local(t1_ms))?;
+    }
+    Ok(audio)
 }
 
 /// The text, after the audio: an audio that fails leaves the text, and trying again zeroes the
@@ -136,7 +149,7 @@ impl MeetingManager {
             wide
         };
         let _erasing = Erasing(&self.work);
-        let audio = zero_audio(&self.session_dir(id), t0_ms, t1_ms)?;
+        let audio = zero_takes(&self.takes_audio(id)?, t0_ms, t1_ms)?;
         let settings = crate::settings::get_settings(&self.app);
         let language = super::context::notes_settings(&settings).language;
         let erased =
@@ -155,7 +168,7 @@ mod tests {
     use super::*;
     use chrono::{FixedOffset, TimeZone};
     use fala_meeting::{SessionMode, StopReason};
-    use fala_storage::{MeetingSegment, NewMeeting, SegmentChannel};
+    use fala_storage::{MeetingSegment, NewMeeting, SegmentChannel, SegmentSpeaker};
 
     fn segment(t0_ms: u64, text: &str) -> MeetingSegment {
         MeetingSegment {
@@ -241,5 +254,49 @@ mod tests {
         // In the trash, the session is not found.
         store.trash_meeting(id, at).unwrap();
         assert_eq!(span(&store, id, (0, 10)), Err(MeetingError::NotFound));
+    }
+
+    #[test]
+    fn a_stretch_across_two_takes_is_zeroed_in_each() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = |dir: &Path| {
+            std::fs::create_dir_all(dir).unwrap();
+            let spec = hound::WavSpec {
+                channels: 2,
+                sample_rate: 48_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::create(dir.join(WORK_WAV), spec).unwrap();
+            for _ in 0..3 * 48_000 * 2 {
+                writer.write_sample(1_000i16).unwrap();
+            }
+            writer.finalize().unwrap();
+        };
+        let takes = [
+            TakeAudio {
+                offset_ms: 0,
+                dir: dir.path().to_path_buf(),
+            },
+            TakeAudio {
+                offset_ms: 3_000,
+                dir: dir.path().join("t2"),
+            },
+        ];
+        for take in &takes {
+            wav(&take.dir);
+        }
+        // 2-4 s of the session: 2-3 s of take 1 and 0-1 s of take 2.
+        assert!(zero_takes(&takes, 2_000, 4_000).unwrap());
+        let zeroed = |dir: &Path| -> Vec<bool> {
+            let samples: Vec<i16> = hound::WavReader::open(dir.join(WORK_WAV))
+                .unwrap()
+                .into_samples::<i16>()
+                .map(Result::unwrap)
+                .collect();
+            (0..3).map(|s| samples[s * 96_000 + 10] == 0).collect()
+        };
+        assert_eq!(zeroed(&takes[0].dir), [false, false, true]);
+        assert_eq!(zeroed(&takes[1].dir), [true, false, false]);
     }
 }

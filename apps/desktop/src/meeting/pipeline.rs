@@ -21,14 +21,17 @@ use fala_notes::{
 };
 use fala_secrets::{ApiKey, SecretStore};
 use fala_storage::{
-    MeetingRecord, MeetingSegment, NameSuggestion, SegmentChannel, SegmentSpeaker, Store,
+    MeetingRecord, MeetingSegment, MeetingTake, NameSuggestion, SegmentChannel, SegmentSpeaker,
+    Store,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
+use super::clip::TakeAudio;
 use super::context::{notes_settings, NotesSettings};
 use super::people::speaker_names;
+use super::series::series_template;
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
 
 /// The notes follow a stop only from this much transcript text and recorded time (Granola waits
@@ -39,6 +42,26 @@ pub(crate) const AUTO_NOTES_MIN_MS: u64 = 3 * 60 * 1000;
 
 /// Keyring account of the ElevenLabs key (`fala-cli key set elevenlabs` stores the same one).
 pub(crate) const SCRIBE_KEY: &str = "elevenlabs";
+
+/// The template of automatic notes: the session's pick, else its series' one (`Usar sempre em
+/// …`). One that left the templates folder gives "geral", and the log says why.
+pub(crate) fn notes_template(
+    id: SessionId,
+    session: Option<String>,
+    series: Option<String>,
+    available: impl Fn(&str) -> Result<(), MeetingError>,
+) -> String {
+    session
+        .or(series)
+        .filter(|t| match available(t) {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("meeting {id}: template {t} unavailable ({e}); notes use geral");
+                false
+            }
+        })
+        .unwrap_or_else(|| "geral".to_string())
+}
 
 /// A session in the list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -84,6 +107,10 @@ pub struct MeetingLine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub erased: Option<bool>,
+    /// The line marks where a resumed recording (a take) starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub resumed: Option<bool>,
 }
 
 /// An opened session.
@@ -110,6 +137,10 @@ pub struct MeetingDetail {
     #[serde(default)]
     #[specta(optional)]
     pub sleeps: Vec<super::sleeps::MeetingSleep>,
+    /// The meetings of the same series ("Weekly produto 13/10" and "20/10"); absent without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub series: Option<super::series::MeetingSeries>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -226,7 +257,10 @@ pub(crate) fn list_in(store: &Store) -> Result<Vec<MeetingSummary>, MeetingError
 }
 
 /// The summary with where the session came from, for the opened session.
-fn summary_in(store: &Store, record: &MeetingRecord) -> Result<MeetingSummary, MeetingError> {
+pub(crate) fn summary_in(
+    store: &Store,
+    record: &MeetingRecord,
+) -> Result<MeetingSummary, MeetingError> {
     Ok(MeetingSummary {
         imported_from: store.meeting_import_source(record.id)?,
         ..summary(record)
@@ -242,7 +276,10 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         }
         .to_string(),
         person: match segment.speaker {
-            SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => None,
+            SegmentSpeaker::Me
+            | SegmentSpeaker::Omitted
+            | SegmentSpeaker::Erased
+            | SegmentSpeaker::Resumed => None,
             SegmentSpeaker::Person(n) => Some(n),
         },
         name: None,
@@ -251,6 +288,7 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         text: segment.text.clone(),
         omitted: (segment.speaker == SegmentSpeaker::Omitted).then_some(true),
         erased: (segment.speaker == SegmentSpeaker::Erased).then_some(true),
+        resumed: (segment.speaker == SegmentSpeaker::Resumed).then_some(true),
     }
 }
 
@@ -293,6 +331,7 @@ pub(crate) fn notes_segments(
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
                 SegmentSpeaker::Omitted => fala_notes::Speaker::Omitted,
                 SegmentSpeaker::Erased => fala_notes::Speaker::Erased,
+                SegmentSpeaker::Resumed => fala_notes::Speaker::Resumed,
                 SegmentSpeaker::Person(n) => match names.get(&n) {
                     Some(name) => fala_notes::Speaker::Named(name.clone()),
                     None => fala_notes::Speaker::Person(n),
@@ -580,14 +619,18 @@ impl MeetingManager {
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
-        let audio_available = super::clip::audio_available(&self.session_dir(id));
-        let audio_pending = self
-            .session_dir(id)
-            .join(WORK_WAV)
-            .is_file()
+        let takes = self.takes_audio(id);
+        let audio_available = takes
+            .as_ref()
+            .is_ok_and(|takes| super::clip::session_audio_available(takes));
+        // A take still waiting for retention: there is audio, not playable yet.
+        let audio_pending = takes
+            .as_ref()
+            .is_ok_and(|takes| takes.iter().any(|take| take.dir.join(WORK_WAV).is_file()))
             .then_some(true);
         let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
+        let series_templates = crate::settings::get_settings(&self.app).meeting_series_templates;
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let names = speaker_names(store, id)?;
@@ -597,14 +640,16 @@ impl MeetingManager {
                 .map(|segment| MeetingLine {
                     name: match segment.speaker {
                         SegmentSpeaker::Person(n) => names.get(&n).cloned(),
-                        SegmentSpeaker::Me | SegmentSpeaker::Omitted | SegmentSpeaker::Erased => {
-                            None
-                        }
+                        SegmentSpeaker::Me
+                        | SegmentSpeaker::Omitted
+                        | SegmentSpeaker::Erased
+                        | SegmentSpeaker::Resumed => None,
                     },
                     ..line(segment)
                 })
                 .collect();
             Ok(MeetingDetail {
+                series: super::series::series_in(store, id, &record.title, &series_templates)?,
                 summary: summary_in(store, &record)?,
                 annotations: record.annotations,
                 lines,
@@ -622,7 +667,13 @@ impl MeetingManager {
     /// The WAV the ▶ of a transcript line plays: `[t0, t1]` with margins (`clip::window`).
     pub fn clip(&self, id: &str, t0_ms: u64, t1_ms: u64) -> Result<Vec<u8>, MeetingError> {
         let id = parse_id(id)?;
-        super::clip::clip_wav(&self.session_dir(id), t0_ms, t1_ms)
+        super::clip::clip_session(&self.takes_audio(id)?, t0_ms, t1_ms)
+    }
+
+    /// Where each take of the session keeps its audio (one, unless it was resumed).
+    pub(crate) fn takes_audio(&self, id: SessionId) -> Result<Vec<TakeAudio>, MeetingError> {
+        let takes = self.with_store(|store| Ok(store.meeting_takes(id)?))?;
+        Ok(super::clip::takes_audio(&self.session_dir(id), &takes))
     }
 
     /// "Copy Markdown": the note document with its transcript anchors.
@@ -683,11 +734,22 @@ impl MeetingManager {
 
     /// Transcribes a stopped session with Scribe v2 and stores the segments (ADR-0005).
     pub fn transcribe(&self, id: &str) -> Result<Vec<MeetingLine>, MeetingError> {
-        let id = parse_id(id)?;
+        self.transcribe_with(parse_id(id)?, None)
+    }
+
+    /// The whole session (`take` absent) or only a take just recorded, whose transcript goes
+    /// after the existing one with the names kept.
+    pub(crate) fn transcribe_with(
+        &self,
+        id: SessionId,
+        take: Option<&MeetingTake>,
+    ) -> Result<Vec<MeetingLine>, MeetingError> {
         if self.status().id.as_deref() == Some(id.to_string().as_str()) {
             return Err(MeetingError::StillRecording);
         }
         let record = self.with_store(|store| Ok(store.meeting(id)?))?;
+        // A session never transcribed (no key until now) is transcribed whole, not from the take.
+        let take = take.filter(|_| record.transcribed_at.is_some());
         if record.started_at.is_none() || record.ended_at.is_none() {
             return Err(MeetingError::StillRecording);
         }
@@ -703,7 +765,7 @@ impl MeetingManager {
             work: &self.work,
             notes: false,
         };
-        let result = self.run_transcription(id, &record, &cancel);
+        let result = self.run_transcription(id, &record, &cancel, take);
         match &result {
             Ok(lines) => {
                 log::info!("meeting {id}: {} transcript segments", lines.len());
@@ -724,21 +786,44 @@ impl MeetingManager {
         id: SessionId,
         record: &MeetingRecord,
         cancel: &CancelToken,
+        only: Option<&MeetingTake>,
     ) -> Result<Vec<MeetingLine>, MeetingError> {
-        let dir = self.session_dir(id);
-        if needs_retain(&dir) {
-            self.retain(id, &dir);
-        }
-        let recording = MeetingRecording::from_session_dir(&dir, record.mode)?;
         let key = scribe_key(self.keys.as_ref())?;
         let options = scribe_options(&crate::settings::get_settings(&self.app));
         let mut scribe = ElevenLabsScribe::new(key, options);
-        let segments = scribe.transcribe_session(&recording, cancel, &mut |progress| {
-            self.progress(id, progress_stage(progress));
-        })?;
+        // A resumed session is transcribed take by take, each on the session's timeline.
+        let mut segments = Vec::new();
+        let takes = match only {
+            Some(take) => {
+                super::clip::takes_audio(&self.session_dir(id), std::slice::from_ref(take))
+                    .split_off(1)
+            }
+            None => self.takes_audio(id)?,
+        };
+        for take in takes {
+            if needs_retain(&take.dir) {
+                self.retain(id, &take.dir);
+            }
+            // A take whose capture never opened has no audio: the others still transcribe.
+            if take.offset_ms > 0 && !super::clip::audio_available(&take.dir) {
+                log::warn!("meeting {id}: a take at {} ms has no audio", take.offset_ms);
+                continue;
+            }
+            let recording = MeetingRecording::from_session_dir(&take.dir, record.mode)?;
+            let found = scribe.transcribe_session(&recording, cancel, &mut |progress| {
+                self.progress(id, progress_stage(progress));
+            })?;
+            segments =
+                fala_storage::on_timeline(segments, segments_for_store(found), take.offset_ms);
+        }
         let now = chrono::Local::now().fixed_offset();
         self.with_store(|store| {
-            store.replace_meeting_segments(id, segments_for_store(segments), now)?;
+            match only {
+                // Already on the session's timeline: the append only numbers its people after
+                // the session's.
+                Some(_) => store.append_meeting_segments(id, segments, 0, now)?,
+                None => store.replace_meeting_segments(id, segments, now)?,
+            }
             Ok(store.meeting_segments(id)?.iter().map(line).collect())
         })
     }
@@ -769,7 +854,8 @@ impl MeetingManager {
     /// After the transcript of a stop: the notes, with the session's template, when
     /// [`auto_notes_due`] says so. Progress and failure reach the page as `MeetingProgress`.
     pub(crate) fn auto_notes(&self, id: SessionId, lines: &[MeetingLine]) {
-        let enabled = crate::settings::get_settings(&self.app).meeting_auto_notes;
+        let settings = crate::settings::get_settings(&self.app);
+        let enabled = settings.meeting_auto_notes;
         let record = match self.with_store(|store| Ok(store.meeting(id)?)) {
             Ok(record) => record,
             Err(e) => return log::warn!("meeting {id}: automatic notes skipped: {e}"),
@@ -779,16 +865,10 @@ impl MeetingManager {
             log::debug!("meeting {id}: notes left to a click");
             return;
         }
-        let template = record
-            .notes_template
-            .filter(|t| match self.template(t) {
-                Ok(_) => true,
-                Err(e) => {
-                    log::warn!("meeting {id}: template {t} unavailable ({e}); notes use geral");
-                    false
-                }
-            })
-            .unwrap_or_else(|| "geral".to_string());
+        let series = series_template(&record.title, &settings.meeting_series_templates);
+        let template = notes_template(id, record.notes_template, series, |t| {
+            self.template(t).map(|_| ())
+        });
         if let Err(e) = self.generate_notes(&id.to_string(), &template, false) {
             log::warn!("meeting {id}: automatic notes failed: {e}");
         }
@@ -804,7 +884,7 @@ impl MeetingManager {
     }
 
     /// A built-in template or one of the person's own.
-    fn template(&self, id: &str) -> Result<Template, MeetingError> {
+    pub(crate) fn template(&self, id: &str) -> Result<Template, MeetingError> {
         find_template(&templates_dir(&self.app)?, id)
     }
 
@@ -1158,6 +1238,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn automatic_notes_use_the_series_template_when_the_session_has_none() {
+        let id = SessionId::from_parts(1_727_000_000_000, 1);
+        let all = |_: &str| Ok(());
+        let pick = |session: Option<&str>, series: Option<&str>| {
+            notes_template(id, session.map(Into::into), series.map(Into::into), all)
+        };
+        assert_eq!(pick(None, Some("1-1")), "1-1");
+        assert_eq!(pick(Some("retro"), Some("1-1")), "retro");
+        assert_eq!(pick(None, None), "geral");
+        let gone = |t: &str| {
+            if t == "1-1" {
+                Err(MeetingError::UnknownTemplate)
+            } else {
+                Ok(())
+            }
+        };
+        assert_eq!(notes_template(id, None, Some("1-1".into()), gone), "geral");
+    }
+
     /// Chain stop -> transcript -> notes: only when every condition holds.
     fn auto_notes_cases(record: &MeetingRecord) {
         let long = MeetingRecord {
@@ -1175,6 +1275,7 @@ mod tests {
             text: text.clone(),
             omitted: None,
             erased: None,
+            resumed: None,
         };
         let enough = vec![line(1), line(2)];
         assert!(auto_notes_due(true, &long, true, &enough));
