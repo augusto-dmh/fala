@@ -170,8 +170,10 @@ ok("C9");
   const settings = read("./LlmSettings.tsx");
   assert.match(
     settings,
-    /<ToggleSwitch\b[^<]*?\/>\s*<CleanupLevelCards\b[\s\S]*?dimmed=\{!enabled \|\| !apiKey\}[\s\S]*?\/>\s*<SettingContainer/,
+    /<ToggleSwitch\b[^<]*?\/>\s*<CleanupLevelCards\b[\s\S]*?dimmed=\{!formatting\}[\s\S]*?\/>\s*<SettingContainer/,
   );
+  // Apagado quando a IA não formata: desligada ou sem a chave.
+  assert.match(settings, /const formatting = enabled && hasKey;/);
   assert.match(
     settings,
     /onChange=\{\(level\) => updateSetting\("cleanup_level", level\)\}/,

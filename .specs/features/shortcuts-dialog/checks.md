@@ -22,3 +22,15 @@ Proof: `cargo test -p fala --lib meeting_shortcut`
 Proof: `cargo test -p fala --lib conflict`
 **C8** - `take_over` tira da outra ação (a 2ª sobe); recusado se Ditar ou Cancelar ficaria sem tecla (AC 4)
 Proof: `cargo test -p fala --lib a_combination_in_use_is_refused_or_taken_over`
+
+## S3 - o diálogo (PR 3)
+
+**C9** - Geral mostra uma linha "Atalhos do teclado" com as teclas de Ditar e [Editar atalhos]; as quatro linhas antigas saem
+Proof: leitura de `GeneralSettings.tsx`/`KeyboardShortcuts.tsx`
+**C10** - cinco linhas na ordem (Cancelar escondida no Linux); "+" só com uma combinação; 🗑 nunca na única de Ditar nem no Cancelar; Esc encerra a gravação, menos no Cancelar
+Proof: `bun src/components/settings/shortcuts.test.tsx` (rows, buttons)
+**C11** - mensagens na linha: em uso com [Usar aqui] só quando dá, reservada, tecla sozinha, sobreposição como aviso; recusas de restaurar em pt e en
+Proof: mesmo arquivo (messages, restore)
+**C12** - frontend limpo: `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`, `bun run check:translations`
+**C13** - Windows, manual: Ctrl+Shift+Espaço como 2ª de Colar → recusa citando Ditar (sem [Usar aqui]); com F9 como 2ª de Ditar, de novo → [Usar aqui] → Ditar fica com F9; Win+H → recusa; Alt+Shift+M em "Gravar ou parar reunião" → começa e para uma reunião sem abrir a janela; [Restaurar padrão] com reunião gravando → recusa; sem reunião → padrões de volta e o ditado funciona
+Proof: roteiro no PR; não rodado pelo agente

@@ -29,6 +29,11 @@ export const LlmSettings: React.FC = React.memo(() => {
   const disabledApps = getSetting("llm_disabled_apps") ?? [];
   const apiKey = settings?.post_process_api_keys?.[GEMINI_PROVIDER_ID] ?? "";
   const appsUpdating = isUpdating("llm_disabled_apps");
+  // On without a key, the AI waits: the row says so instead of looking active (the Privacy
+  // section says the same). The switch stays the person's choice, so it can be turned off
+  // before a key is saved.
+  const hasKey = apiKey.trim() !== "";
+  const formatting = enabled && hasKey;
 
   const handleAddApp = () => {
     const app = newApp.trim();
@@ -45,14 +50,18 @@ export const LlmSettings: React.FC = React.memo(() => {
         onChange={(value) => updateSetting("llm_enabled", value)}
         isUpdating={isUpdating("llm_enabled")}
         label={t("settings.llm.enabled.label")}
-        description={t("settings.llm.enabled.description")}
+        description={
+          enabled && !hasKey
+            ? t("settings.llm.enabled.waitingKey")
+            : t("settings.llm.enabled.description")
+        }
         descriptionMode="tooltip"
         grouped={true}
       />
       <CleanupLevelCards
         value={cleanupLevel}
         onChange={(level) => updateSetting("cleanup_level", level)}
-        dimmed={!enabled || !apiKey}
+        dimmed={!formatting}
       />
       <SettingContainer
         title={t("settings.llm.apiKey.title")}
@@ -63,8 +72,7 @@ export const LlmSettings: React.FC = React.memo(() => {
       >
         <KeyField
           label={t("settings.llm.apiKey.title")}
-          saved={apiKey !== ""}
-          disabled={!enabled}
+          saved={hasKey}
           onSave={(key) =>
             void updatePostProcessApiKey(GEMINI_PROVIDER_ID, key)
           }
@@ -75,6 +83,7 @@ export const LlmSettings: React.FC = React.memo(() => {
         title={t("settings.llm.disabledApps.title")}
         description={t("settings.llm.disabledApps.description")}
         descriptionMode="tooltip"
+        layout="stacked"
         grouped={true}
       >
         <div className="flex items-center gap-2">
@@ -102,42 +111,43 @@ export const LlmSettings: React.FC = React.memo(() => {
             {t("settings.llm.disabledApps.add")}
           </Button>
         </div>
-      </SettingContainer>
-      {disabledApps.length > 0 && (
-        <div className="px-4 p-2 flex flex-wrap gap-1">
-          {disabledApps.map((app) => (
-            <Button
-              key={app}
-              onClick={() =>
-                updateSetting(
-                  "llm_disabled_apps",
-                  disabledApps.filter((a) => a !== app),
-                )
-              }
-              disabled={appsUpdating}
-              variant="secondary"
-              size="sm"
-              className="inline-flex items-center gap-1 cursor-pointer"
-              aria-label={t("settings.llm.disabledApps.remove", { app })}
-            >
-              <span>{app}</span>
-              <svg
-                className="w-3 h-3"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+        {/* The apps sit in the same card as the field that adds them. */}
+        {disabledApps.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {disabledApps.map((app) => (
+              <Button
+                key={app}
+                onClick={() =>
+                  updateSetting(
+                    "llm_disabled_apps",
+                    disabledApps.filter((a) => a !== app),
+                  )
+                }
+                disabled={appsUpdating}
+                variant="secondary"
+                size="sm"
+                className="inline-flex items-center gap-1 cursor-pointer"
+                aria-label={t("settings.llm.disabledApps.remove", { app })}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </Button>
-          ))}
-        </div>
-      )}
+                <span>{app}</span>
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </Button>
+            ))}
+          </div>
+        )}
+      </SettingContainer>
       <AppStyles />
     </>
   );

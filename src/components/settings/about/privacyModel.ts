@@ -26,6 +26,8 @@ export type Status =
   | "off"
   | "keySet"
   | "keyMissing"
+  /** The AI is on but has no key: nothing goes out until one is saved. */
+  | "waitingForKey"
   | "unknown"
   | "doesNotExist";
 
@@ -38,7 +40,8 @@ export interface PrivacyRow {
 
 export interface PrivacyInputs {
   llmEnabled: boolean;
-  geminiKey: boolean;
+  /** `undefined`: the settings have not loaded, so the key is not known. */
+  geminiKey: boolean | undefined;
   /** The provider of the inherited post-processing shortcut, when it is on. */
   experimentalProvider: string | null;
   /** `null`: `meeting_keys` failed or has not answered. */
@@ -77,7 +80,7 @@ export function privacyInputs(
   return {
     // Same defaults as the backend: the LLM starts on (`default_llm_enabled`).
     llmEnabled: settings?.llm_enabled ?? true,
-    geminiKey: hasValue(keys[GEMINI_PROVIDER_ID]),
+    geminiKey: settings ? hasValue(keys[GEMINI_PROVIDER_ID]) : undefined,
     experimentalProvider,
     meetingKeys,
     mcpEnabled: mcpEnabledFromToml(mcpToml),
@@ -92,7 +95,13 @@ export function privacyRows(inputs: PrivacyInputs): PrivacyRow[] {
   const rows: PrivacyRow[] = [
     {
       channel: "dictation",
-      statuses: [inputs.llmEnabled ? "on" : "off", keyStatus(inputs.geminiKey)],
+      // One state, as the settings row says it: on but without a key, nothing goes out yet.
+      // An unknown key (settings not loaded) still says "on", never less than what may leave.
+      statuses: !inputs.llmEnabled
+        ? ["off", keyStatus(inputs.geminiKey)]
+        : inputs.geminiKey === false
+          ? ["waitingForKey"]
+          : ["on", keyStatus(inputs.geminiKey)],
     },
   ];
   if (inputs.experimentalProvider !== null) {
