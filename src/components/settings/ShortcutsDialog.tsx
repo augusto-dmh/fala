@@ -36,7 +36,7 @@ export const KeyChips: React.FC<{ combo: string; osType: OSType }> = ({
       .map((key, i) => (
         <kbd
           key={`${key}-${i}`}
-          className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-caption font-semibold text-text"
+          className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-caption font-semibold text-text"
         >
           {key}
         </kbd>
@@ -282,7 +282,7 @@ export const ShortcutsDialog: React.FC<ShortcutsDialogProps> = ({
       description={t("settings.shortcuts.subtitle")}
       closeLabel={t("common.close")}
       dismissible={!recorder.target}
-      className="max-w-2xl"
+      size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={resetAll}>

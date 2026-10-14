@@ -168,6 +168,11 @@
   }
 }
 
+/* Key chips read like the rest of the text, not in the monospace font the base styles give kbd. */
+kbd {
+  font-family: inherit;
+}
+
 /* Reserve the scrollbar's gutter on both edges so pages with and without a scrollbar line up,
    centred like onboarding. */
 main {

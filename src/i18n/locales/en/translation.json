@@ -336,7 +336,7 @@
         "unset": "No shortcut",
         "bindings": {
           "transcribe": {
-            "name": "Transcribe shortcut",
+            "name": "Dictation shortcut",
             "description": "The keyboard shortcut to record and transcribe your voice."
           },
           "cancel": {
@@ -371,7 +371,7 @@
       },
       "shortcutActivation": {
         "title": "Shortcut behavior",
-        "description": "Choose how the transcribe shortcut starts and stops recording.",
+        "description": "Choose how the dictation shortcut starts and stops recording.",
         "options": {
           "pushToTalkDoubleTap": "Hold or double-tap",
           "holdOrToggle": "Auto",

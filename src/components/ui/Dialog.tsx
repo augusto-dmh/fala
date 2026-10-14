@@ -26,7 +26,12 @@ interface DialogProps {
   className?: string;
   contentClassName?: string;
   contentFades?: boolean;
+  /** The dialog's width: `md` (32rem) by default, `lg` (42rem) for tables like the shortcuts.
+   * A `max-w-*` in `className` replaces it instead of losing to it. */
+  size?: "md" | "lg";
 }
+
+const WIDTHS = { md: "max-w-lg", lg: "max-w-2xl" } as const;
 
 const isVisible = (element: HTMLElement) => {
   const style = window.getComputedStyle(element);
@@ -58,6 +63,7 @@ export const Dialog: React.FC<DialogProps> = ({
   className = "",
   contentClassName = "",
   contentFades = true,
+  size = "md",
 }) => {
   const titleId = useId();
   const descriptionId = useId();
@@ -168,7 +174,7 @@ export const Dialog: React.FC<DialogProps> = ({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-mid-gray/20 bg-background shadow-xl outline-none sm:max-h-[calc(100dvh-3rem)] ${className}`}
+        className={`flex max-h-[calc(100dvh-2rem)] w-full ${/(^|\s)max-w-/.test(className) ? "" : WIDTHS[size]} flex-col overflow-hidden rounded-lg border border-mid-gray/20 bg-background shadow-xl outline-none sm:max-h-[calc(100dvh-3rem)] ${className}`}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-mid-gray/20 px-4 py-2.5">
           <div className="min-w-0">
