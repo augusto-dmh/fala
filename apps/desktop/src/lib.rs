@@ -556,6 +556,22 @@ mod bindings_export {
 }
 
 #[cfg(test)]
+mod version_tests {
+    /// The app version has one source, `[workspace.package]` of the root `Cargo.toml`: without
+    /// `version` in `tauri.conf.json`, Tauri falls back to `CARGO_PKG_VERSION`, and so does the
+    /// bundler for the installer name (`docs/RELEASE.md`).
+    #[test]
+    fn app_version_comes_from_cargo() {
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        assert_eq!(context.config().version, None);
+        assert_eq!(
+            context.package_info().version.to_string(),
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+}
+
+#[cfg(test)]
 mod headless_guard_tests {
     use super::run_headless_guarded;
 
