@@ -929,6 +929,14 @@ async openHomeFromPill() : Promise<void> {
     await TAURI_INVOKE("open_home_from_pill");
 },
 /**
+ * "Nova reunião" on the idle pill's hover card: an explicit click, like the tray item, and the
+ * only way the pill starts a meeting (ADR-0005). The consent card comes first when it is due.
+ * Opening the devices takes a moment, so it runs off the command's thread.
+ */
+async startMeetingFromPill() : Promise<void> {
+    await TAURI_INVOKE("start_meeting_from_pill");
+},
+/**
  * A click on the meeting pill opens the main window on Reuniões, on the session it records.
  */
 async openMeetingFromPill() : Promise<void> {

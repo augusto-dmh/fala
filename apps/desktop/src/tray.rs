@@ -847,11 +847,14 @@ pub const PILL_HIDE_HOUR_ID: &str = "pill_hide_hour";
 /// Menu item id for "Configurações" in the pill menu: opens the main window on Configurações.
 pub const PILL_SETTINGS_ID: &str = "pill_settings";
 
-/// The pill menu, top to bottom; `None` is a separator. The submenus, "Colar o último ditado" and
-/// "Copiar o último ditado" reuse the tray's ids, so the tray's handler in `lib.rs` runs them.
-const PILL_MENU: [Option<&str>; 8] = [
+/// The pill menu, top to bottom; `None` is a separator. The submenus, "Colar o último ditado",
+/// "Copiar o último ditado" and "Gravar reunião" reuse the tray's ids, so the tray's handler in
+/// `lib.rs` runs them (a meeting starts only from that explicit click, ADR-0005).
+const PILL_MENU: [Option<&str>; 10] = [
     Some("paste_last_transcript"),
     Some("copy_last_transcript"),
+    None,
+    Some("meeting_start"),
     None,
     Some("pill_language_submenu"),
     Some("pill_microphone_submenu"),
@@ -885,6 +888,7 @@ pub fn build_pill_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 let label = match id {
                     "paste_last_transcript" => &strings.paste_last_transcript,
                     "copy_last_transcript" => &strings.copy_last_transcript,
+                    "meeting_start" => &strings.record_meeting,
                     PILL_HIDE_HOUR_ID => &strings.hide_pill_hour,
                     PILL_SETTINGS_ID => &strings.settings,
                     other => {
@@ -1011,6 +1015,8 @@ mod tests {
                 Some("paste_last_transcript"),
                 Some("copy_last_transcript"),
                 None,
+                Some("meeting_start"),
+                None,
                 Some("pill_language_submenu"),
                 Some("pill_microphone_submenu"),
                 None,
@@ -1024,6 +1030,7 @@ mod tests {
         for id in [
             "\"paste_last_transcript\" =>",
             "\"copy_last_transcript\" =>",
+            "\"meeting_start\" =>",
             "tray::PILL_HIDE_HOUR_ID =>",
             "tray::PILL_SETTINGS_ID =>",
             "tray::LANGUAGE_ITEM_PREFIX",
