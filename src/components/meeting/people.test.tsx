@@ -1,4 +1,4 @@
-// Prova dos checks de UI de Pessoas (`meeting-people-series`, PRs 1 e 2). Rode com
+// Prova dos checks de UI de Pessoas (`meeting-people-series`, PRs 1 a 3). Rode com
 // `bun src/components/meeting/people.test.tsx`: imprime `<check> ok` e sai com erro na primeira
 // falha. O `t` lê as chaves em pt, então toda string visível passa por elas.
 import assert from "node:assert/strict";
@@ -10,6 +10,7 @@ import { filterPeople, MeetingsTabs, PeopleView } from "./PeopleView";
 import { PersonView } from "./PersonView";
 import { PersonEdit } from "./PersonEdit";
 import { SuggestedNames, suggestNames } from "./nameSuggest";
+import { SeriesLine } from "./SessionHeader";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -291,4 +292,43 @@ const people = [
   assert.ok(read("./MeetingPeoplePanel.tsx").includes("useNameSuggest("));
   assert.ok(read("./TranscriptView.tsx").includes("useNameSuggest("));
   ok("P8");
+}
+
+// P9: "Mesma série:" with the earlier meetings by day; "ver todas (N)" only when there are more.
+{
+  const earlier = [session("B", "Weekly 13/10"), session("C", "Weekly 06/10")];
+  const series = { key: "weekly", name: "Weekly", earlier, total: 3 };
+  const line = (total: number) =>
+    renderToStaticMarkup(
+      <SeriesLine
+        series={{ ...series, total }}
+        onOpen={noop}
+        onAll={noop}
+        locale="pt-BR"
+        t={tr}
+        now={now}
+      />,
+    );
+  assert.ok(line(3).includes("Mesma série:"), line(3));
+  assert.equal(line(3).match(/title="Weekly/g)?.length, 2, line(3));
+  assert.ok(!line(3).includes("ver todas"), line(3));
+  assert.ok(line(3).includes("Ontem 14:02"), "o mesmo dia leva a hora");
+  assert.ok(line(12).includes("ver todas (12)"), line(12));
+  const none = (
+    <SeriesLine
+      series={null}
+      onOpen={noop}
+      onAll={noop}
+      locale="pt-BR"
+      t={tr}
+    />
+  );
+  assert.equal(renderToStaticMarkup(none), "");
+  assert.ok(read("./MeetingView.tsx").includes("<SeriesLine"));
+  assert.ok(
+    page.includes("commands.seriesMeetings"),
+    "ver todas filtra a lista",
+  );
+  assert.ok(page.includes("meeting.series.filter"));
+  ok("P9");
 }

@@ -404,6 +404,17 @@ pub async fn rename_meeting_person(
     meetings.rename_person(&key, &name)
 }
 
+/// Every meeting of the series `key` (a [`crate::meeting::series::MeetingSeries::key`]), newest
+/// first: "ver todas" under a session's title.
+#[tauri::command]
+#[specta::specta]
+pub async fn series_meetings(
+    meetings: Meetings<'_>,
+    key: String,
+) -> Result<Vec<MeetingSummary>, MeetingError> {
+    meetings.series_meetings(&key)
+}
+
 /// "Who was there" of a session and the name suggestions waiting for "apply".
 #[tauri::command]
 #[specta::specta]

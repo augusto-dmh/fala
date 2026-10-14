@@ -174,7 +174,7 @@ fn due_before(now_ms: i64) -> i64 {
     now_ms.saturating_sub(TRASH_DAYS * DAY_MS)
 }
 
-fn parse_id(id: &str) -> Result<SessionId, StorageError> {
+pub(crate) fn parse_id(id: &str) -> Result<SessionId, StorageError> {
     id.parse()
         .map_err(|_| StorageError::Db(bad(0, format!("id de sessão inválido {id:?}"))))
 }

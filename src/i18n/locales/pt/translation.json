@@ -1360,6 +1360,12 @@
       "mergeConfirm_one": "Juntar “{{from}}” com “{{to}}”? O nome muda em {{count}} reunião.",
       "mergeConfirm_other": "Juntar “{{from}}” com “{{to}}”? O nome muda em {{count}} reuniões."
     },
+    "series": {
+      "same": "Mesma série:",
+      "all": "ver todas ({{n}})",
+      "filter": "Série “{{name}}”",
+      "clear": "Limpar"
+    },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",
       "annotations": "Anotações",
