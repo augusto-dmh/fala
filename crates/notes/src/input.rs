@@ -22,6 +22,8 @@ pub enum Speaker {
     Person(u32),
     /// A linha marcadora de um trecho do mic zerado por um ditado (ADR-0015, ADR-0016).
     Omitted,
+    /// A linha marcadora de um trecho que a pessoa apagou, áudio e texto.
+    Erased,
     #[serde(rename = "name")]
     Named(String),
 }
