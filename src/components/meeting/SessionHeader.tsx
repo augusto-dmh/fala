@@ -25,12 +25,15 @@ export function metaLine(
     dayLabel(startOf(summary), now, locale, t),
     startTime(summary, locale),
     // While it records the stored duration is stale; the live time is in the recorder.
+    // A Granola import has no recorded time: no "00:00".
     recording
       ? t("meeting.home.state.recording")
       : summary.started_at === null
         ? t("meeting.list.draft")
-        : clock(summary.recorded_ms),
-  ];
+        : summary.imported_from === "granola"
+          ? null
+          : clock(summary.recorded_ms),
+  ].filter((part): part is string => part !== null);
   const mode = MODE_KEYS[summary.mode];
   if (mode) parts.push(t(mode));
   return parts.join(" · ");
