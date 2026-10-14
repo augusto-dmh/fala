@@ -1084,7 +1084,9 @@
         "reserved": "O Windows ou outro app já usa {{keys}}.",
         "loneKey": "Use com Ctrl, Alt, Shift ou Win: uma tecla sozinha atrapalharia a digitação.",
         "overlap": "{{smaller}} faz parte de {{larger}} ({{action}}): segurar um pode disparar o outro.",
-        "error": "Não deu para salvar o atalho: {{error}}"
+        "error": "Não deu para salvar o atalho: {{error}}",
+        "meetingNeedsKey": "O atalho de reunião precisa de uma tecla além de Ctrl, Alt, Shift ou Win: os modificadores sozinhos são segurados no caminho de outros atalhos, e uma gravação só começa de propósito.",
+        "meetingOverlap": "Ele se sobrepõe a “{{action}}”: segurar um no caminho do outro poderia começar ou parar a gravação de uma reunião. Escolha uma combinação sem essa parte em comum."
       },
       "resetRefused": {
         "dictation_active": "Termine o ditado antes de restaurar os atalhos.",

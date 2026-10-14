@@ -29,6 +29,12 @@ async setBinding(id: string, slot: BindingSlot, binding: string, takeOver: boole
 }
 },
 /**
+ * What the saved shortcuts already get wrong, by the same rules a save applies.
+ */
+async bindingProblems() : Promise<BindingProblem[]> {
+    return await TAURI_INVOKE("binding_problems");
+},
+/**
  * Removes one combination; a second one becomes the first. Cancel keeps its key and dictation
  * its last one.
  */
@@ -1993,6 +1999,18 @@ export type AppStyle = { app: string; style: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
+/**
+ * A problem a saved combination already has, for the shortcuts dialog to show on opening.
+ */
+export type BindingProblem = { action: string; slot: BindingSlot; combo: string; 
+/**
+ * A meeting rule it breaks (ADR-0005); the combination is not registered.
+ */
+refusal: ShortcutRefusal | null; 
+/**
+ * Holding it may fire another action: saved, with a warning.
+ */
+overlap: ShortcutOverlap | null }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null; 
 /**
  * Why the combination was not saved, for the shortcuts dialog to explain.
@@ -2659,7 +2677,17 @@ export type ShortcutRefusal =
  * A letter, digit, punctuation or editing key alone, or one modifier alone, would get in the
  * way of typing; Esc alone only cancels.
  */
-{ kind: "lone_key" }
+{ kind: "lone_key" } | 
+/**
+ * The meeting shortcut with modifiers only: they are held on the way to other shortcuts, and
+ * a recording only starts on purpose (ADR-0005).
+ */
+{ kind: "meeting_needs_key" } | 
+/**
+ * The combination contains, or is contained in, `action`'s, and one of the two is the meeting
+ * shortcut: holding one on the way to the other could start or stop a recording.
+ */
+{ kind: "meeting_overlap"; action: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
  * "Person `person`" may be `name`, because `reason`.
