@@ -111,6 +111,10 @@ pub struct MeetingDetail {
     #[serde(default)]
     #[specta(optional)]
     pub sleeps: Vec<super::sleeps::MeetingSleep>,
+    /// The meetings of the same series ("Weekly produto 13/10" and "20/10"); absent without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub series: Option<super::series::MeetingSeries>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -227,7 +231,10 @@ pub(crate) fn list_in(store: &Store) -> Result<Vec<MeetingSummary>, MeetingError
 }
 
 /// The summary with where the session came from, for the opened session.
-fn summary_in(store: &Store, record: &MeetingRecord) -> Result<MeetingSummary, MeetingError> {
+pub(crate) fn summary_in(
+    store: &Store,
+    record: &MeetingRecord,
+) -> Result<MeetingSummary, MeetingError> {
     Ok(MeetingSummary {
         imported_from: store.meeting_import_source(record.id)?,
         ..summary(record)
@@ -614,6 +621,7 @@ impl MeetingManager {
                 })
                 .collect();
             Ok(MeetingDetail {
+                series: super::series::series_in(store, id, &record.title)?,
                 summary: summary_in(store, &record)?,
                 annotations: record.annotations,
                 lines,
