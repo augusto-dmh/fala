@@ -139,7 +139,9 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
   );
   assert.ok(view_.includes('t("meeting.granola.noAnchors")'));
   assert.ok(
-    /<GranolaImport[\s\S]*onImported=\{\(\) => void refresh\(\)\}/.test(page),
+    /<GranolaImport[\s\S]*onImported=\{\(finished\) => \{[\s\S]*?void refresh\(\);\s*\}\}/.test(
+      page,
+    ),
   );
   const session: MeetingSummary = {
     id: "g",
