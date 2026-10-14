@@ -10,3 +10,8 @@ Profile: light · fase 4 (semana 1, sem LLM) · ADR-0006, 0016, 0017 · nenhuma 
 
 Decisions (PR 1): rascunho vazio = nunca gravou, sem pauta e sem notas; grafia = a da reunião
 mais recente ("Quem estava" antes do falante); a busca filtra nomes no front, sem acento.
+
+Decisions (PR 2): juntar = renomear a chave da origem para a grafia do destino; reescreve também
+lixeira e rascunhos (restaurar não traz a grafia velha) e a sugestão pendente; a contagem dita é
+a de Pessoas; só a pessoa renomeada perde repetidos; renomear para o nome de outra pessoa pede a
+confirmação de juntar.

@@ -466,6 +466,14 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     } else setError(result.error);
   };
 
+  // "Renomear" and "Juntar com…": the reply is the People list as it is now.
+  const renamePerson = async (key: string, name: string) => {
+    setError(null);
+    const result = await commands.renameMeetingPerson(key, name);
+    if (result.status === "ok") setPeople(result.data);
+    else setError(result.error);
+  };
+
   const recover = async (id: string) => {
     setError(null);
     setRecovering(id);
@@ -808,6 +816,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           people={people}
           query={query}
           onOpen={setPerson}
+          onRename={(key, name) => void renamePerson(key, name)}
           locale={i18n.language}
           t={t}
         />

@@ -9,6 +9,7 @@ import {
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { errorKey, parseParticipants } from "./meetingModel";
+import { useNameSuggest } from "./nameSuggest";
 
 export interface MeetingPeoplePanelProps {
   id: string;
@@ -39,6 +40,16 @@ export function MeetingPeoplePanel({
   const [error, setError] = useState<MeetingError | null>(null);
   // While the field has focus, a reload does not overwrite what is being typed.
   const editing = useRef(false);
+  const [focused, setFocused] = useState(false);
+  // People suggested for the name being typed: the one after the last comma.
+  const cut = Math.max(...[",", ";", "\n"].map((s) => typed.lastIndexOf(s)));
+  const head = typed.slice(0, cut + 1);
+  const suggest = useNameSuggest(
+    focused,
+    typed.slice(cut + 1),
+    (name) => setTyped(`${head}${head ? " " : ""}${name}, `),
+    parseParticipants(head),
+  );
 
   useEffect(() => {
     let current = true;
@@ -56,6 +67,7 @@ export function MeetingPeoplePanel({
 
   const save = async () => {
     editing.current = false;
+    setFocused(false);
     // Before the first load there is nothing to compare with: saving would erase the list.
     if (people === null) return;
     const names = parseParticipants(typed);
@@ -93,9 +105,12 @@ export function MeetingPeoplePanel({
             onChange={(event) => setTyped(event.target.value)}
             onFocus={() => {
               editing.current = true;
+              setFocused(true);
             }}
             onBlur={() => void save()}
+            onKeyDown={suggest.onKeyDown}
           />
+          {suggest.list}
           <span className="text-caption text-text-2">
             {t("meeting.people.hint")}
           </span>
