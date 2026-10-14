@@ -81,7 +81,6 @@
     "description": "Words, names and terms Fala should recognize when you dictate.",
     "search": "Search the dictionary",
     "replacements": {
-      "title": "Spoken → written",
       "description": "When you say the spoken form, Fala writes the other one. It matches whole words, ignoring case and accents, before the formatting AI and also with it off. Only the written form goes to the AI.",
       "spokenPlaceholder": "btw",
       "writtenPlaceholder": "by the way",
@@ -94,7 +93,6 @@
       "uses_other": "{{count}} uses"
     },
     "snippets": {
-      "title": "Snippets",
       "description": "Say the trigger and Fala inserts the text as it is: a signature, a calendar link, an address. The trigger needs two words or more and matches ignoring case and accents. {data}, {data_extenso} and {hora} (the Portuguese names stay) become the date, the long date and the time of the dictation. The snippet text never goes to the formatting AI.",
       "spokenPlaceholder": "my signature",
       "writtenPlaceholder": "Jane Doe\nexample.com",
@@ -106,6 +104,25 @@
       "twoWords": "The trigger needs two words or more.",
       "uses_one": "1 use",
       "uses_other": "{{count}} uses"
+    },
+    "list": {
+      "kind": "Kind of entry",
+      "filter": "Show",
+      "filters": {
+        "all": "All ({{count}})",
+        "term": "Terms ({{count}})",
+        "replacement": "Spoken → written ({{count}})",
+        "snippet": "Snippets ({{count}})"
+      },
+      "kinds": {
+        "term": "Term",
+        "replacement": "Spoken → written",
+        "snippet": "Snippet"
+      },
+      "add": "Add",
+      "close": "Close",
+      "empty": "Nothing in the dictionary yet. Add a term, a spoken → written pair or a snippet.",
+      "noMatch": "Nothing matches."
     }
   },
   "settingsPage": {
@@ -394,7 +411,8 @@
       "title": "AI",
       "enabled": {
         "label": "Format dictations with AI",
-        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does."
+        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does.",
+        "waitingKey": "Waiting for the Gemini key below: nothing is formatted or sent until it is saved."
       },
       "cleanup": {
         "title": "How much the AI changes the text",
@@ -649,7 +667,6 @@
         }
       },
       "customWords": {
-        "title": "Personal dictionary",
         "description": "Names and terms Fala should always spell this way. They help supported models recognize what you say, fix the spelling in the text and go to the formatting AI. Fuzzy correction is limited to words using A–Z and numbers.",
         "placeholder": "Add a word",
         "add": "Add",
@@ -949,7 +966,8 @@
           "keySet": "Key saved",
           "keyMissing": "No key",
           "unknown": "Not checked",
-          "doesNotExist": "Does not exist"
+          "doesNotExist": "Does not exist",
+          "waitingForKey": "Waiting for the key"
         },
         "keys": {
           "title": "Where the keys are kept",
@@ -1127,7 +1145,7 @@
       "modelMissing": "No speech model downloaded",
       "chooseMic": "Choose microphone",
       "resolve": "Fix it",
-      "micMutedNamed": "No sound from {{device}}. Is it muted?"
+      "micMutedNamed": "Microphone muted? No sound from {{device}}."
     },
     "meeting": "Recording meeting",
     "meetingPaused": "Meeting paused",

@@ -13,6 +13,7 @@
 //! `granola` lê o "Historical Data Export" do Granola (CSV ou `.zip`); cada reunião vira uma
 //! sessão `import` sem áudio, e `meeting_imports`, aditiva, liga cada uma ao id de origem, para
 //! importar de novo atualizar em vez de duplicar.
+//! `meeting_erasures`, aditiva, guarda os trechos que a pessoa apagou (texto e marcador).
 //! `meeting_trash`, aditiva, guarda as sessões na lixeira por 30 dias; o `.md` delas fica em
 //! `Reuniões/.lixeira/`, e a lista, a busca e o MCP não as veem.
 //! `meeting_directory` junta as pessoas das reuniões por nome, sem tabela: é uma consulta sobre
@@ -24,6 +25,7 @@
 
 mod granola;
 mod meeting_directory;
+mod meeting_erasures;
 mod meeting_imports;
 mod meeting_mirror;
 mod meeting_notes;
@@ -47,6 +49,7 @@ pub use granola::{
     GranolaMeeting, RejectReason, RejectedRow,
 };
 pub use meeting_directory::{person_key, DirectoryPerson};
+pub use meeting_erasures::{erased_segment, Erasure, ERASED_TEXT};
 pub use meeting_imports::{ImportOutcome, GRANOLA};
 pub use meeting_omissions::{omitted_segment, OMITTED_TEXT};
 pub use meeting_people::{MeetingSpeaker, NameSuggestion};
