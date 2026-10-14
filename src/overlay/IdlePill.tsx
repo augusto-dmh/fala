@@ -10,6 +10,10 @@ export interface IdlePillProps {
   /** Translated name for screen readers. */
   label: string;
   onOpen?: () => void;
+  /** Translated "Nova reunião" for the hover card's button; no button without it. */
+  newMeetingLabel?: string;
+  /** Starts a meeting: only this explicit click does, never the hover (ADR-0005). */
+  onNewMeeting?: () => void;
 }
 
 /**
@@ -24,11 +28,16 @@ export function IdlePill({
   doubleTapLabel,
   label,
   onOpen,
+  newMeetingLabel,
+  onNewMeeting,
 }: IdlePillProps) {
+  const meetingButton = Boolean(hover && newMeetingLabel && onNewMeeting);
   return (
+    // With the "New meeting" button inside, the card is a group, not a button: a control inside
+    // another would hide it from screen readers.
     <div
       className={`fpill idle${hover ? " hover" : ""}`}
-      role="button"
+      role={meetingButton ? "group" : "button"}
       aria-label={label}
       onClick={onOpen}
     >
@@ -42,6 +51,22 @@ export function IdlePill({
           </span>
           {doubleTapLabel && (
             <span className="idle-hint">{doubleTapLabel}</span>
+          )}
+          {meetingButton && (
+            <button
+              type="button"
+              className="idle-meeting"
+              // A press here is a click, never the start of a pill drag.
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                // The card's own click opens the main window; this one only starts the meeting.
+                event.stopPropagation();
+                onNewMeeting?.();
+              }}
+            >
+              {newMeetingLabel}
+            </button>
           )}
         </>
       )}

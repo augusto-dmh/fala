@@ -878,6 +878,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             overlay::open_pill_menu,
             overlay::start_pill_drag,
             overlay::open_home_from_pill,
+            overlay::start_meeting_from_pill,
             overlay::open_meeting_from_pill,
             overlay::end_paste_failed,
             last_dictation::copy_failed_paste,

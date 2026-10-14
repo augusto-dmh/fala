@@ -471,6 +471,8 @@ const RecordingOverlay: React.FC = () => {
           doubleTapLabel={idleDoubleTap ? t("overlay.idle.doubleTap") : null}
           label={t("overlay.idle.label")}
           onOpen={() => void commands.openHomeFromPill()}
+          newMeetingLabel={t("overlay.idle.newMeeting")}
+          onNewMeeting={() => void commands.startMeetingFromPill()}
         />
       </div>
     );
