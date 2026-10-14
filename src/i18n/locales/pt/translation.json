@@ -1126,7 +1126,7 @@
       "modelMissing": "Nenhum modelo de voz baixado",
       "chooseMic": "Escolher microfone",
       "resolve": "Resolver",
-      "micMutedNamed": "Não chegou som de {{device}}. Está mudo?"
+      "micMutedNamed": "Microfone mudo? Não chegou som de {{device}}."
     },
     "meeting": "Gravando reunião",
     "meetingPaused": "Reunião pausada",

@@ -1,4 +1,4 @@
-/* The pill at rest (`.specs/features/pill-idle`): a 40×8 capsule, translucent black with a light
+/* The pill at rest (`.specs/features/pill-idle`): a 40×8 capsule, translucent grey with a light
    hairline, no bars, no red, nothing that moves, so it never reads as a recording (ADR-0005). Colours
    are literal like the pill's: the same in light and dark themes. The window is 64×20 at rest and
    grows to 300×64 on hover (overlay.rs). */
@@ -18,6 +18,10 @@
 .ov-stage.top .fpill.idle {
   margin: 10px 0 0;
 }
+/* Open on hover, the card keeps a 6 px margin: the 64 px hover window has no room to lose. */
+.ov-stage.top .fpill.idle.hover {
+  margin: 6px 0 0;
+}
 /* Hover: the capsule opens on the shortcut, black like the pill. */
 .fpill.idle.hover {
   flex-direction: column;
@@ -25,6 +29,7 @@
   width: auto;
   height: auto;
   max-width: 288px;
+  margin: 0 0 6px;
   padding: 7px 12px;
   border-radius: 14px;
   background: #000;
