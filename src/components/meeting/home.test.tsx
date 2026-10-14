@@ -205,9 +205,10 @@ const OPTIONS = "opções";
     page,
     /current\?\.summary\.id === id \|\| \(orHome && current === null\)/,
   );
+  // Recording, recovering, importing and "Retomar": all actions of the person.
   assert.equal(
     page.match(/await open\(/g)?.length,
-    3,
+    4,
     "só ações da pessoa abrem",
   );
   // Gravando, níveis e avisos em cima e os controles na barra; parando, só a barra.
