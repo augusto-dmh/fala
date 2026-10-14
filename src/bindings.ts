@@ -1241,6 +1241,17 @@ async startMeeting(mode: MeetingMode, title: string, draftId: string | null) : P
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * "Retomar" on a finished session: a new take, from a click only (ADR-0005).
+ */
+async continueMeeting(id: string) : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("continue_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async pauseMeeting() : Promise<Result<MeetingStatus, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("pause_meeting") };
@@ -2329,7 +2340,11 @@ omitted?: boolean | null;
 /**
  * The line marks a stretch the person erased, audio and text, in both channels.
  */
-erased?: boolean | null }
+erased?: boolean | null; 
+/**
+ * The line marks where a resumed recording (a take) starts.
+ */
+resumed?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
