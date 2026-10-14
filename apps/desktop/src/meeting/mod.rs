@@ -14,6 +14,7 @@
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
+pub(crate) mod erase;
 pub(crate) mod granola;
 pub(crate) mod import;
 pub(crate) mod lifecycle;
@@ -167,6 +168,8 @@ pub enum MeetingError {
     ImportNoAudio,
     /// The imported source is longer than `fala_media::MAX_DURATION`.
     ImportTooLong,
+    /// More than `erase::MAX_LINES` lines in one stretch to erase.
+    EraseTooLong,
 }
 
 impl std::fmt::Display for MeetingError {

@@ -26,3 +26,13 @@ reindex` on a deleted database brings the trash back.
 C7, C8 PASS: `bun src/components/meeting/trash.test.tsx` → T1-T4 ok; the 15 files under
 `src/components/meeting/` pass; `bunx tsc --noEmit`, `bun run lint`, `bun run format:check`,
 `bun run check:translations` clean. C9 open: no one clicked through the app.
+
+## S3 (PR 3)
+
+C10, C11 PASS (`cargo test -p fala-retention`, `-p fala-storage`, `-p fala-notes`). Opus spreads each edge ~25 ms; from 40 ms in, exact zeros.
+
+## S4 (PR 4)
+
+C12, C13 PASS: `cargo test -p fala --lib meeting` (64 passed, `erase_zeroes_the_working_wav_and_takes_the_text`),
+`bun src/components/meeting/erase.test.tsx` (E1-E5) and the 18 files under `src/components/meeting/`.
+C14 open: no one recorded a real meeting.
