@@ -4,6 +4,9 @@
 # picked up without being listed anywhere.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# The tests pin dates at -03:00 and check the formatted hour, so they run in Brazil's zone
+# whatever the machine's (the CI runner is UTC).
+export TZ=America/Sao_Paulo
 
 failed=()
 count=0
