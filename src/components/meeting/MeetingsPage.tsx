@@ -101,6 +101,13 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const [title, setTitle] = useState("");
   const [askConsent, setAskConsent] = useState(takeConsentRequest);
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
+  // "Retomar" waiting for the third-party notice, like a draft.
+  const [pendingContinue, setPendingContinue] = useState<string | null>(null);
+  // Sessions with notes recording a take: when its transcript is done, offer to write them again.
+  const takesWithNotes = useRef(new Set<string>());
+  const [takeTranscribed, setTakeTranscribed] = useState<Set<string>>(
+    new Set(),
+  );
   const [transcribing, setTranscribing] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   // Sessions whose last notes generation failed; the stage before `failed` says which step.
@@ -296,6 +303,9 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
         if (stage.stage === "failed" && before === "notes") {
           setNotesFailed((ids) => new Set(ids).add(id));
         }
+        if (stage.stage === "done" && takesWithNotes.current.delete(id)) {
+          setTakeTranscribed((current) => new Set(current).add(id));
+        }
         if (stage.stage === "done" || stage.stage === "failed") {
           setTranscribing((current) => (current === id ? null : current));
           setGenerating((current) => (current === id ? null : current));
@@ -370,6 +380,26 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       result.error.kind === "consent_required"
     ) {
       setPendingDraft(draftId);
+      setAskConsent(true);
+    } else {
+      setError(result.error);
+    }
+  };
+
+  // "Retomar": a new take of a finished session, from this click only (ADR-0005).
+  const continueSession = async (id: string) => {
+    setError(null);
+    const hadNotes = selected?.summary.id === id && selected.notes_md !== null;
+    const result = await commands.continueMeeting(id);
+    if (result.status === "ok") {
+      setStatus(result.data);
+      if (hadNotes) takesWithNotes.current.add(id);
+      await open(id);
+    } else if (
+      typeof result.error === "object" &&
+      result.error.kind === "consent_required"
+    ) {
+      setPendingContinue(id);
       setAskConsent(true);
     } else {
       setError(result.error);
@@ -595,7 +625,10 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           onAccept={async () => {
             setAskConsent(false);
             await commands.acceptMeetingConsent();
-            await start(pendingDraft);
+            if (pendingContinue !== null) {
+              setPendingContinue(null);
+              await continueSession(pendingContinue);
+            } else await start(pendingDraft);
           }}
           onCancel={() => setAskConsent(false)}
         />
@@ -684,6 +717,13 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
             }
             notesFailed={notesFailed.has(selected.summary.id)}
             onRecordDraft={() => void start(selected.summary.id)}
+            onContinue={() => void continueSession(selected.summary.id)}
+            takeTranscribed={takeTranscribed.has(selected.summary.id)}
+            onTakeSeen={() =>
+              setTakeTranscribed((current) =>
+                withoutId(current, selected.summary.id),
+              )
+            }
             onTranscribe={() => void transcribe(selected.summary.id)}
             onCancelTranscription={() =>
               void commands.cancelMeetingTranscription()

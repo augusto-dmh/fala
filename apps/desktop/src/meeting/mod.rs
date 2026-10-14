@@ -1515,4 +1515,68 @@ mod tests {
             Err(MeetingError::NotFound)
         );
     }
+
+    #[test]
+    fn only_a_finished_recorded_session_resumes_and_takes_count_up() {
+        let (_dir, mut store) = store("resume");
+        let now = now_local();
+        let id = SessionId::from_parts(1_800_000_000_000, 1);
+        let meeting = |id, mode| NewMeeting {
+            id,
+            title: String::new(),
+            mode,
+            local_only: false,
+            created_at: now,
+        };
+        store
+            .create_meeting(&meeting(id, SessionMode::InPerson))
+            .unwrap();
+        // A draft and a recording do not resume.
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+        store
+            .start_meeting_recording(id, SessionMode::InPerson, now)
+            .unwrap();
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+        store
+            .finish_meeting(id, now, 60_000, StopReason::User)
+            .unwrap();
+        // Finished: take 2, in the session's own mode.
+        assert_eq!(resume_target(&store, id), Ok((MeetingMode::InPerson, 2)));
+        store.start_meeting_take(id, now).unwrap();
+        // A take still open: no other.
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+        store
+            .finish_meeting_take(id, now, 1_000, Some(StopReason::User))
+            .unwrap();
+        assert_eq!(resume_target(&store, id), Ok((MeetingMode::InPerson, 3)));
+        // An import never resumes, nor a session in the trash.
+        let import = SessionId::from_parts(1_800_000_000_001, 2);
+        store
+            .create_meeting(&meeting(import, SessionMode::Import))
+            .unwrap();
+        store
+            .start_meeting_recording(import, SessionMode::Import, now)
+            .unwrap();
+        store
+            .finish_meeting(import, now, 0, StopReason::User)
+            .unwrap();
+        assert_eq!(
+            resume_target(&store, import),
+            Err(MeetingError::InvalidTransition)
+        );
+        store.trash_meeting(id, now).unwrap();
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+    }
 }

@@ -63,6 +63,11 @@ export interface MeetingViewProps {
   live?: LiveControls | null;
   /** Which meeting keys are saved; `null` until known (nothing is turned off meanwhile). */
   keys?: MeetingKeys | null;
+  /** "Retomar": record a new take of this finished session (absent: it cannot take one). */
+  onContinue?: () => void;
+  /** A take was just transcribed after notes existed: offer to write them again. */
+  takeTranscribed?: boolean;
+  onTakeSeen?: () => void;
 }
 
 export type SessionTab = "annotations" | "notes";
@@ -382,6 +387,28 @@ export function MeetingView(props: MeetingViewProps) {
               </Button>
             </div>
           )}
+          {props.takeTranscribed && detail.notes_md !== null && !confirming && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>{t("meeting.erase.changedNone")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={notesOff}
+                onClick={() => {
+                  props.onTakeSeen?.();
+                  generate();
+                }}
+              >
+                {t("meeting.rename.generate")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={props.onTakeSeen}>
+                {t("meeting.rename.dismiss")}
+              </Button>
+            </div>
+          )}
           {erased !== null && detail.notes_md !== null && !confirming && (
             <div
               role="status"
@@ -655,6 +682,18 @@ export function MeetingView(props: MeetingViewProps) {
         transcriptOpen={transcriptOpen}
         onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
         onRecordDraft={props.onRecordDraft}
+        onContinue={
+          props.onContinue &&
+          !draft &&
+          !granola &&
+          detail.summary.mode !== "import" &&
+          detail.summary.ended_at !== null
+            ? props.onContinue
+            : undefined
+        }
+        continueDisabled={
+          props.recording || props.transcribing || props.generating
+        }
         transcribing={props.transcribing}
         transcribeHint={hints.transcribe ? t(hints.transcribe) : undefined}
         transcribeDisabled={

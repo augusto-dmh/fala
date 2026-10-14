@@ -1364,6 +1364,7 @@
       "agenda": "Pauta e anotações (antes de gravar)",
       "annotations": "Anotações",
       "recordDraft": "Gravar esta reunião",
+      "continue": "Retomar",
       "transcribe": "Transcrever",
       "transcribing": "Transcrevendo…",
       "cancel": "Cancelar",
@@ -1403,6 +1404,7 @@
     },
     "omitted": "Trecho de ditado omitido",
     "erased": "Trecho apagado",
+    "resumed": "Gravação retomada",
     "erase": {
       "start": "Apagar trecho",
       "running": "Apagando o trecho…",
