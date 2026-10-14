@@ -951,6 +951,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::person_meetings,
             commands::meeting::rename_meeting_person,
             commands::meeting::series_meetings,
+            commands::meeting::set_meeting_series_template,
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
             commands::meeting::set_meeting_speaker_name,

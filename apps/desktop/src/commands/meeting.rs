@@ -405,6 +405,19 @@ pub async fn rename_meeting_person(
     meetings.rename_person(&key, &name)
 }
 
+/// "Usar sempre em …": the notes template of every meeting of the series `key` (named `name`)
+/// without its own pick; `None` forgets it.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_series_template(
+    meetings: Meetings<'_>,
+    key: String,
+    name: String,
+    template: Option<String>,
+) -> Result<(), MeetingError> {
+    meetings.set_series_template(key, name, template)
+}
+
 /// Every meeting of the series `key` (a [`crate::meeting::series::MeetingSeries::key`]), newest
 /// first: "ver todas" under a session's title.
 #[tauri::command]

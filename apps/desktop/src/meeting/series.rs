@@ -1,7 +1,7 @@
 //! Meetings of the same series: the title without dates or a final number (`fala_storage`'s
 //! `series_of`). Nothing is stored; renaming a meeting moves it to another series at once.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use fala_meeting::SessionId;
 use fala_storage::{series_of, Store};
@@ -10,6 +10,8 @@ use specta::Type;
 
 use super::pipeline::{list_in, summary_in, MeetingSummary};
 use super::{MeetingError, MeetingManager};
+use crate::settings::SeriesTemplate;
+use tauri::Emitter;
 
 /// At most this many earlier meetings under the title; "see all" lists the rest.
 const EARLIER_SHOWN: usize = 5;
@@ -24,6 +26,21 @@ pub struct MeetingSeries {
     pub earlier: Vec<MeetingSummary>,
     /// Every meeting of the series outside the trash, this one included.
     pub total: u32,
+    /// "Usar sempre em …": the template of its meetings without their own pick.
+    pub template: Option<String>,
+}
+
+/// The template "Usar sempre" set for the series `key`, if any.
+fn template_for(key: &str, templates: &BTreeMap<String, SeriesTemplate>) -> Option<String> {
+    templates.get(key).map(|t| t.template.clone())
+}
+
+/// The template "Usar sempre" set for the series of `title`, if any.
+pub(crate) fn series_template(
+    title: &str,
+    templates: &BTreeMap<String, SeriesTemplate>,
+) -> Option<String> {
+    template_for(&series_of(title)?.key, templates)
 }
 
 /// The sessions of the series `key`, newest first.
@@ -46,6 +63,7 @@ pub(crate) fn series_in(
     store: &Store,
     id: SessionId,
     title: &str,
+    templates: &BTreeMap<String, SeriesTemplate>,
 ) -> Result<Option<MeetingSeries>, MeetingError> {
     let Some(series) = series_of(title) else {
         return Ok(None);
@@ -63,6 +81,7 @@ pub(crate) fn series_in(
         .map(|older| summary_in(store, &store.meeting(*older)?))
         .collect::<Result<_, _>>()?;
     Ok(Some(MeetingSeries {
+        template: template_for(&series.key, templates),
         key: series.key,
         name: series.name,
         earlier,
@@ -71,6 +90,37 @@ pub(crate) fn series_in(
 }
 
 impl MeetingManager {
+    /// "Usar sempre em …": `template` for every meeting of the series `key` without its own
+    /// pick; `None` forgets it.
+    pub fn set_series_template(
+        &self,
+        key: String,
+        name: String,
+        template: Option<String>,
+    ) -> Result<(), MeetingError> {
+        if let Some(template) = &template {
+            self.template(template)?;
+        }
+        let mut settings = crate::settings::get_settings(&self.app);
+        match template {
+            Some(template) => {
+                settings
+                    .meeting_series_templates
+                    .insert(key, SeriesTemplate { name, template });
+            }
+            None => {
+                settings.meeting_series_templates.remove(&key);
+            }
+        }
+        let value = serde_json::to_value(&settings.meeting_series_templates).ok();
+        crate::settings::write_settings(&self.app, settings);
+        let _ = self.app.emit(
+            "settings-changed",
+            serde_json::json!({ "setting": "meeting_series_templates", "value": value }),
+        );
+        Ok(())
+    }
+
     pub fn series_meetings(&self, key: &str) -> Result<Vec<MeetingSummary>, MeetingError> {
         self.with_store(|store| series_sessions(store, key))
     }
@@ -113,7 +163,8 @@ mod tests {
             .collect();
         let alone = meeting(&store, 9, "1:1 Ana");
 
-        let series = series_in(&store, ids[6], "Weekly produto 07/10")
+        let none = BTreeMap::new();
+        let series = series_in(&store, ids[6], "Weekly produto 07/10", &none)
             .unwrap()
             .unwrap();
         assert_eq!(series.name, "Weekly produto");
@@ -122,11 +173,29 @@ mod tests {
         let want: Vec<String> = ids[1..6].iter().rev().map(ToString::to_string).collect();
         assert_eq!(earlier, want);
 
-        let first = series_in(&store, ids[0], "Weekly produto 01/10")
+        let first = series_in(&store, ids[0], "Weekly produto 01/10", &none)
             .unwrap()
             .unwrap();
         assert!(first.earlier.is_empty());
-        assert_eq!(series_in(&store, alone, "1:1 Ana").unwrap(), None);
-        assert_eq!(series_in(&store, alone, "Reunião").unwrap(), None);
+        assert_eq!(series_in(&store, alone, "1:1 Ana", &none).unwrap(), None);
+        assert_eq!(series_in(&store, alone, "Reunião", &none).unwrap(), None);
+    }
+
+    #[test]
+    fn a_series_template_follows_the_title() {
+        let mut templates = BTreeMap::new();
+        templates.insert(
+            "weekly produto".to_string(),
+            SeriesTemplate {
+                name: "Weekly produto".to_string(),
+                template: "1-1".to_string(),
+            },
+        );
+        assert_eq!(
+            series_template("Weekly Produto 20/10", &templates).as_deref(),
+            Some("1-1")
+        );
+        assert_eq!(series_template("Retro #3", &templates), None);
+        assert_eq!(series_template("", &templates), None);
     }
 }

@@ -1364,7 +1364,11 @@
       "same": "Same series:",
       "all": "see all ({{n}})",
       "filter": "Series “{{name}}”",
-      "clear": "Clear"
+      "clear": "Clear",
+      "always": "Always use in “{{name}}”",
+      "default": "(series default)",
+      "bySeries": "By series: {{name}}",
+      "forget": "Forget the template of “{{name}}”"
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",
