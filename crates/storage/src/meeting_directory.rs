@@ -5,11 +5,13 @@
 //! A chave de uma pessoa é o nome sem caixa, sem acento, com os espaços colapsados e sem a
 //! pontuação das pontas; um e-mail é a sua própria chave, em minúsculas. A mesma pessoa conta
 //! uma vez por reunião. Reuniões na lixeira e rascunhos sem nada além do título ficam fora.
+//! Juntar duas grafias reescreve os nomes nas reuniões; nenhum apelido fica guardado.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chrono::{DateTime, FixedOffset};
 use fala_meeting::SessionId;
+use rusqlite::params;
 
 use crate::meetings::bad;
 use crate::{StorageError, Store};
@@ -167,6 +169,105 @@ impl Store {
                 ids.push(appearance.meeting);
             }
         }
+        Ok(ids)
+    }
+
+    /// Troca por `name`, em toda reunião (lixeira inclusive), cada nome de chave `key` em "Quem
+    /// estava" e em "Pessoa N", numa transação; o `.md` de cada uma acompanha. Juntar "Ana" com
+    /// "Ana Souza" é trocar a chave `ana` pelo nome "Ana Souza": numa reunião com os dois, "Quem
+    /// estava" fica com um só. Devolve as sessões que mudaram.
+    pub fn rename_person(&mut self, key: &str, name: &str) -> Result<Vec<SessionId>, StorageError> {
+        let tx = self.conn.transaction()?;
+        let mut lists: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        {
+            let mut stmt = tx.prepare(
+                "SELECT meeting_id, name FROM meeting_participants ORDER BY meeting_id, position",
+            )?;
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            for row in rows {
+                let (id, typed): (String, String) = row?;
+                lists.entry(id).or_default().push(typed);
+            }
+        }
+        let target = person_key(name);
+        let mut changed: BTreeSet<String> = BTreeSet::new();
+        for (id, names) in lists {
+            if !names.iter().any(|n| person_key(n).as_deref() == Some(key)) {
+                continue;
+            }
+            // Only the renamed person loses a repeat; anyone else stays as typed.
+            let mut kept: Vec<String> = Vec::new();
+            let mut has_target = false;
+            for typed in &names {
+                let typed = if person_key(typed).as_deref() == Some(key) {
+                    name
+                } else {
+                    typed
+                };
+                if target.is_some() && person_key(typed) == target {
+                    if has_target {
+                        continue;
+                    }
+                    has_target = true;
+                }
+                kept.push(typed.to_string());
+            }
+            if kept == names {
+                continue;
+            }
+            tx.execute(
+                "DELETE FROM meeting_participants WHERE meeting_id = ?1",
+                [&id],
+            )?;
+            for (index, typed) in kept.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO meeting_participants (meeting_id, position, name) VALUES (?1, ?2, ?3)",
+                    params![id, index as i64 + 1, typed],
+                )?;
+            }
+            changed.insert(id);
+        }
+        type Speaker = (String, u32, Option<String>, Option<String>);
+        let speakers: Vec<Speaker> = {
+            let mut stmt = tx
+                .prepare("SELECT meeting_id, person, name, suggested_name FROM meeting_speakers")?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let renamed = |typed: &Option<String>| {
+            typed
+                .as_deref()
+                .is_some_and(|t| t != name && person_key(t).as_deref() == Some(key))
+        };
+        for (id, person, typed, suggested) in speakers {
+            if renamed(&typed) {
+                tx.execute(
+                    "UPDATE meeting_speakers SET name = ?3 WHERE meeting_id = ?1 AND person = ?2",
+                    params![id, person, name],
+                )?;
+                changed.insert(id.clone());
+            }
+            // A suggestion applied later must not bring the old spelling back.
+            if renamed(&suggested) {
+                tx.execute(
+                    "UPDATE meeting_speakers SET suggested_name = ?3
+                     WHERE meeting_id = ?1 AND person = ?2",
+                    params![id, person, name],
+                )?;
+            }
+        }
+        tx.commit()?;
+        let mut ids = Vec::with_capacity(changed.len());
+        for id in changed {
+            let id: SessionId = id
+                .parse()
+                .map_err(|_| StorageError::Db(bad(0, format!("id de sessão inválido {id:?}"))))?;
+            self.after_meeting_change(id);
+            ids.push(id);
+        }
+        log::debug!("pessoa renomeada em {} reuniões", ids.len());
         Ok(ids)
     }
 }
