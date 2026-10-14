@@ -1400,7 +1400,11 @@
       "same": "Mesma série:",
       "all": "ver todas ({{n}})",
       "filter": "Série “{{name}}”",
-      "clear": "Limpar"
+      "clear": "Limpar",
+      "always": "Usar sempre em “{{name}}”",
+      "default": "(padrão da série)",
+      "bySeries": "Por série: {{name}}",
+      "forget": "Esquecer o template de “{{name}}”"
     },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",

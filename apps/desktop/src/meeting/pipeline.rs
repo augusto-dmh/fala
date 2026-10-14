@@ -31,6 +31,7 @@ use tauri_specta::Event;
 use super::clip::TakeAudio;
 use super::context::{notes_settings, NotesSettings};
 use super::people::speaker_names;
+use super::series::series_template;
 use super::{parse_id, MeetingError, MeetingManager, WORK_WAV};
 
 /// The notes follow a stop only from this much transcript text and recorded time (Granola waits
@@ -41,6 +42,26 @@ pub(crate) const AUTO_NOTES_MIN_MS: u64 = 3 * 60 * 1000;
 
 /// Keyring account of the ElevenLabs key (`fala-cli key set elevenlabs` stores the same one).
 pub(crate) const SCRIBE_KEY: &str = "elevenlabs";
+
+/// The template of automatic notes: the session's pick, else its series' one (`Usar sempre em
+/// …`). One that left the templates folder gives "geral", and the log says why.
+pub(crate) fn notes_template(
+    id: SessionId,
+    session: Option<String>,
+    series: Option<String>,
+    available: impl Fn(&str) -> Result<(), MeetingError>,
+) -> String {
+    session
+        .or(series)
+        .filter(|t| match available(t) {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("meeting {id}: template {t} unavailable ({e}); notes use geral");
+                false
+            }
+        })
+        .unwrap_or_else(|| "geral".to_string())
+}
 
 /// A session in the list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -609,6 +630,7 @@ impl MeetingManager {
             .then_some(true);
         let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
+        let series_templates = crate::settings::get_settings(&self.app).meeting_series_templates;
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let names = speaker_names(store, id)?;
@@ -627,7 +649,7 @@ impl MeetingManager {
                 })
                 .collect();
             Ok(MeetingDetail {
-                series: super::series::series_in(store, id, &record.title)?,
+                series: super::series::series_in(store, id, &record.title, &series_templates)?,
                 summary: summary_in(store, &record)?,
                 annotations: record.annotations,
                 lines,
@@ -832,7 +854,8 @@ impl MeetingManager {
     /// After the transcript of a stop: the notes, with the session's template, when
     /// [`auto_notes_due`] says so. Progress and failure reach the page as `MeetingProgress`.
     pub(crate) fn auto_notes(&self, id: SessionId, lines: &[MeetingLine]) {
-        let enabled = crate::settings::get_settings(&self.app).meeting_auto_notes;
+        let settings = crate::settings::get_settings(&self.app);
+        let enabled = settings.meeting_auto_notes;
         let record = match self.with_store(|store| Ok(store.meeting(id)?)) {
             Ok(record) => record,
             Err(e) => return log::warn!("meeting {id}: automatic notes skipped: {e}"),
@@ -842,16 +865,10 @@ impl MeetingManager {
             log::debug!("meeting {id}: notes left to a click");
             return;
         }
-        let template = record
-            .notes_template
-            .filter(|t| match self.template(t) {
-                Ok(_) => true,
-                Err(e) => {
-                    log::warn!("meeting {id}: template {t} unavailable ({e}); notes use geral");
-                    false
-                }
-            })
-            .unwrap_or_else(|| "geral".to_string());
+        let series = series_template(&record.title, &settings.meeting_series_templates);
+        let template = notes_template(id, record.notes_template, series, |t| {
+            self.template(t).map(|_| ())
+        });
         if let Err(e) = self.generate_notes(&id.to_string(), &template, false) {
             log::warn!("meeting {id}: automatic notes failed: {e}");
         }
@@ -867,7 +884,7 @@ impl MeetingManager {
     }
 
     /// A built-in template or one of the person's own.
-    fn template(&self, id: &str) -> Result<Template, MeetingError> {
+    pub(crate) fn template(&self, id: &str) -> Result<Template, MeetingError> {
         find_template(&templates_dir(&self.app)?, id)
     }
 
@@ -1219,6 +1236,26 @@ mod tests {
             find_template(dir.path(), "geral").unwrap().name,
             "Reunião geral"
         );
+    }
+
+    #[test]
+    fn automatic_notes_use_the_series_template_when_the_session_has_none() {
+        let id = SessionId::from_parts(1_727_000_000_000, 1);
+        let all = |_: &str| Ok(());
+        let pick = |session: Option<&str>, series: Option<&str>| {
+            notes_template(id, session.map(Into::into), series.map(Into::into), all)
+        };
+        assert_eq!(pick(None, Some("1-1")), "1-1");
+        assert_eq!(pick(Some("retro"), Some("1-1")), "retro");
+        assert_eq!(pick(None, None), "geral");
+        let gone = |t: &str| {
+            if t == "1-1" {
+                Err(MeetingError::UnknownTemplate)
+            } else {
+                Ok(())
+            }
+        };
+        assert_eq!(notes_template(id, None, Some("1-1".into()), gone), "geral");
     }
 
     /// Chain stop -> transcript -> notes: only when every condition holds.

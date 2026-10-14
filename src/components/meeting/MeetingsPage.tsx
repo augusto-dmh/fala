@@ -615,7 +615,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       onStop={() => void act(commands.stopMeeting)}
       onExtend={() => void act(commands.extendMeetingCap)}
       templates={templates}
-      template={live?.notes_template ?? null}
+      template={live?.notes_template ?? live?.series?.template ?? null}
       onTemplateChange={(templateId) => {
         if (!live) return;
         setLive({ ...live, notes_template: templateId });

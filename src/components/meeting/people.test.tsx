@@ -1,4 +1,4 @@
-// Prova dos checks de UI de Pessoas (`meeting-people-series`, PRs 1 a 3). Rode com
+// Prova dos checks de UI de Pessoas (`meeting-people-series`, PRs 1 a 4). Rode com
 // `bun src/components/meeting/people.test.tsx`: imprime `<check> ok` e sai com erro na primeira
 // falha. O `t` lê as chaves em pt, então toda string visível passa por elas.
 import assert from "node:assert/strict";
@@ -11,6 +11,8 @@ import { PersonView } from "./PersonView";
 import { PersonEdit } from "./PersonEdit";
 import { SuggestedNames, suggestNames } from "./nameSuggest";
 import { SeriesLine } from "./SessionHeader";
+import { TemplateMenu, TemplateSelect } from "./TemplateSelect";
+import { TemplatesSettings } from "./TemplatesSettings";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -297,7 +299,13 @@ const people = [
 // P9: "Mesma série:" with the earlier meetings by day; "ver todas (N)" only when there are more.
 {
   const earlier = [session("B", "Weekly 13/10"), session("C", "Weekly 06/10")];
-  const series = { key: "weekly", name: "Weekly", earlier, total: 3 };
+  const series = {
+    key: "weekly",
+    name: "Weekly",
+    earlier,
+    total: 3,
+    template: null,
+  };
   const line = (total: number) =>
     renderToStaticMarkup(
       <SeriesLine
@@ -331,4 +339,68 @@ const people = [
   );
   assert.ok(page.includes("meeting.series.filter"));
   ok("P9");
+}
+
+// P10: "Usar sempre em “…”" under the templates, "(padrão da série)" when the session inherits
+// it, and "Por série" in Settings with its 🗑. Without i18next, `t` gives the keys.
+{
+  const templates = [
+    {
+      id: "geral",
+      name: "Reunião geral",
+      purpose: "",
+      source: "builtin" as const,
+    },
+    { id: "um-a-um", name: "Um a um", purpose: "", source: "builtin" as const },
+  ];
+  const series = (always: boolean) => ({
+    name: "Weekly",
+    always,
+    inherited: always,
+    onAlways: noop,
+  });
+  const menu = renderToStaticMarkup(
+    <TemplateMenu
+      templates={templates}
+      value="um-a-um"
+      onChange={noop}
+      series={series(true)}
+    />,
+  );
+  assert.match(menu, /role="menuitemcheckbox" aria-checked="true"/);
+  assert.ok(menu.includes("meeting.series.always"), menu);
+  const plain = renderToStaticMarkup(
+    <TemplateMenu templates={templates} value="um-a-um" onChange={noop} />,
+  );
+  assert.ok(!plain.includes("menuitemcheckbox"), plain);
+  const select = (always: boolean) =>
+    renderToStaticMarkup(
+      <TemplateSelect
+        templates={templates}
+        value="um-a-um"
+        onChange={noop}
+        series={series(always)}
+      />,
+    );
+  assert.ok(
+    select(true).includes("Um a um meeting.series.default"),
+    select(true),
+  );
+  assert.ok(!select(false).includes("meeting.series.default"));
+  const settings = renderToStaticMarkup(
+    <TemplatesSettings
+      catalog={{ templates, errors: [] }}
+      onChange={noop}
+      series={{ weekly: { name: "Weekly", template: "um-a-um" } }}
+      onForgetSeries={noop}
+    />,
+  );
+  assert.ok(
+    settings.includes("meeting.series.bySeries") &&
+      settings.includes("Um a um"),
+    settings,
+  );
+  assert.ok(settings.includes('aria-label="meeting.series.forget"'), settings);
+  assert.ok(read("./MeetingView.tsx").includes(".setMeetingSeriesTemplate("));
+  ok("P10");
 }

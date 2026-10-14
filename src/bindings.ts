@@ -1605,6 +1605,18 @@ async seriesMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingErro
 }
 },
 /**
+ * "Usar sempre em …": the notes template of every meeting of the series `key` (named `name`)
+ * without its own pick; `None` forgets it.
+ */
+async setMeetingSeriesTemplate(key: string, name: string, template: string | null) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_series_template", { key, name, template }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
  */
 async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {
@@ -1910,7 +1922,12 @@ meeting_keyterms?: boolean;
  * After the transcript of a stop, the notes follow without a click (never for a local-only
  * session, nor for a short call).
  */
-meeting_auto_notes?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+meeting_auto_notes?: boolean; 
+/**
+ * Series key (`fala_storage::series_of`) to its template. Out of the database, so a
+ * reindex neither loses nor rebuilds it.
+ */
+meeting_series_templates?: Partial<{ [key in string]: SeriesTemplate }>; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
 /**
  * Pause the media playing on the PC while dictating; off by default.
  */
@@ -2464,7 +2481,11 @@ earlier: MeetingSummary[];
 /**
  * Every meeting of the series outside the trash, this one included.
  */
-total: number }
+total: number; 
+/**
+ * "Usar sempre em …": the template of its meetings without their own pick.
+ */
+template: string | null }
 export type MeetingSleep = { 
 /**
  * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
@@ -2642,6 +2663,14 @@ uncovered_bindings: string[];
  * warning banner appears and explains why recording refused.
  */
 recorder_blocked: boolean }
+/**
+ * The notes template of every meeting of a series that has none of its own.
+ */
+export type SeriesTemplate = { 
+/**
+ * The series as typed ("Weekly produto"), for the list in Settings.
+ */
+name: string; template: string }
 /**
  * How the transcribe shortcut's key events drive a recording.
  */
