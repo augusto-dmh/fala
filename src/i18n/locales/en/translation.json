@@ -1084,7 +1084,9 @@
         "reserved": "Windows or another app already uses {{keys}}.",
         "loneKey": "Use it with Ctrl, Alt, Shift or Win: a key on its own would get in the way of typing.",
         "overlap": "{{smaller}} is part of {{larger}} ({{action}}): holding one may fire the other.",
-        "error": "Couldn't save the shortcut: {{error}}"
+        "error": "Couldn't save the shortcut: {{error}}",
+        "meetingNeedsKey": "The meeting shortcut needs a key besides Ctrl, Alt, Shift or Win: modifiers alone are held on the way to other shortcuts, and a recording only starts on purpose.",
+        "meetingOverlap": "It overlaps “{{action}}”: holding one on the way to the other could start or stop a meeting recording. Pick a combination that shares no modifiers-only part."
       },
       "resetRefused": {
         "dictation_active": "Finish the dictation before restoring the shortcuts.",
@@ -1398,12 +1400,17 @@
       "same": "Same series:",
       "all": "see all ({{n}})",
       "filter": "Series “{{name}}”",
-      "clear": "Clear"
+      "clear": "Clear",
+      "always": "Always use in “{{name}}”",
+      "default": "(series default)",
+      "bySeries": "By series: {{name}}",
+      "forget": "Forget the template of “{{name}}”"
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",
       "annotations": "Notes",
       "recordDraft": "Record this meeting",
+      "continue": "Resume",
       "transcribe": "Transcribe",
       "transcribing": "Transcribing…",
       "cancel": "Cancel",
@@ -1443,6 +1450,7 @@
     },
     "omitted": "Dictation left out",
     "erased": "Erased stretch",
+    "resumed": "Recording resumed",
     "erase": {
       "start": "Erase stretch",
       "running": "Erasing the stretch…",

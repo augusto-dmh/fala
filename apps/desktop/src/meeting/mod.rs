@@ -40,7 +40,7 @@ use fala_meeting::{
     SessionConfig, SessionError, SessionId, SessionMode, SessionState, StopReason, UnixMillis,
     UserAction,
 };
-use fala_storage::{NewMeeting, StorageError, Store};
+use fala_storage::{MeetingTake, NewMeeting, StorageError, Store};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Emitter, Manager};
@@ -195,6 +195,7 @@ impl From<StorageError> for MeetingError {
         match error {
             StorageError::NotFound(_) => MeetingError::NotFound,
             StorageError::MeetingAlreadyStarted(_) => MeetingError::AlreadyStarted,
+            StorageError::NotResumable(_) => MeetingError::InvalidTransition,
             other => MeetingError::Storage(other.to_string()),
         }
     }
@@ -337,6 +338,29 @@ pub(crate) fn start_target(
     }
 }
 
+/// What "Retomar" records into: the session's capture mode and the next take number. Only a
+/// finished, recorded session that is not an import nor in the trash, with no take left open.
+pub(crate) fn resume_target(
+    store: &Store,
+    id: SessionId,
+) -> Result<(MeetingMode, u32), MeetingError> {
+    let record = store.meeting(id)?;
+    let takes = store.meeting_takes(id)?;
+    let mode = match record.mode {
+        SessionMode::Meeting => MeetingMode::Meeting,
+        SessionMode::InPerson => MeetingMode::InPerson,
+        SessionMode::SystemOnly => MeetingMode::SystemOnly,
+        SessionMode::Import => return Err(MeetingError::InvalidTransition),
+    };
+    if record.ended_at.is_none()
+        || store.meeting_trashed_at(id)?.is_some()
+        || takes.iter().any(|t| t.ended_at.is_none())
+    {
+        return Err(MeetingError::InvalidTransition);
+    }
+    Ok((mode, takes.last().map_or(2, |t| t.take + 1)))
+}
+
 /// Why a finished session stopped.
 pub(crate) fn stop_reason(state: SessionState) -> StopReason {
     match state {
@@ -420,6 +444,9 @@ struct Active {
     waking: bool,
     /// The devices did not come back after a sleep: nobody stopped the session.
     interrupted: bool,
+    /// A take of a resumed session: its spans and sleeps move by its offset, and its stop
+    /// closes the take.
+    take: Option<MeetingTake>,
 }
 
 #[derive(Default)]
@@ -578,6 +605,38 @@ impl MeetingManager {
         title: &str,
         draft: Option<&str>,
     ) -> Result<MeetingStatus, MeetingError> {
+        let draft = draft.map(parse_id).transpose()?;
+        self.begin(mode, title, draft, None)
+    }
+
+    /// "Retomar" on a finished session: the next take, by the same path as a start (ADR-0005:
+    /// only a click, with the third-party notice and the indicator). The take records in
+    /// `audio/<id>/t<N>/` and opens in the store once the capture is open.
+    pub fn resume_session(&self, id: &str) -> Result<MeetingStatus, MeetingError> {
+        let id = parse_id(id)?;
+        // The last stop of this session is still being retained or transcribed: its transcript
+        // would be lost to the new take.
+        if self
+            .work
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .involves(id)
+        {
+            return Err(MeetingError::Busy);
+        }
+        let (mode, take) = self.with_store(|store| resume_target(store, id))?;
+        self.begin(mode, "", None, Some((id, take)))
+    }
+
+    /// A start: into a draft or a new session, or (`resume`: the session and the take number)
+    /// a take of a finished one.
+    fn begin(
+        &self,
+        mode: MeetingMode,
+        title: &str,
+        draft: Option<SessionId>,
+        resume: Option<(SessionId, u32)>,
+    ) -> Result<MeetingStatus, MeetingError> {
         let settings = crate::settings::get_settings(&self.app);
         let consent = settings.meeting_consent_accepted_at;
         let dictation = self
@@ -586,11 +645,19 @@ impl MeetingManager {
             .is_some_and(|rm| rm.is_recording());
         let mut inner = self.lock();
         check_start(consent.as_deref(), dictation, inner.active.is_some())?;
-        let draft = draft.map(parse_id).transpose()?;
+        if resume.is_some_and(|(id, _)| inner.processing.contains(&id)) {
+            return Err(MeetingError::Busy);
+        }
 
         let now = now_local();
-        let (id, existing) = self.with_store(|store| start_target(store, draft, millis(now)))?;
-        let dir = self.session_dir(id);
+        let (id, existing) = match resume {
+            Some((id, _)) => (id, true),
+            None => self.with_store(|store| start_target(store, draft, millis(now)))?,
+        };
+        let dir = match resume {
+            Some((_, take)) => self.session_dir(id).join(format!("t{take}")),
+            None => self.session_dir(id),
+        };
         std::fs::create_dir_all(&dir)
             .map_err(|e| MeetingError::Storage(format!("{}: {e}", dir.display())))?;
         let free = disk::free_bytes(&dir).unwrap_or_else(|| {
@@ -653,7 +720,31 @@ impl MeetingManager {
         // The row is written only once the capture is open, so a device that fails leaves no
         // session behind. The audio matters more than the row: a failed write is logged and the
         // recording goes on.
+        let mut take = None;
+        if let Some((_, number)) = resume {
+            // Without its row the take would be stopped as the session's first recording (and a
+            // short one even discarded with the session): no row, no take.
+            match self.with_store(|store| Ok(store.start_meeting_take(id, now)?)) {
+                Ok(opened) if opened.take == number => take = Some(opened),
+                opened => {
+                    let _ = control.send(Control::Finalize);
+                    hide_indicator(&self.app);
+                    if opened.is_ok() {
+                        let closed = self.with_store(|store| {
+                            Ok(store.finish_meeting_take(id, now, 0, Some(StopReason::User))?)
+                        });
+                        log::error!(
+                            "meeting {id}: take {number} opened under another number: {closed:?}"
+                        );
+                    }
+                    return Err(opened.err().unwrap_or(MeetingError::InvalidTransition));
+                }
+            }
+        }
         let saved = self.with_store(|store| {
+            if resume.is_some() {
+                return Ok(());
+            }
             if !existing {
                 store.create_meeting(&NewMeeting {
                     id,
@@ -684,6 +775,7 @@ impl MeetingManager {
             dictating: false,
             waking: false,
             interrupted: false,
+            take,
         });
         inner.status = MeetingStatus {
             low_disk_bytes: low_disk,
@@ -883,10 +975,12 @@ impl MeetingManager {
             }
             Report::Omitted(spans) => {
                 let id = active.session.id();
+                // A take's spans are in its own time; the table is on the session's timeline.
+                let offset = active.take.as_ref().map_or(0, |take| take.offset_ms);
                 // Saved now, so a crash keeps the marker of every dictation already closed.
                 let saved = self.with_store(|store| {
                     for (t0, t1) in &spans {
-                        store.add_meeting_omission(id, *t0, *t1)?;
+                        store.add_meeting_omission(id, t0 + offset, t1 + offset)?;
                     }
                     Ok(())
                 });
@@ -912,7 +1006,8 @@ impl MeetingManager {
                     .rev()
                     .find(|gap| gap.kind == GapKind::Suspend)
                     .and_then(sleeps::from_gap);
-                if let Some(sleep) = sleep {
+                if let Some(mut sleep) = sleep {
+                    sleep.at_ms += active.take.as_ref().map_or(0, |take| take.offset_ms);
                     if let Err(e) = sleeps::append(&self.session_dir(id), sleep) {
                         log::warn!("meeting {id}: sleep marker not saved: {e}");
                     }
@@ -1043,14 +1138,19 @@ impl MeetingManager {
             crate::call_prompt::show_silence_stopped(&self.app);
         }
         let app = self.app.clone();
-        let dir = self.session_dir(id);
+        let take = active.take.clone();
+        let dir = match &take {
+            Some(take) => self.session_dir(id).join(format!("t{}", take.take)),
+            None => self.session_dir(id),
+        };
         log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms, {voiced_ms} ms of speech)");
         let spawned = std::thread::Builder::new()
             .name("meeting-process".to_string())
             .spawn(move || {
                 if let Some(manager) = app.try_state::<Arc<MeetingManager>>() {
-                    let voiced_ms = may_be_mistake.then_some(voiced_ms);
-                    manager.finish(id, reason, recorded_ms, voiced_ms, &dir);
+                    // A take is never discarded as a mistake: the session already has a recording.
+                    let voiced_ms = (may_be_mistake && take.is_none()).then_some(voiced_ms);
+                    manager.finish(id, reason, recorded_ms, voiced_ms, &dir, take.as_ref());
                 }
             });
         if let Err(e) = spawned {
@@ -1064,13 +1164,20 @@ impl MeetingManager {
         id: SessionId,
         reason: Option<StopReason>,
         recorded_ms: u64,
-        // `None` when the stop cannot be a mistake (cap, failed capture).
+        // `None` when the stop cannot be a mistake (cap, failed capture, a take).
         voiced_ms: Option<u64>,
         dir: &Path,
+        take: Option<&MeetingTake>,
     ) {
-        let saved = self.with_store(|store| match reason {
-            Some(reason) => Ok(store.finish_meeting(id, now_local(), recorded_ms, reason)?),
-            None => Ok(store.recover_meeting(id, now_local(), recorded_ms)?),
+        let saved = self.with_store(|store| match (take, reason) {
+            (Some(_), reason) => {
+                store.finish_meeting_take(id, now_local(), recorded_ms, reason)?;
+                Ok(())
+            }
+            (None, Some(reason)) => {
+                Ok(store.finish_meeting(id, now_local(), recorded_ms, reason)?)
+            }
+            (None, None) => Ok(store.recover_meeting(id, now_local(), recorded_ms)?),
         });
         if let Err(e) = saved {
             log::error!("meeting {id}: end not saved: {e}");
@@ -1093,11 +1200,15 @@ impl MeetingManager {
                 return;
             }
         }
-        let lines = self.transcribe_if_keyed(id);
+        let lines = match take {
+            Some(take) => self.transcribe_take_if_keyed(id, take),
+            None => self.transcribe_if_keyed(id),
+        };
         if self.quit_if_asked(id) {
             return;
         }
-        // After a stop, the notes follow the transcript (`auto_notes`).
+        // After a stop, the notes follow the transcript (`auto_notes`); after a take, notes that
+        // exist stay as they are until the person writes them again.
         if let Some(lines) = lines {
             self.auto_notes(id, &lines);
         }
@@ -1127,6 +1238,21 @@ impl MeetingManager {
                 None
             }
         }
+    }
+
+    /// After a take's stop, with the key in the keyring: only the take is sent, and its
+    /// transcript goes after the session's.
+    pub(crate) fn transcribe_take_if_keyed(
+        &self,
+        id: SessionId,
+        take: &MeetingTake,
+    ) -> Option<Vec<pipeline::MeetingLine>> {
+        if !pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
+            return None;
+        }
+        self.transcribe_with(id, Some(take))
+            .map_err(|e| log::warn!("meeting {id}: take not transcribed: {e}"))
+            .ok()
     }
 
     /// `recording.wav` becomes `mic.opus` and `sys.opus`; on any error the WAV stays.
@@ -1420,6 +1546,70 @@ mod tests {
         assert_eq!(
             start_target(&store, Some(missing), millis(now)),
             Err(MeetingError::NotFound)
+        );
+    }
+
+    #[test]
+    fn only_a_finished_recorded_session_resumes_and_takes_count_up() {
+        let (_dir, mut store) = store("resume");
+        let now = now_local();
+        let id = SessionId::from_parts(1_800_000_000_000, 1);
+        let meeting = |id, mode| NewMeeting {
+            id,
+            title: String::new(),
+            mode,
+            local_only: false,
+            created_at: now,
+        };
+        store
+            .create_meeting(&meeting(id, SessionMode::InPerson))
+            .unwrap();
+        // A draft and a recording do not resume.
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+        store
+            .start_meeting_recording(id, SessionMode::InPerson, now)
+            .unwrap();
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+        store
+            .finish_meeting(id, now, 60_000, StopReason::User)
+            .unwrap();
+        // Finished: take 2, in the session's own mode.
+        assert_eq!(resume_target(&store, id), Ok((MeetingMode::InPerson, 2)));
+        store.start_meeting_take(id, now).unwrap();
+        // A take still open: no other.
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
+        );
+        store
+            .finish_meeting_take(id, now, 1_000, Some(StopReason::User))
+            .unwrap();
+        assert_eq!(resume_target(&store, id), Ok((MeetingMode::InPerson, 3)));
+        // An import never resumes, nor a session in the trash.
+        let import = SessionId::from_parts(1_800_000_000_001, 2);
+        store
+            .create_meeting(&meeting(import, SessionMode::Import))
+            .unwrap();
+        store
+            .start_meeting_recording(import, SessionMode::Import, now)
+            .unwrap();
+        store
+            .finish_meeting(import, now, 0, StopReason::User)
+            .unwrap();
+        assert_eq!(
+            resume_target(&store, import),
+            Err(MeetingError::InvalidTransition)
+        );
+        store.trash_meeting(id, now).unwrap();
+        assert_eq!(
+            resume_target(&store, id),
+            Err(MeetingError::InvalidTransition)
         );
     }
 }

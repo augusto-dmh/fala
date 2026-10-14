@@ -769,6 +769,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::set_binding,
+            shortcut::binding_problems,
             shortcut::remove_binding,
             shortcut::reset_binding,
             shortcut::reset_all_bindings,
@@ -917,6 +918,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::set_meeting_title,
             commands::meeting::save_meeting_annotations,
             commands::meeting::start_meeting,
+            commands::meeting::continue_meeting,
             commands::meeting::pause_meeting,
             commands::meeting::resume_meeting,
             commands::meeting::stop_meeting,
@@ -951,6 +953,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::person_meetings,
             commands::meeting::rename_meeting_person,
             commands::meeting::series_meetings,
+            commands::meeting::set_meeting_series_template,
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
             commands::meeting::set_meeting_speaker_name,

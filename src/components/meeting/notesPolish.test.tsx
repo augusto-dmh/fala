@@ -191,11 +191,11 @@ const lines: MeetingLine[] = [
     viewSource,
     /const edited = detail\.notes_edited \|\| editedHere;\s*if \(needsConfirmation\(\{ \.\.\.detail, notes_edited: edited \}, picked\)\) \{\s*setConfirming\(true\);\s*\} else \{\s*props\.onGenerate\(picked, false\);/,
   );
-  // "Gerar de novo" da confirmação e o da faixa de trecho apagado ficam desligados como o
-  // "Gerar notas".
+  // "Gerar de novo" da confirmação e os das faixas de trecho apagado e de tomada retomada
+  // ficam desligados como o "Gerar notas".
   assert.equal(
     viewSource.match(/(disabled|generateDisabled)={notesOff}/g)?.length,
-    4,
+    5,
   );
   // Só o mesmo template pergunta; outro template é uma versão nova (como no Granola).
   assert.equal(needsConfirmation(detail, "geral"), true);

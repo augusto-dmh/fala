@@ -29,6 +29,12 @@ async setBinding(id: string, slot: BindingSlot, binding: string, takeOver: boole
 }
 },
 /**
+ * What the saved shortcuts already get wrong, by the same rules a save applies.
+ */
+async bindingProblems() : Promise<BindingProblem[]> {
+    return await TAURI_INVOKE("binding_problems");
+},
+/**
  * Removes one combination; a second one becomes the first. Cancel keeps its key and dictation
  * its last one.
  */
@@ -1241,6 +1247,17 @@ async startMeeting(mode: MeetingMode, title: string, draftId: string | null) : P
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * "Retomar" on a finished session: a new take, from a click only (ADR-0005).
+ */
+async continueMeeting(id: string) : Promise<Result<MeetingStatus, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("continue_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async pauseMeeting() : Promise<Result<MeetingStatus, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("pause_meeting") };
@@ -1588,6 +1605,18 @@ async seriesMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingErro
 }
 },
 /**
+ * "Usar sempre em …": the notes template of every meeting of the series `key` (named `name`)
+ * without its own pick; `None` forgets it.
+ */
+async setMeetingSeriesTemplate(key: string, name: string, template: string | null) : Promise<Result<null, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_series_template", { key, name, template }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
  */
 async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {
@@ -1893,7 +1922,12 @@ meeting_keyterms?: boolean;
  * After the transcript of a stop, the notes follow without a click (never for a local-only
  * session, nor for a short call).
  */
-meeting_auto_notes?: boolean; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
+meeting_auto_notes?: boolean; 
+/**
+ * Series key (`fala_storage::series_of`) to its template. Out of the database, so a
+ * reindex neither loses nor rebuilds it.
+ */
+meeting_series_templates?: Partial<{ [key in string]: SeriesTemplate }>; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; 
 /**
  * Pause the media playing on the PC while dictating; off by default.
  */
@@ -1993,6 +2027,18 @@ export type AppStyle = { app: string; style: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
+/**
+ * A problem a saved combination already has, for the shortcuts dialog to show on opening.
+ */
+export type BindingProblem = { action: string; slot: BindingSlot; combo: string; 
+/**
+ * A meeting rule it breaks (ADR-0005); the combination is not registered.
+ */
+refusal: ShortcutRefusal | null; 
+/**
+ * Holding it may fire another action: saved, with a warning.
+ */
+overlap: ShortcutOverlap | null }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null; 
 /**
  * Why the combination was not saved, for the shortcuts dialog to explain.
@@ -2345,7 +2391,11 @@ omitted?: boolean | null;
 /**
  * The line marks a stretch the person erased, audio and text, in both channels.
  */
-erased?: boolean | null }
+erased?: boolean | null; 
+/**
+ * The line marks where a resumed recording (a take) starts.
+ */
+resumed?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
@@ -2431,7 +2481,11 @@ earlier: MeetingSummary[];
 /**
  * Every meeting of the series outside the trash, this one included.
  */
-total: number }
+total: number; 
+/**
+ * "Usar sempre em …": the template of its meetings without their own pick.
+ */
+template: string | null }
 export type MeetingSleep = { 
 /**
  * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.
@@ -2610,6 +2664,14 @@ uncovered_bindings: string[];
  */
 recorder_blocked: boolean }
 /**
+ * The notes template of every meeting of a series that has none of its own.
+ */
+export type SeriesTemplate = { 
+/**
+ * The series as typed ("Weekly produto"), for the list in Settings.
+ */
+name: string; template: string }
+/**
  * How the transcribe shortcut's key events drive a recording.
  */
 export type ShortcutActivation = 
@@ -2659,7 +2721,17 @@ export type ShortcutRefusal =
  * A letter, digit, punctuation or editing key alone, or one modifier alone, would get in the
  * way of typing; Esc alone only cancels.
  */
-{ kind: "lone_key" }
+{ kind: "lone_key" } | 
+/**
+ * The meeting shortcut with modifiers only: they are held on the way to other shortcuts, and
+ * a recording only starts on purpose (ADR-0005).
+ */
+{ kind: "meeting_needs_key" } | 
+/**
+ * The combination contains, or is contained in, `action`'s, and one of the two is the meeting
+ * shortcut: holding one on the way to the other could start or stop a recording.
+ */
+{ kind: "meeting_overlap"; action: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
  * "Person `person`" may be `name`, because `reason`.
