@@ -35,6 +35,7 @@ const view = (phase: GranolaPhase) =>
       onRun={noop}
       onCancel={noop}
       onClose={noop}
+      locale="pt-BR"
       t={tr}
     />,
   );
@@ -52,7 +53,10 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
 {
   const clean = view({ kind: "preview", preview: preview() });
   assert.ok(
-    clean.includes("Reuniões no arquivo: 12, de 2024-11-03 a 2025-09-30."),
+    // As datas no idioma da UI, não em ISO (R16 da segunda passada de QA).
+    clean.includes(
+      "Reuniões no arquivo: 12, de 3 de nov. de 2024 a 30 de set. de 2025.",
+    ),
   );
   assert.ok(clean.includes(">Importar</button>"));
   assert.ok(!clean.includes("Linhas ignoradas"));
@@ -72,7 +76,7 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
     preview: preview({ rejected, duplicates: 2 }),
   });
   assert.ok(dirty.includes("Linhas ignoradas: 7."));
-  assert.ok(dirty.includes("<li>linha 2: sem document_id</li>"));
+  assert.ok(dirty.includes("<li>Linha 2: sem document_id</li>"));
   assert.ok(
     dirty.includes(
       "<li>export/Acme.csv, linha 3: data não reconhecida (ontem)</li>",
@@ -135,7 +139,9 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
   );
   assert.ok(view_.includes('t("meeting.granola.noAnchors")'));
   assert.ok(
-    /<GranolaImport[\s\S]*onImported=\{\(\) => void refresh\(\)\}/.test(page),
+    /<GranolaImport[\s\S]*onImported=\{\(finished\) => \{[\s\S]*?void refresh\(\);\s*\}\}/.test(
+      page,
+    ),
   );
   const session: MeetingSummary = {
     id: "g",

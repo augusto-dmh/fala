@@ -147,3 +147,22 @@ export const formatClock = (date: Date, locale: string): string => {
   }
   return clock.format(date);
 };
+
+/**
+ * A calendar day ("2026-10-12", or the start of an RFC 3339 time) as a medium date in `locale`.
+ * A malformed or out-of-range day comes back as written, never rolled over to another date.
+ */
+export const formatIsoDay = (iso: string | null, locale: string): string => {
+  const text = (iso ?? "").slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return text;
+  const [year, month, day] = [
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  ];
+  const date = new Date(year, month - 1, day);
+  date.setFullYear(year);
+  if (date.getMonth() !== month - 1 || date.getDate() !== day) return text;
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
+};

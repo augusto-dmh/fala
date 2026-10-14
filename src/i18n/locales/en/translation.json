@@ -1330,7 +1330,7 @@
       "duplicates": "Repeated rows (the last one of each meeting wins): {{count}}.",
       "skipped": "Rows skipped: {{count}}.",
       "more": "and {{count}} more",
-      "row": "row {{line}}: {{reason}}",
+      "row": "Row {{line}}: {{reason}}",
       "rowIn": "{{file}}, row {{line}}: {{reason}}",
       "reasons": {
         "missing_id": "no document_id",
@@ -1345,7 +1345,7 @@
       "close": "Close",
       "importedOn": "Imported from Granola on {{date}}.",
       "noAudio": "Imported from Granola: the transcript has no audio or times.",
-      "noAnchors": "No anchors: imported from Granola.",
+      "noAnchors": "Notes imported from Granola: no links to the transcript.",
       "errors": {
         "empty": "This file is empty.",
         "not_utf8": "This file is not UTF-8 text. Use the CSV from Granola's email without opening and saving it in another program.",
@@ -1573,7 +1573,7 @@
     },
     "delete": {
       "title": "Delete for good?",
-      "body": "The transcript, typed notes and notes leave this computer. This cannot be undone.",
+      "body": "The transcript, typed notes and notes are erased from this computer. This cannot be undone.",
       "confirm": "Delete for good",
       "cancel": "Cancel"
     },
