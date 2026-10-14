@@ -1576,6 +1576,18 @@ async renameMeetingPerson(key: string, name: string) : Promise<Result<MeetingPer
 }
 },
 /**
+ * Every meeting of the series `key` (a [`crate::meeting::series::MeetingSeries::key`]), newest
+ * first: "ver todas" under a session's title.
+ */
+async seriesMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("series_meetings", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
  */
 async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {
@@ -2236,7 +2248,11 @@ audio_pending?: boolean | null;
 /**
  * Where the PC slept during the recording, for the transcript's markers.
  */
-sleeps?: MeetingSleep[] }
+sleeps?: MeetingSleep[]; 
+/**
+ * The meetings of the same series ("Weekly produto 13/10" and "20/10"); absent without one.
+ */
+series?: MeetingSeries | null }
 /**
  * What erasing a stretch did.
  */
@@ -2400,6 +2416,22 @@ export type MeetingSearchHit = { id: string;
  * The matching excerpt; each found term sits between `\u{2}` and `\u{3}`.
  */
 snippet: string }
+/**
+ * The series of an opened session: "Mesma série:" under its title.
+ */
+export type MeetingSeries = { key: string; 
+/**
+ * The title without its date or number, as typed ("Weekly produto").
+ */
+name: string; 
+/**
+ * The meetings that started before this one, latest first, at most [`EARLIER_SHOWN`].
+ */
+earlier: MeetingSummary[]; 
+/**
+ * Every meeting of the series outside the trash, this one included.
+ */
+total: number }
 export type MeetingSleep = { 
 /**
  * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.

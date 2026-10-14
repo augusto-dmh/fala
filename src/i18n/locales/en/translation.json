@@ -1394,6 +1394,12 @@
       "mergeConfirm_one": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meeting.",
       "mergeConfirm_other": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meetings."
     },
+    "series": {
+      "same": "Same series:",
+      "all": "see all ({{n}})",
+      "filter": "Series “{{name}}”",
+      "clear": "Clear"
+    },
     "view": {
       "agenda": "Agenda and notes (before recording)",
       "annotations": "Notes",

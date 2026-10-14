@@ -8,6 +8,7 @@ import {
   type MeetingErased,
   type MeetingKeys,
   type MeetingLine,
+  type MeetingSeries,
   type MeetingTemplate,
 } from "@/bindings";
 import { copyToClipboard } from "../settings/history/clipboard";
@@ -31,7 +32,7 @@ import {
   titleOf,
 } from "./meetingModel";
 import { NotesView } from "./NotesView";
-import { metaLine, SessionMenu, TitleField } from "./SessionHeader";
+import { metaLine, SeriesLine, SessionMenu, TitleField } from "./SessionHeader";
 import { parseNotes } from "./notesModel";
 import { shownTemplate, TemplateMenu, TemplateSelect } from "./TemplateSelect";
 import { segmentAnchor, TranscriptView } from "./TranscriptView";
@@ -57,6 +58,10 @@ export interface MeetingViewProps {
   onNamesChanged?: () => void;
   /** "Move to trash", after the confirmation when there is audio to lose. */
   onDelete?: () => void;
+  /** A meeting of the same series, from "Mesma série:". */
+  onOpenMeeting?: (id: string) => void;
+  /** "ver todas (N)" of the series. */
+  onSeries?: (series: MeetingSeries) => void;
   /** Recording, transcribing or writing notes: nothing to move yet. */
   deleteDisabled?: boolean;
   /** This session's recording: the bar's pause and stop, or the processing line. */
@@ -344,6 +349,15 @@ export function MeetingView(props: MeetingViewProps) {
             props.recording,
           )}
         </p>
+        {props.onOpenMeeting && props.onSeries && (
+          <SeriesLine
+            series={detail.series}
+            onOpen={props.onOpenMeeting}
+            onAll={props.onSeries}
+            locale={i18n.language}
+            t={t}
+          />
+        )}
       </header>
       {deleting && props.onDelete && (
         <DeleteConfirm

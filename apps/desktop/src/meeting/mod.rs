@@ -24,6 +24,7 @@ pub(crate) mod pipeline;
 pub(crate) mod recorder;
 pub(crate) mod recovery;
 pub(crate) mod search;
+pub(crate) mod series;
 pub(crate) mod sleeps;
 pub(crate) mod sound_check;
 

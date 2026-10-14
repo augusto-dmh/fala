@@ -14,6 +14,7 @@ import {
   type MeetingOrphan,
   type MeetingOutputs,
   type MeetingPerson,
+  type MeetingSeries,
   type MeetingSearchHit,
   type MeetingStatus,
   type MeetingSummary,
@@ -146,12 +147,18 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const [personSessions, setPersonSessions] = useState<MeetingSummary[] | null>(
     null,
   );
-  // "Meetings" in the rail leaves the trash and the people too.
+  // "ver todas (N)" under a session's title: the list shows only that series.
+  const [series, setSeries] = useState<MeetingSeries | null>(null);
+  const [seriesSessions, setSeriesSessions] = useState<MeetingSummary[] | null>(
+    null,
+  );
+  // "Meetings" in the rail leaves the trash, the people and the series too.
   useEffect(() => {
     if (home > 0) {
       setShowTrash(false);
       setTab("meetings");
       setPerson(null);
+      setSeries(null);
     }
   }, [home]);
 
@@ -252,6 +259,23 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       current = false;
     };
   }, [personKey, onList, sessions, setError]);
+
+  const seriesKey = series?.key ?? null;
+  useEffect(() => {
+    if (seriesKey === null || !onList) {
+      if (seriesKey === null) setSeriesSessions(null);
+      return;
+    }
+    let current = true;
+    void commands.seriesMeetings(seriesKey).then((result) => {
+      if (!current) return;
+      if (result.status === "ok") setSeriesSessions(result.data);
+      else setError(result.error);
+    });
+    return () => {
+      current = false;
+    };
+  }, [seriesKey, onList, sessions, setError]);
 
   useEffect(() => {
     void commands
@@ -715,6 +739,14 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
               selected.notes_running
             }
             onDelete={() => void remove(selected.summary.id)}
+            onOpenMeeting={(id) => void open(id)}
+            onSeries={(picked) => {
+              setSelected(null);
+              setPerson(null);
+              setTab("meetings");
+              setSeriesSessions(null);
+              setSeries(picked);
+            }}
           />
         </div>
       </div>
@@ -820,6 +852,24 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           locale={i18n.language}
           t={t}
         />
+      ) : series ? (
+        <>
+          <p className="flex items-center gap-2 text-body">
+            {t("meeting.series.filter", { name: series.name })}
+            <Button size="sm" variant="ghost" onClick={() => setSeries(null)}>
+              {t("meeting.series.clear")}
+            </Button>
+          </p>
+          {seriesSessions && (
+            <MeetingList
+              {...(hits
+                ? searchResults(seriesSessions, hits)
+                : { sessions: seriesSessions })}
+              live={liveSessions}
+              onOpen={(id) => void open(id)}
+            />
+          )}
+        </>
       ) : (
         <MeetingList
           {...(hits ? searchResults(sessions, hits) : { sessions })}
