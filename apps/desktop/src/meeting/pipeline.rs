@@ -21,7 +21,8 @@ use fala_notes::{
 };
 use fala_secrets::{ApiKey, SecretStore};
 use fala_storage::{
-    MeetingRecord, MeetingSegment, NameSuggestion, SegmentChannel, SegmentSpeaker, Store,
+    MeetingRecord, MeetingSegment, MeetingTake, NameSuggestion, SegmentChannel, SegmentSpeaker,
+    Store,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -85,6 +86,10 @@ pub struct MeetingLine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub erased: Option<bool>,
+    /// The line marks where a resumed recording (a take) starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub resumed: Option<bool>,
 }
 
 /// An opened session.
@@ -255,6 +260,7 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         text: segment.text.clone(),
         omitted: (segment.speaker == SegmentSpeaker::Omitted).then_some(true),
         erased: (segment.speaker == SegmentSpeaker::Erased).then_some(true),
+        resumed: (segment.speaker == SegmentSpeaker::Resumed).then_some(true),
     }
 }
 
@@ -698,7 +704,16 @@ impl MeetingManager {
 
     /// Transcribes a stopped session with Scribe v2 and stores the segments (ADR-0005).
     pub fn transcribe(&self, id: &str) -> Result<Vec<MeetingLine>, MeetingError> {
-        let id = parse_id(id)?;
+        self.transcribe_with(parse_id(id)?, None)
+    }
+
+    /// The whole session (`take` absent) or only a take just recorded, whose transcript goes
+    /// after the existing one with the names kept.
+    pub(crate) fn transcribe_with(
+        &self,
+        id: SessionId,
+        take: Option<&MeetingTake>,
+    ) -> Result<Vec<MeetingLine>, MeetingError> {
         if self.status().id.as_deref() == Some(id.to_string().as_str()) {
             return Err(MeetingError::StillRecording);
         }
@@ -718,7 +733,7 @@ impl MeetingManager {
             work: &self.work,
             notes: false,
         };
-        let result = self.run_transcription(id, &record, &cancel);
+        let result = self.run_transcription(id, &record, &cancel, take);
         match &result {
             Ok(lines) => {
                 log::info!("meeting {id}: {} transcript segments", lines.len());
@@ -739,13 +754,21 @@ impl MeetingManager {
         id: SessionId,
         record: &MeetingRecord,
         cancel: &CancelToken,
+        only: Option<&MeetingTake>,
     ) -> Result<Vec<MeetingLine>, MeetingError> {
         let key = scribe_key(self.keys.as_ref())?;
         let options = scribe_options(&crate::settings::get_settings(&self.app));
         let mut scribe = ElevenLabsScribe::new(key, options);
         // A resumed session is transcribed take by take, each on the session's timeline.
         let mut segments = Vec::new();
-        for take in self.takes_audio(id)? {
+        let takes = match only {
+            Some(take) => {
+                super::clip::takes_audio(&self.session_dir(id), std::slice::from_ref(take))
+                    .split_off(1)
+            }
+            None => self.takes_audio(id)?,
+        };
+        for take in takes {
             if needs_retain(&take.dir) {
                 self.retain(id, &take.dir);
             }
@@ -763,7 +786,12 @@ impl MeetingManager {
         }
         let now = chrono::Local::now().fixed_offset();
         self.with_store(|store| {
-            store.replace_meeting_segments(id, segments, now)?;
+            match only {
+                // Already on the session's timeline: the append only numbers its people after
+                // the session's.
+                Some(_) => store.append_meeting_segments(id, segments, 0, now)?,
+                None => store.replace_meeting_segments(id, segments, now)?,
+            }
             Ok(store.meeting_segments(id)?.iter().map(line).collect())
         })
     }
@@ -1200,6 +1228,7 @@ mod tests {
             text: text.clone(),
             omitted: None,
             erased: None,
+            resumed: None,
         };
         let enough = vec![line(1), line(2)];
         assert!(auto_notes_due(true, &long, true, &enough));

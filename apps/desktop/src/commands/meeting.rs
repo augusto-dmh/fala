@@ -77,6 +77,16 @@ pub async fn start_meeting(
     meetings.start(mode, &title, draft_id.as_deref())
 }
 
+/// "Retomar" on a finished session: a new take, from a click only (ADR-0005).
+#[tauri::command]
+#[specta::specta]
+pub async fn continue_meeting(
+    meetings: Meetings<'_>,
+    id: String,
+) -> Result<MeetingStatus, MeetingError> {
+    meetings.resume_session(&id)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn pause_meeting(meetings: Meetings<'_>) -> Result<MeetingStatus, MeetingError> {

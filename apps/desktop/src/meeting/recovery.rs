@@ -13,7 +13,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, FixedOffset, Local};
 use fala_meeting::SessionId;
-use fala_storage::{MeetingRecord, Store};
+use fala_storage::{MeetingRecord, MeetingTake, Store};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::Manager;
@@ -31,18 +31,34 @@ pub struct MeetingOrphan {
     pub recorded_ms: u64,
 }
 
-/// Sessions that started, never ended and still have their working WAV.
+/// Sessions that started, never ended and still have their working WAV (of the first take, or
+/// of the take a resumed session was recording).
 pub(crate) fn find_orphans(records: &[MeetingRecord], audio_root: &Path) -> Vec<SessionId> {
     records
         .iter()
         .filter(|r| r.started_at.is_some() && r.ended_at.is_none())
-        .filter(|r| work_wav(audio_root, r.id).is_file())
+        .filter(|r| work_wav(audio_root, r.id).is_some())
         .map(|r| r.id)
         .collect()
 }
 
-fn work_wav(audio_root: &Path, id: SessionId) -> std::path::PathBuf {
-    fala_retention::session_audio_dir(audio_root, id).join(WORK_WAV)
+/// The working WAV left behind: the first take's, or else the one of the highest take `t<N>/`.
+fn work_wav(audio_root: &Path, id: SessionId) -> Option<std::path::PathBuf> {
+    let dir = fala_retention::session_audio_dir(audio_root, id);
+    let first = dir.join(WORK_WAV);
+    if first.is_file() {
+        return Some(first);
+    }
+    std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name();
+            let take: u32 = name.to_str()?.strip_prefix('t')?.parse().ok()?;
+            Some((take, dir.join(name).join(WORK_WAV)))
+        })
+        .filter(|(_, wav)| wav.is_file())
+        .max_by_key(|(take, _)| *take)
+        .map(|(_, wav)| wav)
 }
 
 /// Recorded milliseconds the WAV header announces.
@@ -65,20 +81,33 @@ pub(crate) fn orphan(record: &MeetingRecord, audio_root: &Path) -> MeetingOrphan
         id: record.id.to_string(),
         title: record.title.clone(),
         started_at: started.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
-        recorded_ms: wav_recorded_ms(&work_wav(audio_root, record.id)).unwrap_or(0),
+        recorded_ms: work_wav(audio_root, record.id)
+            .and_then(|wav| wav_recorded_ms(&wav).ok())
+            .unwrap_or(0),
     }
 }
 
 /// Closes an orphan in the store from its WAV: end at the last write, duration from the header.
-pub(crate) fn recover(store: &Store, audio_root: &Path, id: SessionId) -> Result<(), MeetingError> {
-    let wav = work_wav(audio_root, id);
-    if !wav.is_file() {
-        return Err(MeetingError::NoAudio);
-    }
+/// A take left open is closed as a take (returned), so the session keeps what it had before.
+pub(crate) fn recover(
+    store: &mut Store,
+    audio_root: &Path,
+    id: SessionId,
+) -> Result<Option<MeetingTake>, MeetingError> {
+    let wav = work_wav(audio_root, id).ok_or(MeetingError::NoAudio)?;
     let recorded_ms = wav_recorded_ms(&wav)?;
-    store.recover_meeting(id, wav_ended_at(&wav), recorded_ms)?;
+    let open = store
+        .meeting_takes(id)?
+        .into_iter()
+        .any(|take| take.ended_at.is_none());
+    let take = if open {
+        Some(store.finish_meeting_take(id, wav_ended_at(&wav), recorded_ms, None)?)
+    } else {
+        store.recover_meeting(id, wav_ended_at(&wav), recorded_ms)?;
+        None
+    };
     log::info!("meeting {id}: recovered ({recorded_ms} ms)");
-    Ok(())
+    Ok(take)
 }
 
 impl MeetingManager {
@@ -106,15 +135,24 @@ impl MeetingManager {
         if !self.is_orphan(id) {
             return Err(MeetingError::NotFound);
         }
-        self.with_store(|store| recover(store, &self.audio_root, id))?;
+        let take = self.with_store(|store| recover(store, &self.audio_root, id))?;
         self.forget_orphan(id);
         let app = self.app.clone();
         let spawned = std::thread::Builder::new()
             .name("meeting-recover".to_string())
             .spawn(move || {
                 if let Some(manager) = app.try_state::<Arc<MeetingManager>>() {
-                    manager.retain(id, &manager.session_dir(id));
-                    manager.transcribe_if_keyed(id);
+                    match &take {
+                        Some(take) => {
+                            let dir = manager.session_dir(id).join(format!("t{}", take.take));
+                            manager.retain(id, &dir);
+                            manager.transcribe_take_if_keyed(id, take);
+                        }
+                        None => {
+                            manager.retain(id, &manager.session_dir(id));
+                            manager.transcribe_if_keyed(id);
+                        }
+                    }
                 }
             });
         if let Err(e) = spawned {
@@ -151,6 +189,13 @@ impl MeetingManager {
                 // Killed between the Opus rename and the store update.
                 if let Err(e) = self.with_store(|store| Ok(store.set_meeting_audio_retained(id)?)) {
                     log::warn!("meeting {id}: retained audio not marked: {e}");
+                }
+            }
+            // The takes of a resumed session: a WAV left in `t<N>/` is retained too.
+            for take in self.takes_audio(id).unwrap_or_default().iter().skip(1) {
+                if take.dir.join(WORK_WAV).is_file() {
+                    log::info!("meeting {id}: retaining a take a previous run left as WAV");
+                    self.retain(id, &take.dir);
                 }
             }
         }
@@ -211,6 +256,10 @@ mod tests {
         id
     }
 
+    fn first_wav(audio: &Path, id: SessionId) -> std::path::PathBuf {
+        fala_retention::session_audio_dir(audio, id).join(WORK_WAV)
+    }
+
     /// A working WAV of `seconds` as the recorder leaves it when killed: the header of the last
     /// flush, then frames written after it that the header never announced.
     fn killed_wav(path: &Path, seconds: u32) {
@@ -246,7 +295,7 @@ mod tests {
         let _no_wav = session(&store, 3, Some(at(17, 0)));
         let draft = session(&store, 4, None);
         for id in [orphan, ended, draft] {
-            killed_wav(&work_wav(&audio, id), 1);
+            killed_wav(&first_wav(&audio, id), 1);
         }
         assert_eq!(
             find_orphans(&store.meetings().unwrap(), &audio),
@@ -256,15 +305,15 @@ mod tests {
 
     #[test]
     fn recovery_keeps_what_the_header_announced() {
-        let (_dir, store, audio) = setup();
+        let (_dir, mut store, audio) = setup();
         let id = session(&store, 1, Some(at(14, 2)));
-        let wav = work_wav(&audio, id);
+        let wav = first_wav(&audio, id);
         killed_wav(&wav, 10);
         let shown = orphan(&store.meeting(id).unwrap(), &audio);
         assert_eq!(shown.recorded_ms, 10_000);
         assert_eq!(shown.started_at, "2026-10-02T14:02:00-03:00");
 
-        recover(&store, &audio, id).unwrap();
+        recover(&mut store, &audio, id).unwrap();
         let record = store.meeting(id).unwrap();
         assert_eq!(record.recorded_ms, 10_000);
         assert_eq!(record.stop_reason, None);
@@ -273,21 +322,51 @@ mod tests {
         assert!(wav.is_file());
         assert!(find_orphans(&store.meetings().unwrap(), &audio).is_empty());
         // Recovering twice is refused, and a session without its WAV has nothing to recover.
-        assert!(recover(&store, &audio, id).is_err());
+        assert!(recover(&mut store, &audio, id).is_err());
         let gone = session(&store, 2, Some(at(15, 0)));
-        assert_eq!(recover(&store, &audio, gone), Err(MeetingError::NoAudio));
+        assert_eq!(
+            recover(&mut store, &audio, gone),
+            Err(MeetingError::NoAudio)
+        );
     }
 
     #[test]
     fn a_killed_wav_becomes_opus_without_losing_more_than_a_second() {
-        let (_dir, store, audio) = setup();
+        let (_dir, mut store, audio) = setup();
         let id = session(&store, 1, Some(at(14, 2)));
-        let wav = work_wav(&audio, id);
+        let wav = first_wav(&audio, id);
         killed_wav(&wav, 3);
-        recover(&store, &audio, id).unwrap();
+        recover(&mut store, &audio, id).unwrap();
         let retained = fala_retention::retain_wav(&wav, wav.parent().unwrap()).unwrap();
         // 3 s announced, half a second after the last flush lost: within the 1 s budget.
         assert_eq!(retained.samples, 3 * 48_000);
         assert!(!wav.exists());
+    }
+
+    #[test]
+    fn a_take_left_open_is_recovered_as_a_take() {
+        let (_dir, mut store, audio) = setup();
+        let id = session(&store, 1, Some(at(14, 2)));
+        store
+            .finish_meeting(id, at(14, 3), 60_000, StopReason::User)
+            .unwrap();
+        let take = store.start_meeting_take(id, at(15, 42)).unwrap();
+        // The process dies 4 s into take 2: its WAV is in `t2/`.
+        let wav = fala_retention::session_audio_dir(&audio, id)
+            .join("t2")
+            .join(WORK_WAV);
+        killed_wav(&wav, 4);
+        assert_eq!(find_orphans(&store.meetings().unwrap(), &audio), vec![id]);
+        assert_eq!(
+            orphan(&store.meeting(id).unwrap(), &audio).recorded_ms,
+            4_000
+        );
+
+        let closed = recover(&mut store, &audio, id).unwrap().unwrap();
+        assert_eq!((closed.take, closed.offset_ms), (take.take, 60_000));
+        let record = store.meeting(id).unwrap();
+        assert_eq!(record.recorded_ms, 64_000);
+        assert!(record.ended_at.is_some());
+        assert!(find_orphans(&store.meetings().unwrap(), &audio).is_empty());
     }
 }
