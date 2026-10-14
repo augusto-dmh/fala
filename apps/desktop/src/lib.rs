@@ -769,6 +769,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::set_binding,
+            shortcut::binding_problems,
             shortcut::remove_binding,
             shortcut::reset_binding,
             shortcut::reset_all_bindings,
