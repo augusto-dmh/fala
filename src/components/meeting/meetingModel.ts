@@ -50,6 +50,7 @@ export function errorKey(error: MeetingError | string | undefined): string {
     case "import":
     case "import_no_audio":
     case "import_too_long":
+    case "erase_too_long":
       return `meeting.errors.${kind}`;
     default:
       return "meeting.errors.generic";
