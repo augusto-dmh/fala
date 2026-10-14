@@ -14,7 +14,7 @@ Produto, pitches e pesquisa ficam fora do repo, em `~/projects/fala-research/` n
 - `cargo build` sem `-p` compila só `crates/*` e `apps/cli` (`default-members`), sem WebView
 - `cargo run -p fala-cli -- <dictate|meeting|record|bench|key|format|history|import|mcp>` testa o pipeline sem UI (`transcribe` ainda é stub)
 - `cargo deny check` · `scripts/check-no-tauri-in-crates.sh` · `scripts/check-brand.sh`
-- Frontend: `bun run lint` · `bun run format:check` · `bun run check:translations`
+- Frontend: `bun run lint` · `bun run format:check` · `bun run check:translations` · `bun run test:ui` (todos os `src/**/*.test.ts(x)`)
 
 ## Invariantes
 

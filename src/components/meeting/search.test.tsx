@@ -67,6 +67,6 @@ const page = readFileSync(
   new URL("./MeetingsPage.tsx", import.meta.url),
   "utf8",
 );
-assert.ok(page.includes('placeholder={t("meeting.list.search")}'));
+assert.ok(/placeholder=\{t\([\s\S]*?"meeting\.list\.search"/.test(page));
 assert.ok(page.includes("commands.searchMeetings(query)"));
 console.log("search: all assertions passed");

@@ -155,7 +155,8 @@ const OPTIONS = "opções";
   assert.ok(/bg-warn[^>]*title="meeting\.home\.state\.failed"/.test(html));
   assert.ok(/bg-danger[^>]*title="meeting\.home\.state\.failed"/.test(html));
   assert.ok(
-    /failed,\s*notesFailed,\s*\}\}/.test(page),
+    /failed,\s*notesFailed,\s*\};/.test(page) &&
+      /live=\{liveSessions\}/.test(page),
     "a página passa a etapa",
   );
   ok("T4");
