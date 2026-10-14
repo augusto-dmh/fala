@@ -81,6 +81,10 @@ pub struct MeetingLine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub omitted: Option<bool>,
+    /// The line marks a stretch the person erased, audio and text, in both channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub erased: Option<bool>,
 }
 
 /// An opened session.
@@ -99,6 +103,10 @@ pub struct MeetingDetail {
     pub notes_running: bool,
     /// Both retained Opus files are on disk, so a transcript line can be played.
     pub audio_available: bool,
+    /// The working WAV is still waiting to become Opus: there is audio, not playable yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub audio_pending: Option<bool>,
     /// Where the PC slept during the recording, for the transcript's markers.
     #[serde(default)]
     #[specta(optional)]
@@ -246,6 +254,7 @@ pub(crate) fn line(segment: &MeetingSegment) -> MeetingLine {
         t1_ms: segment.t1_ms,
         text: segment.text.clone(),
         omitted: (segment.speaker == SegmentSpeaker::Omitted).then_some(true),
+        erased: (segment.speaker == SegmentSpeaker::Erased).then_some(true),
     }
 }
 
@@ -485,6 +494,8 @@ impl From<fala_asr::AsrError> for MeetingError {
 pub(crate) struct Work {
     transcribing: Option<(SessionId, CancelToken)>,
     notes: Option<SessionId>,
+    /// A stretch of this session is being erased (`erase.rs`), audio then text.
+    erasing: Option<SessionId>,
 }
 
 impl Work {
@@ -498,9 +509,14 @@ impl Work {
         self.transcribing.is_some() || self.notes.is_some()
     }
 
-    /// A transcription or a notes generation is working on `id`.
+    /// A transcription, a notes generation or an erase is working on `id`.
     pub(crate) fn involves(&self, id: SessionId) -> bool {
-        self.transcribing() == Some(id) || self.notes == Some(id)
+        self.transcribing() == Some(id) || self.notes == Some(id) || self.erasing == Some(id)
+    }
+
+    /// Marks (or, with `None`, clears) the session an erase is working on.
+    pub(crate) fn set_erasing(&mut self, id: Option<SessionId>) {
+        self.erasing = id;
     }
 }
 
@@ -569,9 +585,15 @@ impl MeetingManager {
 
     pub fn detail(&self, id: &str) -> Result<MeetingDetail, MeetingError> {
         let id = parse_id(id)?;
-        let audio_available = self
-            .takes_audio(id)
-            .is_ok_and(|takes| super::clip::session_audio_available(&takes));
+        let takes = self.takes_audio(id);
+        let audio_available = takes
+            .as_ref()
+            .is_ok_and(|takes| super::clip::session_audio_available(takes));
+        // A take still waiting for retention: there is audio, not playable yet.
+        let audio_pending = takes
+            .as_ref()
+            .is_ok_and(|takes| takes.iter().any(|take| take.dir.join(WORK_WAV).is_file()))
+            .then_some(true);
         let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
         self.with_store(|store| {
@@ -600,6 +622,7 @@ impl MeetingManager {
                 notes_edited: store.meeting_notes_edited(id)?,
                 notes_running,
                 audio_available,
+                audio_pending,
                 sleeps,
             })
         })
@@ -686,7 +709,7 @@ impl MeetingManager {
         let cancel = CancelToken::new();
         {
             let mut work = self.work.lock().unwrap_or_else(|e| e.into_inner());
-            if work.transcribing.is_some() {
+            if work.transcribing.is_some() || work.erasing == Some(id) {
                 return Err(MeetingError::Busy);
             }
             work.transcribing = Some((id, cancel.clone()));
@@ -824,7 +847,7 @@ impl MeetingManager {
         self.with_store(|store| guard_edited_notes(store, id, template_id, replace_edited))?;
         {
             let mut work = self.work.lock().unwrap_or_else(|e| e.into_inner());
-            if work.notes.is_some() {
+            if work.notes.is_some() || work.erasing == Some(id) {
                 return Err(MeetingError::Busy);
             }
             work.notes = Some(id);
@@ -1176,6 +1199,7 @@ mod tests {
             t1_ms: 1,
             text: text.clone(),
             omitted: None,
+            erased: None,
         };
         let enough = vec![line(1), line(2)];
         assert!(auto_notes_due(true, &long, true, &enough));

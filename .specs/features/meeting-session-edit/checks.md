@@ -21,6 +21,18 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-session-edit`
   30 dias, "Nada na lixeira", link "Lixeira (N)". Mesmo arquivo (T3, T4)
 - **C9** manual: mover, desfazer, restaurar e apagar para sempre no app de debug portátil
 
+## S3 — apagar trecho, núcleo (PR 3)
+
+- **C10** `zero_range`: mesma contagem, < -90 dBFS a 40 ms das bordas, pacotes fora da janela iguais, `.part` recusado não substitui. `cargo test -p fala-retention`
+- **C11** falas que cruzam saem nos dois canais, marcador, renumeração, ponteiros, trechos que se cruzam viram um; transcrição nova e `reindex` mantêm o apagado. `cargo test -p fala-storage --test meeting_erasures`, `-p fala-notes`
+
+## S4 — apagar trecho, app e UI (PR 4)
+
+- **C12** o comando recusa gravando, transcrevendo, gerando notas, na lixeira e acima de 500
+  falas; zera o WAV no lugar ou os Opus, depois o texto. `cargo test -p fala --lib meeting::erase`
+- **C13** seleção primeira/última fala nos dois canais, contagem, confirmação com horários (com e
+  sem áudio), faixa "A transcrição mudou". `bun src/components/meeting/erase.test.tsx`
+- **C14** manual: reunião real, apagar 30 s, tocar antes e depois, regenerar notas
 ## S5 — retomar, núcleo (PR 5)
 
 - **C15** só sessão encerrada, gravada e não importada abre tomada; a tomada começa no `recorded_ms`, fecha somando; a transcrição dela entra depois, com "Pessoa N" depois da maior, nomes mantidos, marcador "[gravação retomada às HH:MM]"; `reindex` traz as tomadas. `cargo test -p fala-storage --test meeting_takes`

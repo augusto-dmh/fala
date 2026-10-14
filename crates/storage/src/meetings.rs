@@ -253,6 +253,13 @@ pub(crate) fn with_markers(
     Ok(segments)
 }
 
+impl MeetingSegment {
+    /// Se apagar `[t0_ms, t1_ms]` leva esta fala (a regra de `Store::erase_meeting_range`).
+    pub fn crosses(&self, t0_ms: u64, t1_ms: u64) -> bool {
+        overlaps(self, t0_ms, t1_ms)
+    }
+}
+
 /// Por `t0_ms`; no empate, o marcador de uma tomada antes de quem fala nela e o mic antes do
 /// sistema: a ordem que dá o `seq` 1..n.
 pub(crate) fn sort_segments(segments: &mut [MeetingSegment]) {
