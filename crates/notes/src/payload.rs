@@ -127,6 +127,8 @@ pub(crate) fn speaker_label(speaker: &Speaker, language: Language) -> String {
         (Speaker::Omitted, Language::En) => "Dictation left out".to_string(),
         (Speaker::Erased, Language::PtBr) => "Trecho apagado".to_string(),
         (Speaker::Erased, Language::En) => "Erased stretch".to_string(),
+        (Speaker::Resumed, Language::PtBr) => "Gravação retomada".to_string(),
+        (Speaker::Resumed, Language::En) => "Recording resumed".to_string(),
     }
 }
 
@@ -309,6 +311,7 @@ mod tests {
             (Speaker::Omitted, Language::En, "Dictation left out"),
             (Speaker::Erased, Language::PtBr, "Trecho apagado"),
             (Speaker::Erased, Language::En, "Erased stretch"),
+            (Speaker::Resumed, Language::En, "Recording resumed"),
         ];
         for (speaker, language, expected) in cases {
             let mut input = input();

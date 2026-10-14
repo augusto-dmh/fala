@@ -2,9 +2,10 @@
 //! (phase 2 F9). Read-only: the audio never leaves the machine (ADR-0005, ADR-0014).
 
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use fala_retention::{decode_range, MIC_FILE, SAMPLE_RATE_HZ, SYSTEM_FILE};
+use fala_storage::MeetingTake;
 
 use super::MeetingError;
 
@@ -16,6 +17,52 @@ pub(crate) const MAX_CLIP_MS: u64 = 60_000;
 /// Both retained channels are on disk (deleted by retention, or never retained, otherwise).
 pub(crate) fn audio_available(dir: &Path) -> bool {
     dir.join(MIC_FILE).is_file() && dir.join(SYSTEM_FILE).is_file()
+}
+
+/// Where a take's audio lives and where it starts on the session's timeline: take 1 in
+/// `audio/<id>/`, take N of a resumed session in `audio/<id>/t<N>/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TakeAudio {
+    pub offset_ms: u64,
+    pub dir: PathBuf,
+}
+
+/// Every take of the session, the first one included, in order.
+pub(crate) fn takes_audio(root: &Path, takes: &[MeetingTake]) -> Vec<TakeAudio> {
+    std::iter::once(TakeAudio {
+        offset_ms: 0,
+        dir: root.to_path_buf(),
+    })
+    .chain(takes.iter().map(|take| TakeAudio {
+        offset_ms: take.offset_ms,
+        dir: root.join(format!("t{}", take.take)),
+    }))
+    .collect()
+}
+
+/// Every take has both retained channels.
+pub(crate) fn session_audio_available(takes: &[TakeAudio]) -> bool {
+    takes.iter().all(|take| audio_available(&take.dir))
+}
+
+/// The clip of `[t0, t1]` from the take `t0` falls in (the last one starting at or before it),
+/// cut at the start of the next: a clip never crosses takes.
+pub(crate) fn clip_session(
+    takes: &[TakeAudio],
+    t0_ms: u64,
+    t1_ms: u64,
+) -> Result<Vec<u8>, MeetingError> {
+    let index = takes
+        .iter()
+        .rposition(|take| take.offset_ms <= t0_ms)
+        .unwrap_or(0);
+    let take = takes.get(index).ok_or(MeetingError::NoAudio)?;
+    let end = takes.get(index + 1).map_or(u64::MAX, |next| next.offset_ms);
+    clip_wav(
+        &take.dir,
+        t0_ms.saturating_sub(take.offset_ms),
+        t1_ms.min(end).saturating_sub(take.offset_ms),
+    )
 }
 
 /// `[start, end)` in ms of the clip for a segment `[t0, t1]`: the margins, capped at a minute.
@@ -131,6 +178,43 @@ mod tests {
         let tail = clip_wav(tmp.path(), 3_000, 30_000).unwrap();
         let reader = hound::WavReader::new(Cursor::new(&tail)).unwrap();
         assert_eq!(reader.duration(), 3 * SAMPLE_RATE_HZ / 2);
+    }
+
+    #[test]
+    fn a_line_plays_from_its_own_take() {
+        let tmp = tempfile::tempdir().unwrap();
+        session(tmp.path());
+        let at = chrono::DateTime::parse_from_rfc3339("2026-10-02T15:42:00-03:00").unwrap();
+        let take = MeetingTake {
+            take: 2,
+            offset_ms: 4_000,
+            started_at: at,
+            ended_at: None,
+            recorded_ms: 4_000,
+        };
+        let takes = takes_audio(tmp.path(), std::slice::from_ref(&take));
+        assert_eq!(takes[1].dir, tmp.path().join("t2"));
+        // The second take has no audio yet: the session is not playable.
+        assert!(!session_audio_available(&takes));
+        std::fs::create_dir_all(&takes[1].dir).unwrap();
+        session(&takes[1].dir);
+        assert!(session_audio_available(&takes));
+
+        let duration = |bytes: Vec<u8>| {
+            hound::WavReader::new(Cursor::new(bytes))
+                .unwrap()
+                .duration()
+        };
+        // 5-6 s is 1-2 s of take 2, with both margins.
+        assert_eq!(
+            duration(clip_session(&takes, 5_000, 6_000).unwrap()),
+            2 * SAMPLE_RATE_HZ
+        );
+        // A line at the end of take 1 is cut where take 2 starts (and at the end of its file).
+        assert_eq!(
+            duration(clip_session(&takes, 3_500, 4_800).unwrap()),
+            SAMPLE_RATE_HZ
+        );
     }
 
     #[test]
