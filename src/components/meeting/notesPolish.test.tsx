@@ -191,10 +191,11 @@ const lines: MeetingLine[] = [
     viewSource,
     /const edited = detail\.notes_edited \|\| editedHere;\s*if \(needsConfirmation\(\{ \.\.\.detail, notes_edited: edited \}, picked\)\) \{\s*setConfirming\(true\);\s*\} else \{\s*props\.onGenerate\(picked, false\);/,
   );
-  // "Gerar de novo" da confirmação fica desligado como o "Gerar notas".
+  // "Gerar de novo" da confirmação e o da faixa de trecho apagado ficam desligados como o
+  // "Gerar notas".
   assert.equal(
-    viewSource.match(/(disabled|generateDisabled)=\{notesOff\}/g)?.length,
-    3,
+    viewSource.match(/(disabled|generateDisabled)={notesOff}/g)?.length,
+    4,
   );
   // Só o mesmo template pergunta; outro template é uma versão nova (como no Granola).
   assert.equal(needsConfirmation(detail, "geral"), true);
@@ -203,12 +204,9 @@ const lines: MeetingLine[] = [
     needsConfirmation({ ...detail, notes_edited: false }, "geral"),
     false,
   );
-  // "Gerar notas", o "Gerar de novo" depois de um nome trocado e o "Tentar de novo" passam pela
-  // mesma regra.
-  assert.equal(
-    viewSource.match(/(onClick|onGenerate)=\{generate\}/g)?.length,
-    3,
-  );
+  // "Gerar notas", o "Gerar de novo" depois de um nome trocado ou de um trecho apagado e o
+  // "Tentar de novo" passam pela mesma regra.
+  assert.equal(viewSource.match(/(onClick|onGenerate)={generate}/g)?.length, 4);
   assert.equal(
     viewSource.match(/props\.onGenerate\(picked, true\)/g)?.length,
     1,

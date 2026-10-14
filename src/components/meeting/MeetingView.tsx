@@ -5,6 +5,7 @@ import {
   commands,
   type MeetingDetail,
   type MeetingError,
+  type MeetingErased,
   type MeetingKeys,
   type MeetingLine,
   type MeetingTemplate,
@@ -14,6 +15,12 @@ import { Button } from "../ui/Button";
 import { SearchField } from "../ui/SearchField";
 import { AnnotationsField } from "./AnnotationsField";
 import { DeleteConfirm, trashNeedsConfirm } from "./DeleteMeeting";
+import {
+  EraseBar,
+  EraseConfirm,
+  stretchOf,
+  type Stretch,
+} from "./EraseStretch";
 import { ClipPlayer } from "./clipPlayer";
 import { MeetingPeoplePanel } from "./MeetingPeoplePanel";
 import { NotesEditor } from "./NotesEditor";
@@ -46,7 +53,7 @@ export interface MeetingViewProps {
   /** `replaceEdited`: the person confirmed discarding the notes they edited. */
   onGenerate: (templateId: string, replaceEdited: boolean) => void;
   onCopy: () => void;
-  /** A name or the title changed, or the notes were edited: reload the session. */
+  /** A name or the title changed, the notes were edited or a stretch erased: reload the session. */
   onNamesChanged?: () => void;
   /** "Move to trash", after the confirmation when there is audio to lose. */
   onDelete?: () => void;
@@ -134,9 +141,30 @@ export function MeetingView(props: MeetingViewProps) {
     return () => document.removeEventListener("keydown", escape);
   }, [transcriptOpen]);
   const [deleting, setDeleting] = useState(false);
+  // "Erase stretch": the lines picked so far (`null`: not picking), the stretch to confirm, and
+  // what the last erase did, for the "transcript changed" line.
+  const [chosen, setChosen] = useState<number[] | null>(null);
+  const [erasing, setErasing] = useState<Stretch | null>(null);
+  const [erased, setErased] = useState<MeetingErased | null>(null);
+  const [eraseError, setEraseError] = useState<MeetingError | null>(null);
+  const [erasingNow, setErasingNow] = useState(false);
+  const stretch = chosen === null ? null : stretchOf(detail.lines, chosen);
   useEffect(() => {
-    if (props.deleteDisabled) setDeleting(false);
+    if (props.deleteDisabled) {
+      setDeleting(false);
+      setChosen(null);
+      setErasing(null);
+    }
   }, [props.deleteDisabled]);
+  // A third click starts over from that line.
+  const pick = (line: MeetingLine) =>
+    setChosen((current) =>
+      current === null || current.includes(line.seq)
+        ? current
+        : current.length >= 2
+          ? [line.seq]
+          : [...current, line.seq],
+    );
 
   const play = (line: MeetingLine) => {
     setClipError(null);
@@ -171,8 +199,26 @@ export function MeetingView(props: MeetingViewProps) {
     setNameError(result.status === "error" ? result.error : null);
     if (result.status === "ok") namesChanged();
   };
+  const erase = async (stretch: Stretch) => {
+    setErasing(null);
+    setChosen(null);
+    setErasingNow(true);
+    const result = await commands.eraseMeetingRange(
+      detail.summary.id,
+      stretch.t0_ms,
+      stretch.t1_ms,
+    );
+    if (!mounted.current) return;
+    setErasingNow(false);
+    setEraseError(result.status === "error" ? result.error : null);
+    if (result.status === "ok") {
+      setErased(result.data);
+      props.onNamesChanged?.();
+    }
+  };
   const generate = () => {
     setOfferRegenerate(false);
+    setErased(null);
     const edited = detail.notes_edited || editedHere;
     if (needsConfirmation({ ...detail, notes_edited: edited }, picked)) {
       setConfirming(true);
@@ -336,6 +382,29 @@ export function MeetingView(props: MeetingViewProps) {
               </Button>
             </div>
           )}
+          {erased !== null && detail.notes_md !== null && !confirming && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span>
+                {erased.notes_lines > 0
+                  ? t("meeting.erase.changed", { count: erased.notes_lines })
+                  : t("meeting.erase.changedNone")}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={notesOff}
+                onClick={generate}
+              >
+                {t("meeting.rename.generate")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setErased(null)}>
+                {t("meeting.rename.dismiss")}
+              </Button>
+            </div>
+          )}
           {offerRegenerate && !confirming && (
             <div
               role="status"
@@ -492,11 +561,54 @@ export function MeetingView(props: MeetingViewProps) {
                     {t(errorKey(nameError))}
                   </p>
                 )}
+                {eraseError !== null && (
+                  <p role="alert" className="text-caption text-danger">
+                    {t(errorKey(eraseError))}
+                  </p>
+                )}
+                {erasingNow ? (
+                  <p role="status" className="text-caption text-text-2">
+                    {t("meeting.erase.running")}
+                  </p>
+                ) : erasing !== null ? (
+                  <EraseConfirm
+                    stretch={erasing}
+                    audio={detail.audio_available || !!detail.audio_pending}
+                    onConfirm={() => void erase(erasing)}
+                    onCancel={() => setErasing(null)}
+                    t={t}
+                  />
+                ) : chosen !== null ? (
+                  <EraseBar
+                    picked={chosen.length}
+                    stretch={stretch}
+                    onErase={() => setErasing(stretch)}
+                    onCancel={() => setChosen(null)}
+                    t={t}
+                  />
+                ) : (
+                  !granola && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={props.deleteDisabled ?? true}
+                      onClick={() => {
+                        setQuery("");
+                        setEraseError(null);
+                        setChosen([]);
+                      }}
+                    >
+                      {t("meeting.erase.start")}
+                    </Button>
+                  )
+                )}
                 <div className="flex items-center gap-2">
                   <SearchField
                     variant="compact"
                     aria-label={t("meeting.view.search")}
                     placeholder={t("meeting.view.search")}
+                    // Picking shows every line: a stretch never takes one out of sight.
+                    disabled={chosen !== null}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                   />
@@ -507,7 +619,7 @@ export function MeetingView(props: MeetingViewProps) {
                   )}
                 </div>
                 <TranscriptView
-                  lines={found}
+                  lines={chosen === null ? found : detail.lines}
                   sleeps={detail.sleeps ?? []}
                   query={query}
                   audioAvailable={detail.audio_available}
@@ -515,6 +627,15 @@ export function MeetingView(props: MeetingViewProps) {
                   highlighted={highlighted}
                   onPlay={play}
                   timed={!granola}
+                  picking={
+                    chosen === null
+                      ? undefined
+                      : {
+                          picked: chosen,
+                          taken: stretch?.taken ?? new Set(),
+                          onPick: pick,
+                        }
+                  }
                   // A new transcript renumbers "Person N" and drops the names.
                   onRename={
                     props.transcribing
