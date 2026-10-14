@@ -16,12 +16,15 @@
 //! `meeting_erasures`, aditiva, guarda os trechos que a pessoa apagou (texto e marcador).
 //! `meeting_trash`, aditiva, guarda as sessões na lixeira por 30 dias; o `.md` delas fica em
 //! `Reuniões/.lixeira/`, e a lista, a busca e o MCP não as veem.
+//! `meeting_directory` junta as pessoas das reuniões por nome, sem tabela: é uma consulta sobre
+//! `meeting_participants` e `meeting_speakers`.
 //! O desktop grava aqui cada ditado entregue, copia as linhas antigas de `transcription_history`
 //! na abertura e liga cada linha ao item por `dictation_id`. Cada ditado do desktop deixa também uma
 //! linha sem texto em `dictation_metrics` (tempos, palavras, idioma, LLM), resumida por
 //! `Store::metrics_summary`.
 
 mod granola;
+mod meeting_directory;
 mod meeting_erasures;
 mod meeting_imports;
 mod meeting_mirror;
@@ -45,6 +48,7 @@ pub use granola::{
     parse_granola_csv, parse_granola_zip, read_granola_export, GranolaError, GranolaExport,
     GranolaMeeting, RejectReason, RejectedRow,
 };
+pub use meeting_directory::{person_key, DirectoryPerson};
 pub use meeting_erasures::{erased_segment, Erasure, ERASED_TEXT};
 pub use meeting_imports::{ImportOutcome, GRANOLA};
 pub use meeting_omissions::{omitted_segment, OMITTED_TEXT};

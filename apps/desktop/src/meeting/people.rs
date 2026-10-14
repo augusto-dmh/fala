@@ -1,13 +1,14 @@
 //! Who was in a meeting (ADR-0016): the names typed in "Who was there" and the name the notes
 //! LLM suggests for each "Person N", applied only by a click.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use fala_meeting::SessionId;
-use fala_storage::{SegmentSpeaker, Store};
+use fala_storage::{DirectoryPerson, SegmentSpeaker, Store};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use super::pipeline::{list_in, rfc3339, MeetingSummary};
 use super::{parse_id, MeetingError, MeetingManager};
 
 /// At most this many names in "Who was there", each at most [`NAME_MAX_CHARS`] characters.
@@ -27,6 +28,42 @@ pub struct SpeakerSuggestion {
     pub person: u32,
     pub name: String,
     pub reason: String,
+}
+
+/// A person of the People list: the names from "Who was there" and from "Person N", joined by
+/// [`fala_storage::person_key`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct MeetingPerson {
+    pub key: String,
+    /// The spelling of the latest meeting.
+    pub name: String,
+    /// RFC 3339: when the latest meeting with them started.
+    pub last_meeting_at: String,
+    pub meetings: u32,
+}
+
+impl From<DirectoryPerson> for MeetingPerson {
+    fn from(person: DirectoryPerson) -> Self {
+        Self {
+            key: person.key,
+            name: person.name,
+            last_meeting_at: rfc3339(&person.last_meeting_at),
+            meetings: person.meetings,
+        }
+    }
+}
+
+/// The sessions of the list where the person of `key` is, newest first.
+fn person_meetings(store: &Store, key: &str) -> Result<Vec<MeetingSummary>, MeetingError> {
+    let ids: HashSet<String> = store
+        .person_meeting_ids(key)?
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    Ok(list_in(store)?
+        .into_iter()
+        .filter(|session| ids.contains(&session.id))
+        .collect())
 }
 
 /// The names applied to "Person N" in the session.
@@ -77,6 +114,21 @@ fn people(store: &Store, id: SessionId) -> Result<MeetingPeople, MeetingError> {
 }
 
 impl MeetingManager {
+    /// The People list: everyone in a meeting outside the trash, latest meeting first.
+    pub fn directory(&self) -> Result<Vec<MeetingPerson>, MeetingError> {
+        self.with_store(|store| {
+            Ok(store
+                .meeting_directory()?
+                .into_iter()
+                .map(MeetingPerson::from)
+                .collect())
+        })
+    }
+
+    pub fn person_meetings(&self, key: &str) -> Result<Vec<MeetingSummary>, MeetingError> {
+        self.with_store(|store| person_meetings(store, key))
+    }
+
     pub fn people(&self, id: &str) -> Result<MeetingPeople, MeetingError> {
         let id = parse_id(id)?;
         self.with_store(|store| people(store, id))

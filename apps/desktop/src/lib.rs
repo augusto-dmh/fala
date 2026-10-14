@@ -947,6 +947,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::change_notes_language_setting,
             commands::meeting::change_meeting_keyterms_setting,
             commands::meeting::meeting_people,
+            commands::meeting::meeting_directory,
+            commands::meeting::person_meetings,
             commands::meeting::set_meeting_participants,
             commands::meeting::apply_speaker_suggestion,
             commands::meeting::set_meeting_speaker_name,

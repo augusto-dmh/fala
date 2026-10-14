@@ -13,6 +13,7 @@ import {
   type MeetingMode,
   type MeetingOrphan,
   type MeetingOutputs,
+  type MeetingPerson,
   type MeetingSearchHit,
   type MeetingStatus,
   type MeetingSummary,
@@ -29,6 +30,8 @@ import { GranolaImport } from "./GranolaImport";
 import { ImportDialog } from "./ImportDialog";
 import { MeetingList } from "./MeetingList";
 import { NewMeetingButton, RecordingStrip } from "./MeetingHome";
+import { MeetingsTabs, PeopleView, type MeetingsTab } from "./PeopleView";
+import { PersonView } from "./PersonView";
 import { SEARCH_AFTER_MS, searchResults } from "./meetingSearch";
 import { MeetingView } from "./MeetingView";
 import { useMeetingTemplates } from "./useMeetingTemplates";
@@ -137,9 +140,19 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const [granolaPath, setGranolaPath] = useState<string | null>(null);
   const [trashed, setTrashed] = useState<TrashedMeetingSummary[]>([]);
   const [showTrash, setShowTrash] = useState(false);
-  // "Meetings" in the rail leaves the trash too.
+  const [tab, setTab] = useState<MeetingsTab>("meetings");
+  const [people, setPeople] = useState<MeetingPerson[] | null>(null);
+  const [person, setPerson] = useState<MeetingPerson | null>(null);
+  const [personSessions, setPersonSessions] = useState<MeetingSummary[] | null>(
+    null,
+  );
+  // "Meetings" in the rail leaves the trash and the people too.
   useEffect(() => {
-    if (home > 0) setShowTrash(false);
+    if (home > 0) {
+      setShowTrash(false);
+      setTab("meetings");
+      setPerson(null);
+    }
   }, [home]);
 
   const refresh = useCallback(async () => {
@@ -183,8 +196,9 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   }, []);
 
   // The search follows the box and the list: a session transcribed meanwhile is searched again.
+  // On "Pessoas" the box filters the names instead.
   useEffect(() => {
-    if (!query.trim()) {
+    if (!query.trim() || tab === "people") {
       setHits(null);
       return;
     }
@@ -200,7 +214,44 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       current = false;
       clearTimeout(timer);
     };
-  }, [query, sessions]);
+  }, [query, sessions, tab]);
+
+  // The people load again whenever they come back on screen: a name or an agenda typed in a
+  // session, a session moved to the trash. The open person takes the latest spelling.
+  const onList = selected === null;
+  useEffect(() => {
+    if (tab !== "people" || !onList) return;
+    let current = true;
+    void commands.meetingDirectory().then((result) => {
+      if (!current) return;
+      if (result.status !== "ok") return setError(result.error);
+      setPeople(result.data);
+      setPerson((open) => {
+        const fresh = open && result.data.find((p) => p.key === open.key);
+        return fresh ?? open;
+      });
+    });
+    return () => {
+      current = false;
+    };
+  }, [tab, onList, sessions, setError]);
+
+  const personKey = person?.key ?? null;
+  useEffect(() => {
+    if (personKey === null || !onList) {
+      if (personKey === null) setPersonSessions(null);
+      return;
+    }
+    let current = true;
+    void commands.personMeetings(personKey).then((result) => {
+      if (!current) return;
+      if (result.status === "ok") setPersonSessions(result.data);
+      else setError(result.error);
+    });
+    return () => {
+      current = false;
+    };
+  }, [personKey, onList, sessions, setError]);
 
   useEffect(() => {
     void commands
@@ -387,7 +438,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
   const onDrop = useRef<(path: string) => void>(() => {});
   useEffect(() => {
     onDrop.current = (path) => {
-      if (!askConsent && selected === null && !showTrash)
+      if (!askConsent && selected === null && !showTrash && !person)
         void importSource({ kind: "file", value: path });
     };
   });
@@ -475,6 +526,12 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
 
   const recordingNow =
     status.state === "recording" || status.state === "paused";
+  const liveSessions = {
+    recording: recordingNow ? status.id : null,
+    working: new Set([transcribing, generating].filter((id) => id !== null)),
+    failed,
+    notesFailed,
+  };
   const recorder = (controls: boolean) => (
     <RecorderPanel
       controls={controls}
@@ -592,7 +649,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
             className="rtl:rotate-180"
             aria-hidden="true"
           />
-          {t("meeting.list.title")}
+          {person ? person.name : t("meeting.list.title")}
         </button>
         {banners}
         {granola}
@@ -656,6 +713,24 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
     );
   }
 
+  if (person) {
+    return (
+      <div className="w-full space-y-4">
+        {banners}
+        {granola}
+        {strip}
+        <PersonView
+          person={person}
+          sessions={personSessions}
+          onBack={() => setPerson(null)}
+          onOpen={(id) => void open(id)}
+          live={liveSessions}
+          t={t}
+        />
+      </div>
+    );
+  }
+
   if (showTrash) {
     return (
       <div className="w-full space-y-4">
@@ -690,12 +765,21 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
       {banners}
       {strip}
       <div className="flex flex-wrap items-center gap-2">
+        <MeetingsTabs tab={tab} onTab={setTab} t={t} />
         <SearchField
           variant="compact"
           className="min-w-0 flex-1"
           value={query}
-          placeholder={t("meeting.list.search")}
-          aria-label={t("meeting.list.search")}
+          placeholder={t(
+            tab === "people"
+              ? "meeting.directory.search"
+              : "meeting.list.search",
+          )}
+          aria-label={t(
+            tab === "people"
+              ? "meeting.directory.search"
+              : "meeting.list.search",
+          )}
           onChange={(event) => setQuery(event.target.value)}
         />
         {!askConsent && (
@@ -719,18 +803,21 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           )}
         </p>
       )}
-      <MeetingList
-        {...(hits ? searchResults(sessions, hits) : { sessions })}
-        live={{
-          recording: recordingNow ? status.id : null,
-          working: new Set(
-            [transcribing, generating].filter((id) => id !== null),
-          ),
-          failed,
-          notesFailed,
-        }}
-        onOpen={(id) => void open(id)}
-      />
+      {tab === "people" ? (
+        <PeopleView
+          people={people}
+          query={query}
+          onOpen={setPerson}
+          locale={i18n.language}
+          t={t}
+        />
+      ) : (
+        <MeetingList
+          {...(hits ? searchResults(sessions, hits) : { sessions })}
+          live={liveSessions}
+          onOpen={(id) => void open(id)}
+        />
+      )}
       {trashed.length > 0 && (
         <button
           type="button"
