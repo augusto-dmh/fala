@@ -129,6 +129,24 @@ impl MeetingManager {
         self.with_store(|store| person_meetings(store, key))
     }
 
+    /// "Rename" and "Merge with…": every name of `key`, in "Who was there" and in "Person N",
+    /// becomes `name` in all meetings; gives the People list back.
+    pub fn rename_person(&self, key: &str, name: &str) -> Result<Vec<MeetingPerson>, MeetingError> {
+        // The page never sends a blank name, nor one that is only punctuation.
+        let Some(name) = clean_name(name).filter(|n| fala_storage::person_key(n).is_some()) else {
+            return Err(MeetingError::NotFound);
+        };
+        self.with_store(|store| {
+            let changed = store.rename_person(key, &name)?;
+            log::debug!("person renamed in {} meetings", changed.len());
+            Ok(store
+                .meeting_directory()?
+                .into_iter()
+                .map(MeetingPerson::from)
+                .collect())
+        })
+    }
+
     pub fn people(&self, id: &str) -> Result<MeetingPeople, MeetingError> {
         let id = parse_id(id)?;
         self.with_store(|store| people(store, id))

@@ -123,6 +123,40 @@
       "close": "Close",
       "empty": "Nothing in the dictionary yet. Add a term, a spoken → written pair or a snippet.",
       "noMatch": "Nothing matches."
+    },
+    "import": {
+      "open": "Import…",
+      "title": "Import into the dictionary",
+      "files": "Word list (.txt, .csv)",
+      "format": "One entry per line: a term, or the spoken and written forms separated by a comma, semicolon or tab. Blank lines and lines starting with # are skipped. Only new entries are added; nothing in the dictionary changes.",
+      "readError": "Couldn't read the file. It must be UTF-8 text.",
+      "tooBig": "The file is over {{max}} MB; it does not look like a word list.",
+      "counts": {
+        "terms_one": "{{count}} new term",
+        "terms_other": "{{count}} new terms",
+        "replacements_one": "{{count}} new spoken → written pair",
+        "replacements_other": "{{count}} new spoken → written pairs",
+        "duplicates_one": "{{count}} repeat (already in the dictionary or earlier in the file)",
+        "duplicates_other": "{{count}} repeats (already in the dictionary or earlier in the file)",
+        "invalid_one": "{{count}} invalid line",
+        "invalid_other": "{{count}} invalid lines"
+      },
+      "invalidLine": "Line {{line}}: {{reason}}",
+      "reasons": {
+        "fields": "more than two fields",
+        "quote": "unclosed quote",
+        "empty": "empty field",
+        "tooLong": "too long for the dictionary"
+      },
+      "tooManyLines": "The file has {{count}} entries; the limit is {{max}}. Nothing will be imported.",
+      "fieldTooLong": "Line {{line}} has a field over {{max}} characters. Nothing will be imported.",
+      "first": "First entries",
+      "nothing": "Nothing new to import.",
+      "cancel": "Cancel",
+      "confirm": "Import {{count}}",
+      "done_one": "{{count}} entry imported",
+      "done_other": "{{count}} entries imported",
+      "saveError": "Not everything was saved: {{count}} of {{total}} entries. Try again."
     }
   },
   "settingsPage": {
@@ -1350,7 +1384,23 @@
       "noResults": "No one found.",
       "meetings_one": "{{count}} meeting",
       "meetings_other": "{{count}} meetings",
-      "none": "No meetings with this person now."
+      "none": "No meetings with this person now.",
+      "actions": "Actions",
+      "actionsOf": "Actions for {{name}}",
+      "merge": "Merge with…",
+      "rename": "Rename",
+      "newName": "New name",
+      "pick": "Choose the person",
+      "mergeAction": "Merge",
+      "cancel": "Cancel",
+      "mergeConfirm_one": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meeting.",
+      "mergeConfirm_other": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meetings."
+    },
+    "series": {
+      "same": "Same series:",
+      "all": "see all ({{n}})",
+      "filter": "Series “{{name}}”",
+      "clear": "Clear"
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",
@@ -1394,6 +1444,25 @@
       "noAudio": "This meeting's audio is no longer on disk."
     },
     "omitted": "Dictation left out",
+    "erased": "Erased stretch",
+    "erase": {
+      "start": "Erase stretch",
+      "running": "Erasing the stretch…",
+      "pickFirst": "Click the first line of the stretch.",
+      "pickLast": "Now click the last one.",
+      "picked_one": "1 line from {{from}} to {{to}}, both channels.",
+      "picked_other": "{{count}} lines from {{from}} to {{to}}, both channels.",
+      "tooMany": "More than {{max}} lines: pick a shorter stretch.",
+      "action": "Erase stretch",
+      "title": "Erase this stretch?",
+      "body_one": "The audio from {{from}} to {{to}} in both channels and the line in it leave this computer. This cannot be undone.",
+      "body_other": "The audio from {{from}} to {{to}} in both channels and the {{count}} lines in it leave this computer. This cannot be undone.",
+      "bodyNoAudio_one": "The line from {{from}} to {{to}} leaves this computer; the audio is already gone. This cannot be undone.",
+      "bodyNoAudio_other": "The {{count}} lines from {{from}} to {{to}} leave this computer; the audio is already gone. This cannot be undone.",
+      "changed_one": "The transcript changed. 1 line of the notes cited the erased stretch.",
+      "changed_other": "The transcript changed. {{count}} lines of the notes cited the erased stretch.",
+      "changedNone": "The transcript changed."
+    },
     "speaker": {
       "me": "Me",
       "person": "Person {{n}}"
@@ -1486,6 +1555,7 @@
       "import": "Could not import that file: {{detail}}",
       "import_no_audio": "That file has no audio track.",
       "import_too_long": "That file is longer than 12 hours, the import limit.",
+      "erase_too_long": "Stretch too long: up to 500 lines at a time.",
       "generic": "Something went wrong. See the log."
     },
     "notice": {

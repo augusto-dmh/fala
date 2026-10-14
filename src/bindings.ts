@@ -1571,6 +1571,29 @@ async personMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingErro
 }
 },
 /**
+ * "Rename" or "Merge with…" on People: every name of the person `key` becomes `name`.
+ */
+async renameMeetingPerson(key: string, name: string) : Promise<Result<MeetingPerson[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_meeting_person", { key, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Every meeting of the series `key` (a [`crate::meeting::series::MeetingSeries::key`]), newest
+ * first: "ver todas" under a session's title.
+ */
+async seriesMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("series_meetings", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
  */
 async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {
@@ -1642,6 +1665,17 @@ async changeMeetingAutoNotesSetting(enabled: boolean) : Promise<Result<null, str
 async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Erase stretch" after its confirmation: `[t0, t1]` leaves the audio and the transcript.
+ */
+async eraseMeetingRange(id: string, t0Ms: number, t1Ms: number) : Promise<Result<MeetingErased, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("erase_meeting_range", { id, t0Ms, t1Ms }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2226,9 +2260,33 @@ notes_running: boolean;
  */
 audio_available: boolean; 
 /**
+ * The working WAV is still waiting to become Opus: there is audio, not playable yet.
+ */
+audio_pending?: boolean | null; 
+/**
  * Where the PC slept during the recording, for the transcript's markers.
  */
-sleeps?: MeetingSleep[] }
+sleeps?: MeetingSleep[]; 
+/**
+ * The meetings of the same series ("Weekly produto 13/10" and "20/10"); absent without one.
+ */
+series?: MeetingSeries | null }
+/**
+ * What erasing a stretch did.
+ */
+export type MeetingErased = { 
+/**
+ * Lines that left the transcript.
+ */
+removed: number; 
+/**
+ * Lines of the notes that cited one of them and now say "(trecho apagado)".
+ */
+notes_lines: number; 
+/**
+ * The session had audio, and it was zeroed too.
+ */
+audio: boolean }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.
@@ -2277,7 +2335,11 @@ export type MeetingError = { kind: "consent_required" } | { kind: "already_activ
 /**
  * The imported source is longer than `fala_media::MAX_DURATION`.
  */
-{ kind: "import_too_long" }
+{ kind: "import_too_long" } | 
+/**
+ * More than `erase::MAX_LINES` lines in one stretch to erase.
+ */
+{ kind: "erase_too_long" }
 /**
  * Which keys exist in the keyring; never the keys themselves.
  */
@@ -2297,7 +2359,11 @@ name?: string | null; t0_ms: number; t1_ms: number; text: string;
 /**
  * The line marks a span of the mic zeroed by a dictation (ADR-0015); nobody speaks in it.
  */
-omitted?: boolean | null }
+omitted?: boolean | null; 
+/**
+ * The line marks a stretch the person erased, audio and text, in both channels.
+ */
+erased?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */
@@ -2368,6 +2434,22 @@ export type MeetingSearchHit = { id: string;
  * The matching excerpt; each found term sits between `\u{2}` and `\u{3}`.
  */
 snippet: string }
+/**
+ * The series of an opened session: "Mesma série:" under its title.
+ */
+export type MeetingSeries = { key: string; 
+/**
+ * The title without its date or number, as typed ("Weekly produto").
+ */
+name: string; 
+/**
+ * The meetings that started before this one, latest first, at most [`EARLIER_SHOWN`].
+ */
+earlier: MeetingSummary[]; 
+/**
+ * Every meeting of the series outside the trash, this one included.
+ */
+total: number }
 export type MeetingSleep = { 
 /**
  * Position in the recorded audio (without pauses), comparable to a line's `t0_ms`.

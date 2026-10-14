@@ -9,3 +9,21 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-people-series`
   lixeira e rascunho vazio fora. `cargo test -p fala-storage --test meeting_directory`
 - **C3** comandos e `bindings.ts` (`fala.exe --list-devices`).
 - **C4** alternador, tabela, vazio, filtro, uma pessoa. `bun src/components/meeting/people.test.tsx` (P1-P4)
+
+## PR 2 — Juntar e sugerir
+
+- **C5** juntar/renomear reescreve participantes (sem repetir a pessoa) e falantes de toda
+  reunião, e os `.md`; mesma grafia ou chave sem ninguém não muda nada.
+  `cargo test -p fala-storage --test meeting_directory merging`
+- **C6** "⋯" com "Juntar com…"/"Renomear"; confirmação com as duas grafias e a contagem;
+  sugestão por prefixo sem acento, até 5, sem repetidos; usada em "Quem estava" e "Pessoa N".
+  `bun src/components/meeting/people.test.tsx` (P5-P8)
+
+## PR 3 — Série
+
+- **C7** chave de série por tabela de casos (datas, "13 de outubro", "#12", "nº 12", "- 12";
+  "1:1 Ana" ≠ "1:1 Bruno"; sem série: vazio, "Reunião", < 3 letras). `cargo test -p fala-storage --lib meeting_series`
+- **C8** reuniões da série fora da lixeira, mais recente primeiro; renomear muda a série.
+  `cargo test -p fala-storage --test meeting_series`
+- **C9** anteriores (até 5) e total; sem série ou sozinha, nada. `cargo test -p fala --lib meeting::series`
+- **C10** "Mesma série:", "ver todas (N)" só quando há mais; a lista filtrada. `bun src/components/meeting/people.test.tsx` (P9)

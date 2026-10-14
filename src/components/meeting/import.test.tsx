@@ -115,7 +115,7 @@ const panel = (s: MeetingStatus) =>
   // e só uma importação por vez sai da página.
   assert.ok(/onDragDropEvent[\s\S]*type !== "drop"/.test(page));
   assert.ok(
-    /if \(!askConsent && selected === null && !showTrash\)\s*void importSource\(\{ kind: "file"/.test(
+    /if \(!askConsent && selected === null && !showTrash && !person\)\s*void importSource\(\{ kind: "file"/.test(
       page,
     ),
   );

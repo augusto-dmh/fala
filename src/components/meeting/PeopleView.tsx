@@ -1,7 +1,10 @@
+import { MoreHorizontal } from "lucide-react";
+import { Fragment, useState } from "react";
 import type { MeetingPerson } from "@/bindings";
 import { matchesQuery } from "@/lib/utils/search";
 import { dayLabel } from "./meetingDays";
 import type { Translate } from "./meetingModel";
+import { PersonEdit } from "./PersonEdit";
 
 export type MeetingsTab = "meetings" | "people";
 
@@ -52,6 +55,8 @@ export interface PeopleViewProps {
   /** The page's search box. */
   query: string;
   onOpen: (person: MeetingPerson) => void;
+  /** "Rename" and "Merge with…": every name of `key` becomes `name`. */
+  onRename?: (key: string, name: string) => void;
   locale: string;
   t: Translate;
   /** "Today" for the dates; the tests pin it. */
@@ -63,10 +68,13 @@ export function PeopleView({
   people,
   query,
   onOpen,
+  onRename,
   locale,
   t,
   now = new Date(),
 }: PeopleViewProps) {
+  // The person whose "⋯" is open.
+  const [editing, setEditing] = useState<string | null>(null);
   if (people === null) return null;
   if (people.length === 0) {
     return (
@@ -85,7 +93,7 @@ export function PeopleView({
   }
   const head = "px-4 py-2 text-start text-caption font-semibold text-text-2";
   return (
-    <table className="w-full overflow-hidden rounded-lg border border-border bg-surface-1">
+    <table className="w-full rounded-lg border border-border bg-surface-1">
       <thead className="border-b border-border">
         <tr>
           <th scope="col" className={head}>
@@ -97,27 +105,69 @@ export function PeopleView({
           <th scope="col" className={`${head} text-end`}>
             {t("meeting.directory.count")}
           </th>
+          <th scope="col" className="w-10">
+            <span className="sr-only">{t("meeting.directory.actions")}</span>
+          </th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border">
         {shown.map((person) => (
-          <tr key={person.key} className="hover:bg-surface-2">
-            <td className="max-w-0 w-1/2">
-              <button
-                type="button"
-                onClick={() => onOpen(person)}
-                className="block w-full truncate px-4 py-2.5 text-start text-body focus-visible:focus-ring"
-              >
-                {person.name}
-              </button>
-            </td>
-            <td className="whitespace-nowrap px-4 text-caption text-text-2">
-              {dayLabel(new Date(person.last_meeting_at), now, locale, t)}
-            </td>
-            <td className="px-4 text-end text-caption text-text-2 tabular-nums">
-              {person.meetings}
-            </td>
-          </tr>
+          <Fragment key={person.key}>
+            <tr className="hover:bg-surface-2">
+              <td className="max-w-0 w-1/2">
+                <button
+                  type="button"
+                  onClick={() => onOpen(person)}
+                  className="block w-full truncate px-4 py-2.5 text-start text-body focus-visible:focus-ring"
+                >
+                  {person.name}
+                </button>
+              </td>
+              <td className="whitespace-nowrap px-4 text-caption text-text-2">
+                {dayLabel(new Date(person.last_meeting_at), now, locale, t)}
+              </td>
+              <td className="px-4 text-end text-caption text-text-2 tabular-nums">
+                {person.meetings}
+              </td>
+              <td className="pe-2">
+                {onRename && (
+                  <button
+                    type="button"
+                    aria-label={t("meeting.directory.actionsOf", {
+                      name: person.name,
+                    })}
+                    aria-expanded={editing === person.key}
+                    onClick={() =>
+                      setEditing(editing === person.key ? null : person.key)
+                    }
+                    className="rounded p-1 text-text-2 hover:text-text focus-visible:focus-ring"
+                  >
+                    <MoreHorizontal
+                      size={16}
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                  </button>
+                )}
+              </td>
+            </tr>
+            {onRename && editing === person.key && (
+              <tr>
+                <td colSpan={4} className="px-4 py-2">
+                  <PersonEdit
+                    person={person}
+                    people={people}
+                    onRename={(key, name) => {
+                      setEditing(null);
+                      onRename(key, name);
+                    }}
+                    onClose={() => setEditing(null)}
+                    t={t}
+                  />
+                </td>
+              </tr>
+            )}
+          </Fragment>
         ))}
       </tbody>
     </table>

@@ -3,6 +3,7 @@ import { Fragment, useRef, useState } from "react";
 import type { MeetingLine, MeetingSleep } from "@/bindings";
 import { Input } from "../ui/Input";
 import { clock, speakerOf, type Translate } from "./meetingModel";
+import { useNameSuggest } from "./nameSuggest";
 import { highlight } from "./transcriptSearch";
 
 export interface PlayButtonProps {
@@ -46,6 +47,7 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
   const [typed, setTyped] = useState<string | null>(null);
   // Enter closes the field, and a blur may follow as it unmounts: one rename per edit.
   const open = useRef(false);
+  const suggest = useNameSuggest(typed !== null, typed ?? "", setTyped);
   const person = line.person;
   if (person === null || !onRename) return <>{speakerOf(line, t)}</>;
   const current = line.name ?? "";
@@ -75,21 +77,26 @@ export function SpeakerName({ line, onRename, t }: SpeakerNameProps) {
     }
   };
   return (
-    <Input
-      variant="compact"
-      autoFocus
-      aria-label={t("meeting.rename.label", { person: label })}
-      placeholder={label}
-      value={typed}
-      onChange={(event) => setTyped(event.target.value)}
-      onBlur={() => close(true)}
-      onKeyDown={(event) => {
-        // Enter that confirms an IME composition is not the end of the name.
-        if (event.key === "Enter" && !event.nativeEvent.isComposing)
-          close(true);
-        if (event.key === "Escape") close(false);
-      }}
-    />
+    <span className="inline-flex flex-col gap-1">
+      <Input
+        variant="compact"
+        autoFocus
+        aria-label={t("meeting.rename.label", { person: label })}
+        placeholder={label}
+        value={typed}
+        onChange={(event) => setTyped(event.target.value)}
+        onBlur={() => close(true)}
+        onKeyDown={(event) => {
+          suggest.onKeyDown(event);
+          if (event.defaultPrevented) return;
+          // Enter that confirms an IME composition is not the end of the name.
+          if (event.key === "Enter" && !event.nativeEvent.isComposing)
+            close(true);
+          if (event.key === "Escape") close(false);
+        }}
+      />
+      {suggest.list}
+    </span>
   );
 }
 
@@ -136,13 +143,19 @@ export interface TranscriptViewProps {
   onRename?: (person: number, name: string) => void;
   /** `false` for a transcript without times or audio (a Granola import): no ▶, no `mm:ss`. */
   timed?: boolean;
+  /** "Erase stretch": a click on a line picks it, and the lines the stretch takes are marked. */
+  picking?: {
+    picked: number[];
+    taken: Set<number>;
+    onPick: (line: MeetingLine) => void;
+  };
   t: Translate;
 }
 
 /** The nearest line before `index` that someone speaks (markers skipped). */
 function lineBefore(lines: MeetingLine[], index: number) {
   for (let i = index - 1; i >= 0; i--) {
-    if (!lines[i].omitted) return lines[i];
+    if (!lines[i].omitted && !lines[i].erased) return lines[i];
   }
   return undefined;
 }
@@ -152,7 +165,7 @@ function lineBefore(lines: MeetingLine[], index: number) {
  * time only when the speaker changes, a ▶ on each bubble.
  */
 export function TranscriptView(props: TranscriptViewProps) {
-  const { lines, t } = props;
+  const { lines, picking, t } = props;
   const timed = props.timed ?? true;
   const searching = (props.query ?? "").trim() !== "";
   const marks = searching ? new Map() : sleepMarks(lines, props.sleeps ?? []);
@@ -163,16 +176,17 @@ export function TranscriptView(props: TranscriptViewProps) {
   return (
     <ol className="space-y-1">
       {lines.map((line, index) => {
-        // A span of the mic a dictation zeroed (ADR-0015): a marker, not a bubble.
-        if (line.omitted) {
+        // A span of the mic a dictation zeroed (ADR-0015), or a stretch the person erased: a
+        // marker, not a bubble.
+        if (line.omitted || line.erased) {
           return (
             <li
               key={line.seq}
               id={segmentAnchor(line.seq)}
-              data-speaker="omitted"
+              data-speaker={line.erased ? "erased" : "omitted"}
               className="py-1 text-center text-caption text-text-2 italic"
             >
-              {t("meeting.omitted")}
+              {t(line.erased ? "meeting.erased" : "meeting.omitted")}
               {timed && <> · {clock(line.t0_ms)}</>}
             </li>
           );
@@ -185,7 +199,20 @@ export function TranscriptView(props: TranscriptViewProps) {
           previous === undefined ||
           (props.query ?? "").trim() !== "" ||
           previous.person !== line.person;
-        const highlighted = props.highlighted === line.seq;
+        const ring = picking?.taken.has(line.seq)
+          ? "ring-2 ring-danger"
+          : props.highlighted === line.seq
+            ? "ring-2 ring-accent"
+            : "";
+        const text = highlight(line.text, props.query ?? "").map((piece, i) =>
+          piece.hit ? (
+            <mark key={i} className="rounded bg-accent/30 text-text">
+              {piece.text}
+            </mark>
+          ) : (
+            piece.text
+          ),
+        );
         return (
           <Fragment key={line.seq}>
             {marksAt(index)}
@@ -201,7 +228,7 @@ export function TranscriptView(props: TranscriptViewProps) {
                 </span>
               )}
               <div
-                className={`flex max-w-[85%] items-start gap-1 rounded-lg px-2 py-1 text-sm text-text ${me ? "flex-row-reverse bg-me/15" : "bg-them/15"} ${highlighted ? "ring-2 ring-accent" : ""}`}
+                className={`flex max-w-[85%] items-start gap-1 rounded-lg px-2 py-1 text-sm text-text ${me ? "flex-row-reverse bg-me/15" : "bg-them/15"} ${ring}`}
               >
                 {timed && (
                   <PlayButton
@@ -211,17 +238,18 @@ export function TranscriptView(props: TranscriptViewProps) {
                     t={t}
                   />
                 )}
-                <span>
-                  {highlight(line.text, props.query ?? "").map((piece, i) =>
-                    piece.hit ? (
-                      <mark key={i} className="rounded bg-accent/30 text-text">
-                        {piece.text}
-                      </mark>
-                    ) : (
-                      piece.text
-                    ),
-                  )}
-                </span>
+                {picking ? (
+                  <button
+                    type="button"
+                    aria-pressed={picking.picked.includes(line.seq)}
+                    className={`cursor-pointer rounded text-start focus-visible:focus-ring ${picking.taken.has(line.seq) ? "line-through decoration-danger" : ""}`}
+                    onClick={() => picking.onPick(line)}
+                  >
+                    {text}
+                  </button>
+                ) : (
+                  <span>{text}</span>
+                )}
               </div>
             </li>
           </Fragment>

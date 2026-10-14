@@ -1,4 +1,4 @@
-// Prova dos checks de UI de Pessoas (`meeting-people-series`, PR 1). Rode com
+// Prova dos checks de UI de Pessoas (`meeting-people-series`, PRs 1 a 3). Rode com
 // `bun src/components/meeting/people.test.tsx`: imprime `<check> ok` e sai com erro na primeira
 // falha. O `t` lê as chaves em pt, então toda string visível passa por elas.
 import assert from "node:assert/strict";
@@ -8,6 +8,9 @@ import type { MeetingPerson, MeetingSummary } from "@/bindings";
 import type { Translate } from "./meetingModel";
 import { filterPeople, MeetingsTabs, PeopleView } from "./PeopleView";
 import { PersonView } from "./PersonView";
+import { PersonEdit } from "./PersonEdit";
+import { SuggestedNames, suggestNames } from "./nameSuggest";
+import { SeriesLine } from "./SessionHeader";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
@@ -168,4 +171,164 @@ const people = [
   );
   assert.ok(gone.includes("Nenhuma reunião com esta pessoa agora."), gone);
   ok("P4");
+}
+
+// P5: "⋯" on each row; its menu offers "Juntar com…" and "Renomear".
+{
+  const html = renderToStaticMarkup(
+    <PeopleView
+      people={people}
+      query=""
+      onOpen={noop}
+      onRename={noop}
+      locale="pt-BR"
+      t={tr}
+    />,
+  );
+  assert.ok(html.includes('aria-label="Ações de João"'), html);
+  const menu = renderToStaticMarkup(
+    <PersonEdit
+      person={people[1]}
+      people={people}
+      onRename={noop}
+      onClose={noop}
+      t={tr}
+    />,
+  );
+  assert.ok(menu.includes("Juntar com…") && menu.includes("Renomear"), menu);
+  ok("P5");
+}
+
+// P6: merging names both spellings and how many meetings change before it runs.
+{
+  const ana = person({ key: "ana", name: "Ana", meetings: 4 });
+  const html = renderToStaticMarkup(
+    <PersonEdit
+      person={ana}
+      people={[ana, person()]}
+      onRename={noop}
+      onClose={noop}
+      start={{ kind: "merge", into: person() }}
+      t={tr}
+    />,
+  );
+  assert.ok(
+    html.includes("Juntar “Ana” com “Ana Souza”? O nome muda em 4 reuniões."),
+    html,
+  );
+  const rename = renderToStaticMarkup(
+    <PersonEdit
+      person={ana}
+      people={[ana]}
+      onRename={noop}
+      onClose={noop}
+      start={{ kind: "rename" }}
+      t={tr}
+    />,
+  );
+  assert.ok(rename.includes('aria-label="Novo nome"'), rename);
+  assert.ok(rename.includes('value="Ana"'), rename);
+  // A new name that is someone else's asks like a merge.
+  const old = person({ key: "ana  souza", name: "Ana  Souza", meetings: 2 });
+  const clash = renderToStaticMarkup(
+    <PersonEdit
+      person={old}
+      people={[old, person()]}
+      onRename={noop}
+      onClose={noop}
+      start={{ kind: "rename" }}
+      t={tr}
+    />,
+  );
+  assert.ok(
+    clash.includes("O nome muda em 2 reuniões.") && clash.includes(">Juntar<"),
+    clash,
+  );
+  assert.ok(page.includes("commands.renameMeetingPerson"), "a página renomeia");
+  ok("P6");
+}
+
+// P7: suggestions start with what was typed, without accents, latest first, at most five,
+// without the names already there or the one typed in full.
+{
+  const many = [
+    "Ana Souza",
+    "Ana Lima",
+    "Anabel",
+    "Ána Paula",
+    "Ananias",
+    "Anita",
+  ].map((name) => person({ key: name.toLowerCase(), name }));
+  assert.deepEqual(suggestNames(many, "ana"), [
+    "Ana Souza",
+    "Ana Lima",
+    "Anabel",
+    "Ána Paula",
+    "Ananias",
+  ]);
+  assert.deepEqual(suggestNames(many, "ÁNA L"), ["Ana Lima"]);
+  assert.deepEqual(suggestNames(many, "ana", ["ana souza", "Anabel"]), [
+    "Ana Lima",
+    "Ána Paula",
+    "Ananias",
+  ]);
+  assert.deepEqual(suggestNames(many, "Anita"), []);
+  assert.deepEqual(suggestNames(many, "  "), []);
+  assert.deepEqual(suggestNames(many, "lima"), []);
+  ok("P7");
+}
+
+// P8: the list under the field, the picked one selected; "Quem estava" and "Pessoa N" use it.
+{
+  const html = renderToStaticMarkup(
+    <SuggestedNames
+      names={["Ana Souza", "Ana Lima"]}
+      picked={1}
+      onPick={noop}
+    />,
+  );
+  assert.ok(html.includes('role="listbox"'), html);
+  assert.match(html, /aria-selected="true"[^>]*>Ana Lima</);
+  assert.ok(read("./MeetingPeoplePanel.tsx").includes("useNameSuggest("));
+  assert.ok(read("./TranscriptView.tsx").includes("useNameSuggest("));
+  ok("P8");
+}
+
+// P9: "Mesma série:" with the earlier meetings by day; "ver todas (N)" only when there are more.
+{
+  const earlier = [session("B", "Weekly 13/10"), session("C", "Weekly 06/10")];
+  const series = { key: "weekly", name: "Weekly", earlier, total: 3 };
+  const line = (total: number) =>
+    renderToStaticMarkup(
+      <SeriesLine
+        series={{ ...series, total }}
+        onOpen={noop}
+        onAll={noop}
+        locale="pt-BR"
+        t={tr}
+        now={now}
+      />,
+    );
+  assert.ok(line(3).includes("Mesma série:"), line(3));
+  assert.equal(line(3).match(/title="Weekly/g)?.length, 2, line(3));
+  assert.ok(!line(3).includes("ver todas"), line(3));
+  assert.ok(line(3).includes("Ontem 14:02"), "o mesmo dia leva a hora");
+  assert.ok(line(12).includes("ver todas (12)"), line(12));
+  const none = (
+    <SeriesLine
+      series={null}
+      onOpen={noop}
+      onAll={noop}
+      locale="pt-BR"
+      t={tr}
+    />
+  );
+  assert.equal(renderToStaticMarkup(none), "");
+  assert.ok(read("./MeetingView.tsx").includes("<SeriesLine"));
+  assert.ok(
+    page.includes("commands.seriesMeetings"),
+    "ver todas filtra a lista",
+  );
+  assert.ok(page.includes("meeting.series.filter"));
+  ok("P9");
 }

@@ -4,10 +4,10 @@
 //! Em cada Opus, os pacotes em volta do trecho são recodificados com as amostras zeradas e os
 //! outros são copiados, num `.part`; só depois de os dois `.part` decodificarem com a contagem
 //! exata de amostras eles substituem os originais (a regra da ADR-0014 para o WAV vale para o
-//! Opus reescrito).
+//! Opus reescrito). O WAV de trabalho que ainda não virou Opus é zerado no lugar.
 
-use std::fs::{self, File};
-use std::io::BufReader;
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use ogg::PacketReader;
@@ -26,9 +26,9 @@ const MARGIN: u64 = SAMPLE_RATE_HZ as u64;
 /// Pacotes de aquecimento do encoder novo, descartados.
 const WARM: u64 = 5;
 
-/// Zera `[t0_ms, t1_ms)` de `mic.opus` e `sys.opus` em `session_dir`. Se um `.part` não sai ou
-/// não valida, os originais ficam como estavam. Se a troca do segundo falhar (arquivo preso), o
-/// primeiro já está zerado e o erro volta: tentar de novo zera o que falta.
+/// Zera `[t0_ms, t1_ms)` de `mic.opus` e `sys.opus` (dos que existem) em `session_dir`. Se um
+/// `.part` não sai ou não valida, os originais ficam como estavam. Se a troca do segundo falhar
+/// (arquivo preso), o primeiro já está zerado e o erro volta: tentar de novo zera o que falta.
 pub fn zero_range(session_dir: &Path, t0_ms: u64, t1_ms: u64) -> Result<(), RetentionError> {
     zero_range_with(session_dir, t0_ms, t1_ms, validate_opus)
 }
@@ -41,10 +41,14 @@ fn zero_range_with(
     validate: impl Fn(&Path, u64) -> Result<(), RetentionError> + Sync,
 ) -> Result<(), RetentionError> {
     let range = (t0_ms.saturating_mul(PER_MS), t1_ms.saturating_mul(PER_MS));
-    let files = [
+    // Um canal que falta (perdido) fica de fora: o que existe ainda guarda o trecho.
+    let files: Vec<_> = [
         (session_dir.join(MIC_FILE), 1),
         (session_dir.join(SYSTEM_FILE), 2),
-    ];
+    ]
+    .into_iter()
+    .filter(|(path, _)| path.is_file())
+    .collect();
     let parts: Vec<PathBuf> = files.iter().map(|(path, _)| part_path(path)).collect();
     // Um canal por thread: o tempo vai quase todo na validação, que decodifica o arquivo inteiro.
     let written = std::thread::scope(|scope| {
@@ -80,6 +84,75 @@ fn zero_range_with(
     }
     sync_dir(session_dir);
     renamed
+}
+
+/// Zera `[t0_ms, t1_ms)` dos dois canais do WAV de trabalho, no lugar, sem mudar o tamanho.
+/// O trecho é recortado nos dados que o cabeçalho anuncia.
+pub fn zero_wav(wav: &Path, t0_ms: u64, t1_ms: u64) -> Result<(), RetentionError> {
+    let io = |e| RetentionError::io(wav, e);
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(wav)
+        .map_err(io)?;
+    let (block, data, size) = wav_layout(&mut file).map_err(|reason| RetentionError::Wav {
+        path: wav.to_path_buf(),
+        reason,
+    })?;
+    let frames = size / block;
+    let (from, to) = (
+        t0_ms.saturating_mul(PER_MS).min(frames),
+        t1_ms.saturating_mul(PER_MS).min(frames),
+    );
+    if to <= from {
+        return Ok(());
+    }
+    file.seek(SeekFrom::Start(data + from * block))
+        .map_err(io)?;
+    let zeros = vec![0u8; 64 * 1024];
+    let mut left = (to - from) * block;
+    while left > 0 {
+        let n = left.min(zeros.len() as u64) as usize;
+        file.write_all(&zeros[..n]).map_err(io)?;
+        left -= n as u64;
+    }
+    file.sync_all().map_err(io)
+}
+
+/// Bytes por quadro, início e tamanho dos dados de um WAV PCM, lendo os chunks RIFF.
+fn wav_layout(file: &mut File) -> Result<(u64, u64, u64), String> {
+    let mut riff = [0u8; 12];
+    file.read_exact(&mut riff).map_err(|e| e.to_string())?;
+    if &riff[..4] != b"RIFF" || &riff[8..] != b"WAVE" {
+        return Err("não é RIFF/WAVE".into());
+    }
+    let mut block = None;
+    loop {
+        let mut chunk = [0u8; 8];
+        file.read_exact(&mut chunk)
+            .map_err(|_| "sem chunk `data`".to_string())?;
+        let size = u64::from(u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
+        let start = file.stream_position().map_err(|e| e.to_string())?;
+        match &chunk[..4] {
+            b"fmt " => {
+                let mut fmt = [0u8; 14];
+                file.read_exact(&mut fmt).map_err(|e| e.to_string())?;
+                let rate = u32::from_le_bytes([fmt[4], fmt[5], fmt[6], fmt[7]]);
+                if rate != SAMPLE_RATE_HZ {
+                    return Err(format!("{rate} Hz, esperado {SAMPLE_RATE_HZ}"));
+                }
+                block = Some(u64::from(u16::from_le_bytes([fmt[12], fmt[13]])));
+            }
+            b"data" => {
+                let block = block.filter(|b| *b > 0).ok_or("`data` antes de `fmt `")?;
+                return Ok((block, start, size));
+            }
+            _ => {}
+        }
+        // Chunks têm tamanho par (RIFF).
+        file.seek(SeekFrom::Start(start + size + size % 2))
+            .map_err(|e| e.to_string())?;
+    }
 }
 
 /// Reescreve `src` em `part` com `[from, to)` (em amostras depois do pre-skip) zerado. Só os
