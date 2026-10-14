@@ -103,13 +103,6 @@ pub enum SegmentSpeaker {
     Erased,
 }
 
-impl SegmentSpeaker {
-    /// Uma linha marcadora, que vem de uma tabela da sessão e não de quem transcreve.
-    pub fn is_marker(self) -> bool {
-        matches!(self, SegmentSpeaker::Omitted | SegmentSpeaker::Erased)
-    }
-}
-
 /// Um trecho transcrito. `seq` (1 a n, na ordem de `t0_ms`) é o id que os ponteiros `^sN` das
 /// notas citam; na gravação ele é recalculado.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -511,7 +504,8 @@ impl Store {
         // devolver dentro de um trecho apagado volta.
         let erasures = crate::meeting_erasures::erasures(&tx, id)?;
         segments.retain(|s| {
-            !s.speaker.is_marker() && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
+            !matches!(s.speaker, SegmentSpeaker::Omitted | SegmentSpeaker::Erased)
+                && !erasures.iter().any(|&(t0, t1)| overlaps(s, t0, t1))
         });
         segments.extend(crate::meeting_omissions::omitted_segments(&tx, id)?);
         segments.extend(
