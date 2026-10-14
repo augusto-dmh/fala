@@ -123,6 +123,40 @@
       "close": "Fechar",
       "empty": "O dicionário está vazio. Adicione um termo, um par falado → escrito ou um snippet.",
       "noMatch": "Nada encontrado."
+    },
+    "import": {
+      "open": "Importar…",
+      "title": "Importar para o dicionário",
+      "files": "Lista de termos (.txt, .csv)",
+      "format": "Uma entrada por linha: um termo, ou a forma falada e a escrita separadas por vírgula, ponto e vírgula ou tab. Linhas vazias e linhas que começam com # ficam de fora. Só entra o que é novo; nada do dicionário muda.",
+      "readError": "Não deu para ler o arquivo. Ele precisa ser texto em UTF-8.",
+      "tooBig": "O arquivo passa de {{max}} MB; não parece uma lista de termos.",
+      "counts": {
+        "terms_one": "{{count}} termo novo",
+        "terms_other": "{{count}} termos novos",
+        "replacements_one": "{{count}} par falado → escrito novo",
+        "replacements_other": "{{count}} pares falado → escrito novos",
+        "duplicates_one": "{{count}} repetida (já no dicionário ou antes no arquivo)",
+        "duplicates_other": "{{count}} repetidas (já no dicionário ou antes no arquivo)",
+        "invalid_one": "{{count}} linha inválida",
+        "invalid_other": "{{count}} linhas inválidas"
+      },
+      "invalidLine": "Linha {{line}}: {{reason}}",
+      "reasons": {
+        "fields": "mais de dois campos",
+        "quote": "aspas sem fechar",
+        "empty": "campo vazio",
+        "tooLong": "longo demais para o dicionário"
+      },
+      "tooManyLines": "O arquivo tem {{count}} entradas; o limite é {{max}}. Nada será importado.",
+      "fieldTooLong": "A linha {{line}} tem um campo com mais de {{max}} caracteres. Nada será importado.",
+      "first": "Primeiras entradas",
+      "nothing": "Nada novo para importar.",
+      "cancel": "Cancelar",
+      "confirm": "Importar {{count}}",
+      "done_one": "{{count}} entrada importada",
+      "done_other": "{{count}} entradas importadas",
+      "saveError": "Nem tudo foi gravado: {{count}} de {{total}} entradas. Tente de novo."
     }
   },
   "settingsPage": {
@@ -1412,6 +1446,25 @@
       "noAudio": "O áudio desta reunião não está mais no disco."
     },
     "omitted": "Trecho de ditado omitido",
+    "erased": "Trecho apagado",
+    "erase": {
+      "start": "Apagar trecho",
+      "running": "Apagando o trecho…",
+      "pickFirst": "Clique na primeira fala do trecho.",
+      "pickLast": "Agora clique na última.",
+      "picked_one": "1 fala de {{from}} a {{to}}, nos dois canais.",
+      "picked_other": "{{count}} falas de {{from}} a {{to}}, nos dois canais.",
+      "tooMany": "Mais de {{max}} falas: escolha um trecho menor.",
+      "action": "Apagar trecho",
+      "title": "Apagar este trecho?",
+      "body_one": "O áudio de {{from}} a {{to}} nos dois canais e a fala desse intervalo saem deste computador. Não dá para desfazer.",
+      "body_other": "O áudio de {{from}} a {{to}} nos dois canais e as {{count}} falas desse intervalo saem deste computador. Não dá para desfazer.",
+      "bodyNoAudio_one": "A fala de {{from}} a {{to}} sai deste computador; o áudio já não está aqui. Não dá para desfazer.",
+      "bodyNoAudio_other": "As {{count}} falas de {{from}} a {{to}} saem deste computador; o áudio já não está aqui. Não dá para desfazer.",
+      "changed_one": "A transcrição mudou. 1 linha das notas citava o trecho apagado.",
+      "changed_other": "A transcrição mudou. {{count}} linhas das notas citavam o trecho apagado.",
+      "changedNone": "A transcrição mudou."
+    },
     "speaker": {
       "me": "Eu",
       "person": "Pessoa {{n}}"

@@ -33,3 +33,7 @@ Profile: light · Windows 11, `CARGO_TARGET_DIR=C:\f\meeting-session-edit`
 - **C13** seleção primeira/última fala nos dois canais, contagem, confirmação com horários (com e
   sem áudio), faixa "A transcrição mudou". `bun src/components/meeting/erase.test.tsx`
 - **C14** manual: reunião real, apagar 30 s, tocar antes e depois, regenerar notas
+## S5 — retomar, núcleo (PR 5)
+
+- **C15** só sessão encerrada, gravada e não importada abre tomada; a tomada começa no `recorded_ms`, fecha somando; a transcrição dela entra depois, com "Pessoa N" depois da maior, nomes mantidos, marcador "[gravação retomada às HH:MM]"; `reindex` traz as tomadas. `cargo test -p fala-storage --test meeting_takes`
+- **C16** um trecho toca da tomada dele, cortado no início da seguinte; sem o áudio de todas, sem áudio. `cargo test -p fala --lib meeting::clip`
