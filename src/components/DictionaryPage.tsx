@@ -2,12 +2,10 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../hooks/useSettings";
 import { PageHeader } from "./PageHeader";
-import { SettingsGroup } from "./ui/SettingsGroup";
 import { SearchField } from "./ui/SearchField";
-import { CustomWords, DictionaryReplacements } from "./settings";
+import { DictionaryList } from "./DictionaryList";
 
-/** The user's own words and terms, promoted out of Advanced, the spoken -> written pairs and
- * the snippets. */
+/** The user's own words and terms, the spoken -> written pairs and the snippets, in one list. */
 export const DictionaryPage: React.FC = () => {
   const { t } = useTranslation();
   const { refreshSettings } = useSettings();
@@ -32,15 +30,7 @@ export const DictionaryPage: React.FC = () => {
         placeholder={t("dictionary.search")}
         aria-label={t("dictionary.search")}
       />
-      <SettingsGroup>
-        <CustomWords grouped filter={query} />
-      </SettingsGroup>
-      <SettingsGroup>
-        <DictionaryReplacements filter={query} />
-      </SettingsGroup>
-      <SettingsGroup>
-        <DictionaryReplacements kind="snippets" filter={query} />
-      </SettingsGroup>
+      <DictionaryList filter={query} />
     </div>
   );
 };

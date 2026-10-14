@@ -204,19 +204,15 @@ ok("C27");
 }
 ok("C28");
 
-// C29: the dictionary is its own destination and CustomWords lives only there,
-// next to the spoken -> written pairs, both filtered by the page search.
+// C29: the dictionary is its own destination: terms, spoken -> written pairs and snippets in
+// one list there, filtered by the page search, and nowhere in Advanced.
 assert.match(
   read("./DictionaryPage.tsx"),
-  /<CustomWords grouped filter=\{query\} \/>/,
-);
-assert.match(
-  read("./DictionaryPage.tsx"),
-  /<DictionaryReplacements filter=\{query\} \/>/,
+  /<DictionaryList filter=\{query\} \/>/,
 );
 assert.doesNotMatch(
   read("./settings/advanced/AdvancedSettings.tsx"),
-  /CustomWords/,
+  /DictionaryList|custom_words/,
 );
 ok("C29");
 
