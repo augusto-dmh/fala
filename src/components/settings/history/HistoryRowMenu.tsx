@@ -68,7 +68,14 @@ export function HistoryRowMenu(props: HistoryRowMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
+  // Esc and a picked item put focus back on "⋮", as the Dropdown does; a click elsewhere leaves it
+  // where the click put it.
+  const closeToButton = () => {
+    setOpen(false);
+    button.current?.focus();
+  };
   useDismiss(open, close, box);
   const items = () =>
     Array.from(
@@ -81,6 +88,11 @@ export function HistoryRowMenu(props: HistoryRowMenuProps) {
     if (open) items()[0]?.focus();
   }, [open]);
   const onKeyDown = (event: React.KeyboardEvent) => {
+    if (open && event.key === "Escape") {
+      event.preventDefault();
+      closeToButton();
+      return;
+    }
     if (!open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
     event.preventDefault();
     const list = items();
@@ -98,6 +110,7 @@ export function HistoryRowMenu(props: HistoryRowMenuProps) {
       }}
     >
       <button
+        ref={button}
         type="button"
         aria-label={t("settings.history.more")}
         title={t("settings.history.more")}
@@ -110,7 +123,7 @@ export function HistoryRowMenu(props: HistoryRowMenuProps) {
       </button>
       {open && (
         <div className="absolute end-0 top-full z-20 mt-1 w-56 rounded-xl border border-border bg-surface-1 shadow-lg">
-          <HistoryRowMenuItems {...props} onPick={close} />
+          <HistoryRowMenuItems {...props} onPick={closeToButton} />
         </div>
       )}
     </div>

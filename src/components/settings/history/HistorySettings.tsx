@@ -19,6 +19,8 @@ import { Button } from "../../ui/Button";
 import { copyToClipboard } from "./clipboard";
 import { HistoryRowMenu } from "./HistoryRowMenu";
 import {
+  DELETE_UNDO_MS,
+  restoreEntry,
   appLabel,
   appName,
   emptyHint,
@@ -103,6 +105,13 @@ export const HistorySettings: React.FC = () => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const entriesRef = useRef<HistoryEntry[]>([]);
   const loadingRef = useRef(false);
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  // Deleted and still undoable, with the toast that offers the undo: kept out of every page or
+  // search fetched meanwhile, since the backend still has them.
+  const pendingDeletes = useRef(new Map<number, string | number>());
+  const notPending = (list: HistoryEntry[]) =>
+    list.filter((e) => !pendingDeletes.current.has(e.id));
 
   // Keep ref in sync for use in IntersectionObserver callback
   useEffect(() => {
@@ -123,9 +132,8 @@ export const HistorySettings: React.FC = () => {
       );
       if (result.status === "ok") {
         const { entries: newEntries, has_more } = result.data;
-        setEntries((prev) =>
-          isFirstPage ? newEntries : [...prev, ...newEntries],
-        );
+        const shown = notPending(newEntries);
+        setEntries((prev) => (isFirstPage ? shown : [...prev, ...shown]));
         setHasMore(has_more);
       }
     } catch (error) {
@@ -154,7 +162,7 @@ export const HistorySettings: React.FC = () => {
         const result = await commands.historySearch(q);
         if (stale) return;
         if (result.status === "ok") {
-          setResults(result.data);
+          setResults(notPending(result.data));
         } else {
           console.error("Failed to search the history:", result.error);
           toast.error(t("settings.history.searchError"));
@@ -259,20 +267,71 @@ export const HistorySettings: React.FC = () => {
     [osType],
   );
 
-  const deleteAudioEntry = async (id: number) => {
-    // Optimistically remove
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-    setResults((prev) => (prev ? prev.filter((e) => e.id !== id) : prev));
-    try {
-      const result = await commands.deleteHistoryEntry(id);
-      if (result.status !== "ok") {
-        // Reload on failure
+  // A deleted dictation leaves the list at once; the delete is sent when its toast closes, so
+  // "Undo" can bring it back meanwhile (Wispr keeps a "Recover" row). The toast's own clock (which
+  // pauses under the pointer) decides, not a timer of ours; leaving the page sends what waits.
+  const commitDelete = useCallback(
+    async (id: number) => {
+      if (!pendingDeletes.current.delete(id)) return;
+      try {
+        const result = await commands.deleteHistoryEntry(id);
+        if (result.status !== "ok") {
+          toast.error(t("settings.history.deleteError"));
+          loadPage();
+        }
+      } catch (error) {
+        console.error("Failed to delete entry:", error);
+        toast.error(t("settings.history.deleteError"));
         loadPage();
       }
-    } catch (error) {
-      console.error("Failed to delete entry:", error);
-      loadPage();
-    }
+    },
+    [loadPage, t],
+  );
+  useEffect(() => {
+    const pending = pendingDeletes.current;
+    return () => {
+      for (const [id, toastId] of [...pending]) {
+        void commitDelete(id);
+        toast.dismiss(toastId);
+      }
+    };
+  }, [commitDelete]);
+
+  const deleteAudioEntry = async (id: number) => {
+    const fromEntries = entriesRef.current.find((e) => e.id === id);
+    const fromResults = results?.find((e) => e.id === id);
+    const entry = fromEntries ?? fromResults;
+    const queryAtDelete = queryRef.current;
+    // Focus goes to the next row's "⋮" (or the previous one), not to the page body.
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-history-row]"),
+    );
+    const at = rows.findIndex((row) => row.dataset.historyRow === String(id));
+    const neighbour = rows[at + 1] ?? rows[at - 1];
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setResults((prev) => (prev ? prev.filter((e) => e.id !== id) : prev));
+    requestAnimationFrame(() =>
+      neighbour?.querySelector<HTMLElement>('[aria-haspopup="menu"]')?.focus(),
+    );
+    const toastId = toast(t("settings.history.deleted"), {
+      duration: DELETE_UNDO_MS,
+      // Back where it was: the list it was in, and the search only if it is still the same one.
+      action: entry && {
+        label: t("settings.history.undoDelete"),
+        onClick: () => {
+          if (!pendingDeletes.current.delete(id)) return;
+          if (fromEntries)
+            setEntries((prev) => restoreEntry(prev, fromEntries));
+          if (fromResults && queryRef.current === queryAtDelete)
+            setResults((prev) =>
+              prev ? restoreEntry(prev, fromResults) : prev,
+            );
+        },
+      },
+      onDismiss: () => void commitDelete(id),
+      onAutoClose: () => void commitDelete(id),
+    });
+    pendingDeletes.current.set(id, toastId);
   };
 
   const applyOutcome = (outcome: SwitchTextOutcome) => {
@@ -555,7 +614,10 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   }
 
   return (
-    <div className="group px-4 py-3 flex gap-4 hover:bg-mid-gray/5">
+    <div
+      data-history-row={entry.id}
+      className="group px-4 py-3 flex gap-4 hover:bg-mid-gray/5"
+    >
       <span className="w-16 shrink-0 whitespace-nowrap pt-0.5 text-xs text-text/50 tabular-nums">
         {timeLabel(entry.timestamp, i18n.language)}
       </span>
