@@ -357,6 +357,7 @@ fn body_is_the_copied_note_document() {
                 SegmentSpeaker::Me => fala_notes::Speaker::Me,
                 SegmentSpeaker::Omitted => fala_notes::Speaker::Omitted,
                 SegmentSpeaker::Erased => fala_notes::Speaker::Erased,
+                SegmentSpeaker::Resumed => fala_notes::Speaker::Resumed,
                 SegmentSpeaker::Person(n) => names
                     .iter()
                     .find(|p| p.person == n)

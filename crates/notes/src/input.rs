@@ -24,6 +24,8 @@ pub enum Speaker {
     Omitted,
     /// A linha marcadora de um trecho que a pessoa apagou, áudio e texto.
     Erased,
+    /// A linha marcadora do início de uma gravação retomada.
+    Resumed,
     #[serde(rename = "name")]
     Named(String),
 }
