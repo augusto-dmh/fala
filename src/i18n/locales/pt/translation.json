@@ -81,7 +81,6 @@
     "description": "Palavras, nomes e termos que o Fala deve reconhecer quando você dita.",
     "search": "Buscar no dicionário",
     "replacements": {
-      "title": "Falado → escrito",
       "description": "Quando você disser a forma falada, o Fala escreve a outra. Vale para a palavra inteira, sem diferenciar maiúsculas nem acentos, antes da IA de formatação e também com ela desligada. Só a forma escrita vai para a IA.",
       "spokenPlaceholder": "fala sql",
       "writtenPlaceholder": "Fala.sqlite",
@@ -94,7 +93,6 @@
       "uses_other": "{{count}} usos"
     },
     "snippets": {
-      "title": "Snippets",
       "description": "Diga o gatilho e o Fala insere o texto, como está: assinatura, link da agenda, endereço. O gatilho precisa de duas palavras ou mais e vale sem diferenciar maiúsculas nem acentos. {data}, {data_extenso} e {hora} viram a data, a data por extenso e a hora do ditado. O texto do snippet nunca vai para a IA de formatação.",
       "spokenPlaceholder": "minha assinatura",
       "writtenPlaceholder": "Augusto Henriques\nfala.dev",
@@ -106,6 +104,25 @@
       "twoWords": "O gatilho precisa de duas palavras ou mais.",
       "uses_one": "1 uso",
       "uses_other": "{{count}} usos"
+    },
+    "list": {
+      "kind": "Tipo de entrada",
+      "filter": "Mostrar",
+      "filters": {
+        "all": "Tudo ({{count}})",
+        "term": "Termos ({{count}})",
+        "replacement": "Falado → escrito ({{count}})",
+        "snippet": "Snippets ({{count}})"
+      },
+      "kinds": {
+        "term": "Termo",
+        "replacement": "Falado → escrito",
+        "snippet": "Snippet"
+      },
+      "add": "Adicionar",
+      "close": "Fechar",
+      "empty": "O dicionário está vazio. Adicione um termo, um par falado → escrito ou um snippet.",
+      "noMatch": "Nada encontrado."
     }
   },
   "settingsPage": {
@@ -650,7 +667,6 @@
         }
       },
       "customWords": {
-        "title": "Dicionário pessoal",
         "description": "Nomes e termos que o Fala deve escrever sempre com esta grafia. Eles ajudam os modelos compatíveis a reconhecer o que você diz, corrigem a grafia no texto e vão para a IA de formatação. A correção aproximada está limitada a palavras com letras de A–Z e números.",
         "placeholder": "Adicionar uma palavra",
         "add": "Adicionar",
