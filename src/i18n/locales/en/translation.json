@@ -394,7 +394,8 @@
       "title": "AI",
       "enabled": {
         "label": "Format dictations with AI",
-        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does."
+        "description": "Above 15 words, Gemini formats the dictated text. Only the text and the app name leave this computer; the audio never does.",
+        "waitingKey": "Waiting for the Gemini key below: nothing is formatted or sent until it is saved."
       },
       "cleanup": {
         "title": "How much the AI changes the text",
@@ -949,7 +950,8 @@
           "keySet": "Key saved",
           "keyMissing": "No key",
           "unknown": "Not checked",
-          "doesNotExist": "Does not exist"
+          "doesNotExist": "Does not exist",
+          "waitingForKey": "Waiting for the key"
         },
         "keys": {
           "title": "Where the keys are kept",
@@ -981,6 +983,62 @@
           "description": "High-performance tensor library for on-device machine learning inference",
           "details": "Fala's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
+      }
+    },
+    "shortcuts": {
+      "row": {
+        "title": "Keyboard shortcuts",
+        "description": "The keys to dictate, paste, copy and record a meeting.",
+        "edit": "Edit shortcuts"
+      },
+      "title": "Shortcuts",
+      "subtitle": "Choose the keys for each action. Each one takes up to two combinations.",
+      "actions": {
+        "transcribe": {
+          "name": "Dictate",
+          "description": "Hold to talk; also during a recorded meeting."
+        },
+        "cancel": {
+          "name": "Cancel the dictation",
+          "description": "Discards the dictation in progress."
+        },
+        "paste_last": {
+          "name": "Paste the last dictation",
+          "description": "Pastes the last dictated text again."
+        },
+        "copy_last": {
+          "name": "Copy the last dictation",
+          "description": "Puts the last dictated text on the clipboard."
+        },
+        "transcribe_with_post_process": {
+          "name": "Dictate with post-processing",
+          "description": "The old shortcut that always applies AI to the dictation."
+        },
+        "meeting_toggle": {
+          "name": "Record or stop meeting",
+          "description": "Starts a new meeting or stops the one recording."
+        }
+      },
+      "choose": "Click to choose a shortcut",
+      "pressKeys": "Press the keys…",
+      "edit": "Record again",
+      "remove": "Remove this combination",
+      "add": "Add another combination",
+      "useHere": "Use here",
+      "saved": "Shortcut saved",
+      "reset": "Restore defaults",
+      "restored": "Shortcuts restored",
+      "done": "Done",
+      "messages": {
+        "inUse": "Already used by “{{action}}”.",
+        "reserved": "Windows or another app already uses {{keys}}.",
+        "loneKey": "Use it with Ctrl, Alt, Shift or Win: a key on its own would get in the way of typing.",
+        "overlap": "{{smaller}} is part of {{larger}} ({{action}}): holding one may fire the other.",
+        "error": "Couldn't save the shortcut: {{error}}"
+      },
+      "resetRefused": {
+        "dictation_active": "Finish the dictation before restoring the shortcuts.",
+        "meeting_recording": "Stop the meeting before restoring the shortcuts."
       }
     }
   },
