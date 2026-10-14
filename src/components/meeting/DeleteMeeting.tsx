@@ -4,7 +4,9 @@ import type { Translate } from "./meetingModel";
 
 /** Moving to the trash asks only when there is audio, the one thing that does not come back. */
 export const trashNeedsConfirm = (detail: MeetingDetail): boolean =>
-  detail.audio_available || detail.summary.audio_retained;
+  detail.audio_available ||
+  !!detail.audio_pending ||
+  detail.summary.audio_retained;
 
 export interface DeleteConfirmProps {
   onConfirm: () => void;
