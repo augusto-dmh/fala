@@ -127,7 +127,11 @@ const preview = (over: Partial<GranolaPreview> = {}): GranolaPreview => ({
   // Sem áudio, "Transcrever" fica desligado, e as notas dizem que não têm âncoras.
   assert.match(
     view_,
-    /transcribeDisabled=\{[\s\S]*?imported_from === "granola"\s*\}\s*onTranscribe=\{props\.onTranscribe\}/,
+    /const audio =\s*detail\.summary\.imported_from === "granola"\s*\?\s*"imported"/,
+  );
+  assert.match(
+    view_,
+    /transcribeDisabled=\{[\s\S]*?audio !== "kept"\s*\}\s*onTranscribe=\{props\.onTranscribe\}/,
   );
   assert.ok(view_.includes('t("meeting.granola.noAnchors")'));
   assert.ok(
