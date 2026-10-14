@@ -1653,6 +1653,17 @@ async deleteMeeting(id: string) : Promise<Result<null, MeetingError>> {
 }
 },
 /**
+ * "Erase stretch" after its confirmation: `[t0, t1]` leaves the audio and the transcript.
+ */
+async eraseMeetingRange(id: string, t0Ms: number, t1Ms: number) : Promise<Result<MeetingErased, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("erase_meeting_range", { id, t0Ms, t1Ms }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * "Move to trash": the audio goes now; the rest stays 30 days in the trash.
  */
 async trashMeeting(id: string) : Promise<Result<null, MeetingError>> {
@@ -2219,9 +2230,29 @@ notes_running: boolean;
  */
 audio_available: boolean; 
 /**
+ * The working WAV is still waiting to become Opus: there is audio, not playable yet.
+ */
+audio_pending?: boolean | null; 
+/**
  * Where the PC slept during the recording, for the transcript's markers.
  */
 sleeps?: MeetingSleep[] }
+/**
+ * What erasing a stretch did.
+ */
+export type MeetingErased = { 
+/**
+ * Lines that left the transcript.
+ */
+removed: number; 
+/**
+ * Lines of the notes that cited one of them and now say "(trecho apagado)".
+ */
+notes_lines: number; 
+/**
+ * The session had audio, and it was zeroed too.
+ */
+audio: boolean }
 /**
  * Errors of the meeting commands, serialized as `{"kind": "...", "detail": ...}` so the UI
  * can tell them apart without matching text.
@@ -2270,7 +2301,11 @@ export type MeetingError = { kind: "consent_required" } | { kind: "already_activ
 /**
  * The imported source is longer than `fala_media::MAX_DURATION`.
  */
-{ kind: "import_too_long" }
+{ kind: "import_too_long" } | 
+/**
+ * More than `erase::MAX_LINES` lines in one stretch to erase.
+ */
+{ kind: "erase_too_long" }
 /**
  * Which keys exist in the keyring; never the keys themselves.
  */
@@ -2290,7 +2325,11 @@ name?: string | null; t0_ms: number; t1_ms: number; text: string;
 /**
  * The line marks a span of the mic zeroed by a dictation (ADR-0015); nobody speaks in it.
  */
-omitted?: boolean | null }
+omitted?: boolean | null; 
+/**
+ * The line marks a stretch the person erased, audio and text, in both channels.
+ */
+erased?: boolean | null }
 /**
  * The capture modes the panel offers (part 1 of F2, and "system only" of F7).
  */

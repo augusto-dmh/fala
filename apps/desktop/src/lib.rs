@@ -958,6 +958,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::set_meeting_template,
             commands::meeting::change_meeting_auto_notes_setting,
             commands::meeting::delete_meeting,
+            commands::meeting::erase_meeting_range,
             commands::meeting::trash_meeting,
             commands::meeting::restore_meeting,
             commands::meeting::list_trashed_meetings,

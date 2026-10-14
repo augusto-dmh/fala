@@ -1,10 +1,10 @@
-//! Apagar um trecho do áudio retido: `zero_range` nos dois Opus.
+//! Apagar um trecho do áudio retido: `zero_range` nos dois Opus e `zero_wav` no WAV de trabalho.
 
 #![allow(clippy::unwrap_used)]
 
 use std::path::Path;
 
-use fala_retention::{decode_range, retain_wav, zero_range, MIC_FILE, SYSTEM_FILE};
+use fala_retention::{decode_range, retain_wav, zero_range, zero_wav, MIC_FILE, SYSTEM_FILE};
 
 const RATE: u32 = 48_000;
 const PER_MS: usize = 48;
@@ -109,4 +109,34 @@ fn zero_range_silences_both_channels_and_keeps_the_rest() {
         .file_name()
         .to_string_lossy()
         .ends_with(".part")));
+}
+
+#[test]
+fn zero_wav_blanks_the_range_in_place() {
+    let tmp = tempfile::tempdir().unwrap();
+    let wav = tmp.path().join("recording.wav");
+    write_wav(&wav, 2);
+    let size = std::fs::metadata(&wav).unwrap().len();
+
+    zero_wav(&wav, 500, 1_000).unwrap();
+    // Um trecho além do fim é recortado.
+    zero_wav(&wav, 1_900, 9_000).unwrap();
+
+    assert_eq!(std::fs::metadata(&wav).unwrap().len(), size);
+    let samples: Vec<i16> = hound::WavReader::open(&wav)
+        .unwrap()
+        .into_samples::<i16>()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(samples.len(), 2 * 2 * RATE as usize);
+    for (frame, pair) in samples.chunks(2).enumerate() {
+        let ms = frame / PER_MS;
+        let zeroed = (500..1_000).contains(&ms) || ms >= 1_900;
+        let expected = if zeroed {
+            [0, 0]
+        } else {
+            [sample(frame as u32, 0), sample(frame as u32, 1)]
+        };
+        assert_eq!(pair, expected, "quadro {frame}");
+    }
 }
