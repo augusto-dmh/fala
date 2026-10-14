@@ -108,6 +108,12 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
   );
   assert.match(page, /setPendingContinue\(id\);\s*setAskConsent\(true\);/);
   assert.match(page, /await continueSession\(pendingContinue\);/);
+  // Cancelling the notice, or starting a new meeting, forgets the pending "Retomar".
+  assert.match(page, /setAskConsent\(false\);\s*setPendingContinue\(null\);/);
+  assert.match(page, /const start = async[^]*?setPendingContinue\(null\);/);
+  // Another meeting recording keeps it off.
+  assert.match(page, /recordingElsewhere=\{recordingNow && !recordingThis\}/);
+  assert.match(view, /props\.generating \|\|\s*props\.recordingElsewhere/);
   ok("R2 click and consent");
 }
 

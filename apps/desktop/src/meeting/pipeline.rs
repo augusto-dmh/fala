@@ -718,6 +718,8 @@ impl MeetingManager {
             return Err(MeetingError::StillRecording);
         }
         let record = self.with_store(|store| Ok(store.meeting(id)?))?;
+        // A session never transcribed (no key until now) is transcribed whole, not from the take.
+        let take = take.filter(|_| record.transcribed_at.is_some());
         if record.started_at.is_none() || record.ended_at.is_none() {
             return Err(MeetingError::StillRecording);
         }

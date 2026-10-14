@@ -613,6 +613,16 @@ impl MeetingManager {
     /// `audio/<id>/t<N>/` and opens in the store once the capture is open.
     pub fn resume_session(&self, id: &str) -> Result<MeetingStatus, MeetingError> {
         let id = parse_id(id)?;
+        // The last stop of this session is still being retained or transcribed: its transcript
+        // would be lost to the new take.
+        if self
+            .work
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .involves(id)
+        {
+            return Err(MeetingError::Busy);
+        }
         let (mode, take) = self.with_store(|store| resume_target(store, id))?;
         self.begin(mode, "", None, Some((id, take)))
     }
@@ -634,6 +644,9 @@ impl MeetingManager {
             .is_some_and(|rm| rm.is_recording());
         let mut inner = self.lock();
         check_start(consent.as_deref(), dictation, inner.active.is_some())?;
+        if resume.is_some_and(|(id, _)| inner.processing.contains(&id)) {
+            return Err(MeetingError::Busy);
+        }
 
         let now = now_local();
         let (id, existing) = match resume {
@@ -707,9 +720,28 @@ impl MeetingManager {
         // session behind. The audio matters more than the row: a failed write is logged and the
         // recording goes on.
         let mut take = None;
+        if let Some((_, number)) = resume {
+            // Without its row the take would be stopped as the session's first recording (and a
+            // short one even discarded with the session): no row, no take.
+            match self.with_store(|store| Ok(store.start_meeting_take(id, now)?)) {
+                Ok(opened) if opened.take == number => take = Some(opened),
+                opened => {
+                    let _ = control.send(Control::Finalize);
+                    hide_indicator(&self.app);
+                    if opened.is_ok() {
+                        let closed = self.with_store(|store| {
+                            Ok(store.finish_meeting_take(id, now, 0, Some(StopReason::User))?)
+                        });
+                        log::error!(
+                            "meeting {id}: take {number} opened under another number: {closed:?}"
+                        );
+                    }
+                    return Err(opened.err().unwrap_or(MeetingError::InvalidTransition));
+                }
+            }
+        }
         let saved = self.with_store(|store| {
             if resume.is_some() {
-                take = Some(store.start_meeting_take(id, now)?);
                 return Ok(());
             }
             if !existing {

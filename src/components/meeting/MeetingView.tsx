@@ -65,6 +65,8 @@ export interface MeetingViewProps {
   keys?: MeetingKeys | null;
   /** "Retomar": record a new take of this finished session (absent: it cannot take one). */
   onContinue?: () => void;
+  /** Another meeting records now: "Retomar" waits for it. */
+  recordingElsewhere?: boolean;
   /** A take was just transcribed after notes existed: offer to write them again. */
   takeTranscribed?: boolean;
   onTakeSeen?: () => void;
@@ -692,7 +694,10 @@ export function MeetingView(props: MeetingViewProps) {
             : undefined
         }
         continueDisabled={
-          props.recording || props.transcribing || props.generating
+          props.recording ||
+          props.transcribing ||
+          props.generating ||
+          props.recordingElsewhere
         }
         transcribing={props.transcribing}
         transcribeHint={hints.transcribe ? t(hints.transcribe) : undefined}

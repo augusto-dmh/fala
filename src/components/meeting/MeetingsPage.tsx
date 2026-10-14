@@ -369,6 +369,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
 
   const start = async (draftId: string | null) => {
     setError(null);
+    setPendingContinue(null);
     const result = await commands.startMeeting(mode, title, draftId);
     if (result.status === "ok") {
       setStatus(result.data);
@@ -630,7 +631,10 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
               await continueSession(pendingContinue);
             } else await start(pendingDraft);
           }}
-          onCancel={() => setAskConsent(false)}
+          onCancel={() => {
+            setAskConsent(false);
+            setPendingContinue(null);
+          }}
         />
       )}
       <RecoverBanner
@@ -718,6 +722,7 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
             notesFailed={notesFailed.has(selected.summary.id)}
             onRecordDraft={() => void start(selected.summary.id)}
             onContinue={() => void continueSession(selected.summary.id)}
+            recordingElsewhere={recordingNow && !recordingThis}
             takeTranscribed={takeTranscribed.has(selected.summary.id)}
             onTakeSeen={() =>
               setTakeTranscribed((current) =>
