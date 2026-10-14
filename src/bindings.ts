@@ -1557,6 +1557,17 @@ async personMeetings(key: string) : Promise<Result<MeetingSummary[], MeetingErro
 }
 },
 /**
+ * "Rename" or "Merge with…" on People: every name of the person `key` becomes `name`.
+ */
+async renameMeetingPerson(key: string, name: string) : Promise<Result<MeetingPerson[], MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_meeting_person", { key, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Names only: `fala-notes` keeps any entry with `@` out of the notes payload (ADR-0016).
  */
 async setMeetingParticipants(id: string, names: string[]) : Promise<Result<MeetingPeople, MeetingError>> {

@@ -393,6 +393,17 @@ pub async fn person_meetings(
     meetings.person_meetings(&key)
 }
 
+/// "Rename" or "Merge with…" on People: every name of the person `key` becomes `name`.
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_meeting_person(
+    meetings: Meetings<'_>,
+    key: String,
+    name: String,
+) -> Result<Vec<MeetingPerson>, MeetingError> {
+    meetings.rename_person(&key, &name)
+}
+
 /// "Who was there" of a session and the name suggestions waiting for "apply".
 #[tauri::command]
 #[specta::specta]

@@ -1347,7 +1347,17 @@
       "noResults": "Nenhuma pessoa encontrada.",
       "meetings_one": "{{count}} reunião",
       "meetings_other": "{{count}} reuniões",
-      "none": "Nenhuma reunião com esta pessoa agora."
+      "none": "Nenhuma reunião com esta pessoa agora.",
+      "actions": "Ações",
+      "actionsOf": "Ações de {{name}}",
+      "merge": "Juntar com…",
+      "rename": "Renomear",
+      "newName": "Novo nome",
+      "pick": "Escolha a pessoa",
+      "mergeAction": "Juntar",
+      "cancel": "Cancelar",
+      "mergeConfirm_one": "Juntar “{{from}}” com “{{to}}”? O nome muda em {{count}} reunião.",
+      "mergeConfirm_other": "Juntar “{{from}}” com “{{to}}”? O nome muda em {{count}} reuniões."
     },
     "view": {
       "agenda": "Pauta e anotações (antes de gravar)",

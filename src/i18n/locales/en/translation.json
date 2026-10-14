@@ -1347,7 +1347,17 @@
       "noResults": "No one found.",
       "meetings_one": "{{count}} meeting",
       "meetings_other": "{{count}} meetings",
-      "none": "No meetings with this person now."
+      "none": "No meetings with this person now.",
+      "actions": "Actions",
+      "actionsOf": "Actions for {{name}}",
+      "merge": "Merge with…",
+      "rename": "Rename",
+      "newName": "New name",
+      "pick": "Choose the person",
+      "mergeAction": "Merge",
+      "cancel": "Cancel",
+      "mergeConfirm_one": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meeting.",
+      "mergeConfirm_other": "Merge “{{from}}” with “{{to}}”? The name changes in {{count}} meetings."
     },
     "view": {
       "agenda": "Agenda and notes (before recording)",
