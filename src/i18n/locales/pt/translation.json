@@ -123,6 +123,38 @@
       "close": "Fechar",
       "empty": "O dicionário está vazio. Adicione um termo, um par falado → escrito ou um snippet.",
       "noMatch": "Nada encontrado."
+    },
+    "import": {
+      "open": "Importar…",
+      "title": "Importar para o dicionário",
+      "files": "Lista de termos (.txt, .csv)",
+      "format": "Uma entrada por linha: um termo, ou a forma falada e a escrita separadas por vírgula, ponto e vírgula ou tab. Linhas vazias e linhas que começam com # ficam de fora. Só entra o que é novo; nada do dicionário muda.",
+      "readError": "Não deu para ler o arquivo. Ele precisa ser texto em UTF-8.",
+      "counts": {
+        "terms_one": "{{count}} termo novo",
+        "terms_other": "{{count}} termos novos",
+        "replacements_one": "{{count}} par falado → escrito novo",
+        "replacements_other": "{{count}} pares falado → escrito novos",
+        "duplicates_one": "{{count}} já está no dicionário",
+        "duplicates_other": "{{count}} já estão no dicionário",
+        "invalid_one": "{{count}} linha inválida",
+        "invalid_other": "{{count}} linhas inválidas"
+      },
+      "invalidLine": "Linha {{line}}: {{reason}}",
+      "reasons": {
+        "fields": "mais de dois campos",
+        "quote": "aspas sem fechar",
+        "empty": "campo vazio",
+        "tooLong": "longo demais para o dicionário"
+      },
+      "tooManyLines": "O arquivo tem {{count}} entradas; o limite é {{max}}. Nada será importado.",
+      "fieldTooLong": "A linha {{line}} tem um campo com mais de {{max}} caracteres. Nada será importado.",
+      "first": "Primeiras entradas",
+      "nothing": "Nada novo para importar.",
+      "cancel": "Cancelar",
+      "confirm": "Importar {{count}}",
+      "done_one": "{{count}} entrada importada",
+      "done_other": "{{count}} entradas importadas"
     }
   },
   "settingsPage": {
