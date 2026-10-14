@@ -807,7 +807,9 @@
       "audioDeleted": "This dictation's audio was deleted; the text stays.",
       "play": "Play the recording",
       "hidePlayer": "Hide the player",
-      "more": "More actions"
+      "more": "More actions",
+      "deleted": "Dictation deleted",
+      "undoDelete": "Undo"
     },
     "debug": {
       "title": "Debug",

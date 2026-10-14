@@ -807,7 +807,9 @@
       "audioDeleted": "O áudio deste ditado já foi apagado; o texto fica.",
       "play": "Ouvir a gravação",
       "hidePlayer": "Fechar o player",
-      "more": "Mais ações"
+      "more": "Mais ações",
+      "deleted": "Ditado apagado",
+      "undoDelete": "Desfazer"
     },
     "debug": {
       "title": "Depuração",
