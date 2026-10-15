@@ -1233,7 +1233,7 @@
     "mistake": {
       "title": "Recorded by mistake?",
       "short": "It was only {{seconds}} s. Nothing was transcribed yet.",
-      "quiet": "Almost nothing was said in {{minutes}} min. Nothing was transcribed yet."
+      "quiet": "Almost no sound was recorded. Nothing was transcribed yet."
     },
     "nothingRecorded": {
       "title": "Nothing was recorded",
@@ -1298,6 +1298,7 @@
       "lowDisk": "Low disk space: {{mb}} MB free.",
       "output": "Meeting sound",
       "outputDefault": "Default output ({{name}})",
+      "micFrom": "Microphone: {{device}}",
       "outputFrom": "Sound from {{device}}",
       "callElsewhere": "The call's sound is playing on {{device}}.",
       "recordFrom": "Record from this device",

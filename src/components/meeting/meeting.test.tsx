@@ -63,6 +63,7 @@ const status = (over: Partial<MeetingStatus> = {}): MeetingStatus => ({
   muted_system: false,
   cap_remaining_ms: null,
   low_disk_bytes: null,
+  mic_input: null,
   system_output: null,
   call_output: null,
   zero_mic: false,
@@ -203,6 +204,16 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     ),
   );
   ok("C25-muted");
+  // The microphone the backend opened, the one dictation uses; none in "system only".
+  assert.ok(!panel(recording).includes("meeting.recorder.micFrom"));
+  const named = { ...recording, mode: "meeting" as const, mic_input: "Mic X" };
+  assert.ok(panel(named).includes("meeting.recorder.micFrom"));
+  assert.ok(
+    !panel({ ...named, mode: "system_only" }).includes(
+      "meeting.recorder.micFrom",
+    ),
+  );
+  ok("mic-input");
   const capped = panel({ ...recording, cap_remaining_ms: 600_000 });
   assert.ok(capped.includes("meeting.recorder.capWarning"), capped);
   assert.ok(capped.includes("meeting.recorder.extend"), capped);
