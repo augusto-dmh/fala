@@ -315,12 +315,14 @@ impl MeetingManager {
 
     /// [Keep] on "Recorded by mistake?": the session goes on as after any stop.
     /// Also when nobody answers: the recording is kept and transcribed. One transcribed from
-    /// the meetings page meanwhile is not sent again.
+    /// the meetings page meanwhile is not sent again, nor one moved to the trash.
     pub fn keep_after_mistake(&self, id: &str) -> Result<(), MeetingError> {
         let id = parse_id(id)?;
-        let transcribed =
-            self.with_store(|store| Ok(store.meeting(id)?.transcribed_at.is_some()))?;
-        if !transcribed {
+        let settled = self.with_store(|store| {
+            let transcribed = store.meeting(id)?.transcribed_at.is_some();
+            Ok(transcribed || store.meeting_trashed_at(id)?.is_some())
+        })?;
+        if !settled {
             self.transcribe_if_keyed(id);
         }
         Ok(())
