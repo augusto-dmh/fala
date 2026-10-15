@@ -16,8 +16,9 @@ import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const TICK_MS = 100;
 
-/** The body key and its values: a short recording and an almost silent long one ask for
- *  different reasons; the wake card says how long the PC slept. */
+/** The body key and its values: a short recording and a silent one ask for different
+ *  reasons (the backend asks under 10 s, or with no sound in either channel); the wake card
+ *  says how long the PC slept. */
 export function cardBody(
   text: string,
   seconds: number | null,
@@ -29,12 +30,9 @@ export function cardBody(
     ];
   if (text !== "mistake" || seconds === null)
     return [`callPrompt.${text}.body`, {}];
-  return seconds < 30
+  return seconds < 10
     ? ["callPrompt.mistake.short", { seconds }]
-    : [
-        "callPrompt.mistake.quiet",
-        { minutes: Math.max(1, Math.round(seconds / 60)) },
-      ];
+    : ["callPrompt.mistake.quiet", {}];
 }
 
 /** The prompt window: shows the card the backend sends and reports the answer. */
