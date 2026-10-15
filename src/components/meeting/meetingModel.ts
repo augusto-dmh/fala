@@ -39,6 +39,7 @@ export function errorKey(error: MeetingError | string | undefined): string {
     case "invalid_key":
     case "keyring":
     case "transcription":
+    case "unreachable":
     case "cancelled":
     case "busy":
     case "unknown_template":

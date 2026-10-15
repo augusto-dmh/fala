@@ -141,6 +141,10 @@ pub struct MeetingDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub series: Option<super::series::MeetingSeries>,
+    /// The automatic transcript has not arrived: it waits for a retry, or failed for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub auto_transcript: Option<super::retry::TranscriptWait>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -206,6 +210,10 @@ pub enum ProgressStage {
         phase: String,
         done: u64,
         total: u64,
+    },
+    /// The automatic transcript failed and runs again on its own (`retry`).
+    Waiting {
+        reason: super::retry::WaitReason,
     },
     Notes,
     Done,
@@ -518,6 +526,11 @@ impl From<fala_asr::AsrError> for MeetingError {
         match error {
             fala_asr::AsrError::Cancelled => MeetingError::Cancelled,
             fala_asr::AsrError::MissingChannel(_) => MeetingError::NoAudio,
+            fala_asr::AsrError::Network {
+                retriable: true,
+                status,
+                reason,
+            } => MeetingError::Unreachable { status, reason },
             other => MeetingError::Transcription(other.to_string()),
         }
     }
@@ -631,6 +644,7 @@ impl MeetingManager {
         let sleeps = super::sleeps::read(&self.session_dir(id));
         let notes_running = self.work.lock().unwrap_or_else(|e| e.into_inner()).notes == Some(id);
         let series_templates = crate::settings::get_settings(&self.app).meeting_series_templates;
+        let auto_transcript = self.transcript_wait(id);
         self.with_store(|store| {
             let record = store.meeting(id)?;
             let names = speaker_names(store, id)?;
@@ -660,6 +674,7 @@ impl MeetingManager {
                 audio_available,
                 audio_pending,
                 sleeps,
+                auto_transcript,
             })
         })
     }
@@ -732,9 +747,16 @@ impl MeetingManager {
         Ok(self.keys())
     }
 
-    /// Transcribes a stopped session with Scribe v2 and stores the segments (ADR-0005).
+    /// "Transcrever": transcribes a stopped session with Scribe v2 and stores the segments
+    /// (ADR-0005). On a meeting whose automatic transcript waited, the stop's notes follow.
     pub fn transcribe(&self, id: &str) -> Result<Vec<MeetingLine>, MeetingError> {
-        self.transcribe_with(parse_id(id)?, None)
+        let id = parse_id(id)?;
+        let owed = self.notes_owed(id);
+        let lines = self.transcribe_with(id, None)?;
+        if owed {
+            self.spawn_owed_notes(id, lines.clone());
+        }
+        Ok(lines)
     }
 
     /// The whole session (`take` absent) or only a take just recorded, whose transcript goes
@@ -750,6 +772,7 @@ impl MeetingManager {
         let record = self.with_store(|store| Ok(store.meeting(id)?))?;
         // A session never transcribed (no key until now) is transcribed whole, not from the take.
         let take = take.filter(|_| record.transcribed_at.is_some());
+        let take_number = take.map(|t| t.take);
         if record.started_at.is_none() || record.ended_at.is_none() {
             return Err(MeetingError::StillRecording);
         }
@@ -770,6 +793,7 @@ impl MeetingManager {
             Ok(lines) => {
                 log::info!("meeting {id}: {} transcript segments", lines.len());
                 self.progress(id, ProgressStage::Done);
+                self.transcript_arrived(id, take_number);
             }
             Err(error) => self.progress(
                 id,
