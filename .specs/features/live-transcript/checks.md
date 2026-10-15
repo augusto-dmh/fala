@@ -12,7 +12,12 @@ Proof: `cargo test -p fala-audio meeting::live`
 ordem; modelo ocupado guarda, erro descarta; silêncio não dá linha; teto da fila — PR 2
 Proof: `cargo test -p fala --lib meeting::preview`
 
-**C4** - Portões: fmt, clippy do workspace, testes dos crates tocados, lint, format, tsc,
+**C4** - Painel: linhas na ordem do tempo sem repetir, vazio quando a transcrição de registro
+substitui; segue o fim só com a pessoa nele; Você à direita, Eles à esquerda, "ouvindo…"; estados
+gravando, parado e rotulado; Sala no presencial; a última fala na barra — PR 3
+Proof: `bun src/components/meeting/live.test.tsx`
+
+**C5** - Portões: fmt, clippy do workspace, testes dos crates tocados, lint, format, tsc,
 traduções, `scripts/check-brand.sh` — todo PR
 
 **Manual (Windows).** M1 debug portátil, reunião "só sistema" tocando fala pelo alto-falante:

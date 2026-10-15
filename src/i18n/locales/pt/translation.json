@@ -1639,6 +1639,17 @@
     "bar": {
       "label": "Ações da reunião",
       "close": "Fechar a transcrição"
+    },
+    "live": {
+      "title": "Transcrição ao vivo",
+      "note": "Prévia local, feita neste computador enquanto grava. A transcrição final substitui esta ao parar.",
+      "stopped": "Prévia local. A transcrição final substitui esta quando chegar.",
+      "waiting": "Quando alguém falar, o texto aparece aqui.",
+      "listening": "ouvindo…",
+      "you": "Você",
+      "them": "Eles",
+      "room": "Sala",
+      "latest": "Ir para o fim"
     }
   },
   "keyField": {

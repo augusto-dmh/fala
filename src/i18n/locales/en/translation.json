@@ -1639,6 +1639,17 @@
     "bar": {
       "label": "Meeting actions",
       "close": "Close the transcript"
+    },
+    "live": {
+      "title": "Live transcript",
+      "note": "Local preview, made on this computer while it records. The final transcript replaces it when you stop.",
+      "stopped": "Local preview. The final transcript replaces it when it arrives.",
+      "waiting": "When someone speaks, the text shows up here.",
+      "listening": "listening…",
+      "you": "You",
+      "them": "Them",
+      "room": "Room",
+      "latest": "Jump to the end"
     }
   },
   "keyField": {
