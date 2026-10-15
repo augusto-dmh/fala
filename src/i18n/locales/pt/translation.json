@@ -1558,6 +1558,7 @@
       "invalid_key": "Chave vazia ou inválida.",
       "keyring": "O cofre de chaves do sistema não respondeu.",
       "transcription": "A transcrição falhou. O áudio continua salvo; tente de novo.",
+      "unreachable": "Não consegui falar com a ElevenLabs. O áudio continua salvo; tente de novo daqui a pouco.",
       "cancelled": "Transcrição cancelada.",
       "busy": "Já há uma transcrição ou geração de notas em andamento.",
       "unknown_template": "Template desconhecido.",

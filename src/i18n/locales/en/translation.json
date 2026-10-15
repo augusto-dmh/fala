@@ -1558,6 +1558,7 @@
       "invalid_key": "Empty or invalid key.",
       "keyring": "The system keyring did not answer.",
       "transcription": "Transcription failed. The audio is still saved; try again.",
+      "unreachable": "Couldn't reach ElevenLabs. The audio is still saved; try again in a moment.",
       "cancelled": "Transcription cancelled.",
       "busy": "A transcription or notes generation is already running.",
       "unknown_template": "Unknown template.",

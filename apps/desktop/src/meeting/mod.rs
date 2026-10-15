@@ -23,6 +23,7 @@ pub(crate) mod people;
 pub(crate) mod pipeline;
 pub(crate) mod recorder;
 pub(crate) mod recovery;
+pub(crate) mod retry;
 pub(crate) mod search;
 pub(crate) mod series;
 pub(crate) mod sleeps;
@@ -152,6 +153,12 @@ pub enum MeetingError {
     InvalidKey,
     Keyring,
     Transcription(String),
+    /// Scribe was not reached (no network: `status` absent) or answered `429`/`5xx`; retrying
+    /// may work. `reason` is the HTTP status or the transport error, never a body.
+    Unreachable {
+        status: Option<u16>,
+        reason: String,
+    },
     Cancelled,
     /// A transcription or a notes generation is already running.
     Busy,
@@ -475,6 +482,8 @@ pub struct MeetingManager {
     orphans: Mutex<Vec<SessionId>>,
     /// "Stop and quit": the app exits once the stopped session's end is saved.
     quit_after_stop: AtomicBool,
+    /// Automatic transcripts waiting for a retry, or that failed for good (`retry`).
+    retries: Mutex<retry::Retries>,
 }
 
 impl MeetingManager {
@@ -517,6 +526,7 @@ impl MeetingManager {
             importing: Mutex::new(None),
             orphans: Mutex::new(orphans),
             quit_after_stop: AtomicBool::new(false),
+            retries: Mutex::new(retry::Retries::default()),
         })
     }
 
@@ -1249,15 +1259,16 @@ impl MeetingManager {
     }
 
     /// With the key in the keyring, the transcript follows a stop, an import, a recovery or a
-    /// "Keep" without another click.
+    /// "Keep" without another click. A failure waits for its retry (`retry`): `None` then, and the
+    /// notes follow the transcript when it arrives.
     pub(crate) fn transcribe_if_keyed(&self, id: SessionId) -> Option<Vec<pipeline::MeetingLine>> {
         if !pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
             return None;
         }
-        match self.transcribe(&id.to_string()) {
+        match self.transcribe_with(id, None) {
             Ok(lines) => Some(lines),
             Err(e) => {
-                log::warn!("meeting {id}: automatic transcription failed: {e}");
+                self.transcript_failed(id, None, e);
                 None
             }
         }
@@ -1274,7 +1285,7 @@ impl MeetingManager {
             return None;
         }
         self.transcribe_with(id, Some(take))
-            .map_err(|e| log::warn!("meeting {id}: take not transcribed: {e}"))
+            .map_err(|e| self.transcript_failed(id, Some(take), e))
             .ok()
     }
 

@@ -247,11 +247,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(Arc::new(meeting::sound_check::SoundCheck::default()));
     // Audio a previous run left as WAV becomes Opus; the retention runs now and once a day.
     meeting::MeetingManager::spawn_upkeep(app_handle);
-    // A recording the PC slept through goes on in the same session once it wakes.
+    // A recording the PC slept through goes on in the same session once it wakes, and the
+    // transcripts that wait for the network are tried again.
     let sleep_app = app_handle.clone();
     power::watch_sleep(move |event| {
         if let Some(manager) = sleep_app.try_state::<Arc<meeting::MeetingManager>>() {
             manager.on_sleep(event);
+            if event == power::SleepEvent::Resumed {
+                manager.wake_retries();
+            }
         }
     });
     app_handle.manage(tray::TrayState::new());
