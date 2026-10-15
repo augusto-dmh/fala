@@ -15,6 +15,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { Button } from "../ui/Button";
 import { SearchField } from "../ui/SearchField";
 import { AnnotationsField } from "./AnnotationsField";
+import { LiveTranscript, liveTicker, useLivePreview } from "./LiveTranscript";
 import { DeleteConfirm, trashNeedsConfirm } from "./DeleteMeeting";
 import {
   EraseBar,
@@ -157,6 +158,9 @@ export function MeetingView(props: MeetingViewProps) {
   }, [hasNotes]);
   const [showPeople, setShowPeople] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const drawer = useRef<HTMLElement>(null);
+  // The live preview (ADR-0019) until a transcript of record replaces it.
+  const live = useLivePreview(detail.summary.id);
   const granola = detail.summary.imported_from === "granola";
   // Escape closes the sheet, like the menus.
   useEffect(() => {
@@ -602,6 +606,7 @@ export function MeetingView(props: MeetingViewProps) {
           </div>
           <aside
             hidden={!transcriptOpen}
+            ref={drawer}
             aria-label={t("meeting.view.transcript")}
             // Over the bar (z-40), under dialogs (z-50), down to the window's bottom: the bar
             // never cuts a line, and the ✕ (or Esc) gives the bar back, as Granola's sheet does.
@@ -621,7 +626,9 @@ export function MeetingView(props: MeetingViewProps) {
               </Button>
             </div>
             {detail.lines.length === 0 ? (
-              <p className="text-sm">{t("meeting.view.noTranscript")}</p>
+              !props.recording && (
+                <p className="text-sm">{t("meeting.view.noTranscript")}</p>
+              )
             ) : (
               <>
                 {(granola || !detail.audio_available) && (
@@ -728,12 +735,22 @@ export function MeetingView(props: MeetingViewProps) {
                 />
               </>
             )}
+            <LiveTranscript
+              live={live}
+              mode={detail.summary.mode}
+              recording={props.recording}
+              scroller={drawer}
+              t={t}
+            />
           </aside>
         </>
       )}
       <SessionBar
         draft={draft}
         live={props.live ?? null}
+        liveLine={
+          props.recording ? liveTicker(live, detail.summary.mode, t) : null
+        }
         transcriptOpen={transcriptOpen}
         onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
         onRecordDraft={props.onRecordDraft}

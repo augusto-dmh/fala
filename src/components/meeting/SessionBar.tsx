@@ -18,6 +18,8 @@ export interface SessionBarProps {
   live: LiveControls | null;
   transcriptOpen: boolean;
   onToggleTranscript: () => void;
+  /** While recording: the last line of the live preview, or that someone is speaking. */
+  liveLine?: string | null;
   onRecordDraft: () => void;
   transcribing: boolean;
   transcribeDisabled: boolean;
@@ -179,6 +181,15 @@ export function SessionBar(props: SessionBarProps) {
           alone would not reach the keyboard or a screen reader. */}
       <div className="min-w-0 flex-1 text-caption text-text-2">
         {!live && !props.draft && (props.transcribeHint ?? props.generateHint)}
+        {live && props.liveLine && (
+          <button
+            type="button"
+            className="block w-full cursor-pointer truncate text-start hover:text-text focus-visible:focus-ring"
+            onClick={props.onToggleTranscript}
+          >
+            {props.liveLine}
+          </button>
+        )}
       </div>
       {actions}
     </div>
