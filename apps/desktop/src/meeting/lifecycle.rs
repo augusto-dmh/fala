@@ -204,6 +204,7 @@ impl MeetingManager {
             return Err(error);
         }
         self.with_store(|store| Ok(store.delete_meeting(id)?))?;
+        super::preview::discard(&self.app, id);
         let _ = tauri::Emitter::emit(&self.app, super::DELETED_EVENT, id.to_string());
         self.forget_orphan(id);
         log::info!("meeting {id} deleted");
@@ -231,6 +232,7 @@ impl MeetingManager {
             return Err(error);
         }
         self.with_store(|store| Ok(store.trash_meeting(id, super::now_local())?))?;
+        super::preview::discard(&self.app, id);
         let _ = tauri::Emitter::emit(&self.app, super::DELETED_EVENT, id.to_string());
         self.forget_orphan(id);
         log::info!("meeting {id} moved to the trash");
@@ -289,6 +291,10 @@ impl MeetingManager {
     /// looks like a mistake instead of sending it to the transcription. Returns whether it
     /// took over (no automatic transcript).
     pub(crate) fn handle_mistake(&self, id: SessionId, recorded_ms: u64, heard_ms: u64) -> bool {
+        // Speech the live preview heard is no mistake (ADR-0019).
+        if super::preview::heard(id) {
+            return false;
+        }
         let typed = self
             .with_store(|store| {
                 let record = store.meeting(id)?;

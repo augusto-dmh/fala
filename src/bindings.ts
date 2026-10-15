@@ -1746,6 +1746,17 @@ async meetingOrphans() : Promise<Result<MeetingOrphan[], MeetingError>> {
 }
 },
 /**
+ * The live preview of a session so far (ADR-0019); the page then follows `MeetingPreview`.
+ */
+async meetingPreview(id: string) : Promise<Result<MeetingPreview, MeetingError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_preview", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The click on "Recover"; retention and transcription follow in the background.
  */
 async recoverMeeting(id: string) : Promise<Result<null, MeetingError>> {
@@ -1840,6 +1851,7 @@ async changeCallPromptMutedAppsSetting(apps: string[]) : Promise<Result<string[]
 export const events = __makeEvents__<{
 granolaProgress: GranolaProgress,
 historyUpdatePayload: HistoryUpdatePayload,
+meetingPreview: MeetingPreview,
 meetingProgress: MeetingProgress,
 meetingSoundLevel: MeetingSoundLevel,
 meetingStatus: MeetingStatus,
@@ -1848,6 +1860,7 @@ streamTextEvent: StreamTextEvent
 }>({
 granolaProgress: "granola-progress",
 historyUpdatePayload: "history-update-payload",
+meetingPreview: "meeting-preview",
 meetingProgress: "meeting-progress",
 meetingSoundLevel: "meeting-sound-level",
 meetingStatus: "meeting-status",
@@ -2455,6 +2468,19 @@ export type MeetingPhase = "idle" | "recording" | "paused" | "stopping" |
  */
 "processing"
 /**
+ * The preview of a session: emitted with the lines just added, and returned whole by
+ * `meeting_preview` with every line so far.
+ */
+export type MeetingPreview = { id: string; lines: PreviewLine[]; 
+/**
+ * Speech heard in the channel that has no text yet ("listening…").
+ */
+mic_listening: boolean; system_listening: boolean; 
+/**
+ * The transcript of record replaced the preview, or the session went: the page drops it.
+ */
+replaced: boolean }
+/**
  * Where the processing of a session is, at least once a second while the transcript runs.
  */
 export type MeetingProgress = { id: string; stage: ProgressStage }
@@ -2607,6 +2633,19 @@ export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+export type PreviewChannel = 
+/**
+ * "You"; in person, the room.
+ */
+"mic" | 
+/**
+ * "Them".
+ */
+"system"
+/**
+ * A stretch transcribed locally, in ms of the session's timeline.
+ */
+export type PreviewLine = { channel: PreviewChannel; t0_ms: number; t1_ms: number; text: string }
 export type ProgressStage = 
 /**
  * An import: `phase` is `download` (bytes `done` of `total`, 0 when unknown) or `convert`

@@ -217,6 +217,31 @@ impl Drop for LoadingGuard {
     }
 }
 
+/// The meeting preview (ADR-0019) did not run: the model is loading, not loaded, in use or
+/// wanted by a dictation. The preview tries again later; dictation never sees this.
+#[derive(Debug)]
+pub struct ModelBusy;
+
+impl std::fmt::Display for ModelBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the model is busy; the meeting preview waits")
+    }
+}
+
+impl std::error::Error for ModelBusy {}
+
+/// Held while the meeting preview has the engine out of the mutex. On drop, under the engine
+/// mutex so a waiting dictation cannot miss it, the lease ends and waiters wake.
+struct PreviewLease<'a>(&'a TranscriptionManager);
+
+impl Drop for PreviewLease<'_> {
+    fn drop(&mut self) {
+        let _engine = self.0.lock_engine();
+        self.0.preview_lease.store(false, Ordering::Release);
+        self.0.engine_back.notify_all();
+    }
+}
+
 /// RAII guard that clears the streaming worker/lease flags on any worker exit -
 /// normal return, early return, or a panic in an engine call that unwinds the
 /// detached worker thread. Tokens prevent an older worker from clearing a newer
@@ -281,6 +306,10 @@ pub struct TranscriptionManager {
     /// `is_model_loaded()` consults this so the model still reports "loaded"
     /// while the worker holds it.
     active_engine_lease: Arc<AtomicU64>,
+    /// The meeting preview has the engine out of `engine` (ADR-0019).
+    preview_lease: Arc<AtomicBool>,
+    /// Paired with `engine`: notified when the preview gives the engine back.
+    engine_back: Arc<Condvar>,
 }
 
 impl TranscriptionManager {
@@ -301,6 +330,8 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
+            preview_lease: Arc::new(AtomicBool::new(false)),
+            engine_back: Arc::new(Condvar::new()),
         };
 
         // Start the idle watcher
@@ -386,9 +417,25 @@ impl TranscriptionManager {
     }
 
     pub fn is_model_loaded(&self) -> bool {
-        // The engine may be leased out to the streaming worker (taken out of
-        // the mutex). It's still loaded, just in use, so report true.
-        self.lock_engine().is_some() || self.active_engine_lease.load(Ordering::Acquire) != 0
+        // The engine may be leased out to the streaming worker or the meeting
+        // preview (taken out of the mutex). It's still loaded, just in use.
+        self.lock_engine().is_some()
+            || self.active_engine_lease.load(Ordering::Acquire) != 0
+            || self.preview_lease.load(Ordering::Acquire)
+    }
+
+    /// Waits while the meeting preview has the engine out: at most one short preview run.
+    fn wait_for_preview<'a>(
+        &self,
+        mut guard: MutexGuard<'a, Option<LoadedEngine>>,
+    ) -> MutexGuard<'a, Option<LoadedEngine>> {
+        while guard.is_none() && self.preview_lease.load(Ordering::Acquire) {
+            guard = self
+                .engine_back
+                .wait(guard)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        guard
     }
 
     /// Accelerator changes should not disturb the current transcription. Mark
@@ -876,7 +923,8 @@ impl TranscriptionManager {
             drain_until_finalize(rx);
             return;
         }
-        let mut engine = match self.lock_engine().take() {
+        // A meeting preview run that holds the engine is short: wait for it, as batch does.
+        let mut engine = match self.wait_for_preview(self.lock_engine()).take() {
             Some(e) => e,
             None => {
                 info!(
@@ -1184,7 +1232,29 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
+    /// A preview run already holding the model is waited for instead of failing.
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+        self.run_transcription(audio, None)
+    }
+
+    /// The meeting preview (ADR-0019): never loads or unloads the model, and returns
+    /// [`ModelBusy`] instead of waiting. The caller checks that no dictation is in flight.
+    pub fn transcribe_preview(&self, audio: &[f32]) -> Result<String> {
+        let loading = *self.is_loading.lock().unwrap_or_else(|e| e.into_inner());
+        if loading || self.active_stream_worker.load(Ordering::Acquire) != 0 {
+            return Err(ModelBusy.into());
+        }
+        let mut lease = None;
+        self.run_transcription(audio.to_vec(), Some(&mut lease))
+    }
+
+    /// `preview` is `None` for dictation priority; for the preview it receives the lease taken
+    /// with the engine.
+    fn run_transcription<'a>(
+        &'a self,
+        audio: Vec<f32>,
+        mut preview: Option<&mut Option<PreviewLease<'a>>>,
+    ) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("FALA_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -1202,19 +1272,21 @@ impl TranscriptionManager {
 
         if audio.is_empty() {
             debug!("Empty audio vector");
-            self.maybe_unload_immediately("empty audio");
+            if preview.is_none() {
+                self.maybe_unload_immediately("empty audio");
+            }
             return Ok(String::new());
         }
 
         // Check if model is loaded, if not try to load it
-        {
+        if preview.is_none() {
             // If the model is loading, wait for it to complete.
             let mut is_loading = self.is_loading.lock().unwrap();
             while *is_loading {
                 is_loading = self.loading_condvar.wait(is_loading).unwrap();
             }
 
-            let engine_guard = self.lock_engine();
+            let engine_guard = self.wait_for_preview(self.lock_engine());
             if engine_guard.is_none() {
                 return Err(anyhow::anyhow!("Model is not loaded for transcription."));
             }
@@ -1262,13 +1334,23 @@ impl TranscriptionManager {
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
         // which would make the app hang indefinitely on subsequent operations.
         let (result, output_language, model_languages) = {
-            let mut engine_guard = self.lock_engine();
+            let mut engine_guard = match preview.as_deref() {
+                Some(_) => self.lock_engine(),
+                None => self.wait_for_preview(self.lock_engine()),
+            };
 
             // Take the engine out so we own it during transcription.
             // If the engine panics, we simply don't put it back (effectively unloading it)
             // instead of poisoning the mutex.
             let mut engine = match engine_guard.take() {
-                Some(e) => e,
+                Some(e) => {
+                    if let Some(lease) = preview.as_deref_mut() {
+                        self.preview_lease.store(true, Ordering::Release);
+                        *lease = Some(PreviewLease(self));
+                    }
+                    e
+                }
+                None if preview.is_some() => return Err(ModelBusy.into()),
                 None => {
                     return Err(anyhow::anyhow!(
                         "Model failed to load after auto-load attempt. Please check your model settings."
@@ -1448,6 +1530,10 @@ impl TranscriptionManager {
                     // Success or normal error: return the engine unless a model
                     // switch/unload invalidated it while it was in use.
                     self.return_engine(engine, &active_model);
+                    // A dictation waiting for the preview goes on now, not after the filters.
+                    if let Some(lease) = preview.as_deref_mut() {
+                        lease.take();
+                    }
                     inner_result?
                 }
                 Err(panic_payload) => {
@@ -1541,7 +1627,9 @@ impl TranscriptionManager {
             );
         }
 
-        self.maybe_unload_immediately("transcription");
+        if preview.is_none() {
+            self.maybe_unload_immediately("transcription");
+        }
 
         Ok(final_result)
     }
