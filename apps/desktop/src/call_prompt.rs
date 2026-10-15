@@ -200,16 +200,16 @@ pub(crate) fn answer_action(
             | CallPromptKind::CallEnded,
             A::Dismiss | A::Expired,
         ) => Some(AnswerAction::Close),
-        (CallPromptKind::Mistake, A::Keep | A::Discard) => {
+        // Nobody answering is a [Keep]: the recording goes to the transcription. Only the
+        // [Discard] click deletes it.
+        (CallPromptKind::Mistake, A::Keep | A::Discard | A::Expired) => {
             let id = current.session_id.clone()?;
-            Some(if answer == A::Keep {
-                AnswerAction::Keep(id)
-            } else {
+            Some(if answer == A::Discard {
                 AnswerAction::Discard(id)
+            } else {
+                AnswerAction::Keep(id)
             })
         }
-        // Nobody answering keeps the recording, but sends nothing to the transcription.
-        (CallPromptKind::Mistake, A::Expired) => Some(AnswerAction::Close),
         _ => None,
     }
 }
@@ -247,10 +247,27 @@ fn current() -> Option<CallPromptPayload> {
     CURRENT.lock().map(|c| c.clone()).unwrap_or(None)
 }
 
-fn set_current(payload: Option<CallPromptPayload>) {
-    if let Ok(mut current) = CURRENT.lock() {
-        *current = payload;
-    }
+/// Puts `payload` on record and returns the card it replaces.
+fn set_current(payload: Option<CallPromptPayload>) -> Option<CallPromptPayload> {
+    CURRENT
+        .lock()
+        .map(|mut current| std::mem::replace(&mut *current, payload))
+        .unwrap_or(None)
+}
+
+/// A "Recorded by mistake?" that leaves the screen without an answer (another card took its
+/// place, or it was hidden) counts as running out: the meeting is kept and transcribed.
+fn settle_unanswered(app: &AppHandle, replaced: Option<CallPromptPayload>) {
+    let Some(card) = replaced.filter(|card| card.kind == CallPromptKind::Mistake) else {
+        return;
+    };
+    let (Some(id), Some(meetings)) = (card.session_id, app.try_state::<Arc<MeetingManager>>())
+    else {
+        return;
+    };
+    log::info!("call prompt left unanswered: Expired");
+    let meetings = Arc::clone(&meetings);
+    std::thread::spawn(move || meetings.keep_after_mistake(&id));
 }
 
 fn ensure_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
@@ -411,12 +428,13 @@ pub fn show_quit(app: &AppHandle) {
 fn show_payload(app: &AppHandle, payload: CallPromptPayload) {
     let quit = payload.kind == CallPromptKind::Quit;
     let still_recording = payload.kind == CallPromptKind::StillRecording;
-    set_current(Some(payload.clone()));
+    settle_unanswered(app, set_current(Some(payload.clone())));
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let Some(window) = ensure_window(&handle) else {
-            set_current(None);
+            // Without the card nobody can answer "Recorded by mistake?" either.
+            settle_unanswered(&handle, set_current(None));
             // Without the card, "Quit" would do nothing: stop the recording safely and quit.
             if quit {
                 if let Some(meetings) = handle.try_state::<Arc<MeetingManager>>() {
@@ -448,9 +466,14 @@ fn show_payload(app: &AppHandle, payload: CallPromptPayload) {
     });
 }
 
-/// Hides the card and forgets it.
+/// Hides the card and forgets it; an unanswered "Recorded by mistake?" counts as run out.
 pub fn hide(app: &AppHandle) {
-    set_current(None);
+    settle_unanswered(app, close(app));
+}
+
+/// Hides the card and returns it, without settling it: the answer path acts on it itself.
+fn close(app: &AppHandle) -> Option<CallPromptPayload> {
+    let closed = set_current(None);
     GENERATION.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -458,6 +481,7 @@ pub fn hide(app: &AppHandle) {
             let _ = window.hide();
         }
     });
+    closed
 }
 
 /// An offer on screen is moot once a meeting records, however it started.
@@ -483,15 +507,15 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         log::debug!("call prompt: {answer:?} does not match the card on screen");
         return Ok(());
     };
-    let asked_stop = current().is_some_and(|c| c.kind == CallPromptKind::AskStop);
     // Before the card goes: the stopped session's transcription waits while [Retomar] is up.
     if let AnswerAction::Resume(id) = &action {
         if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
             meetings.resuming_after_call(id);
         }
     }
-    hide(&app);
+    let closed = close(&app);
     // [Continuar gravando]: nothing armed by that card outlives it.
+    let asked_stop = closed.is_some_and(|c| c.kind == CallPromptKind::AskStop);
     if asked_stop && answer == CallPromptAnswer::KeepRecording {
         if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
             meetings.hold_call_stop();
@@ -797,10 +821,11 @@ mod tests {
             answer_action(Some(&mistake), A::Keep),
             Some(AnswerAction::Keep("01K".into()))
         );
-        // Running out keeps the session: nothing is deleted without the click.
+        // Running out keeps the session and transcribes it: nothing is deleted without the
+        // click, and nothing is left untranscribed either.
         assert_eq!(
             answer_action(Some(&mistake), A::Expired),
-            Some(AnswerAction::Close)
+            Some(AnswerAction::Keep("01K".into()))
         );
         mistake.session_id = None;
         assert_eq!(answer_action(Some(&mistake), A::Discard), None);

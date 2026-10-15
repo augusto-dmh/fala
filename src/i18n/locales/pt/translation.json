@@ -1238,7 +1238,7 @@
     "mistake": {
       "title": "Gravou por engano?",
       "short": "Foram só {{seconds}} s. Nada foi transcrito ainda.",
-      "quiet": "Quase nada foi dito em {{minutes}} min. Nada foi transcrito ainda."
+      "quiet": "Quase nenhum som foi gravado. Nada foi transcrito ainda."
     },
     "nothingRecorded": {
       "title": "Nada foi gravado",
@@ -1306,6 +1306,7 @@
       "lowDisk": "Pouco espaço em disco: {{mb}} MB livres.",
       "output": "Som da reunião",
       "outputDefault": "Saída padrão ({{name}})",
+      "micFrom": "Microfone: {{device}}",
       "outputFrom": "Som de {{device}}",
       "callElsewhere": "O som da chamada está saindo por {{device}}.",
       "recordFrom": "Gravar deste dispositivo",

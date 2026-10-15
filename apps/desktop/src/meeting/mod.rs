@@ -115,6 +115,8 @@ pub struct MeetingStatus {
     pub cap_remaining_ms: Option<u64>,
     /// Free bytes when recording started with less than 2 GiB free.
     pub low_disk_bytes: Option<u64>,
+    /// The input whose sound is the mic channel: the microphone dictation uses.
+    pub mic_input: Option<String>,
     /// The output whose sound is the system channel.
     pub system_output: Option<String>,
     /// Another output that plays while the system channel records zeros: the call is there.
@@ -431,12 +433,8 @@ struct Active {
     control: Sender<Control>,
     mute: MuteWatch,
     route: output::Route,
-    /// Recorded time at the last `Tick` given to the session (one per second).
-    last_tick: Duration,
-    /// Loudest level of each channel since the last `Tick`.
-    tick_levels: Levels,
-    /// Recorded time with speech (`lifecycle::SPEECH_RMS`), for "Recorded by mistake?".
-    voiced: Duration,
+    /// The session's 1 s `Tick`s and the recorded time with sound, for "Recorded by mistake?".
+    sound: lifecycle::SoundTicks,
     /// The capture ended on a device or disk error, not on a stop.
     capture_failed: bool,
     /// A dictation is zeroing the mic channel (`BeginOmit` sent, `EndOmit` not yet).
@@ -689,6 +687,7 @@ impl MeetingManager {
         let system = output::resolve(settings.meeting_output_device.as_deref())?;
         IN_PERSON.store(mode == MeetingMode::InPerson, Ordering::SeqCst);
         let mut control = None;
+        let mut mic_input = None;
         let mut low_disk = None;
         for effect in effects {
             match effect {
@@ -701,12 +700,13 @@ impl MeetingManager {
                             manager.on_report(report);
                         }
                     };
-                    let with_mic = mode.session_mode().has_mic();
+                    let mic = mode.session_mode().has_mic().then(|| self.mic_choice());
                     let wav = dir.join(WORK_WAV);
                     let awake = settings.meeting_keep_awake;
-                    match recorder::spawn(system.clone(), with_mic, wav, awake, sink) {
-                        Ok(tx) => {
+                    match recorder::spawn(system.clone(), mic, wav, awake, sink) {
+                        Ok((tx, mic)) => {
                             control = Some(tx);
+                            mic_input = mic;
                             self.feedback(&Effect::StartCapture);
                         }
                         Err(e) => {
@@ -775,9 +775,7 @@ impl MeetingManager {
             control,
             mute: MuteWatch::new(mode.session_mode()),
             route: output::Route::new(mode.session_mode(), &system),
-            last_tick: Duration::ZERO,
-            tick_levels: Levels::default(),
-            voiced: Duration::ZERO,
+            sound: lifecycle::SoundTicks::default(),
             capture_failed: false,
             dictating: false,
             waking: false,
@@ -788,6 +786,7 @@ impl MeetingManager {
         });
         inner.status = MeetingStatus {
             low_disk_bytes: low_disk,
+            mic_input,
             system_output: Some(system),
             ..MeetingStatus::default()
         };
@@ -887,6 +886,30 @@ impl MeetingManager {
         Ok(self.publish(&mut inner))
     }
 
+    /// The microphone the recorder asks for at every open: the one dictation resolves now.
+    fn mic_choice(&self) -> recorder::MicChoice {
+        let app = self.app.clone();
+        Box::new(
+            move || match app.try_state::<Arc<AudioRecordingManager>>() {
+                Some(rm) => rm.meeting_microphone(),
+                None => (None, None),
+            },
+        )
+    }
+
+    /// The microphone setting changed: a recording with a mic moves to the new one at once,
+    /// like dictation does.
+    pub fn microphone_changed(&self) {
+        let inner = self.lock();
+        if inner
+            .active
+            .as_ref()
+            .is_some_and(|a| a.mode.session_mode().has_mic())
+        {
+            self.send(&inner, Control::SwitchMic);
+        }
+    }
+
     /// "Stop and quit" on the quit question: the capture closes, the end is saved and the app
     /// exits (`finish`). Should the capture not close, the app exits after a few seconds anyway:
     /// the WAV header is at most a second behind, and the next start offers to recover it.
@@ -966,17 +989,8 @@ impl MeetingManager {
                 if active.call_quiet.observe(system.max(room)) {
                     crate::call_prompt::keep_after_sound(&self.app);
                 }
-                active.tick_levels.mic = active.tick_levels.mic.max(mic);
-                active.tick_levels.system = active.tick_levels.system.max(system);
-                active.tick_levels.mic_omitted |= mic_omitted;
                 let mut effects = Vec::new();
-                if recorded >= active.last_tick + Duration::from_secs(1) {
-                    let elapsed = recorded - active.last_tick;
-                    active.last_tick = recorded;
-                    let levels = std::mem::take(&mut active.tick_levels);
-                    if lifecycle::heard_speech(levels) {
-                        active.voiced += elapsed;
-                    }
+                if let Some(levels) = active.sound.observe(recorded, levels) {
                     match active
                         .session
                         .apply(millis(now_local()), Input::Tick { recorded, levels })
@@ -1017,6 +1031,10 @@ impl MeetingManager {
                     inner.status.call_output = None;
                     crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 }
+            }
+            Report::MicSwitched(name) => {
+                inner.status.mic_input = Some(name);
+                self.publish(&mut inner);
             }
             Report::Woke => {
                 active.waking = false;
@@ -1149,7 +1167,7 @@ impl MeetingManager {
         // `None`: the capture did not come back after a sleep, recorded as interrupted (#128).
         let reason = (!active.interrupted).then(|| stop_reason(active.session.state()));
         let recorded_ms = inner.status.recorded_ms;
-        let voiced_ms = u64::try_from(active.voiced.as_millis()).unwrap_or(u64::MAX);
+        let heard_ms = u64::try_from(active.sound.heard().as_millis()).unwrap_or(u64::MAX);
         // Only a stop the person clicked, or silence, may look like a mistake; never the cap or a
         // device that failed.
         // Nor the call's end: a call held the mic for minutes, and [Retomar] is on screen.
@@ -1166,7 +1184,7 @@ impl MeetingManager {
                 inner.resume_offer = Some(call_end::ResumeOffer::Open(id));
             }
             crate::call_prompt::show_call_ended(&self.app, resumable.then_some(id));
-        } else if reason == Some(StopReason::Silence) && voiced_ms >= lifecycle::LITTLE_SPEECH_MS {
+        } else if reason == Some(StopReason::Silence) && heard_ms >= lifecycle::LITTLE_SOUND_MS {
             crate::call_prompt::show_silence_stopped(&self.app);
         }
         let app = self.app.clone();
@@ -1175,14 +1193,14 @@ impl MeetingManager {
             Some(take) => self.session_dir(id).join(format!("t{}", take.take)),
             None => self.session_dir(id),
         };
-        log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms, {voiced_ms} ms of speech)");
+        log::info!("meeting {id} stopped ({reason:?}, {recorded_ms} ms, {heard_ms} ms of sound)");
         let spawned = std::thread::Builder::new()
             .name("meeting-process".to_string())
             .spawn(move || {
                 if let Some(manager) = app.try_state::<Arc<MeetingManager>>() {
                     // A take is never discarded as a mistake: the session already has a recording.
-                    let voiced_ms = (may_be_mistake && take.is_none()).then_some(voiced_ms);
-                    manager.finish(id, reason, recorded_ms, voiced_ms, &dir, take.as_ref());
+                    let heard_ms = (may_be_mistake && take.is_none()).then_some(heard_ms);
+                    manager.finish(id, reason, recorded_ms, heard_ms, &dir, take.as_ref());
                 }
             });
         if let Err(e) = spawned {
@@ -1197,7 +1215,7 @@ impl MeetingManager {
         reason: Option<StopReason>,
         recorded_ms: u64,
         // `None` when the stop cannot be a mistake (cap, failed capture, a take).
-        voiced_ms: Option<u64>,
+        heard_ms: Option<u64>,
         dir: &Path,
         take: Option<&MeetingTake>,
     ) {
@@ -1227,8 +1245,8 @@ impl MeetingManager {
             inner.processing.retain(|p| *p != id);
             self.publish(&mut inner);
         }
-        if let Some(voiced_ms) = voiced_ms {
-            if self.handle_mistake(id, recorded_ms, voiced_ms) {
+        if let Some(heard_ms) = heard_ms {
+            if self.handle_mistake(id, recorded_ms, heard_ms) {
                 return;
             }
         }

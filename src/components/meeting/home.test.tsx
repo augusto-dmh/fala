@@ -241,6 +241,7 @@ const OPTIONS = "opções";
     muted_system: false,
     cap_remaining_ms: null,
     low_disk_bytes: null,
+    mic_input: null,
     system_output: null,
     call_output: null,
     zero_mic: false,

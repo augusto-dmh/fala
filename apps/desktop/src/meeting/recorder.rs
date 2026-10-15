@@ -1,7 +1,7 @@
-//! The meeting capture thread: the default mic and the chosen system output pushed into
-//! `fala_audio::MeetingRecorder`, the same loop `fala-cli meeting` runs, plus pause and the
-//! switch of the system output while recording. A "system only" session opens no mic: the
-//! recorder fills that channel with zeros.
+//! The meeting capture thread: the microphone dictation uses and the chosen system output pushed
+//! into `fala_audio::MeetingRecorder`, the same loop `fala-cli meeting` runs, plus pause and the
+//! switch of either device while recording. A "system only" session opens no mic: the recorder
+//! fills that channel with zeros.
 //!
 //! The mic is a tap of `MIC_HUB`, the stream dictation reads too (ADR-0015): while a dictation
 //! runs, the recorder zeroes the mic channel from the dictation's pre-buffer to its end.
@@ -43,6 +43,8 @@ pub(crate) enum Control {
     /// Record the system channel from this output from now on; the WAV keeps zeros for the
     /// moment without a source.
     SwitchSystem(String),
+    /// The microphone setting changed: record the mic channel from the new choice from now on.
+    SwitchMic,
     /// A dictation started at this instant: zero the mic channel from its pre-buffer on.
     BeginOmit(Instant),
     /// The dictation ended (released, cancelled or discarded).
@@ -73,6 +75,8 @@ pub(crate) enum Report {
     Omitted(Vec<(u64, u64)>),
     /// The system channel now records `name`, or still records the previous output (`error`).
     SystemSwitched { name: String, error: Option<String> },
+    /// The mic channel now records this input.
+    MicSwitched(String),
     /// The devices are open again after a sleep.
     Woke,
     /// The WAV is closed (or the capture failed); the thread is gone.
@@ -205,23 +209,28 @@ pub(crate) fn recorded_ms(written_frames: u64) -> u64 {
     written_frames * 1_000 / u64::from(MEETING_RATE)
 }
 
-/// Opens the system output and, `with_mic`, the default mic on a new thread and starts writing
-/// `wav`; with `keep_awake` the PC does not sleep while it records. Returns once the streams are
-/// open (or with the reason they did not open).
+/// The input the mic channel records and the channel of it, asked at every open: the microphone
+/// dictation resolves from the settings, `None` for the system default.
+pub(crate) type MicChoice = Box<dyn Fn() -> (Option<cpal::Device>, Option<usize>) + Send>;
+
+/// Opens the system output and, with a `mic` choice, that input on a new thread and starts
+/// writing `wav`; with `keep_awake` the PC does not sleep while it records. Returns once the
+/// streams are open, with the name of the mic (or with the reason they did not open).
 pub(crate) fn spawn(
     system: String,
-    with_mic: bool,
+    mic: Option<MicChoice>,
     wav: PathBuf,
     keep_awake: bool,
     on_report: impl Fn(Report) + Send + 'static,
-) -> Result<Sender<Control>, String> {
+) -> Result<(Sender<Control>, Option<String>), String> {
     let (control, commands) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
     thread::Builder::new()
         .name("meeting-recorder".to_string())
-        .spawn(move || match open(&system, with_mic, &wav) {
+        .spawn(move || match open(&system, mic, &wav) {
             Ok(capture) => {
-                let _ = ready_tx.send(Ok(()));
+                let mic_name = capture.mic.as_ref().map(|mic| mic.name().to_string());
+                let _ = ready_tx.send(Ok(mic_name));
                 run(capture, commands, keep_awake, on_report);
             }
             Err(e) => {
@@ -229,15 +238,19 @@ pub(crate) fn spawn(
             }
         })
         .map_err(|e| format!("could not start the recorder thread: {e}"))?;
-    ready_rx
+    let mic_name = ready_rx
         .recv()
         .map_err(|_| "the recorder thread ended before opening".to_string())??;
-    Ok(control)
+    Ok((control, mic_name))
 }
 
 struct Capture {
     /// `None` in a "system only" session.
     mic: Option<MicTap>,
+    /// Which input `mic` opens, again after a failure, a sleep or a change of the setting.
+    choice: Option<MicChoice>,
+    /// The channel of the input `mic` reads (`None`: all of them, mixed).
+    mic_channel: Option<usize>,
     system: SystemAudio,
     /// The output `system` records, to open it again after a sleep.
     system_name: String,
@@ -247,11 +260,12 @@ struct Capture {
     meter: Option<OutputMeter>,
 }
 
-fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String> {
+fn open(system_name: &str, choice: Option<MicChoice>, wav: &Path) -> Result<Capture, String> {
     if let Some(dir) = wav.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let (system, mic) = streams(system_name, with_mic, false)?;
+    let (system, mic) = streams(system_name, choice.as_ref(), false)?;
+    let (mic, mic_channel) = mic.map_or((None, None), |(tap, channel)| (Some(tap), channel));
     let mic_rate = mic.as_ref().map_or(MEETING_RATE, MicTap::sample_rate);
     let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
     let recorder =
@@ -265,6 +279,8 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
         .ok();
     Ok(Capture {
         mic,
+        choice,
+        mic_channel,
         system,
         system_name: system_name.to_string(),
         recorder,
@@ -272,54 +288,145 @@ fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String
     })
 }
 
-/// The output and, `with_mic`, the default input. `renew` asks the hub for a new mic stream
-/// instead of the one already open (after a sleep the old one rarely delivers again).
+/// An open mic and the channel of it that it reads.
+type OpenMic = (MicTap, Option<usize>);
+
+/// The output and, with a `choice`, the mic and its channel. `renew` asks the hub for a new mic
+/// stream instead of the one already open (after a sleep the old one rarely delivers again).
 fn streams(
     system_name: &str,
-    with_mic: bool,
+    choice: Option<&MicChoice>,
     renew: bool,
-) -> Result<(SystemAudio, Option<MicTap>), String> {
+) -> Result<(SystemAudio, Option<OpenMic>), String> {
     let system = SystemAudio::open(system_name).map_err(|e| e.to_string())?;
-    let mic = with_mic.then(|| open_mic(renew)).transpose()?;
+    let mic = choice.map(|choice| open_mic(choice, renew)).transpose()?;
     Ok((system, mic))
 }
 
-/// The default input, through the hub: when dictation uses the same device, both read one
-/// stream. With `renew` the hub drops the stream it had for it, so dictation moves too.
-fn open_mic(renew: bool) -> Result<MicTap, String> {
+fn default_input() -> Result<cpal::Device, String> {
     use cpal::traits::HostTrait;
-    let device = crate::audio_toolkit::get_cpal_host()
+    crate::audio_toolkit::get_cpal_host()
         .default_input_device()
-        .ok_or_else(|| "no input device".to_string())?;
+        .ok_or_else(|| "no input device".to_string())
+}
+
+/// `device` through the hub: when dictation uses the same device, both read one stream. With
+/// `renew` the hub drops the stream it had for it, so dictation moves too.
+fn hub_open(device: cpal::Device, channel: Option<usize>, renew: bool) -> Result<MicTap, String> {
     let tap = if renew {
-        MIC_HUB.renew(device, None)
+        MIC_HUB.renew(device, channel)
     } else {
-        MIC_HUB.open(device, None)
+        MIC_HUB.open(device, channel)
     };
     tap.map_err(|e| e.to_string())
+}
+
+/// The chosen input and its channel. One that does not open (held by another app, still pairing
+/// after a sleep) gives way to the default input, as before the meeting followed the choice: a
+/// mic channel from another input is better than no recording.
+fn open_mic(choice: &MicChoice, renew: bool) -> Result<OpenMic, String> {
+    let (device, channel) = choice();
+    let tap = match device {
+        Some(device) => hub_open(device, channel, renew).or_else(|e| {
+            log::warn!("meeting mic did not open ({e}); recording the default input");
+            hub_open(default_input()?, channel, renew)
+        }),
+        None => hub_open(default_input()?, channel, renew),
+    }?;
+    Ok((tap, channel))
 }
 
 /// How often a failed mic stream is reopened while recording.
 const REOPEN_EVERY: Duration = Duration::from_secs(2);
 
 /// The mic's stream failed (device reset or removed): the hub hands out a new stream of the
-/// default input, the one dictation reopens too, so both stay on a single stream. A new stream
-/// at another rate would break the recorder's clock, so the old one is kept then.
-fn reopen_mic(capture: &mut Capture) {
-    let Some(rate) = capture.mic.as_ref().map(MicTap::sample_rate) else {
-        return;
+/// chosen input, the one dictation reopens too, so both stay on a single stream. Returns the
+/// name of the new one; an error is the recorder's, and ends the capture.
+fn reopen_mic(
+    capture: &mut Capture,
+    write: bool,
+    buffer: &mut Vec<f32>,
+) -> Result<Option<String>, String> {
+    let Some(choice) = capture.choice.as_ref() else {
+        return Ok(None);
     };
-    match open_mic(false) {
-        Ok(tap) if tap.sample_rate() == rate => {
-            log::warn!("meeting mic stream failed; reopened {}", tap.name());
-            capture.mic = Some(tap);
+    let (tap, channel) = match open_mic(choice, false) {
+        Ok(opened) => opened,
+        Err(e) => {
+            log::warn!("meeting mic stream failed and did not reopen: {e}");
+            return Ok(None);
         }
-        Ok(tap) => log::warn!(
-            "meeting mic stream failed; the new one runs at {} Hz, not {rate}",
-            tap.sample_rate()
-        ),
-        Err(e) => log::warn!("meeting mic stream failed and did not reopen: {e}"),
+    };
+    let name = replace_mic(capture, tap, channel, write, buffer)?;
+    log::warn!("meeting mic stream failed; reopened {name}");
+    Ok(Some(name))
+}
+
+/// Records the mic channel from `tap` from now on. What the old stream still held is written
+/// unless paused, and a tap at another rate goes through `set_mic_rate`, which keeps the clock
+/// (the same path as after a sleep). Returns the input's name.
+fn replace_mic(
+    capture: &mut Capture,
+    tap: MicTap,
+    channel: Option<usize>,
+    write: bool,
+    buffer: &mut Vec<f32>,
+) -> Result<String, String> {
+    buffer.clear();
+    let old_rate = capture.mic.as_mut().map(|old| {
+        old.drain_into(buffer);
+        old.sample_rate()
+    });
+    if write {
+        capture
+            .recorder
+            .push_mic(buffer)
+            .map_err(|e| e.to_string())?;
     }
+    if old_rate != Some(tap.sample_rate()) {
+        capture
+            .recorder
+            .set_mic_rate(tap.sample_rate())
+            .map_err(|e| e.to_string())?;
+    }
+    let name = tap.name().to_string();
+    capture.mic = Some(tap);
+    capture.mic_channel = channel;
+    Ok(name)
+}
+
+/// The microphone setting changed: the new choice is opened and, only once it is open, recorded
+/// from; one that does not open keeps the old one. `None` when the choice is the input and
+/// channel already recorded. An error is the recorder's, and ends the capture.
+fn switch_mic(
+    capture: &mut Capture,
+    write: bool,
+    buffer: &mut Vec<f32>,
+) -> Result<Option<String>, String> {
+    use cpal::traits::DeviceTrait;
+    let Some(choice) = capture.choice.as_ref() else {
+        return Ok(None);
+    };
+    let (device, channel) = choice();
+    let opened = device.map_or_else(default_input, Ok).and_then(|device| {
+        let name = device.name().map_err(|e| e.to_string())?;
+        let current = capture.mic.as_ref().map(MicTap::name);
+        if current == Some(name.as_str()) && capture.mic_channel == channel {
+            return Ok(None);
+        }
+        hub_open(device, channel, false).map(Some)
+    });
+    let tap = match opened {
+        Ok(Some(tap)) => tap,
+        Ok(None) => return Ok(None),
+        Err(e) => {
+            log::warn!("meeting mic not switched: {e}");
+            return Ok(None);
+        }
+    };
+    let name = replace_mic(capture, tap, channel, write, buffer)?;
+    log::info!("meeting mic switched to {name}");
+    Ok(Some(name))
 }
 
 /// How far back from the newest sample the mic is zeroed for a dictation that started `late`
@@ -330,21 +437,21 @@ pub(crate) fn omit_lookback(late: Duration, paused_for: Duration) -> Duration {
 }
 
 /// After a sleep the old streams rarely deliver again: both are opened anew (the output by
-/// name, the mic as the current default), retried for [`WAKE_GRACE`]. From half of it on, an
+/// name, the mic as chosen now), retried for [`WAKE_GRACE`]. From half of it on, an
 /// output that did not come back (a Bluetooth headset still pairing) gives way to the default
 /// one; the new name is returned then. What the old streams held is dropped: it was captured
 /// around the sleep.
 fn reopen(capture: &mut Capture) -> Result<Option<String>, String> {
     let started = Instant::now();
     let deadline = started + WAKE_GRACE;
-    let with_mic = capture.mic.is_some();
+    let choice = capture.choice.as_ref();
     let (name, (system, mic)) = loop {
-        let mut opened = streams(&capture.system_name, with_mic, true)
+        let mut opened = streams(&capture.system_name, choice, true)
             .map(|streams| (capture.system_name.clone(), streams));
         if opened.is_err() && started.elapsed() >= WAKE_GRACE / 2 {
             if let Ok(default) = SystemAudio::default_name() {
                 if default != capture.system_name {
-                    opened = streams(&default, with_mic, true).map(|streams| (default, streams));
+                    opened = streams(&default, choice, true).map(|streams| (default, streams));
                 }
             }
         }
@@ -361,14 +468,17 @@ fn reopen(capture: &mut Capture) -> Result<Option<String>, String> {
         .recorder
         .set_system_rate(system.sample_rate())
         .map_err(|e| e.to_string())?;
-    if let Some(mic) = &mic {
+    if let Some((mic, _)) = &mic {
         capture
             .recorder
             .set_mic_rate(mic.sample_rate())
             .map_err(|e| e.to_string())?;
     }
     capture.system = system;
-    capture.mic = mic;
+    if let Some((mic, channel)) = mic {
+        capture.mic = Some(mic);
+        capture.mic_channel = channel;
+    }
     log::info!("meeting capture open again after sleep: {name}");
     let switched = (name != capture.system_name).then(|| name.clone());
     capture.system_name = name;
@@ -520,6 +630,14 @@ fn run(
                 on_report(Report::SystemSwitched { name, error });
                 false
             }
+            Ok(Control::SwitchMic) => {
+                match switch_mic(&mut capture, gate.writing(), &mut buffer) {
+                    Ok(Some(name)) => on_report(Report::MicSwitched(name)),
+                    Ok(None) => {}
+                    Err(e) => error = Some(e),
+                }
+                false
+            }
             Ok(Control::BeginOmit(at)) => {
                 omit = Some(Some(at));
                 false
@@ -535,10 +653,17 @@ fn run(
                 false
             }
             Ok(Control::Wake) => {
+                let mic_before = capture.mic.as_ref().map(|mic| mic.name().to_string());
                 match reopen(&mut capture) {
                     Ok(switched) => {
                         if let Some(name) = switched {
                             on_report(Report::SystemSwitched { name, error: None });
+                        }
+                        let mic_after = capture.mic.as_ref().map(|mic| mic.name().to_string());
+                        if let Some(name) =
+                            mic_after.filter(|after| Some(after) != mic_before.as_ref())
+                        {
+                            on_report(Report::MicSwitched(name));
                         }
                         gate.wake(Instant::now());
                         on_report(Report::Woke);
@@ -560,7 +685,11 @@ fn run(
         let failed = capture.mic.as_ref().is_some_and(MicTap::failed);
         if failed && last_reopen.is_none_or(|at| now.duration_since(at) >= REOPEN_EVERY) {
             last_reopen = Some(now);
-            reopen_mic(&mut capture);
+            match reopen_mic(&mut capture, writing, &mut buffer) {
+                Ok(Some(name)) => on_report(Report::MicSwitched(name)),
+                Ok(None) => {}
+                Err(e) => error = Some(e),
+            }
         }
         // After the push, so the interval is measured from the newest sample.
         match omit {

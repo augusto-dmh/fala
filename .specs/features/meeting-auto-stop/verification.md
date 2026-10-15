@@ -7,7 +7,7 @@ Windows 11 (Alienware), branch `feat/meeting-auto-stop`, `CARGO_TARGET_DIR=C:\f\
 | C1 | pass | `cargo test -p fala-meeting --test detect`: `an_expired_ask_stops_only_if_the_system_stayed_quiet` ok |
 | C2 | pass | same run: `a_call_that_ended_stops_as_silence_and_only_while_recording` ok |
 | C3 | pass | `cargo test -p fala-meeting`: 76 passed (detect 16 with `ask_stop_waits_three_minutes_and_stops_after_two` and `never_starts_recording_without_a_click`) |
-| C4 | pass | `cargo test -p fala --lib -- call_prompt meeting::`: 73 passed, incl. `answer_stops_a_quiet_call_when_nobody_answers`, `answer_maps_each_stop_button` |
+| C4 | pass | `cargo test -p fala --lib -- call_prompt meeting::`: 75 passed (after merging main with #202), incl. `answer_stops_a_quiet_call_when_nobody_answers`, `answer_maps_each_stop_button` |
 | C5 | pass | same run: `answer_resumes_the_session_the_call_stopped`, `meeting::call_end::tests::the_transcription_waits_only_for_its_own_offer` |
 | C6 | pass | `bun src/callprompt/callprompt.test.tsx`: 7 sections ok, incl. "meeting-auto-stop card ok" and "meeting-auto-stop update ok" (a re-sent card keeps countdown and hover); `bun run check:translations` ok |
 | C7 | open | manual with "Meet now", needs Augusto (no real call from the agent) |
