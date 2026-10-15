@@ -1,4 +1,8 @@
-import type { CallPromptAnswer, CallPromptKind } from "@/bindings";
+import type {
+  CallPromptAnswer,
+  CallPromptKind,
+  CallPromptPayload,
+} from "@/bindings";
 import "./CallPrompt.css";
 
 export interface CallPromptAction {
@@ -29,7 +33,19 @@ export const CALL_PROMPT_ANSWERS: Record<CallPromptKind, CallPromptAnswer[]> = {
   mistake: ["keep", "discard"],
   nothing_recorded: ["dismiss"],
   woke: ["dismiss"],
+  call_ended: ["resume", "dismiss"],
 };
+
+/** The answers of the card on screen: a "stop?" that stops when it runs out offers keeping
+ *  first; [Retomar] needs a session to resume. */
+export function cardAnswers(
+  prompt: Pick<CallPromptPayload, "kind" | "auto_stop" | "session_id">,
+): CallPromptAnswer[] {
+  if (prompt.kind === "ask_stop" && prompt.auto_stop)
+    return ["keep_recording", "stop"];
+  if (prompt.kind === "call_ended" && !prompt.session_id) return ["dismiss"];
+  return CALL_PROMPT_ANSWERS[prompt.kind];
+}
 
 /** The `callPrompt.*` group with the title and body of each card. */
 export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
@@ -41,6 +57,7 @@ export const CALL_PROMPT_TEXT: Record<CallPromptKind, string> = {
   mistake: "mistake",
   nothing_recorded: "nothingRecorded",
   woke: "woke",
+  call_ended: "callEnded",
 };
 
 /** The title key: a meeting in a browser names both ("Google Meet no Edge"); the cards about

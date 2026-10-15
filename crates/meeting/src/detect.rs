@@ -15,6 +15,11 @@ pub const ASK_STOP_AFTER: Duration = Duration::from_secs(3 * 60);
 pub const ASK_STOP_QUIET: Duration = Duration::from_secs(3 * 60);
 /// Máximo de "Parar a gravação?" por gravação (o `restopMaxPerSession` do Wispr).
 pub const ASK_STOP_MAX: usize = 2;
+/// Nível RMS linear do canal do sistema a partir do qual algo ainda toca depois da largada
+/// (≈ −70 dBFS). Abaixo de [`crate::SILENCE_RMS`] de propósito: a call chega a −45…−55 dBFS por
+/// janela de 250 ms, com um quarto das janelas entre −60 e −70, e o sistema calado fica perto de
+/// −100. Errar para baixo só mantém a gravação.
+pub const CALL_QUIET_RMS: f32 = 0.000_316;
 
 /// Um app de call reconhecido pelo exe que captura o mic.
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -228,7 +233,7 @@ pub fn may_ask_stop(asked: &[UnixMillis], now: UnixMillis) -> bool {
             .is_none_or(|&last| elapsed(last, now) >= ASK_STOP_QUIET)
 }
 
-/// O que o detector pede à UI. Só pergunta: nenhuma variante grava, retoma ou para (ADR-0005).
+/// O que o detector pede à UI. Só pergunta: nenhuma variante grava ou retoma (ADR-0005).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallPrompt {
     /// "Parece uma chamada no <app>. Gravar reunião?" com [Gravar] [Agora não] [Não avisar].
@@ -237,11 +242,47 @@ pub enum CallPrompt {
         app: &'static CallApp,
         web: Option<&'static WebCall>,
     },
-    /// "O <app> largou o microfone. Parar a gravação?"; sem resposta, a gravação continua.
+    /// "O <app> largou o microfone. Parar a gravação?". Sem resposta, só para se o sistema
+    /// ficou calado desde então ([`CallQuiet`]).
     AskStop {
         app: &'static CallApp,
         web: Option<&'static WebCall>,
     },
+}
+
+/// Se o canal do sistema ficou calado desde o "Parar a gravação?": decide se o card que expira
+/// para a gravação. Armado quando o card aparece, e não no instante da largada, para que o som de
+/// "saiu da call" do app não conte. Um nível ≥ [`CALL_QUIET_RMS`] ou uma pausa (a pessoa está lá,
+/// e pausada não há nível) desarma até o próximo card.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CallQuiet {
+    armed: bool,
+}
+
+impl CallQuiet {
+    /// O card apareceu: daqui em diante o sistema precisa ficar calado.
+    pub fn arm(&mut self) {
+        self.armed = true;
+    }
+
+    /// Um relato do canal do sistema. `true` só na vez em que o som desarma.
+    pub fn observe(&mut self, system: f32) -> bool {
+        if self.armed && system >= CALL_QUIET_RMS {
+            self.armed = false;
+            return true;
+        }
+        false
+    }
+
+    /// Pausa ou suspensão: desarma. `true` se estava armado.
+    pub fn disarm(&mut self) -> bool {
+        std::mem::take(&mut self.armed)
+    }
+
+    /// Armado e sem som desde então: o card que expira para a gravação.
+    pub fn quiet(&self) -> bool {
+        self.armed
+    }
 }
 
 /// O que o detector precisa saber do resto do app a cada leitura.

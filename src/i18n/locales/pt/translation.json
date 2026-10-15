@@ -513,7 +513,7 @@
       "title": "Reuniões",
       "callPrompt": {
         "label": "Avisar quando uma chamada começar",
-        "description": "Quando o Teams, o Zoom, o WhatsApp ou uma reunião no navegador, como o Google Meet, abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique, e pergunta se deve parar quando o app larga o microfone."
+        "description": "Quando o Teams, o Zoom, o WhatsApp ou uma reunião no navegador, como o Google Meet, abre o microfone, o Fala pergunta se você quer gravar. Ele nunca grava sem o seu clique. Quando o app larga o microfone, ele pergunta se deve parar; sem resposta e sem som da chamada, a gravação para sozinha."
       },
       "mutedApps": {
         "title": "Não avisar nestes apps",
@@ -1206,8 +1206,16 @@
     "askStop": {
       "title": "{{app}} largou o microfone",
       "titleWeb": "{{web}} no {{app}} largou o microfone",
-      "body": "Parar a gravação?"
+      "body": "Parar a gravação?",
+      "autoStop": "Paro a gravação em {{seconds}} s.",
+      "keep": "Continuar gravando",
+      "stopNow": "Parar agora"
     },
+    "callEnded": {
+      "title": "Parei a gravação",
+      "body": "A chamada terminou. O que foi gravado está salvo."
+    },
+    "resume": "Retomar",
     "record": "Gravar",
     "notNow": "Agora não",
     "muteApp": "Não avisar no {{app}}",

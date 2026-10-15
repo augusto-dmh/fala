@@ -7,9 +7,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   CALL_PROMPT_ANSWERS,
   CallPromptCard,
+  cardAnswers,
   titleKey,
 } from "./CallPromptCard";
-import { cardBody } from "./CallPromptWindow";
+import { cardBody, isUpdate } from "./CallPromptWindow";
 import { advance, expired, fraction, startCountdown } from "./countdown";
 
 const read = (path: string) =>
@@ -197,3 +198,110 @@ assert.equal(
 assert.match(windowSource, /titleKey\(prompt\.kind, prompt\.web_name\)/);
 assert.match(rustSource, /pub web_name: Option<String>/);
 console.log("meeting-detection-polish web title ok");
+
+// meeting-auto-stop: a "stop?" that stops when it runs out says so and counts down, offers
+// keeping first; the card after that stop offers [Retomar] for its session.
+assert.deepEqual(
+  cardAnswers({ kind: "ask_stop", auto_stop: true, session_id: "01K" }),
+  ["keep_recording", "stop"],
+);
+assert.deepEqual(
+  cardAnswers({ kind: "ask_stop", auto_stop: false, session_id: "01K" }),
+  ["stop", "keep_recording"],
+);
+assert.deepEqual(
+  cardAnswers({ kind: "call_ended", auto_stop: false, session_id: "01K" }),
+  ["resume", "dismiss"],
+);
+assert.deepEqual(
+  cardAnswers({ kind: "call_ended", auto_stop: false, session_id: null }),
+  ["dismiss"],
+);
+assert.deepEqual(cardBody("askStop", null, 20_000), [
+  "callPrompt.askStop.autoStop",
+  { seconds: 20 },
+]);
+assert.deepEqual(cardBody("askStop", null, 12_300), [
+  "callPrompt.askStop.autoStop",
+  { seconds: 13 },
+]);
+assert.deepEqual(cardBody("askStop", null, 0), [
+  "callPrompt.askStop.autoStop",
+  { seconds: 1 },
+]);
+assert.deepEqual(cardBody("askStop", null), ["callPrompt.askStop.body", {}]);
+assert.deepEqual(cardBody("callEnded", null), [
+  "callPrompt.callEnded.body",
+  {},
+]);
+assert.equal(titleKey("call_ended", null), "callPrompt.callEnded.title");
+for (const { lang, json } of locales) {
+  for (const key of [
+    "callPrompt.askStop.autoStop",
+    "callPrompt.askStop.keep",
+    "callPrompt.askStop.stopNow",
+    "callPrompt.callEnded.title",
+    "callPrompt.callEnded.body",
+    "callPrompt.resume",
+  ]) {
+    assert.equal(typeof lookup(json, key), "string", `${lang} ${key}`);
+  }
+  assert.match(
+    lookup(json, "callPrompt.askStop.autoStop") as string,
+    /\{\{seconds\}\}/,
+  );
+}
+const ptAuto = lookup(locales[0].json, "callPrompt.askStop.autoStop") as string;
+assert.equal(ptAuto.replace("{{seconds}}", "20"), "Paro a gravação em 20 s.");
+assert.equal(
+  lookup(locales[0].json, "callPrompt.callEnded.title"),
+  "Parei a gravação",
+);
+// The window counts the seconds from the countdown it runs, and the backend sends 2 min.
+assert.match(windowSource, /autoStop \? countdown\.remainingMs : null/);
+assert.match(rustSource, /CALL_ENDED_ON_SCREEN: Duration = MAX_ON_SCREEN/);
+assert.match(
+  rustSource,
+  /MAX_ON_SCREEN: Duration = Duration::from_secs\(120\)/,
+);
+const autoHtml = renderToStaticMarkup(
+  <CallPromptCard
+    kind="ask_stop"
+    title="Teams largou o microfone"
+    body="Paro a gravação em 20 s."
+    actions={[
+      { answer: "keep_recording", label: "Continuar gravando", primary: true },
+      { answer: "stop", label: "Parar agora" },
+    ]}
+    remaining={1}
+    onAnswer={() => {}}
+    onHover={() => {}}
+  />,
+);
+assert.match(autoHtml, /Paro a gravação em 20 s\./);
+assert.match(autoHtml, /class="primary"[^>]*>Continuar gravando</);
+assert.match(autoHtml, />Parar agora</);
+console.log("meeting-auto-stop card ok");
+
+// The "stop?" that heard sound comes again: same card, so the countdown and the hover go on;
+// any other card starts over.
+const askCard = {
+  kind: "ask_stop" as const,
+  app_id: "teams",
+  app_name: "Teams",
+  web_name: null,
+  countdown_ms: 20_000,
+  session_id: "01K",
+  seconds: null,
+  auto_stop: true,
+};
+assert.equal(isUpdate(askCard, { ...askCard, auto_stop: false }), true);
+assert.equal(isUpdate(null, askCard), false);
+assert.equal(isUpdate(askCard, null), false);
+assert.equal(isUpdate(askCard, { ...askCard, session_id: "01L" }), false);
+assert.equal(isUpdate(askCard, { ...askCard, kind: "call_ended" }), false);
+assert.match(
+  windowSource,
+  /if \(update\) return;\n\s+hovered\.current = false;/,
+);
+console.log("meeting-auto-stop update ok");

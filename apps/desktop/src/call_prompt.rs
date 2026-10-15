@@ -5,7 +5,9 @@
 //! `fala_audio`. This module only shows the card and runs the answer. ADR-0005: the prompt never
 //! records by itself. [Gravar] goes through [`MeetingManager::start_from_tray`], the same
 //! explicit path as the tray item (the third-party notice comes first), and [Parar] through
-//! [`MeetingManager::stop`]. Expiring, [Agora não] and [Continuar] only close the card.
+//! [`MeetingManager::stop`]. [Agora não] and [Continuar] only close the card; so does expiring,
+//! except "Parar a gravação?" with the system quiet since it appeared, which stops the recording
+//! ([`MeetingManager::stop_call_ended`]) and offers [Retomar], a click again.
 
 pub(crate) mod watch;
 
@@ -36,6 +38,8 @@ const MAX_ON_SCREEN: Duration = Duration::from_secs(120);
 const MISTAKE_COUNTDOWN: Duration = Duration::from_secs(60);
 /// The wake card only informs: 10 s, like the definition's pill notice.
 const WOKE_ON_SCREEN: Duration = Duration::from_secs(10);
+/// "Parei a gravação: a call terminou." with [Retomar], for two minutes.
+pub(crate) const CALL_ENDED_ON_SCREEN: Duration = MAX_ON_SCREEN;
 /// Event with the [`CallPromptPayload`], sent to the prompt window.
 const PROMPT_EVENT: &str = "call-prompt";
 
@@ -44,7 +48,8 @@ const PROMPT_EVENT: &str = "call-prompt";
 pub enum CallPromptKind {
     /// "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
     Offer,
-    /// "Parar a gravação?" with [Parar] [Continuar].
+    /// "Parar a gravação?" with [Parar] [Continuar]; with `auto_stop`, "Paro a gravação em N s"
+    /// with [Continuar gravando] [Parar agora].
     AskStop,
     /// "Quit" from the tray while a meeting records: [Parar e sair] [Cancelar].
     Quit,
@@ -58,6 +63,8 @@ pub enum CallPromptKind {
     NothingRecorded,
     /// "A gravação continuou depois da suspensão" with how long the PC slept: [Fechar].
     Woke,
+    /// "Parei a gravação: a call terminou." with [Retomar] [Fechar].
+    CallEnded,
 }
 
 /// What the card shows.
@@ -69,10 +76,13 @@ pub struct CallPromptPayload {
     /// The meeting a browser shows ("Google Meet" in "Google Meet no Edge"); `None` for apps.
     pub web_name: Option<String>,
     pub countdown_ms: u32,
-    /// The session a "Gravou por engano?" is about.
+    /// The session a "Gravou por engano?", a "Parar a gravação?" or a "Parei a gravação" is about.
     pub session_id: Option<String>,
     /// Seconds recorded, for "Gravou por engano?"; seconds asleep, for the wake card.
     pub seconds: Option<u32>,
+    /// "Parar a gravação?" stops the recording when it runs out: the system has been quiet since
+    /// it appeared. Turns false (and the card is sent again) at the first sound.
+    pub auto_stop: bool,
 }
 
 impl CallPromptPayload {
@@ -89,6 +99,7 @@ impl CallPromptPayload {
             countdown_ms: COUNTDOWN.as_millis() as u32,
             session_id: None,
             seconds: None,
+            auto_stop: false,
         }
     }
 
@@ -102,6 +113,7 @@ impl CallPromptPayload {
             countdown_ms: u32::try_from(countdown.as_millis()).unwrap_or(u32::MAX),
             session_id: None,
             seconds: None,
+            auto_stop: false,
         }
     }
 
@@ -125,6 +137,7 @@ pub enum CallPromptAnswer {
     Dismiss,
     Keep,
     Discard,
+    Resume,
     Expired,
 }
 
@@ -134,6 +147,10 @@ pub(crate) enum AnswerAction {
     /// The explicit "record" click, through the tray's start path (consent first).
     Record,
     Stop,
+    /// "Parar a gravação?" ran out with the system quiet: the call ended.
+    StopCallEnded(String),
+    /// [Retomar] after that stop: a take of the session, by the explicit resume path.
+    Resume(String),
     StopAndQuit,
     KeepRecording,
     Keep(String),
@@ -155,7 +172,18 @@ pub(crate) fn answer_action(
         (CallPromptKind::Offer, A::MuteApp) => Some(AnswerAction::Mute(current.app_id.clone())),
         (CallPromptKind::Offer, A::NotNow | A::Expired) => Some(AnswerAction::Close),
         (CallPromptKind::AskStop, A::Stop) => Some(AnswerAction::Stop),
-        (CallPromptKind::AskStop, A::KeepRecording | A::Expired) => Some(AnswerAction::Close),
+        // Nobody answering stops only when the call's sound ended with it; otherwise the
+        // recording goes on (Wispr's rule for an ambiguous end).
+        (CallPromptKind::AskStop, A::Expired) => Some(
+            match current.session_id.clone().filter(|_| current.auto_stop) {
+                Some(id) => AnswerAction::StopCallEnded(id),
+                None => AnswerAction::Close,
+            },
+        ),
+        (CallPromptKind::AskStop, A::KeepRecording) => Some(AnswerAction::Close),
+        (CallPromptKind::CallEnded, A::Resume) => {
+            Some(AnswerAction::Resume(current.session_id.clone()?))
+        }
         (CallPromptKind::Quit, A::StopAndQuit) => Some(AnswerAction::StopAndQuit),
         // Nobody answering never quits: the recording goes on.
         (CallPromptKind::Quit, A::Cancel | A::Expired) => Some(AnswerAction::Close),
@@ -166,7 +194,10 @@ pub(crate) fn answer_action(
         // Recording again is the explicit start path, consent first (ADR-0005).
         (CallPromptKind::SilenceStopped, A::RecordAgain) => Some(AnswerAction::Record),
         (
-            CallPromptKind::SilenceStopped | CallPromptKind::NothingRecorded | CallPromptKind::Woke,
+            CallPromptKind::SilenceStopped
+            | CallPromptKind::NothingRecorded
+            | CallPromptKind::Woke
+            | CallPromptKind::CallEnded,
             A::Dismiss | A::Expired,
         ) => Some(AnswerAction::Close),
         // Nobody answering is a [Keep]: the recording goes to the transcription. Only the
@@ -291,9 +322,51 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow) {
     let _ = window.set_position(position);
 }
 
-/// Shows the card for `prompt`, replacing any card on screen.
+/// Shows the card for `prompt`, replacing any card on screen. "Parar a gravação?" arms the stop
+/// of the recording on screen when it runs out ([`MeetingManager::arm_call_quiet`]).
 pub fn show(app: &AppHandle, prompt: CallPrompt) {
-    show_payload(app, CallPromptPayload::from_prompt(prompt));
+    let mut payload = CallPromptPayload::from_prompt(prompt);
+    if payload.kind == CallPromptKind::AskStop {
+        if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+            payload.session_id = meetings.arm_call_quiet().map(|id| id.to_string());
+            payload.auto_stop = payload.session_id.is_some();
+        }
+    }
+    show_payload(app, payload);
+}
+
+/// The system played sound, or the recording paused, after "Parar a gravação?" appeared: the
+/// card no longer stops anything when it runs out, and says so.
+pub fn keep_after_sound(app: &AppHandle) {
+    let payload = {
+        let Ok(mut current) = CURRENT.lock() else {
+            return;
+        };
+        let Some(card) = current
+            .as_mut()
+            .filter(|c| c.kind == CallPromptKind::AskStop && c.auto_stop)
+        else {
+            return;
+        };
+        card.auto_stop = false;
+        card.clone()
+    };
+    let _ = app.emit_to(LABEL, PROMPT_EVENT, payload);
+}
+
+/// "Parei a gravação: a call terminou." for two minutes, with [Retomar] when there is a session
+/// to resume.
+pub fn show_call_ended(app: &AppHandle, id: Option<fala_meeting::SessionId>) {
+    let mut payload = CallPromptPayload::meeting(CallPromptKind::CallEnded, CALL_ENDED_ON_SCREEN);
+    payload.session_id = id.map(|id| id.to_string());
+    show_payload(app, payload);
+}
+
+/// [Retomar] for `id` is still on screen.
+pub(crate) fn offers_resume(id: fala_meeting::SessionId) -> bool {
+    current().is_some_and(|c| {
+        c.kind == CallPromptKind::CallEnded && c.session_id == Some(id.to_string())
+    })
 }
 
 /// "Still recording?" with the time left before the stop for silence.
@@ -434,7 +507,20 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         log::debug!("call prompt: {answer:?} does not match the card on screen");
         return Ok(());
     };
-    close(&app);
+    // Before the card goes: the stopped session's transcription waits while [Retomar] is up.
+    if let AnswerAction::Resume(id) = &action {
+        if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+            meetings.resuming_after_call(id);
+        }
+    }
+    let closed = close(&app);
+    // [Continuar gravando]: nothing armed by that card outlives it.
+    let asked_stop = closed.is_some_and(|c| c.kind == CallPromptKind::AskStop);
+    if asked_stop && answer == CallPromptAnswer::KeepRecording {
+        if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+            meetings.hold_call_stop();
+        }
+    }
     log::info!("call prompt answered: {answer:?}");
     match action {
         AnswerAction::Record => {
@@ -445,6 +531,17 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         AnswerAction::Stop => {
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 meetings.stop().map_err(|e| e.to_string())?;
+            }
+        }
+        AnswerAction::StopCallEnded(id) => {
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                meetings.stop_call_ended(&id);
+            }
+        }
+        AnswerAction::Resume(id) => {
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                let meetings = Arc::clone(&meetings);
+                tauri::async_runtime::spawn_blocking(move || meetings.resume_after_call(&id));
             }
         }
         AnswerAction::StopAndQuit => {
@@ -545,6 +642,7 @@ mod tests {
             countdown_ms: 20_000,
             session_id: None,
             seconds: None,
+            auto_stop: false,
         }
     }
 
@@ -594,13 +692,72 @@ mod tests {
         let ask = card(CallPromptKind::AskStop);
         use CallPromptAnswer as A;
         assert_eq!(answer_action(Some(&ask), A::Stop), Some(AnswerAction::Stop));
-        // No answer keeps recording (ADR-0005; Wispr's rule for an ambiguous end).
+        // With sound since the card appeared, no answer keeps recording (Wispr's rule for an
+        // ambiguous end).
         for keep in [A::KeepRecording, A::Expired] {
             assert_eq!(answer_action(Some(&ask), keep), Some(AnswerAction::Close));
         }
-        for stale in [A::Record, A::MuteApp, A::NotNow] {
+        for stale in [A::Record, A::MuteApp, A::NotNow, A::Resume] {
             assert_eq!(answer_action(Some(&ask), stale), None);
         }
+    }
+
+    #[test]
+    fn answer_stops_a_quiet_call_when_nobody_answers() {
+        use CallPromptAnswer as A;
+        let mut ask = card(CallPromptKind::AskStop);
+        ask.session_id = Some("01K".into());
+        // Sound since it appeared: running out only closes.
+        assert_eq!(
+            answer_action(Some(&ask), A::Expired),
+            Some(AnswerAction::Close)
+        );
+        // Quiet since it appeared: running out stops that session.
+        ask.auto_stop = true;
+        assert_eq!(
+            answer_action(Some(&ask), A::Expired),
+            Some(AnswerAction::StopCallEnded("01K".into()))
+        );
+        // The buttons still decide: [Continuar gravando] keeps it, [Parar agora] stops it.
+        assert_eq!(
+            answer_action(Some(&ask), A::KeepRecording),
+            Some(AnswerAction::Close)
+        );
+        assert_eq!(answer_action(Some(&ask), A::Stop), Some(AnswerAction::Stop));
+        // No recording to name: nothing to stop.
+        ask.session_id = None;
+        assert_eq!(
+            answer_action(Some(&ask), A::Expired),
+            Some(AnswerAction::Close)
+        );
+    }
+
+    #[test]
+    fn answer_resumes_the_session_the_call_stopped() {
+        use CallPromptAnswer as A;
+        let mut ended = CallPromptPayload::meeting(CallPromptKind::CallEnded, CALL_ENDED_ON_SCREEN);
+        assert_eq!(ended.countdown_ms, 120_000);
+        ended.session_id = Some("01K".into());
+        assert_eq!(
+            answer_action(Some(&ended), A::Resume),
+            Some(AnswerAction::Resume("01K".into()))
+        );
+        for close in [A::Dismiss, A::Expired] {
+            assert_eq!(
+                answer_action(Some(&ended), close),
+                Some(AnswerAction::Close)
+            );
+        }
+        for stale in [A::Record, A::RecordAgain, A::Stop, A::Keep, A::Discard] {
+            assert_eq!(answer_action(Some(&ended), stale), None);
+        }
+        // [Retomar] is about one session; without it there is nothing to resume.
+        ended.session_id = None;
+        assert_eq!(answer_action(Some(&ended), A::Resume), None);
+        // Only that card resumes.
+        let mut stopped = CallPromptPayload::meeting(CallPromptKind::SilenceStopped, COUNTDOWN);
+        stopped.session_id = Some("01K".into());
+        assert_eq!(answer_action(Some(&stopped), A::Resume), None);
     }
 
     #[test]
@@ -706,6 +863,7 @@ mod tests {
             A::Dismiss,
             A::Keep,
             A::Discard,
+            A::Resume,
             A::Expired,
         ] {
             assert_eq!(answer_action(None, answer), None);
