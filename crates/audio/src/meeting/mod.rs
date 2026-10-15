@@ -5,14 +5,16 @@
 //! de 2026-10-02). `SystemAudio` abre o monitor do sink (ALSA/PipeWire, ADR-0013) ou o loopback
 //! (WASAPI), separados pelo nome do host do `cpal`, sem `cfg` de sistema (ADR-0007).
 
+mod live;
 mod outputs;
 mod recorder;
 mod system;
 mod wav;
 
+pub use live::{LiveSegmenter, LiveUtterance};
 pub use outputs::{OutputDevice, OutputMeter, OutputPeak};
 pub use recorder::{
-    ChannelStats, MeetingRecorder, OmittedSpan, LAG_FRAMES, MAX_BACKLOG_FRAMES, MIC_HOLD,
+    ChannelStats, FrameTap, MeetingRecorder, OmittedSpan, LAG_FRAMES, MAX_BACKLOG_FRAMES, MIC_HOLD,
 };
 pub use system::SystemAudio;
 pub(crate) use system::ENV_OPEN;

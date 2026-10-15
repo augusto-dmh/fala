@@ -6,7 +6,9 @@
 //! `fala_core::DictationAudio` (que não implementa serialização, ADR-0003), e, para o ditado
 //! longo, blocos de 25-40 s fechados no silêncio.
 //! Reunião: `meeting::MeetingRecorder` grava mic e sistema (`SystemAudio`) num WAV estéreo 48 kHz
-//! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo).
+//! à prova de crash, com o relógio de parede decidindo os frames (ver o módulo); o que vai ao WAV
+//! pode ir também a um `FrameTap`, e o `LiveSegmenter` corta cada canal em trechos de fala para a
+//! prévia ao vivo (ADR-0019).
 //! Um dispositivo, um stream: `MicHub` abre o `Mic` uma vez e entrega um `MicTap` a cada
 //! consumidor (ditado, gravador de reunião), cada um no seu canal (ADR-0015). Durante um ditado, o
 //! `MeetingRecorder` zera o canal do mic no intervalo do ditado antes de escrevê-lo.
@@ -30,8 +32,8 @@ pub use capture::{
 };
 pub use hub::{MicHub, MicSource, MicTap};
 pub use meeting::{
-    ChannelStats, MeetingRecorder, MeetingWav, OmittedSpan, SystemAudio, FLUSH_EVERY, LAG_FRAMES,
-    MAX_BACKLOG_FRAMES, MEETING_RATE, MIC_HOLD,
+    ChannelStats, FrameTap, LiveSegmenter, LiveUtterance, MeetingRecorder, MeetingWav, OmittedSpan,
+    SystemAudio, FLUSH_EVERY, LAG_FRAMES, MAX_BACKLOG_FRAMES, MEETING_RATE, MIC_HOLD,
 };
 pub use meeting::{OutputDevice, OutputMeter, OutputPeak};
 pub use mic::Mic;
