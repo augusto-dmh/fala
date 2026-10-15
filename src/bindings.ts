@@ -2540,6 +2540,10 @@ cap_remaining_ms: number | null;
  */
 low_disk_bytes: number | null; 
 /**
+ * The input whose sound is the mic channel: the microphone dictation uses.
+ */
+mic_input: string | null; 
+/**
  * The output whose sound is the system channel.
  */
 system_output: string | null; 

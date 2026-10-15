@@ -1020,6 +1020,24 @@ impl AudioRecordingManager {
             _ => None,
         }
     }
+    /// The input a meeting records, resolved as dictation resolves it (clamshell, selected
+    /// microphone, channel): `None` is the system default. A selected microphone that is gone
+    /// falls back to the default without touching the setting, which dictation owns. Always a
+    /// fresh enumeration: the meeting asks after a stream failed or the PC woke, when the cached
+    /// device may be the one that went away.
+    pub fn meeting_microphone(&self) -> (Option<cpal::Device>, Option<usize>) {
+        let settings = get_settings(&self.app_handle);
+        self.invalidate_device_cache();
+        let resolution = self.resolve_microphone_device(&settings);
+        if let Some(name) = resolution.unavailable_selected_microphone {
+            warn!("meeting: microphone {name} not found; recording the default input");
+        }
+        (
+            resolution.device,
+            settings.selected_channel.map(usize::from),
+        )
+    }
+
     /// The name of the open microphone, once the stream is open.
     pub fn microphone_name(&self) -> Option<String> {
         self.recorder
