@@ -966,6 +966,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::restore_meeting,
             commands::meeting::list_trashed_meetings,
             commands::meeting::meeting_orphans,
+            commands::meeting::meeting_preview,
             commands::meeting::recover_meeting,
             commands::meeting::change_meeting_retention_setting,
             commands::meeting::change_meeting_cap_setting,
@@ -982,6 +983,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
             meeting::MeetingStatus,
             meeting::pipeline::MeetingProgress,
+            meeting::preview::MeetingPreview,
             meeting::granola::GranolaProgress,
             meeting::sound_check::MeetingSoundLevel,
         ])

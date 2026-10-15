@@ -769,6 +769,8 @@ impl MeetingManager {
         match &result {
             Ok(lines) => {
                 log::info!("meeting {id}: {} transcript segments", lines.len());
+                // The transcript of record replaces the live preview (ADR-0019).
+                super::preview::discard(&self.app, id);
                 self.progress(id, ProgressStage::Done);
             }
             Err(error) => self.progress(

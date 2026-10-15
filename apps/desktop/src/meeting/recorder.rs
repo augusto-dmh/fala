@@ -18,8 +18,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fala_audio::{
-    MeetingRecorder, MeetingWav, MicTap, OmittedSpan, OutputMeter, OutputPeak, SystemAudio,
-    MEETING_RATE,
+    FrameTap, MeetingRecorder, MeetingWav, MicTap, OmittedSpan, OutputMeter, OutputPeak,
+    SystemAudio, MEETING_RATE,
 };
 
 use crate::dictation_capture::MIC_HUB;
@@ -206,20 +206,21 @@ pub(crate) fn recorded_ms(written_frames: u64) -> u64 {
 }
 
 /// Opens the system output and, `with_mic`, the default mic on a new thread and starts writing
-/// `wav`; with `keep_awake` the PC does not sleep while it records. Returns once the streams are
-/// open (or with the reason they did not open).
+/// `wav`; with `keep_awake` the PC does not sleep while it records. `tap` gets what the WAV gets
+/// (the live preview). Returns once the streams are open (or with the reason they did not open).
 pub(crate) fn spawn(
     system: String,
     with_mic: bool,
     wav: PathBuf,
     keep_awake: bool,
+    tap: Option<FrameTap>,
     on_report: impl Fn(Report) + Send + 'static,
 ) -> Result<Sender<Control>, String> {
     let (control, commands) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
     thread::Builder::new()
         .name("meeting-recorder".to_string())
-        .spawn(move || match open(&system, with_mic, &wav) {
+        .spawn(move || match open(&system, with_mic, &wav, tap) {
             Ok(capture) => {
                 let _ = ready_tx.send(Ok(()));
                 run(capture, commands, keep_awake, on_report);
@@ -247,15 +248,23 @@ struct Capture {
     meter: Option<OutputMeter>,
 }
 
-fn open(system_name: &str, with_mic: bool, wav: &Path) -> Result<Capture, String> {
+fn open(
+    system_name: &str,
+    with_mic: bool,
+    wav: &Path,
+    tap: Option<FrameTap>,
+) -> Result<Capture, String> {
     if let Some(dir) = wav.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let (system, mic) = streams(system_name, with_mic, false)?;
     let mic_rate = mic.as_ref().map_or(MEETING_RATE, MicTap::sample_rate);
     let file = MeetingWav::create(wav).map_err(|e| e.to_string())?;
-    let recorder =
+    let mut recorder =
         MeetingRecorder::new(mic_rate, system.sample_rate(), file).map_err(|e| e.to_string())?;
+    if let Some(tap) = tap {
+        recorder.set_tap(tap);
+    }
     log::info!(
         "meeting capture open: mic {}, system {system_name}",
         mic.as_ref().map_or("none", MicTap::name)

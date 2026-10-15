@@ -15,6 +15,7 @@ use crate::meeting::pipeline::{
     templates, templates_dir, MeetingDetail, MeetingKeys, MeetingLine, MeetingSummary,
     MeetingTemplates,
 };
+use crate::meeting::preview::MeetingPreview;
 use crate::meeting::recovery::MeetingOrphan;
 use crate::meeting::search::MeetingSearchHit;
 use crate::meeting::sound_check::SoundCheck;
@@ -27,6 +28,16 @@ type Meetings<'a> = State<'a, Arc<MeetingManager>>;
 #[specta::specta]
 pub async fn meeting_status(meetings: Meetings<'_>) -> Result<MeetingStatus, MeetingError> {
     Ok(meetings.status())
+}
+
+/// The live preview of a session so far (ADR-0019); the page then follows `MeetingPreview`.
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_preview(id: String) -> Result<MeetingPreview, MeetingError> {
+    let id = id
+        .parse::<fala_meeting::SessionId>()
+        .map_err(|_| MeetingError::NotFound)?;
+    Ok(crate::meeting::preview::snapshot(id))
 }
 
 /// The third-party notice was accepted; returns the stored date.

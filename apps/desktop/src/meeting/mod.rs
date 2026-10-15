@@ -21,6 +21,7 @@ pub(crate) mod lifecycle;
 pub(crate) mod output;
 pub(crate) mod people;
 pub(crate) mod pipeline;
+pub(crate) mod preview;
 pub(crate) mod recorder;
 pub(crate) mod recovery;
 pub(crate) mod search;
@@ -697,7 +698,15 @@ impl MeetingManager {
                     let with_mic = mode.session_mode().has_mic();
                     let wav = dir.join(WORK_WAV);
                     let awake = settings.meeting_keep_awake;
-                    match recorder::spawn(system.clone(), with_mic, wav, awake, sink) {
+                    // A take goes after what the session already recorded (ADR-0019 preview).
+                    let offset_ms = match resume {
+                        Some(_) => self
+                            .with_store(|store| Ok(store.meeting(id)?.recorded_ms))
+                            .unwrap_or(0),
+                        None => 0,
+                    };
+                    let tap = preview::start(&self.app, id, with_mic, offset_ms);
+                    match recorder::spawn(system.clone(), with_mic, wav, awake, tap, sink) {
                         Ok(tx) => {
                             control = Some(tx);
                             self.feedback(&Effect::StartCapture);
