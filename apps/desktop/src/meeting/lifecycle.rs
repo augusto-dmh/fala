@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use fala_meeting::{Levels, SessionId, UnixMillis};
+use fala_meeting::{Levels, SessionId, UnixMillis, SILENCE_RMS};
 use fala_retention::{audio_due, RetainedSession, RetentionPolicy};
 use fala_storage::{MeetingRecord, Store, TRASH_DAYS};
 use serde::{Deserialize, Serialize};
@@ -31,16 +31,50 @@ const RETENTION_EVERY_MS: u64 = 24 * 3600 * 1000;
 
 /// A stop shorter than this asks "Recorded by mistake?" (Fala transcribes after the stop, so it
 /// has no word count to go by, unlike Wispr's 20 words).
-pub(crate) const SHORT_RECORDING_MS: u64 = 30_000;
-/// Or one with less speech than this, wherever it falls.
-pub(crate) const LITTLE_SPEECH_MS: u64 = 5_000;
-/// A second whose louder channel reaches this RMS (≈ −40 dBFS) counts as speech.
-pub(crate) const SPEECH_RMS: f32 = 0.01;
-/// A second of the recording counts as speech: its louder channel reached `SPEECH_RMS`. A
-/// dictation zeroes the mic (ADR-0015), so then only the system channel counts.
-pub(crate) fn heard_speech(levels: Levels) -> bool {
-    let mic = if levels.mic_omitted { 0.0 } else { levels.mic };
-    mic.max(levels.system) >= SPEECH_RMS
+pub(crate) const SHORT_RECORDING_MS: u64 = 10_000;
+/// Or one with less sound than this in both channels: both silent but for Fala's own start sound,
+/// which fills the first second of the system channel.
+pub(crate) const LITTLE_SOUND_MS: u64 = 3_000;
+/// A second of the recording has sound when either channel reached the silence floor
+/// (`SILENCE_RMS`, ≈ −60 dBFS): the person talking or the others in the call, however low.
+/// The old −40 dBFS bar missed a call heard at −54 dBFS and asked about it. A dictation zeroes
+/// the mic (ADR-0015), so then only the system channel counts.
+pub(crate) fn heard_sound(levels: Levels) -> bool {
+    let mic = !levels.mic_omitted && levels.mic >= SILENCE_RMS;
+    mic || levels.system >= SILENCE_RMS
+}
+
+/// The recorder's 4 Hz levels grouped into the session's 1 s ticks, with the recorded time that
+/// had sound in it (for "Recorded by mistake?").
+#[derive(Debug, Default)]
+pub(crate) struct SoundTicks {
+    last: Duration,
+    levels: Levels,
+    heard: Duration,
+}
+
+impl SoundTicks {
+    /// A report: the recorded duration so far and the RMS since the last report. Returns the
+    /// loudest levels of a tick once a second of recording has passed since the last one.
+    pub(crate) fn observe(&mut self, recorded: Duration, levels: Levels) -> Option<Levels> {
+        self.levels.mic = self.levels.mic.max(levels.mic);
+        self.levels.system = self.levels.system.max(levels.system);
+        self.levels.mic_omitted |= levels.mic_omitted;
+        if recorded < self.last + Duration::from_secs(1) {
+            return None;
+        }
+        let elapsed = recorded - self.last;
+        self.last = recorded;
+        let tick = std::mem::take(&mut self.levels);
+        if heard_sound(tick) {
+            self.heard += elapsed;
+        }
+        Some(tick)
+    }
+
+    pub(crate) fn heard(&self) -> Duration {
+        self.heard
+    }
 }
 
 /// Under this, nothing was recorded at all.
@@ -56,10 +90,10 @@ pub(crate) enum Mistake {
 
 /// What a stop the person clicked looks like. A typed agenda or title is never discarded
 /// without asking.
-pub(crate) fn mistake(recorded_ms: u64, voiced_ms: u64, typed: bool) -> Option<Mistake> {
+pub(crate) fn mistake(recorded_ms: u64, heard_ms: u64, typed: bool) -> Option<Mistake> {
     if recorded_ms < NOTHING_MS && !typed {
         Some(Mistake::NothingRecorded)
-    } else if recorded_ms < SHORT_RECORDING_MS || voiced_ms < LITTLE_SPEECH_MS {
+    } else if recorded_ms < SHORT_RECORDING_MS || heard_ms < LITTLE_SOUND_MS {
         Some(Mistake::Ask)
     } else {
         None
@@ -254,14 +288,14 @@ impl MeetingManager {
     /// After a stop the person clicked: discards an empty recording, or asks about one that
     /// looks like a mistake instead of sending it to the transcription. Returns whether it
     /// took over (no automatic transcript).
-    pub(crate) fn handle_mistake(&self, id: SessionId, recorded_ms: u64, voiced_ms: u64) -> bool {
+    pub(crate) fn handle_mistake(&self, id: SessionId, recorded_ms: u64, heard_ms: u64) -> bool {
         let typed = self
             .with_store(|store| {
                 let record = store.meeting(id)?;
                 Ok(!record.title.trim().is_empty() || !record.annotations.trim().is_empty())
             })
             .unwrap_or(true);
-        match mistake(recorded_ms, voiced_ms, typed) {
+        match mistake(recorded_ms, heard_ms, typed) {
             None => false,
             Some(Mistake::NothingRecorded) => {
                 if let Err(e) = self.delete(&id.to_string()) {
@@ -280,9 +314,15 @@ impl MeetingManager {
     }
 
     /// [Keep] on "Recorded by mistake?": the session goes on as after any stop.
+    /// Also when nobody answers: the recording is kept and transcribed. One transcribed from
+    /// the meetings page meanwhile is not sent again.
     pub fn keep_after_mistake(&self, id: &str) -> Result<(), MeetingError> {
         let id = parse_id(id)?;
-        self.transcribe_if_keyed(id);
+        let transcribed =
+            self.with_store(|store| Ok(store.meeting(id)?.transcribed_at.is_some()))?;
+        if !transcribed {
+            self.transcribe_if_keyed(id);
+        }
         Ok(())
     }
 
@@ -495,29 +535,75 @@ mod tests {
         assert_eq!(mistake(0, 0, false), Some(Mistake::NothingRecorded));
         // An agenda or a title typed before recording is never discarded without asking.
         assert_eq!(mistake(0, 0, true), Some(Mistake::Ask));
-        assert_eq!(mistake(29_999, 29_999, false), Some(Mistake::Ask));
-        assert_eq!(mistake(600_000, 4_999, false), Some(Mistake::Ask));
-        assert_eq!(mistake(30_000, 5_000, false), None);
+        assert_eq!(mistake(9_999, 9_999, false), Some(Mistake::Ask));
+        assert_eq!(mistake(600_000, 2_999, false), Some(Mistake::Ask));
+        assert_eq!(mistake(10_000, 3_000, false), None);
         assert_eq!(mistake(3_600_000, 1_200_000, true), None);
     }
 
     #[test]
-    fn a_dictation_is_not_speech_of_the_meeting() {
+    fn a_dictation_is_not_sound_of_the_meeting() {
         let levels = |mic, system, mic_omitted| Levels {
             mic,
             system,
             mic_omitted,
         };
-        assert!(heard_speech(levels(0.2, 0.0, false)));
+        assert!(heard_sound(levels(0.2, 0.0, false)));
         assert!(
-            !heard_speech(levels(0.2, 0.0, true)),
+            !heard_sound(levels(0.2, 0.0, true)),
             "the dictation's voice"
         );
-        assert!(
-            heard_speech(levels(0.2, 0.2, true)),
-            "the call still speaks"
-        );
-        assert!(!heard_speech(levels(0.0, 0.0, false)));
+        assert!(heard_sound(levels(0.2, 0.2, true)), "the call still speaks");
+        assert!(!heard_sound(levels(0.0, 0.0, false)));
+    }
+
+    /// The recorded time with sound after `seconds` of 4 Hz reports, the levels of report `i`
+    /// (from 1) given by `level`.
+    fn heard_over(seconds: u64, level: impl Fn(u64) -> (f32, f32)) -> u64 {
+        let mut ticks = SoundTicks::default();
+        for i in 1..=seconds * 4 {
+            let (mic, system) = level(i);
+            let levels = Levels {
+                mic,
+                system,
+                mic_omitted: false,
+            };
+            ticks.observe(Duration::from_millis(250 * i), levels);
+        }
+        u64::try_from(ticks.heard().as_millis()).unwrap()
+    }
+
+    /// Fala's start sound: the first second of the system channel.
+    fn start_sound(i: u64) -> Option<f32> {
+        (i <= 4).then_some(0.2)
+    }
+
+    #[test]
+    fn a_call_heard_at_a_low_volume_is_not_a_mistake() {
+        // The 100 s call that asked "Recorded by mistake?": the mic recorded digital zero and the
+        // others spoke on the system channel between −69 and −44 dBFS, a quiet second after
+        // every second of speech. Only the start sound reached the old −40 dBFS bar.
+        let call = [
+            0.0061, 0.0004, 0.0002, 0.0006, 0.0008, 0.0019, 0.003, 0.0045,
+        ];
+        let heard = heard_over(100, |i| {
+            (0.0, start_sound(i).unwrap_or(call[(i % 8) as usize]))
+        });
+        // The start sound and the 50 even seconds.
+        assert_eq!(heard, 51_000);
+        assert_eq!(mistake(100_000, heard, false), None);
+    }
+
+    #[test]
+    fn only_both_channels_silent_is_a_mistake() {
+        // A mic in digital zero and nothing playing: only the start sound.
+        let heard = heard_over(120, |i| (0.0, start_sound(i).unwrap_or(0.0)));
+        assert_eq!(heard, 1_000);
+        assert_eq!(mistake(120_000, heard, false), Some(Mistake::Ask));
+        // A working mic in a quiet room (−55 dBFS) is transcribed: no bar for speech to clear.
+        let heard = heard_over(60, |i| (0.0018, start_sound(i).unwrap_or(0.0)));
+        assert_eq!(heard, 60_000);
+        assert_eq!(mistake(60_000, heard, false), None);
     }
 
     #[test]

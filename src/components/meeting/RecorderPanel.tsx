@@ -240,6 +240,11 @@ export function RecorderPanel(props: RecorderPanelProps) {
         <Level label={t("meeting.recorder.mic")} value={status.mic_level} />
       )}
       <Level label={t("meeting.recorder.system")} value={status.system_level} />
+      {status.mode !== "system_only" && status.mic_input !== null && (
+        <p className="text-xs text-mid-gray">
+          {t("meeting.recorder.micFrom", { device: status.mic_input })}
+        </p>
+      )}
       {status.system_output !== null && (
         <p className="text-xs text-mid-gray">
           {t("meeting.recorder.outputFrom", { device: status.system_output })}
