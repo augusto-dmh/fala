@@ -2059,14 +2059,15 @@ export type CallAppInfo = { id: string; name: string }
 /**
  * The person's answer, or the countdown running out.
  */
-export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "record_again" | "dismiss" | "keep" | "discard" | "expired"
+export type CallPromptAnswer = "record" | "not_now" | "mute_app" | "stop" | "keep_recording" | "stop_and_quit" | "cancel" | "record_again" | "dismiss" | "keep" | "discard" | "resume" | "expired"
 export type CallPromptKind = 
 /**
  * "Gravar reunião?" with [Gravar] [Agora não] [Não avisar no <app>].
  */
 "offer" | 
 /**
- * "Parar a gravação?" with [Parar] [Continuar].
+ * "Parar a gravação?" with [Parar] [Continuar]; with `auto_stop`, "Paro a gravação em N s"
+ * with [Continuar gravando] [Parar agora].
  */
 "ask_stop" | 
 /**
@@ -2092,7 +2093,11 @@ export type CallPromptKind =
 /**
  * "A gravação continuou depois da suspensão" with how long the PC slept: [Fechar].
  */
-"woke"
+"woke" | 
+/**
+ * "Parei a gravação: a call terminou." with [Retomar] [Fechar].
+ */
+"call_ended"
 /**
  * What the card shows.
  */
@@ -2102,13 +2107,18 @@ export type CallPromptPayload = { kind: CallPromptKind; app_id: string; app_name
  */
 web_name: string | null; countdown_ms: number; 
 /**
- * The session a "Gravou por engano?" is about.
+ * The session a "Gravou por engano?", a "Parar a gravação?" or a "Parei a gravação" is about.
  */
 session_id: string | null; 
 /**
  * Seconds recorded, for "Gravou por engano?"; seconds asleep, for the wake card.
  */
-seconds: number | null }
+seconds: number | null; 
+/**
+ * "Parar a gravação?" stops the recording when it runs out: the system has been quiet since
+ * it appeared. Turns false (and the card is sent again) at the first sound.
+ */
+auto_stop: boolean }
 /**
  * How much the dictation LLM rewrites, stored with the literals of `fala_postproc::CleanupLevel`.
  * The crate stays without `specta`, so the desktop keeps its own copy for the bindings.

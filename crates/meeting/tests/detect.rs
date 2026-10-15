@@ -5,9 +5,10 @@
 use std::time::Duration;
 
 use fala_meeting::{
-    identify, may_ask_stop, web_call, CallApp, CallDetector, CallHolder, CallPrompt, DetectContext,
-    Input, MeetingSession, RecordingCap, SessionConfig, SessionId, SessionMode, SessionState,
-    UnixMillis, UserAction, WebCall, ASK_STOP_MAX,
+    identify, may_ask_stop, web_call, CallApp, CallDetector, CallHolder, CallPrompt, CallQuiet,
+    DetectContext, Effect, Input, MeetingSession, RecordingCap, SessionConfig, SessionId,
+    SessionMode, SessionState, StopReason, UnixMillis, UserAction, WebCall, ASK_STOP_MAX,
+    CALL_QUIET_RMS,
 };
 
 const T0: u64 = 1_727_000_000_000;
@@ -392,6 +393,100 @@ fn ask_stop_waits_three_minutes_and_stops_after_two() {
     );
 }
 
+/// Nível RMS linear de `db` dBFS.
+fn dbfs(db: f32) -> f32 {
+    10f32.powf(db / 20.0)
+}
+
+#[test]
+fn an_expired_ask_stops_only_if_the_system_stayed_quiet() {
+    assert!((dbfs(-70.0) - CALL_QUIET_RMS).abs() < 1e-6);
+    let mut quiet = CallQuiet::default();
+    // Sem card, nada para.
+    assert!(!quiet.quiet());
+    assert!(!quiet.observe(0.0));
+
+    // O card aparece; o sistema fica no piso do Opus calado (≈ −100 dBFS) por 20 s.
+    quiet.arm();
+    for _ in 0..80 {
+        assert!(!quiet.observe(dbfs(-100.0)));
+    }
+    assert!(quiet.quiet());
+
+    // A call baixa do Augusto (mediana −54 dBFS) seguiu noutro app: as janelas de 250 ms de uma
+    // reunião retida, com o maior trecho calado (3,75 s) no começo. Só fecha.
+    let call = [
+        -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0,
+        -99.0, -51.0, -49.0, -47.0, -63.0, -52.0, -48.0,
+    ];
+    quiet.arm();
+    let flips: Vec<bool> = call.iter().map(|&db| quiet.observe(dbfs(db))).collect();
+    assert_eq!(flips.iter().filter(|&&f| f).count(), 1);
+    assert!(!quiet.quiet());
+    // O rabo baixo de uma palavra (−65 dBFS) também conta como som.
+    quiet.arm();
+    assert!(quiet.observe(dbfs(-65.0)));
+    assert!(!quiet.quiet());
+
+    // Uma pausa no meio da contagem desarma até o próximo card.
+    quiet.arm();
+    assert!(quiet.disarm());
+    assert!(!quiet.disarm());
+    assert!(!quiet.quiet());
+}
+
+#[test]
+fn a_call_that_ended_stops_as_silence_and_only_while_recording() {
+    let session = || {
+        let mut s = MeetingSession::new(SessionConfig {
+            id: SessionId::from_parts(T0, 0),
+            mode: SessionMode::Meeting,
+            title: String::new(),
+            local_only: false,
+            cap: RecordingCap::default(),
+        });
+        s.apply(
+            at(0),
+            Input::User(UserAction::StartRecording {
+                free_disk_bytes: 10 * GIB,
+            }),
+        )
+        .unwrap();
+        s
+    };
+    let mut s = session();
+    assert_eq!(
+        s.apply(at(400), Input::CallEnded).unwrap(),
+        [Effect::FinalizeCapture]
+    );
+    assert_eq!(
+        s.state(),
+        SessionState::Stopping {
+            reason: StopReason::Silence
+        }
+    );
+    assert_eq!(s.ended_at(), Some(at(400)));
+
+    // Pausada, a pessoa está lá: nada muda.
+    let mut paused = session();
+    paused
+        .apply(at(300), Input::User(UserAction::PauseRecording))
+        .unwrap();
+    assert!(paused.apply(at(400), Input::CallEnded).unwrap().is_empty());
+    assert!(matches!(paused.state(), SessionState::Paused { .. }));
+
+    // Sem gravação, nada começa nem para.
+    let mut idle = MeetingSession::new(SessionConfig {
+        id: SessionId::from_parts(T0, 1),
+        mode: SessionMode::Meeting,
+        title: String::new(),
+        local_only: false,
+        cap: RecordingCap::default(),
+    });
+    assert!(idle.apply(at(400), Input::CallEnded).unwrap().is_empty());
+    assert_eq!(idle.state(), SessionState::Idle);
+}
+
 /// ADR-0005: o detector só pergunta. Com uma call inteira e ninguém clicando, a sessão não
 /// sai de `Idle`; ela só grava quando o clique vira `UserAction::StartRecording`.
 #[test]
@@ -421,7 +516,7 @@ fn never_starts_recording_without_a_click() {
     }
     assert_eq!(nobody.state(), SessionState::Idle);
     assert!(nobody.indicator().is_none());
-    // A pergunta "parar?" também não para nada: só a ação do usuário para.
+    // A pergunta "parar?" também não para nada: só o clique ou, depois dela, o `CallEnded`.
     let mut d = CallDetector::new();
     let mut recorded = session();
     recorded

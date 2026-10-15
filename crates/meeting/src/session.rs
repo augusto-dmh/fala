@@ -63,6 +63,9 @@ pub enum Input {
     /// O "Ainda está gravando?" apareceu na tela. Sem ele, o silêncio nunca para a gravação
     /// (ninguém foi avisado).
     SilenceWarningShown,
+    /// O "Parar a gravação?" expirou com o sistema calado desde a largada da call
+    /// ([`crate::CallQuiet`]): para como silêncio. Fora de `Recording` não faz nada.
+    CallEnded,
     /// O gravador fechou o cabeçalho e o arquivo da sessão.
     ///
     /// Contrato com o gravador: só responde assim a um [`Effect::FinalizeCapture`] pedido em
@@ -337,6 +340,9 @@ impl MeetingSession {
             (S::Recording { .. }, Input::Tick { recorded, levels }) => {
                 Ok(self.tick(now, recorded, levels))
             }
+            (S::Recording { .. }, Input::CallEnded) => {
+                Ok(self.begin_stop(now, StopReason::Silence))
+            }
             (S::Recording { .. } | S::Paused { .. }, Input::OsSuspended) => {
                 let paused = matches!(self.state, S::Paused { .. });
                 // Like a pause: a warning nobody can answer while asleep never stops it after.
@@ -374,7 +380,9 @@ impl MeetingSession {
                 Ok(vec![Effect::HideIndicator, Effect::Process])
             }
             (_, Input::Tick { .. } | Input::OsSuspended | Input::OsResumed)
-            | (_, Input::CaptureFinalized | Input::SilenceWarningShown) => Ok(Vec::new()),
+            | (_, Input::CaptureFinalized | Input::SilenceWarningShown | Input::CallEnded) => {
+                Ok(Vec::new())
+            }
         }
     }
 

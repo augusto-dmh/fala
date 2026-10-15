@@ -11,6 +11,7 @@
 //! (`MIC_HUB`), and a dictation during the recording zeroes the meeting's mic channel for its
 //! interval ([`MeetingManager::dictation_changed`]). In-person mode still refuses dictation.
 
+mod call_end;
 pub(crate) mod clip;
 pub(crate) mod context;
 mod disk;
@@ -36,9 +37,9 @@ use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, Local, SecondsFormat};
 use fala_meeting::{
-    Effect, GapKind, IndicatorKind, Input, Levels, MeetingSession, MuteWatch, RecordingCap,
-    SessionConfig, SessionError, SessionId, SessionMode, SessionState, StopReason, UnixMillis,
-    UserAction,
+    CallQuiet, Effect, GapKind, IndicatorKind, Input, Levels, MeetingSession, MuteWatch,
+    RecordingCap, SessionConfig, SessionError, SessionId, SessionMode, SessionState, StopReason,
+    UnixMillis, UserAction,
 };
 use fala_storage::{MeetingTake, NewMeeting, StorageError, Store};
 use serde::{Deserialize, Serialize};
@@ -447,6 +448,10 @@ struct Active {
     /// A take of a resumed session: its spans and sleeps move by its offset, and its stop
     /// closes the take.
     take: Option<MeetingTake>,
+    /// Armed while "Parar a gravação?" may stop the recording when it runs out (`call_end`).
+    call_quiet: CallQuiet,
+    /// The recording stopped because the call ended: the stop offers [Retomar].
+    call_ended: bool,
 }
 
 #[derive(Default)]
@@ -457,6 +462,8 @@ struct Inner {
     status: MeetingStatus,
     /// Answered once the recorder put the WAV header on disk before a sleep.
     suspend_ack: Option<Receiver<()>>,
+    /// The session the call's end stopped, while its [Retomar] is answered (`call_end`).
+    resume_offer: Option<call_end::ResumeOffer>,
 }
 
 pub struct MeetingManager {
@@ -776,6 +783,8 @@ impl MeetingManager {
             waking: false,
             interrupted: false,
             take,
+            call_quiet: CallQuiet::default(),
+            call_ended: false,
         });
         inner.status = MeetingStatus {
             low_disk_bytes: low_disk,
@@ -788,6 +797,7 @@ impl MeetingManager {
     pub fn pause(&self) -> Result<MeetingStatus, MeetingError> {
         let status = self.act(UserAction::PauseRecording)?;
         crate::call_prompt::hide_still_recording(&self.app);
+        self.hold_call_stop();
         Ok(status)
     }
 
@@ -821,6 +831,9 @@ impl MeetingManager {
             SleepEvent::Suspending => Input::OsSuspended,
             SleepEvent::Resumed => Input::OsResumed,
         };
+        if event == SleepEvent::Suspending {
+            self.hold_call_stop();
+        }
         let ack = {
             let mut inner = self.lock();
             let Some(active) = inner.active.as_mut() else {
@@ -944,6 +957,15 @@ impl MeetingManager {
                 let route = active
                     .route
                     .observe(recorded, mic_peak, system_peak, &outputs);
+                // In person, the room is on the mic: people still talking keep the recording.
+                let room = if active.mode == MeetingMode::InPerson && !mic_omitted {
+                    mic
+                } else {
+                    0.0
+                };
+                if active.call_quiet.observe(system.max(room)) {
+                    crate::call_prompt::keep_after_sound(&self.app);
+                }
                 active.tick_levels.mic = active.tick_levels.mic.max(mic);
                 active.tick_levels.system = active.tick_levels.system.max(system);
                 active.tick_levels.mic_omitted |= mic_omitted;
@@ -1130,11 +1152,21 @@ impl MeetingManager {
         let voiced_ms = u64::try_from(active.voiced.as_millis()).unwrap_or(u64::MAX);
         // Only a stop the person clicked, or silence, may look like a mistake; never the cap or a
         // device that failed.
+        // Nor the call's end: a call held the mic for minutes, and [Retomar] is on screen.
         let may_be_mistake = !active.capture_failed
+            && !active.call_ended
             && matches!(reason, Some(StopReason::User | StopReason::Silence));
         inner.processing.push(id);
         crate::call_prompt::hide_still_recording(&self.app);
-        if reason == Some(StopReason::Silence) && voiced_ms >= lifecycle::LITTLE_SPEECH_MS {
+        if active.call_ended {
+            // A take's transcription cannot wait for another take: [Retomar] only after the first
+            // recording, which a later take transcribes whole.
+            let resumable = active.take.is_none();
+            if resumable {
+                inner.resume_offer = Some(call_end::ResumeOffer::Open(id));
+            }
+            crate::call_prompt::show_call_ended(&self.app, resumable.then_some(id));
+        } else if reason == Some(StopReason::Silence) && voiced_ms >= lifecycle::LITTLE_SPEECH_MS {
             crate::call_prompt::show_silence_stopped(&self.app);
         }
         let app = self.app.clone();
@@ -1199,6 +1231,9 @@ impl MeetingManager {
             if self.handle_mistake(id, recorded_ms, voiced_ms) {
                 return;
             }
+        }
+        if self.resumed_after_call(id) {
+            return;
         }
         let lines = match take {
             Some(take) => self.transcribe_take_if_keyed(id, take),
