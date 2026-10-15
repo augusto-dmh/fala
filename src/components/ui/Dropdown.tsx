@@ -18,6 +18,8 @@ interface DropdownProps {
   placeholder?: string;
   disabled?: boolean;
   onOpen?: () => void;
+  /** Each new value opens the list, as a click would (another window asked for the picker). */
+  openSignal?: number;
 }
 
 /**
@@ -53,9 +55,13 @@ export const Dropdown: React.FC<DropdownProps> = ({
   placeholder,
   disabled = false,
   onOpen,
+  openSignal,
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  useEffect(() => {
+    if (openSignal) setIsOpen(true);
+  }, [openSignal]);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);

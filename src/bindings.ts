@@ -949,6 +949,13 @@ async openMeetingFromPill() : Promise<void> {
     await TAURI_INVOKE("open_meeting_from_pill");
 },
 /**
+ * [Switch microphone] on the pill's muted-mic card: the main window opens on the session it
+ * records, with the microphone picker open. The recording goes on.
+ */
+async openMeetingMicPicker() : Promise<void> {
+    await TAURI_INVOKE("open_meeting_mic_picker");
+},
+/**
  * The pill that says the paste failed ran its time without the pointer over it.
  */
 async endPasteFailed(generation: number) : Promise<void> {

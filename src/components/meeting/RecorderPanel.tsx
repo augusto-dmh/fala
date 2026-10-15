@@ -13,6 +13,7 @@ import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { SettingTitleContext } from "../ui/SettingContainer";
 import { Input } from "../ui/Input";
 import { clock, levelPercent } from "./meetingModel";
+import { MicSwitcher } from "./MicSwitcher";
 import { shownTemplate, TemplateSelect } from "./TemplateSelect";
 
 export interface RecorderPanelProps {
@@ -263,9 +264,12 @@ export function RecorderPanel(props: RecorderPanelProps) {
         </p>
       )}
       {status.muted_mic && (
-        <p role="alert" className={STRIP}>
-          {t("meeting.recorder.mutedMic")}
-        </p>
+        <div role="alert" className={STRIP}>
+          {status.mic_input === null
+            ? t("meeting.recorder.mutedMic")
+            : t("meeting.recorder.mutedMicNamed", { device: status.mic_input })}
+          <MicSwitcher />
+        </div>
       )}
       {status.muted_system && (
         <p role="alert" className={STRIP}>

@@ -32,3 +32,17 @@ Profile: light
 ## Fora
 
 O aviso de mic mudo em ~10 s com ação de troca: PR seguinte.
+
+## PR 2 — aviso de mic mudo
+
+- D6: `MuteWatch` ganha uma janela curta para o mic que ainda não deu sinal (desde o começo ou a
+  troca): 15 s abaixo do piso acendem o aviso; depois do primeiro sinal valem os 120 s de antes.
+  "Mic sem voz enquanto o sistema tem som" com o mic acima do piso não conta: quem só escuta numa
+  call ficaria avisado o tempo todo.
+- D7: a pílula mostra "Não estamos ouvindo seu microfone (<nome>)" com [Trocar microfone], que abre
+  a janela principal na reunião com o seletor aberto (`open_meeting_mic_picker` →
+  `meeting-pick-mic`); a faixa do painel tem o mesmo texto e o seletor. Trocar grava o
+  `selected_microphone` (o mesmo do ditado) e o PR 1 move a reunião para ele.
+- Referência: o Granola só avisa "Your mic is muted" quando a call (Meet) está muda e "We're not
+  receiving audio from <app>" para o sistema; mostra "Audio input: <label>" no popover de áudio
+  (`app.asar` 7.645.2, `qQ`/`C2`). Não tem aviso de mic silencioso.

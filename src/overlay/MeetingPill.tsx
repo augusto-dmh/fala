@@ -37,20 +37,23 @@ export function MeetingPill({
 }
 
 export interface CallOutputCardProps {
-  /** The translated "the call's sound is playing on <device>". */
+  /** The translated "the call's sound is playing on <device>", or "we can't hear <mic>". */
   text: string;
   switchLabel: string;
   onSwitch: () => void;
+  kind?: "call_output" | "muted_mic";
 }
 
-/** Over the meeting pill while the call plays on an output that is not being recorded. */
+/** Over the meeting pill while the call plays on an output that is not being recorded, or while
+ *  the microphone is not heard: the warning and the switch that fixes it. */
 export function CallOutputCard({
   text,
   switchLabel,
   onSwitch,
+  kind = "call_output",
 }: CallOutputCardProps) {
   return (
-    <div className="fnotice call_output" role="alert">
+    <div className={`fnotice ${kind}`} role="alert">
       <div className="fnotice-line">
         <span className="fnotice-dot warn" />
         <span className="fnotice-text">{text}</span>

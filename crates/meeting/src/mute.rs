@@ -4,6 +4,9 @@ use crate::{Levels, SessionMode, SILENCE_RMS};
 
 /// Duração gravada seguida abaixo de [`SILENCE_RMS`] que acende o aviso de canal mudo.
 pub const MUTE_WARN_AFTER: Duration = Duration::from_secs(120);
+/// O mesmo para um mic que ainda não deu sinal desde o começo ou desde a troca: o microfone
+/// errado (ou mudo no Windows) se mostra em segundos, e a reunião não espera 2 min para avisar.
+pub const MIC_EARLY_WARN_AFTER: Duration = Duration::from_secs(15);
 
 /// Quais canais estão mudos agora.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -23,6 +26,8 @@ pub struct MuteWatch {
     last: Duration,
     mic_silent: Duration,
     system_silent: Duration,
+    /// O mic passou do piso desde o começo ou desde a última troca.
+    mic_heard: bool,
 }
 
 impl MuteWatch {
@@ -32,7 +37,14 @@ impl MuteWatch {
             last: Duration::ZERO,
             mic_silent: Duration::ZERO,
             system_silent: Duration::ZERO,
+            mic_heard: false,
         }
+    }
+
+    /// A gravação passou a outro microfone: a contagem do mic recomeça, com a janela curta.
+    pub fn mic_switched(&mut self) {
+        self.mic_silent = Duration::ZERO;
+        self.mic_heard = false;
     }
 
     /// Recebe a duração total já gravada e os níveis do intervalo desde a última observação.
@@ -42,6 +54,7 @@ impl MuteWatch {
         // Um ditado zera o mic de propósito: esse intervalo não é silêncio nem som.
         if self.mode.has_mic() && !levels.mic_omitted {
             accumulate(&mut self.mic_silent, levels.mic, delta);
+            self.mic_heard |= levels.mic >= SILENCE_RMS;
         }
         accumulate(&mut self.system_silent, levels.system, delta);
         self.muted()
@@ -49,8 +62,18 @@ impl MuteWatch {
 
     pub fn muted(&self) -> Muted {
         Muted {
-            mic: self.mode.has_mic() && self.mic_silent >= MUTE_WARN_AFTER,
+            mic: self.mode.has_mic() && self.mic_silent >= self.mic_warn_after(),
             system: self.system_silent >= MUTE_WARN_AFTER,
+        }
+    }
+}
+
+impl MuteWatch {
+    fn mic_warn_after(&self) -> Duration {
+        if self.mic_heard {
+            MUTE_WARN_AFTER
+        } else {
+            MIC_EARLY_WARN_AFTER
         }
     }
 }
@@ -124,9 +147,11 @@ mod tests {
     #[test]
     fn a_dictation_is_neither_silence_nor_sound_on_the_mic() {
         let mut watch = MuteWatch::new(SessionMode::Meeting);
-        run(&mut watch, 0, 100, QUIET, LOUD);
+        // O mic deu sinal no primeiro segundo: vale a janela de 120 s.
+        run(&mut watch, 0, 1, LOUD, LOUD);
+        run(&mut watch, 1, 101, QUIET, LOUD);
         // 3 min de ditado: o mic zerado não completa os 120 s nem zera a contagem.
-        for s in 101..=280 {
+        for s in 102..=281 {
             let levels = Levels {
                 mic: QUIET,
                 system: LOUD,
@@ -134,8 +159,35 @@ mod tests {
             };
             assert!(!watch.observe(Duration::from_secs(s), levels).mic, "{s} s");
         }
-        assert!(!run(&mut watch, 280, 299, QUIET, LOUD).mic);
-        assert!(run(&mut watch, 299, 300, QUIET, LOUD).mic, "100 s + 20 s");
+        assert!(!run(&mut watch, 281, 300, QUIET, LOUD).mic);
+        assert!(run(&mut watch, 300, 301, QUIET, LOUD).mic, "100 s + 20 s");
+    }
+
+    #[test]
+    fn a_mic_never_heard_warns_at_15_s() {
+        // O microfone errado: zero desde o começo, enquanto a call toca no sistema.
+        let mut watch = MuteWatch::new(SessionMode::Meeting);
+        assert!(!run(&mut watch, 0, 14, QUIET, LOUD).mic);
+        assert!(run(&mut watch, 14, 15, QUIET, LOUD).mic);
+        // Um sinal apaga o aviso, e daí em diante o mic tem os 120 s de sempre.
+        assert!(!run(&mut watch, 15, 16, LOUD, LOUD).mic);
+        assert!(!run(&mut watch, 16, 135, QUIET, LOUD).mic);
+        assert!(run(&mut watch, 135, 136, QUIET, LOUD).mic);
+    }
+
+    #[test]
+    fn switching_the_mic_starts_the_short_window_again() {
+        let mut watch = MuteWatch::new(SessionMode::Meeting);
+        run(&mut watch, 0, 10, LOUD, LOUD);
+        assert!(!run(&mut watch, 10, 100, QUIET, LOUD).mic);
+        watch.mic_switched();
+        assert!(!watch.muted().mic);
+        assert!(!run(&mut watch, 100, 114, QUIET, LOUD).mic);
+        assert!(run(&mut watch, 114, 115, QUIET, LOUD).mic);
+        // Sem mic, nada muda.
+        let mut system_only = MuteWatch::new(SessionMode::SystemOnly);
+        system_only.mic_switched();
+        assert!(!run(&mut system_only, 0, 60, QUIET, LOUD).mic);
     }
 
     #[test]

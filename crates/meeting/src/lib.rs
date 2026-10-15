@@ -25,7 +25,7 @@ pub use detect::{
     RELEASE_DELAY, WEB_CALLS,
 };
 pub use id::{SessionId, SessionMode};
-pub use mute::{MuteWatch, Muted, MUTE_WARN_AFTER};
+pub use mute::{MuteWatch, Muted, MIC_EARLY_WARN_AFTER, MUTE_WARN_AFTER};
 pub use route::{
     OutputWatch, ZeroWatch, Zeroed, ELSEWHERE_AFTER, ELSEWHERE_GAP, OUTPUT_PEAK, ZERO_PEAK,
     ZERO_WARN_AFTER,

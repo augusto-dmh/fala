@@ -217,9 +217,10 @@ impl From<SessionError> for MeetingError {
 /// recorded (Granola shows the same for 5 s on every recording); the notice of ADR-0005 stays.
 pub(crate) const CONSENT_CHIP_MS: u64 = 5_000;
 
-/// The pill shows a card over it: the call plays elsewhere, or the consent chip is on.
+/// The pill shows a card over it: the call plays elsewhere, the mic is not heard, or the
+/// consent chip is on.
 pub(crate) fn meeting_card(status: &MeetingStatus) -> bool {
-    status.call_output.is_some() || status.recorded_ms < CONSENT_CHIP_MS
+    status.call_output.is_some() || status.muted_mic || status.recorded_ms < CONSENT_CHIP_MS
 }
 
 /// Who may start recording, in the order the reasons are reported.
@@ -1011,7 +1012,11 @@ impl MeetingManager {
                 }
             }
             Report::MicSwitched(name) => {
+                // Another microphone: it gets the short window to show it is heard.
+                active.mute.mic_switched();
                 inner.status.mic_input = Some(name);
+                inner.status.muted_mic = false;
+                crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
                 self.publish(&mut inner);
             }
             Report::Woke => {
@@ -1369,6 +1374,9 @@ mod tests {
         assert!(!meeting_card(&status));
         status.call_output = Some("Fone".into());
         assert!(meeting_card(&status));
+        status.call_output = None;
+        status.muted_mic = true;
+        assert!(meeting_card(&status), "we can't hear the mic");
     }
 
     #[test]
