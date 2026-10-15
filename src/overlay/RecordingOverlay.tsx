@@ -97,6 +97,8 @@ const RecordingOverlay: React.FC = () => {
   const [meetingMuted, setMeetingMuted] = useState(false);
   // The output the call plays on while the system channel records zeros, if any.
   const [callOutput, setCallOutput] = useState<string | null>(null);
+  // The meeting's mic was never heard: its name ("" when unknown), or `null`.
+  const [mutedMic, setMutedMic] = useState<string | null>(null);
   // A dictation zeroes the meeting's mic now: a card over the recording pill says so.
   const [meetingDictation, setMeetingDictation] = useState(false);
   // The pill at rest: the cursor is over it, and the shortcut it shows on hover.
@@ -245,6 +247,8 @@ const RecordingOverlay: React.FC = () => {
         setCaptureReady(false);
         setLimitWarning(false);
         setNotice(null);
+        // The next meeting starts without the last one's mic card.
+        setMutedMic(null);
       });
 
       const unlistenNotice = await listen<OverlayNotice>(
@@ -290,6 +294,9 @@ const RecordingOverlay: React.FC = () => {
         const zero = event.payload.zero_mic || event.payload.zero_system;
         setMeetingMuted(muted || zero);
         setCallOutput(event.payload.call_output);
+        setMutedMic(
+          event.payload.mic_unheard ? (event.payload.mic_input ?? "") : null,
+        );
         setMeetingDictation(event.payload.dictating);
       });
 
@@ -625,6 +632,20 @@ const RecordingOverlay: React.FC = () => {
               text={t("overlay.callElsewhere", { device: callOutput })}
               switchLabel={t("overlay.recordFrom")}
               onSwitch={() => void commands.switchMeetingOutput(callOutput)}
+            />
+            {meetingPill}
+          </div>
+        ) : mutedMic !== null ? (
+          <div className="ov-stack">
+            <CallOutputCard
+              kind="muted_mic"
+              text={
+                mutedMic
+                  ? t("overlay.mutedMic", { device: mutedMic })
+                  : t("overlay.mutedMicUnnamed")
+              }
+              switchLabel={t("overlay.switchMic")}
+              onSwitch={() => void commands.openMeetingMicPicker()}
             />
             {meetingPill}
           </div>

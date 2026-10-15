@@ -32,6 +32,7 @@ import {
   requestConsent,
   requestOpenMeeting,
 } from "./components/meeting/meetingModel";
+import { PICK_MIC_EVENT, requestMicPick } from "./components/meeting/micPick";
 import { UPDATER_ENABLED } from "./lib/updater";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -113,6 +114,14 @@ function App() {
         setDestination("meetings");
       }
     });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // [Switch microphone] on the pill: the picker opens once the session's panel is on screen.
+  useEffect(() => {
+    const unlisten = listen(PICK_MIC_EVENT, () => requestMicPick());
     return () => {
       unlisten.then((fn) => fn());
     };

@@ -111,6 +111,9 @@ pub struct MeetingStatus {
     pub system_level: f32,
     pub muted_mic: bool,
     pub muted_system: bool,
+    /// The mic has not been heard since the start or the last switch, for 15 s: the wrong or a
+    /// muted microphone. The pill says so with a way to switch.
+    pub mic_unheard: bool,
     /// Set once the session warns that the cap is near; "one more hour" clears it.
     pub cap_remaining_ms: Option<u64>,
     /// Free bytes when recording started with less than 2 GiB free.
@@ -224,9 +227,10 @@ impl From<SessionError> for MeetingError {
 /// recorded (Granola shows the same for 5 s on every recording); the notice of ADR-0005 stays.
 pub(crate) const CONSENT_CHIP_MS: u64 = 5_000;
 
-/// The pill shows a card over it: the call plays elsewhere, or the consent chip is on.
+/// The pill shows a card over it: the call plays elsewhere, the mic was never heard, or the
+/// consent chip is on.
 pub(crate) fn meeting_card(status: &MeetingStatus) -> bool {
-    status.call_output.is_some() || status.recorded_ms < CONSENT_CHIP_MS
+    status.call_output.is_some() || status.mic_unheard || status.recorded_ms < CONSENT_CHIP_MS
 }
 
 /// Who may start recording, in the order the reasons are reported.
@@ -974,6 +978,7 @@ impl MeetingManager {
                     mic_omitted,
                 };
                 let muted = active.mute.observe(recorded, levels);
+                let mic_unheard = active.mute.mic_unheard();
                 let route = active
                     .route
                     .observe(recorded, mic_peak, system_peak, &outputs);
@@ -991,6 +996,7 @@ impl MeetingManager {
                 inner.status.mic_level = mic;
                 inner.status.system_level = system;
                 inner.status.muted_mic = muted.mic;
+                inner.status.mic_unheard = mic_unheard;
                 inner.status.muted_system = muted.system;
                 route.apply(&mut inner.status);
                 // Only a change resizes the pill's window.
@@ -1021,6 +1027,16 @@ impl MeetingManager {
                 }
             }
             Report::MicSwitched(name) => {
+                // Another microphone gets the short window to show it is heard; the same one
+                // reopened after a reset keeps its count, or a flapping mic would never warn.
+                if inner.status.mic_input.as_deref() != Some(name.as_str()) {
+                    if let Some(active) = inner.active.as_mut() {
+                        active.mute.mic_switched();
+                    }
+                    inner.status.muted_mic = false;
+                    inner.status.mic_unheard = false;
+                    crate::overlay::set_meeting_card(&self.app, meeting_card(&inner.status));
+                }
                 inner.status.mic_input = Some(name);
                 self.publish(&mut inner);
             }
@@ -1380,6 +1396,14 @@ mod tests {
         assert!(!meeting_card(&status));
         status.call_output = Some("Fone".into());
         assert!(meeting_card(&status));
+        status.call_output = None;
+        status.muted_mic = true;
+        assert!(
+            !meeting_card(&status),
+            "2 min of a quiet mic: the panel only"
+        );
+        status.mic_unheard = true;
+        assert!(meeting_card(&status), "we can't hear the mic");
     }
 
     #[test]

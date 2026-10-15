@@ -74,6 +74,7 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
         system_level: 0,
         muted_mic: false,
         muted_system: false,
+        mic_unheard: false,
         cap_remaining_ms: null,
         low_disk_bytes: null,
         mic_input: null,

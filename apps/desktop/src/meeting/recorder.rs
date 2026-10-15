@@ -322,18 +322,21 @@ fn hub_open(device: cpal::Device, channel: Option<usize>, renew: bool) -> Result
 }
 
 /// The chosen input and its channel. One that does not open (held by another app, still pairing
-/// after a sleep) gives way to the default input, as before the meeting followed the choice: a
-/// mic channel from another input is better than no recording.
+/// after a sleep) gives way to the default input, all its channels mixed (the chosen channel
+/// belongs to the other device), as before the meeting followed the choice: a mic channel from
+/// another input is better than no recording.
 fn open_mic(choice: &MicChoice, renew: bool) -> Result<OpenMic, String> {
     let (device, channel) = choice();
-    let tap = match device {
-        Some(device) => hub_open(device, channel, renew).or_else(|e| {
-            log::warn!("meeting mic did not open ({e}); recording the default input");
-            hub_open(default_input()?, channel, renew)
-        }),
-        None => hub_open(default_input()?, channel, renew),
-    }?;
-    Ok((tap, channel))
+    match device {
+        Some(device) => match hub_open(device, channel, renew) {
+            Ok(tap) => Ok((tap, channel)),
+            Err(e) => {
+                log::warn!("meeting mic did not open ({e}); recording the default input");
+                Ok((hub_open(default_input()?, None, renew)?, None))
+            }
+        },
+        None => Ok((hub_open(default_input()?, channel, renew)?, channel)),
+    }
 }
 
 /// How often a failed mic stream is reopened while recording.

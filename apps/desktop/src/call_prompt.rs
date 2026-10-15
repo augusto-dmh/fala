@@ -236,7 +236,35 @@ fn settle_unanswered(app: &AppHandle, replaced: Option<CallPromptPayload>) {
     };
     log::info!("call prompt left unanswered: Expired");
     let meetings = Arc::clone(&meetings);
-    std::thread::spawn(move || meetings.keep_after_mistake(&id));
+    std::thread::spawn(move || {
+        if let Err(e) = meetings.keep_after_mistake(&id) {
+            log::warn!("meeting {id}: not kept after the card ran out: {e}");
+        }
+    });
+}
+
+/// The answered card leaves the screen, unless another card took its place meanwhile: that
+/// one stays on record and on screen.
+fn hide_answered(app: &AppHandle) {
+    if current().is_some() {
+        return;
+    }
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(LABEL) {
+            let _ = window.hide();
+        }
+    });
+}
+
+/// The action for `answer`, taking the card off the record in the same step: a card that
+/// replaces it meanwhile is neither answered nor settled twice. `None` leaves the card as is.
+fn take_answered(answer: CallPromptAnswer) -> Option<AnswerAction> {
+    let mut current = CURRENT.lock().ok()?;
+    let action = answer_action(current.as_ref(), answer)?;
+    *current = None;
+    Some(action)
 }
 
 fn ensure_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
@@ -430,11 +458,11 @@ pub fn call_prompt_current() -> Option<CallPromptPayload> {
 #[tauri::command]
 #[specta::specta]
 pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Result<(), String> {
-    let Some(action) = answer_action(current().as_ref(), answer) else {
+    let Some(action) = take_answered(answer) else {
         log::debug!("call prompt: {answer:?} does not match the card on screen");
         return Ok(());
     };
-    close(&app);
+    hide_answered(&app);
     log::info!("call prompt answered: {answer:?}");
     match action {
         AnswerAction::Record => {
@@ -461,7 +489,11 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         AnswerAction::Keep(id) => {
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 let meetings = Arc::clone(&meetings);
-                tauri::async_runtime::spawn_blocking(move || meetings.keep_after_mistake(&id));
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(e) = meetings.keep_after_mistake(&id) {
+                        log::warn!("meeting {id}: not kept after [Keep]: {e}");
+                    }
+                });
             }
         }
         AnswerAction::Discard(id) => {
@@ -689,6 +721,27 @@ mod tests {
         for stale in [A::Record, A::Stop, A::KeepRecording] {
             assert_eq!(answer_action(Some(&woke), stale), None);
         }
+    }
+
+    #[test]
+    fn an_answer_takes_its_card_off_the_record() {
+        // The only test that touches the card on record.
+        let mut mistake = CallPromptPayload::meeting(CallPromptKind::Mistake, MISTAKE_COUNTDOWN);
+        mistake.session_id = Some("01K".into());
+        set_current(Some(mistake));
+        assert_eq!(
+            take_answered(CallPromptAnswer::Dismiss),
+            None,
+            "not this card's answer"
+        );
+        assert!(current().is_some(), "a stale answer leaves the card");
+        assert_eq!(
+            take_answered(CallPromptAnswer::Discard),
+            Some(AnswerAction::Discard("01K".into()))
+        );
+        // Nothing left for a card that replaces it to settle as unanswered.
+        assert_eq!(set_current(None), None);
+        assert_eq!(take_answered(CallPromptAnswer::Discard), None);
     }
 
     #[test]

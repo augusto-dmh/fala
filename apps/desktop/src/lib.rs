@@ -885,6 +885,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             overlay::open_home_from_pill,
             overlay::start_meeting_from_pill,
             overlay::open_meeting_from_pill,
+            overlay::open_meeting_mic_picker,
             overlay::end_paste_failed,
             last_dictation::copy_failed_paste,
             commands::audio::get_available_microphones,

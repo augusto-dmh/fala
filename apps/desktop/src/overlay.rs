@@ -1365,6 +1365,15 @@ pub fn open_meeting_from_pill(app: AppHandle) {
     let _ = app.emit_to("main", "open-meeting", id);
 }
 
+/// [Switch microphone] on the pill's muted-mic card: the main window opens on the session it
+/// records, with the microphone picker open. The recording goes on.
+#[tauri::command]
+#[specta::specta]
+pub fn open_meeting_mic_picker(app: AppHandle) {
+    open_meeting_from_pill(app.clone());
+    let _ = app.emit_to("main", "meeting-pick-mic", ());
+}
+
 /// The pointer moved past the drag threshold on the idle or the meeting pill with the button
 /// down: the pill follows the cursor along its edge until the button comes up, then the place is
 /// saved in `pill_center_x`. Windows only, like the idle pill.
