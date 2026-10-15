@@ -1264,7 +1264,6 @@
       "missingElevenlabs": "The ElevenLabs key is missing: meetings are transcribed with it.",
       "missingAnthropic": "The Anthropic key is missing: notes are written with it.",
       "add": "Add key",
-      "transcribeNeedsKey": "Add the ElevenLabs key in Settings to transcribe.",
       "notesNeedKey": "Add the Anthropic key in Settings to write notes.",
       "notesNeedContent": "Transcribe the meeting or type notes first."
     },
@@ -1416,6 +1415,18 @@
       "continue": "Resume",
       "transcribe": "Transcribe",
       "transcribing": "Transcribing…",
+      "retryNow": "Try now",
+      "transcribeCloud": "Transcribe in the cloud",
+      "localTranscript": "Transcribed on this computer: less accurate, and speakers aren't told apart.",
+      "retry": "Try again",
+      "wait": {
+        "offline": "No connection — we'll try again on our own. Your audio and notes are safe.",
+        "provider": "ElevenLabs didn't respond — we'll try again on our own. Your audio and notes are safe.",
+        "queued": "Transcript queued; it starts in a moment.",
+        "local": "ElevenLabs didn't respond; transcribing on this computer…",
+        "failed": "The transcript didn't go through. Your audio and notes are safe.",
+        "keyRefused": "ElevenLabs refused the key. Change it in Settings and try again; your audio and notes are safe."
+      },
       "cancel": "Cancel",
       "template": "Notes template",
       "generate": "Generate notes",
@@ -1532,7 +1543,7 @@
     "key": {
       "label": "ElevenLabs key",
       "saved": "Saved in the system keyring. Meetings are transcribed.",
-      "missing": "Without it, meetings record but are not transcribed. It stays in the system keyring and is never shown again."
+      "missing": "Without it, meetings are transcribed on this computer, less accurately and without telling speakers apart. It stays in the system keyring and is never shown again."
     },
     "notesKey": {
       "label": "Anthropic key",

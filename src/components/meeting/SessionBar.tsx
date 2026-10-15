@@ -20,6 +20,10 @@ export interface SessionBarProps {
   onToggleTranscript: () => void;
   onRecordDraft: () => void;
   transcribing: boolean;
+  /** "Transcrever", or what it is while the transcript runs, waits for a retry or failed. */
+  transcribeLabel: string;
+  /** The automatic transcript waits for a retry or failed: the bar says so. */
+  transcriptStatus?: string;
   transcribeDisabled: boolean;
   /** Why "Transcrever" is off, when it is for lack of something the person can fix. */
   transcribeHint?: string;
@@ -147,9 +151,7 @@ export function SessionBar(props: SessionBarProps) {
           title={props.transcribeHint}
           onClick={props.onTranscribe}
         >
-          {props.transcribing
-            ? t("meeting.view.transcribing")
-            : t("meeting.view.transcribe")}
+          {props.transcribeLabel}
         </Button>
         <GenerateButton {...props} />
       </>
@@ -177,8 +179,12 @@ export function SessionBar(props: SessionBarProps) {
       {/* Kept for "Ask about this meeting" (meeting-chat), which takes this space later. Until
           then it says why a button is off: a disabled button takes no focus, so a tooltip
           alone would not reach the keyboard or a screen reader. */}
-      <div className="min-w-0 flex-1 text-caption text-text-2">
-        {!live && !props.draft && (props.transcribeHint ?? props.generateHint)}
+      <div role="status" className="min-w-0 flex-1 text-caption text-text-2">
+        {!live &&
+          !props.draft &&
+          (props.transcriptStatus ??
+            props.transcribeHint ??
+            props.generateHint)}
       </div>
       {actions}
     </div>

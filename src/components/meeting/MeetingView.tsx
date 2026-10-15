@@ -29,6 +29,7 @@ import {
   errorKey,
   needsConfirmation,
   sessionHints,
+  transcriptWait,
   titleOf,
 } from "./meetingModel";
 import { NotesView } from "./NotesView";
@@ -117,6 +118,12 @@ export function MeetingView(props: MeetingViewProps) {
       : detail.audio_available || detail.audio_pending
         ? "kept"
         : "deleted";
+  const wait = transcriptWait(
+    detail.auto_transcript,
+    props.transcribing,
+    detail.transcript_local,
+    props.keys?.elevenlabs,
+  );
   const hints = sessionHints(props.keys ?? null, {
     transcript: detail.lines.length > 0,
     typed: typedHere || detail.annotations.trim() !== "",
@@ -753,6 +760,17 @@ export function MeetingView(props: MeetingViewProps) {
           props.recordingElsewhere
         }
         transcribing={props.transcribing}
+        transcribeLabel={t(wait.action)}
+        transcriptStatus={
+          // Why a button is off wins over the "local" label: it is the only way to reach it.
+          wait.status &&
+          !(
+            wait.status === "meeting.view.localTranscript" &&
+            (hints.transcribe ?? hints.generate)
+          )
+            ? t(wait.status)
+            : undefined
+        }
         transcribeHint={hints.transcribe ? t(hints.transcribe) : undefined}
         transcribeDisabled={
           props.recording ||

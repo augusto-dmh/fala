@@ -18,6 +18,7 @@ pub(crate) mod erase;
 pub(crate) mod granola;
 pub(crate) mod import;
 pub(crate) mod lifecycle;
+pub(crate) mod local;
 pub(crate) mod output;
 pub(crate) mod people;
 pub(crate) mod pipeline;
@@ -1253,13 +1254,11 @@ impl MeetingManager {
         quit
     }
 
-    /// With the key in the keyring, the transcript follows a stop, an import, a recovery or a
-    /// "Keep" without another click. A failure waits for its retry (`retry`): `None` then, and the
-    /// notes follow the transcript when it arrives.
+    /// The transcript follows a stop, an import, a recovery or a "Keep" without another click: by
+    /// Scribe with the key, else by the local model (ADR-0023; the name is from before that). A
+    /// failure waits for its retry or the local fallback (`retry`): `None` then, and the notes
+    /// follow the transcript when it arrives.
     pub(crate) fn transcribe_if_keyed(&self, id: SessionId) -> Option<Vec<pipeline::MeetingLine>> {
-        if !pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
-            return None;
-        }
         match self.transcribe_with(id, None) {
             Ok(lines) => Some(lines),
             Err(e) => {
@@ -1269,16 +1268,13 @@ impl MeetingManager {
         }
     }
 
-    /// After a take's stop, with the key in the keyring: only the take is sent, and its
-    /// transcript goes after the session's.
+    /// After a take's stop: only the take is transcribed, and its transcript goes after the
+    /// session's.
     pub(crate) fn transcribe_take_if_keyed(
         &self,
         id: SessionId,
         take: &MeetingTake,
     ) -> Option<Vec<pipeline::MeetingLine>> {
-        if !pipeline::has_key(self.keys.as_ref(), pipeline::SCRIBE_KEY) {
-            return None;
-        }
         self.transcribe_with(id, Some(take))
             .map_err(|e| self.transcript_failed(id, Some(take), e))
             .ok()

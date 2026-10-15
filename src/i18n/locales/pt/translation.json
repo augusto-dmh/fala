@@ -1264,7 +1264,6 @@
       "missingElevenlabs": "Falta a chave da ElevenLabs: é com ela que as reuniões são transcritas.",
       "missingAnthropic": "Falta a chave da Anthropic: é com ela que as notas são escritas.",
       "add": "Adicionar chave",
-      "transcribeNeedsKey": "Adicione a chave da ElevenLabs em Configurações para transcrever.",
       "notesNeedKey": "Adicione a chave da Anthropic em Configurações para escrever as notas.",
       "notesNeedContent": "Transcreva a reunião ou digite notas antes."
     },
@@ -1416,6 +1415,18 @@
       "continue": "Retomar",
       "transcribe": "Transcrever",
       "transcribing": "Transcrevendo…",
+      "retryNow": "Tentar agora",
+      "transcribeCloud": "Transcrever na nuvem",
+      "localTranscript": "Transcrita no computador: menos precisa e sem separar quem fala.",
+      "retry": "Tentar de novo",
+      "wait": {
+        "offline": "Sem conexão — tentaremos de novo sozinhos. O áudio e suas notas estão salvos.",
+        "provider": "A ElevenLabs não respondeu — tentaremos de novo sozinhos. O áudio e suas notas estão salvos.",
+        "queued": "Transcrição na fila; começa em instantes.",
+        "local": "A ElevenLabs não respondeu; transcrevendo no computador…",
+        "failed": "A transcrição não deu certo. O áudio e suas notas estão salvos.",
+        "keyRefused": "A ElevenLabs recusou a chave. Troque-a em Configurações e tente de novo; o áudio e suas notas estão salvos."
+      },
       "cancel": "Cancelar",
       "template": "Template das notas",
       "generate": "Gerar notas",
@@ -1532,7 +1543,7 @@
     "key": {
       "label": "Chave da ElevenLabs",
       "saved": "Salva no cofre do sistema. As reuniões são transcritas.",
-      "missing": "Sem ela, as reuniões gravam mas não são transcritas. Fica no cofre do sistema e não aparece de novo."
+      "missing": "Sem ela, as reuniões são transcritas no computador, com menos precisão e sem separar quem fala. Fica no cofre do sistema e não aparece de novo."
     },
     "notesKey": {
       "label": "Chave da Anthropic",

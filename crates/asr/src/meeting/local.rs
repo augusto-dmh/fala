@@ -14,6 +14,26 @@ pub const WINDOW_MS: u64 = 60_000;
 /// Taxa que o Parakeet espera.
 const SAMPLE_RATE_HZ: u64 = 16_000;
 const WINDOW_SAMPLES: usize = (WINDOW_MS * SAMPLE_RATE_HZ / 1_000) as usize;
+/// Pico abaixo do qual a janela é silêncio e nem vai ao modelo (−60 dBFS).
+const SILENCE_PEAK: f32 = 1e-3;
+/// O pico que cada janela passa a ter (−6 dBFS).
+const TARGET_PEAK: f32 = 0.5;
+/// Ganho máximo de uma janela (+40 dB): o pico de uma call baixa (−44 dBFS medido) chega perto
+/// do alvo, e o chiado de um canal quieto não é empurrado até virar "fala" num Whisper.
+const MAX_GAIN: f32 = 100.0;
+
+/// A janela com o pico em [`TARGET_PEAK`], sem passar de [`MAX_GAIN`] e sem atenuar (o pico
+/// nunca passa de 1, então nada clipa); `None` para uma janela em silêncio. O canal do sistema de
+/// uma call chega baixo (−54 dBFS de mediana medido numa reunião real) e o Parakeet o tomaria
+/// por silêncio.
+fn normalized(window: &[f32]) -> Option<Vec<f32>> {
+    let peak = window.iter().fold(0.0_f32, |max, s| max.max(s.abs()));
+    if peak < SILENCE_PEAK {
+        return None;
+    }
+    let gain = (TARGET_PEAK / peak).clamp(1.0, MAX_GAIN);
+    Some(window.iter().map(|s| s * gain).collect())
+}
 
 /// Um [`Transcriber`] local (o Parakeet) aplicado a uma sessão de reunião, em janelas de 60 s.
 /// Sem diarização: cada canal tem um falante só.
@@ -63,9 +83,12 @@ where
                     total_ms,
                 },
             });
+            let Some(window_audio) = normalized(window) else {
+                continue;
+            };
             let transcript = self
                 .transcriber
-                .transcribe(&DictationAudio::new(window.to_vec()), self.language)?;
+                .transcribe(&DictationAudio::new(window_audio), self.language)?;
             let text = transcript.text.trim();
             if !text.is_empty() {
                 out.push(ChannelSegment {
@@ -156,9 +179,10 @@ mod tests {
     use super::*;
     use crate::meeting::{Speaker, MIC_FILE, SYSTEM_FILE};
 
-    /// Devolve "<canal> <n>" e anota o tamanho de cada janela que recebeu.
+    /// Devolve "<canal> <n>" e anota o tamanho e o pico de cada janela que recebeu.
     struct FakeParakeet {
         seen: Arc<Mutex<Vec<usize>>>,
+        peaks: Arc<Mutex<Vec<f32>>>,
         calls: usize,
     }
 
@@ -170,6 +194,8 @@ mod tests {
         ) -> Result<Transcript, AsrError> {
             self.calls += 1;
             self.seen.lock().unwrap().push(audio.samples().len());
+            let peak = audio.samples().iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+            self.peaks.lock().unwrap().push(peak);
             Ok(Transcript {
                 text: format!(" janela {} ", self.calls),
                 language,
@@ -199,6 +225,7 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let fake = FakeParakeet {
             seen: Arc::clone(&seen),
+            peaks: Arc::default(),
             calls: 0,
         };
         (LocalMeeting::new(fake, seconds(secs), Language::PtBr), seen)
@@ -248,6 +275,44 @@ mod tests {
                 (Channel::Mic, Speaker::Me, 60_000),
                 (Channel::System, person1, 60_000),
             ]
+        );
+    }
+
+    #[test]
+    fn quiet_windows_are_raised_and_silent_ones_skipped() {
+        // Uma call a −50 dBFS (pico 0,00316) e, depois, 60 s de silêncio digital.
+        let quiet = 10_f32.powf(-50.0 / 20.0);
+        let mut samples: Vec<f32> = (0..WINDOW_SAMPLES)
+            .map(|i| quiet * (i as f32 * 0.05).sin())
+            .collect();
+        samples.extend(std::iter::repeat_n(0.0, WINDOW_SAMPLES));
+        let peaks = Arc::new(Mutex::new(Vec::new()));
+        let fake = FakeParakeet {
+            seen: Arc::default(),
+            peaks: Arc::clone(&peaks),
+            calls: 0,
+        };
+        let decode: Decode = Box::new(move |_| Ok(samples.clone()));
+        let mut local = LocalMeeting::new(fake, decode, Language::PtBr);
+        let recording = session("quiet", SessionMode::SystemOnly);
+        let segments = local
+            .transcribe_session(&recording, &CancelToken::new(), &mut |_| {})
+            .unwrap();
+        let peaks = peaks.lock().unwrap().clone();
+        assert_eq!(peaks.len(), 1, "a janela em silêncio não vai ao modelo");
+        // +40 dB: de −50 para −10 dBFS, longe do silêncio que o modelo ignoraria.
+        assert!((peaks[0] - quiet * MAX_GAIN).abs() < 0.01, "{peaks:?}");
+        assert_eq!(segments.len(), 1);
+
+        // Alto já está bom: nada é atenuado nem clipa; o chiado não ganha mais de 50 dB.
+        let loud = normalized(&[0.9, -0.2]).unwrap();
+        assert_eq!(loud, [0.9, -0.2]);
+        let hiss = normalized(&[0.002, -0.002]).unwrap();
+        assert!((hiss[0] - 0.002 * MAX_GAIN).abs() < 1e-4, "{hiss:?}");
+        assert_eq!(
+            normalized(&[0.0004; 4]),
+            None,
+            "−68 dBFS de chiado fica fora"
         );
     }
 

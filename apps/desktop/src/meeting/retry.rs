@@ -1,23 +1,26 @@
 //! A stop's transcript never just doesn't happen (ADR-0005: nothing is lost if the transcription
 //! fails). An automatic transcription that fails without network, or because Scribe answered
-//! `429`/`5xx`, waits in a `RetryQueue` and runs again on its own: on the backoff, a few seconds
-//! after the PC wakes, and at the next start (`transcript-pending` next to the audio). The notes
-//! the stop would have written follow the transcript that arrives, by a retry or a click.
+//! `429`/`5xx`, waits in a `RetryQueue` and runs again on its own: on the backoff, as soon as a
+//! probe of Scribe's host connects again (every 10 s while offline), a few seconds after the PC
+//! wakes, and at the next start (`transcript-pending` next to the audio). The notes
+//! the stop would have written follow the transcript that arrives, by a retry or a click. When
+//! Scribe gives up (offline for the 4th time, `429`/`5xx` for the 4th, or any other error), the
+//! local model transcribes the session (ADR-0005), marked local; a local failure is final.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
 
-use fala_asr::meeting::{Failure, Next, RetryQueue};
+use fala_asr::meeting::{reachable, Failure, Next, RetryQueue, PROBE_EVERY, SCRIBE_BASE_URL};
 use fala_meeting::SessionId;
 use fala_storage::MeetingTake;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::Manager;
 
-use super::pipeline::{MeetingLine, ProgressStage};
+use super::pipeline::{MeetingLine, ProgressStage, Route};
 use super::{MeetingError, MeetingManager};
 
 /// In `audio/<id>/` while the session waits for a retry: empty for the whole session, or the
@@ -28,6 +31,10 @@ const MARKER: &str = "transcript-pending";
 const BUSY_RETRY: Duration = Duration::from_secs(30);
 /// After a wake or a start, the network gets this long to come back before the retry.
 const SETTLE: Duration = Duration::from_secs(10);
+/// How long the notes owed to a local transcript wait for the network before trying anyway.
+const NOTES_NETWORK_WAIT: Duration = Duration::from_secs(60 * 60);
+/// How long the probe of Scribe's host waits for the TCP connection.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// What a meeting shows about an automatic transcript that has not arrived.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -48,6 +55,8 @@ pub enum WaitReason {
     Provider,
     /// Not tried yet in this run (after a start, or behind another transcription).
     Queued,
+    /// Scribe gave up: the local model transcribes it next.
+    Local,
 }
 
 #[derive(Default)]
@@ -56,6 +65,8 @@ pub(crate) struct Retries {
     /// The take a retry transcribes; absent, the whole session.
     takes: HashMap<SessionId, MeetingTake>,
     failed: HashMap<SessionId, MeetingError>,
+    /// The jobs the local model runs, after Scribe gave up.
+    local: HashSet<SessionId>,
     /// Wakes the `meeting-retry` thread, started with the first retry.
     wake: Option<Sender<()>>,
 }
@@ -66,6 +77,7 @@ enum Outcome {
     Retry(Failure),
     Later,
     Drop,
+    Fail,
 }
 
 fn outcome(error: &MeetingError) -> Outcome {
@@ -75,6 +87,9 @@ fn outcome(error: &MeetingError) -> Outcome {
             status: Some(_), ..
         } => Outcome::Retry(Failure::Busy),
         MeetingError::Busy | MeetingError::StillRecording => Outcome::Later,
+        // Scribe refused the key: the meeting says so ("Tentar de novo" once it is fixed) rather
+        // than hiding it behind a local transcript.
+        MeetingError::InvalidKey => Outcome::Fail,
         // The person cancelled, or nothing is left to send.
         MeetingError::Cancelled
         | MeetingError::NoAudio
@@ -108,10 +123,13 @@ fn wait_reason(failures: u32, offline: bool) -> WaitReason {
     }
 }
 
-/// The take a marker names; `Some(None)` for the whole session, `None` without a marker.
-fn read_marker(dir: &Path) -> Option<Option<u32>> {
+/// The take a marker names (`Some(None)` for the whole session, `None` without a marker) and
+/// whether Scribe already gave up (an `L` before the take).
+fn read_marker(dir: &Path) -> Option<(Option<u32>, bool)> {
     let text = std::fs::read_to_string(dir.join(MARKER)).ok()?;
-    Some(text.trim().parse().ok())
+    let text = text.trim();
+    let take = text.trim_start_matches('L');
+    Some((take.parse().ok(), take.len() < text.len()))
 }
 
 impl MeetingManager {
@@ -119,8 +137,8 @@ impl MeetingManager {
         self.retries.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// An automatic transcription failed: the session waits for its retry, or the meeting shows
-    /// the failure with "Tentar de novo".
+    /// An automatic transcription failed: the session waits for its retry or for the local model,
+    /// or the meeting shows the failure with "Tentar de novo".
     pub(crate) fn transcript_failed(
         &self,
         id: SessionId,
@@ -128,17 +146,38 @@ impl MeetingManager {
         error: MeetingError,
     ) {
         let now = Instant::now();
+        // Without the key (or "local only") the try was already local.
+        let local_route = self
+            .with_store(|store| Ok(store.meeting(id)?))
+            .is_ok_and(|record| self.route(&record) == Route::Local);
         let mut retries = self.retries();
         let queued = retries
             .queue
             .get(id)
             .map(|_| retries.takes.get(&id).map(|t| t.take));
-        let next = match outcome(&error) {
+        let was_local = local_route || retries.local.contains(&id);
+        let outcome = match outcome(&error) {
+            Outcome::Retry(_) if was_local => Outcome::Fail,
+            other => other,
+        };
+        let next = match outcome {
             Outcome::Drop => {
                 log::info!("meeting {id}: automatic transcription stopped: {error}");
                 retries.queue.forget(id);
                 retries.takes.remove(&id);
                 retries.failed.remove(&id);
+                retries.local.remove(&id);
+                drop(retries);
+                self.clear_marker(id);
+                return;
+            }
+            // The local model failed too, or the key was refused: nothing else to try on its own.
+            Outcome::Fail => {
+                log::warn!("meeting {id}: automatic transcription failed: {error}");
+                retries.queue.forget(id);
+                retries.takes.remove(&id);
+                retries.local.remove(&id);
+                retries.failed.insert(id, error);
                 drop(retries);
                 self.clear_marker(id);
                 return;
@@ -156,33 +195,37 @@ impl MeetingManager {
             }
             Outcome::Retry(failure) => retries.queue.failed(id, failure, now),
         };
+        let job = merged_take(queued, take.map(|t| t.take));
+        match (job, take) {
+            (Some(_), Some(take)) => {
+                retries.takes.insert(id, take.clone());
+            }
+            _ => {
+                retries.takes.remove(&id);
+            }
+        }
         match next {
             Next::RetryAt(at) => {
-                let job = merged_take(queued, take.map(|t| t.take));
-                match (job, take) {
-                    (Some(_), Some(take)) => {
-                        retries.takes.insert(id, take.clone());
-                    }
-                    _ => {
-                        retries.takes.remove(&id);
-                    }
-                }
                 let waiting = retries.queue.get(id);
                 self.run_retries(&mut retries);
                 drop(retries);
                 let secs = at.saturating_duration_since(now).as_secs();
                 log::warn!("meeting {id}: transcription failed ({error}); retrying in {secs} s");
-                self.write_marker(id, job);
+                self.write_marker(id, job, false);
                 let reason =
                     waiting.map_or(WaitReason::Queued, |w| wait_reason(w.failures, w.offline));
                 self.progress(id, ProgressStage::Waiting { reason });
             }
+            // Scribe gave up: the local model takes the session, at once (ADR-0005).
             Next::GiveUp => {
-                log::warn!("meeting {id}: automatic transcription failed: {error}");
-                retries.takes.remove(&id);
-                retries.failed.insert(id, error);
+                retries.local.insert(id);
+                retries.queue.later(id, now);
+                self.run_retries(&mut retries);
                 drop(retries);
-                self.clear_marker(id);
+                log::warn!("meeting {id}: transcription failed ({error}); transcribing locally");
+                self.write_marker(id, job, true);
+                let reason = WaitReason::Local;
+                self.progress(id, ProgressStage::Waiting { reason });
             }
         }
     }
@@ -199,6 +242,7 @@ impl MeetingManager {
         retries.queue.forget(id);
         retries.takes.remove(&id);
         retries.failed.remove(&id);
+        retries.local.remove(&id);
         drop(retries);
         if queued {
             self.clear_marker(id);
@@ -226,6 +270,14 @@ impl MeetingManager {
             .name("meeting-owed-notes".to_string())
             .spawn(move || {
                 if let Some(manager) = app.try_state::<Arc<MeetingManager>>() {
+                    // A local transcript may arrive offline: the notes wait for the network.
+                    let mut waited = Duration::ZERO;
+                    while waited < NOTES_NETWORK_WAIT
+                        && !reachable(fala_notes::DEFAULT_BASE_URL, PROBE_TIMEOUT)
+                    {
+                        std::thread::sleep(PROBE_EVERY);
+                        waited += PROBE_EVERY;
+                    }
                     manager.auto_notes(id, &lines);
                 }
             });
@@ -238,7 +290,11 @@ impl MeetingManager {
     pub(crate) fn transcript_wait(&self, id: SessionId) -> Option<TranscriptWait> {
         let retries = self.retries();
         if let Some(waiting) = retries.queue.get(id) {
-            let reason = wait_reason(waiting.failures, waiting.offline);
+            let reason = if retries.local.contains(&id) {
+                WaitReason::Local
+            } else {
+                wait_reason(waiting.failures, waiting.offline)
+            };
             return Some(TranscriptWait::Waiting { reason });
         }
         retries.failed.get(&id).map(|error| TranscriptWait::Failed {
@@ -268,7 +324,7 @@ impl MeetingManager {
                 .collect::<Vec<_>>())
         });
         for id in ended.unwrap_or_default() {
-            let Some(take) = read_marker(&self.session_dir(id)) else {
+            let Some((take, local)) = read_marker(&self.session_dir(id)) else {
                 continue;
             };
             let take = take.and_then(|n| {
@@ -286,6 +342,9 @@ impl MeetingManager {
             if let Some(take) = take {
                 retries.takes.insert(id, take);
             }
+            if local {
+                retries.local.insert(id);
+            }
             self.run_retries(&mut retries);
         }
     }
@@ -301,21 +360,46 @@ impl MeetingManager {
         let app = self.app.clone();
         let spawned = std::thread::Builder::new()
             .name("meeting-retry".to_string())
-            .spawn(move || loop {
-                let Some(manager) = app.try_state::<Arc<MeetingManager>>() else {
-                    return;
-                };
-                let next = manager.retries().queue.next_due();
-                let woke = match next {
-                    Some(at) => woken.recv_timeout(at.saturating_duration_since(Instant::now())),
-                    None => woken.recv().map_err(|_| RecvTimeoutError::Disconnected),
-                };
-                if woke == Err(RecvTimeoutError::Disconnected) {
-                    return;
-                }
-                let due = manager.retries().queue.take_due(Instant::now());
-                for id in due {
-                    manager.retry(id);
+            .spawn(move || {
+                // Only a probe that connects after one that did not wakes the queue: a host that
+                // answers while the request still fails must not turn the backoff into 10 s.
+                let mut was_reachable = true;
+                loop {
+                    let Some(manager) = app.try_state::<Arc<MeetingManager>>() else {
+                        return;
+                    };
+                    let (next, offline) = {
+                        let retries = manager.retries();
+                        (retries.queue.next_due(), retries.queue.any_offline())
+                    };
+                    let mut wait = next.map(|at| at.saturating_duration_since(Instant::now()));
+                    if offline {
+                        wait = Some(wait.map_or(PROBE_EVERY, |w| w.min(PROBE_EVERY)));
+                    }
+                    let woke = match wait {
+                        Some(wait) => woken.recv_timeout(wait),
+                        None => woken.recv().map_err(|_| RecvTimeoutError::Disconnected),
+                    };
+                    if woke == Err(RecvTimeoutError::Disconnected) {
+                        return;
+                    }
+                    let early = next.is_some_and(|at| at > Instant::now());
+                    if offline && early {
+                        let now_reachable = reachable(SCRIBE_BASE_URL, PROBE_TIMEOUT);
+                        if now_reachable && !was_reachable {
+                            log::info!(
+                                "meeting: the network is back; retrying the waiting transcripts"
+                            );
+                            manager.retries().queue.wake_offline(Instant::now());
+                        }
+                        was_reachable = now_reachable;
+                    } else if !offline {
+                        was_reachable = true;
+                    }
+                    let due = manager.retries().queue.take_due(Instant::now());
+                    for id in due {
+                        manager.retry(id);
+                    }
                 }
             });
         match spawned {
@@ -325,11 +409,15 @@ impl MeetingManager {
     }
 
     fn retry(&self, id: SessionId) {
-        let take = self.retries().takes.get(&id).cloned();
-        log::info!("meeting {id}: retrying the transcription");
+        let (take, route) = {
+            let retries = self.retries();
+            let route = retries.local.contains(&id).then_some(Route::Local);
+            (retries.takes.get(&id).cloned(), route)
+        };
+        log::info!("meeting {id}: retrying the transcription ({route:?})");
         let owed = self.notes_owed(id);
-        // On success `transcribe_with` takes the session out of the queue.
-        match self.transcribe_with(id, take.as_ref()) {
+        // On success `transcribe_by` takes the session out of the queue.
+        match self.transcribe_by(id, take.as_ref(), route) {
             Ok(lines) if owed => self.spawn_owed_notes(id, lines),
             Ok(_) => {}
             // A click transcribed it meanwhile (this try found the slot busy): nothing waits.
@@ -338,8 +426,9 @@ impl MeetingManager {
         }
     }
 
-    fn write_marker(&self, id: SessionId, take: Option<u32>) {
-        let text = take.map(|n| n.to_string()).unwrap_or_default();
+    fn write_marker(&self, id: SessionId, take: Option<u32>, local: bool) {
+        let take = take.map(|n| n.to_string()).unwrap_or_default();
+        let text = if local { format!("L{take}") } else { take };
         if let Err(e) = std::fs::write(self.session_dir(id).join(MARKER), text) {
             log::warn!("meeting {id}: retry not marked for the next start: {e}");
         }
@@ -375,6 +464,7 @@ mod tests {
             Outcome::Retry(Failure::Busy)
         );
         assert_eq!(outcome(&MeetingError::Busy), Outcome::Later);
+        assert_eq!(outcome(&MeetingError::InvalidKey), Outcome::Fail);
         assert_eq!(outcome(&MeetingError::StillRecording), Outcome::Later);
         for gone in [
             MeetingError::Cancelled,
@@ -431,8 +521,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(read_marker(dir.path()), None);
         std::fs::write(dir.path().join(MARKER), "").unwrap();
-        assert_eq!(read_marker(dir.path()), Some(None));
+        assert_eq!(read_marker(dir.path()), Some((None, false)));
         std::fs::write(dir.path().join(MARKER), "3").unwrap();
-        assert_eq!(read_marker(dir.path()), Some(Some(3)));
+        assert_eq!(read_marker(dir.path()), Some((Some(3), false)));
+        std::fs::write(dir.path().join(MARKER), "L3").unwrap();
+        assert_eq!(read_marker(dir.path()), Some((Some(3), true)));
+        std::fs::write(dir.path().join(MARKER), "L").unwrap();
+        assert_eq!(read_marker(dir.path()), Some((None, true)));
     }
 }

@@ -31,6 +31,7 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
       onToggleTranscript={noop}
       onRecordDraft={noop}
       transcribing={false}
+      transcribeLabel="meeting.view.transcribe"
       transcribeDisabled={false}
       onTranscribe={noop}
       onCancelTranscription={noop}

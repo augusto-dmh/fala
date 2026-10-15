@@ -328,7 +328,12 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
           if (stage.stage === "done" || stage.stage === "failed")
             setImporting(false);
         }
-        if (stage.stage === "transcribing" || stage.stage === "notes")
+        // A failure that waits for its retry is not a failure on the list.
+        if (
+          stage.stage === "transcribing" ||
+          stage.stage === "notes" ||
+          stage.stage === "waiting"
+        )
           setFailed((ids) => withoutId(ids, id));
         if (stage.stage === "failed") setFailed((ids) => new Set(ids).add(id));
         // A new transcription replaces an older notes failure: a failure now is the ASR's.
@@ -346,7 +351,11 @@ export function MeetingsPage({ onOpenSettings, home = 0 }: MeetingsPageProps) {
         if (stage.stage === "done" && takesWithNotes.current.delete(id)) {
           setTakeTranscribed((current) => new Set(current).add(id));
         }
-        if (stage.stage === "done" || stage.stage === "failed") {
+        if (
+          stage.stage === "done" ||
+          stage.stage === "failed" ||
+          stage.stage === "waiting"
+        ) {
           setTranscribing((current) => (current === id ? null : current));
           setGenerating((current) => (current === id ? null : current));
           void refresh();

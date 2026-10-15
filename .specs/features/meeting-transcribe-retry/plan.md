@@ -48,10 +48,29 @@ O diff inteiro passa de 1000 linhas; vão dois PRs empilhados:
    depois de N tentativas, erro não-retriable, desistência do provedor, e sem chave: Q28 ligada pelo
    orquestrador, ADR-0023 proposta), com a transcrição marcada como local e "Transcrever na nuvem".
 
+## Fatia 2 — fallback local, sonda e estado na reunião
+
+6. Sonda (`reachable`: TCP no host da Scribe, DNS com prazo, nada enviado) a cada 10 s enquanto há
+   sessão sem rede; só uma que conecta depois de falhar adianta as sessões sem rede
+   (`wake_offline`). Sem rede desiste na 4ª falha.
+7. Desistir da nuvem (sem rede 4×, `429`/`5xx` 4×, erro final) vira trabalho local
+   (`WaitReason::Local`, `Route::Local`); falha local é definitiva. `401`/`403` → `InvalidKey`:
+   a reunião pede outra chave. `batch` em `TranscriptionManager` serializa `transcribe` (ditado e
+   janela da reunião esperam um ao outro); o adaptador recarrega o modelo descarregado.
+8. `route`: nuvem com chave; local sem chave (Q28, ADR-0023 proposta) ou "só local". `local.rs`
+   decodifica o Opus em blocos de 10 min a 16 kHz e zera o 1º segundo do sistema numa gravação
+   (som de início). As notas devidas a uma transcrição local esperam a rede (até 1 h).
+9. `LocalMeeting`: pico de cada janela a −6 dBFS (ganho 1×–100×), janela abaixo de −60 dBFS fora
+   (a call chega a −54 dBFS).
+10. `meeting_local_transcripts` marca a transcrição local; `MeetingDetail.transcript_local`; a
+    barra mostra espera, falha, "Transcrita no computador" e "Transcrever na nuvem" com a chave.
+
 ## Impact
 
 | Front | What changes |
 | --- | --- |
 | `crates/asr` | `meeting/retry.rs` novo, exportado |
 | `apps/desktop` | `meeting/retry.rs` novo; `MeetingError::Unreachable`; `ProgressStage::Waiting`; `MeetingDetail.auto_transcript`; ganchos no sono e no `spawn_upkeep` |
-| UI | `transcriptWait` em `meetingModel.ts`; `SessionBar` com status e rótulo; `MeetingsPage` trata `waiting`; strings pt/en |
+| UI | `transcriptWait` em `meetingModel.ts`; `SessionBar` com status e rótulo; `MeetingsPage` trata `waiting`; strings pt/en (fatia 2) |
+| `crates/storage` | `meeting_local_transcripts` (fatia 2) |
+| `docs/decisions` | ADR-0023 proposta: transcrição local sem chave (fatia 2) |

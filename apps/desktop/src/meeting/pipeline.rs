@@ -141,6 +141,10 @@ pub struct MeetingDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub series: Option<super::series::MeetingSeries>,
+    /// The transcript came from the local model: the meeting offers to transcribe it in the cloud.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub transcript_local: Option<bool>,
     /// The automatic transcript has not arrived: it waits for a retry, or failed for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
@@ -531,9 +535,22 @@ impl From<fala_asr::AsrError> for MeetingError {
                 status,
                 reason,
             } => MeetingError::Unreachable { status, reason },
+            fala_asr::AsrError::Network {
+                status: Some(401 | 403),
+                ..
+            } => MeetingError::InvalidKey,
             other => MeetingError::Transcription(other.to_string()),
         }
     }
+}
+
+/// Where a transcript comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Route {
+    /// ElevenLabs Scribe (ADR-0005).
+    Cloud,
+    /// The dictation model on this computer: offline, Scribe gave up, no key, or "local only".
+    Local,
 }
 
 /// The long job in flight: a transcription (cancellable) or a notes generation.
@@ -675,6 +692,7 @@ impl MeetingManager {
                 audio_pending,
                 sleeps,
                 auto_transcript,
+                transcript_local: store.meeting_transcript_local(id)?.then_some(true),
             })
         })
     }
@@ -760,11 +778,22 @@ impl MeetingManager {
     }
 
     /// The whole session (`take` absent) or only a take just recorded, whose transcript goes
-    /// after the existing one with the names kept.
+    /// after the existing one with the names kept. By Scribe with the key, else by the local
+    /// model (ADR-0023); always local in a "local only" session (ADR-0005).
     pub(crate) fn transcribe_with(
         &self,
         id: SessionId,
         take: Option<&MeetingTake>,
+    ) -> Result<Vec<MeetingLine>, MeetingError> {
+        self.transcribe_by(id, take, None)
+    }
+
+    /// `transcribe_with` by the given route; `None` picks it from the key and the session.
+    pub(crate) fn transcribe_by(
+        &self,
+        id: SessionId,
+        take: Option<&MeetingTake>,
+        route: Option<Route>,
     ) -> Result<Vec<MeetingLine>, MeetingError> {
         if self.status().id.as_deref() == Some(id.to_string().as_str()) {
             return Err(MeetingError::StillRecording);
@@ -776,6 +805,7 @@ impl MeetingManager {
         if record.started_at.is_none() || record.ended_at.is_none() {
             return Err(MeetingError::StillRecording);
         }
+        let route = route.unwrap_or_else(|| self.route(&record));
         let cancel = CancelToken::new();
         {
             let mut work = self.work.lock().unwrap_or_else(|e| e.into_inner());
@@ -788,7 +818,7 @@ impl MeetingManager {
             work: &self.work,
             notes: false,
         };
-        let result = self.run_transcription(id, &record, &cancel, take);
+        let result = self.run_transcription(id, &record, &cancel, take, route);
         match &result {
             Ok(lines) => {
                 log::info!("meeting {id}: {} transcript segments", lines.len());
@@ -805,16 +835,38 @@ impl MeetingManager {
         result
     }
 
+    /// Scribe when the key is there, else the local model; "local only" never calls the cloud.
+    pub(crate) fn route(&self, record: &MeetingRecord) -> Route {
+        if record.local_only || !has_key(self.keys.as_ref(), SCRIBE_KEY) {
+            Route::Local
+        } else {
+            Route::Cloud
+        }
+    }
+
     fn run_transcription(
         &self,
         id: SessionId,
         record: &MeetingRecord,
         cancel: &CancelToken,
         only: Option<&MeetingTake>,
+        route: Route,
     ) -> Result<Vec<MeetingLine>, MeetingError> {
-        let key = scribe_key(self.keys.as_ref())?;
-        let options = scribe_options(&crate::settings::get_settings(&self.app));
-        let mut scribe = ElevenLabsScribe::new(key, options);
+        let settings = crate::settings::get_settings(&self.app);
+        let mut backend: Box<dyn MeetingTranscriber> = match route {
+            Route::Cloud => Box::new(ElevenLabsScribe::new(
+                scribe_key(self.keys.as_ref())?,
+                scribe_options(&settings),
+            )),
+            Route::Local => {
+                log::info!("meeting {id}: transcribing with the local model");
+                let language = crate::managers::history_dictations::language_from_setting(
+                    &settings.selected_language,
+                );
+                let recorded = record.mode != fala_meeting::SessionMode::Import;
+                super::local::local_meeting(&self.app, language, recorded)?
+            }
+        };
         // A resumed session is transcribed take by take, each on the session's timeline.
         let mut segments = Vec::new();
         let takes = match only {
@@ -834,19 +886,24 @@ impl MeetingManager {
                 continue;
             }
             let recording = MeetingRecording::from_session_dir(&take.dir, record.mode)?;
-            let found = scribe.transcribe_session(&recording, cancel, &mut |progress| {
+            let found = backend.transcribe_session(&recording, cancel, &mut |progress| {
                 self.progress(id, progress_stage(progress));
             })?;
             segments =
                 fala_storage::on_timeline(segments, segments_for_store(found), take.offset_ms);
         }
         let now = chrono::Local::now().fixed_offset();
+        let local = route == Route::Local;
         self.with_store(|store| {
             match only {
                 // Already on the session's timeline: the append only numbers its people after
                 // the session's.
                 Some(_) => store.append_meeting_segments(id, segments, 0, now)?,
                 None => store.replace_meeting_segments(id, segments, now)?,
+            }
+            // A local take marks the transcript local; a cloud one leaves the mark it had.
+            if local || only.is_none() {
+                store.set_meeting_transcript_local(id, local)?;
             }
             Ok(store.meeting_segments(id)?.iter().map(line).collect())
         })
