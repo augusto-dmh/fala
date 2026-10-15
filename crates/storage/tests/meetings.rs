@@ -524,3 +524,28 @@ fn retained_audio_can_be_cleared() {
     assert!(!store.meeting(meeting.id).unwrap().audio_retained);
     assert_not_found(store.clear_meeting_audio_retained(id(99)), id(99));
 }
+
+#[test]
+fn local_transcript_is_marked_until_the_cloud_replaces_it() {
+    let e = env("meetings_local_transcript");
+    let store = e.open();
+    let meeting = new_meeting(1, 14);
+    store.create_meeting(&meeting).unwrap();
+    assert!(!store.meeting_transcript_local(meeting.id).unwrap());
+    store
+        .set_meeting_transcript_local(meeting.id, true)
+        .unwrap();
+    assert!(store.meeting_transcript_local(meeting.id).unwrap());
+    store
+        .set_meeting_transcript_local(meeting.id, false)
+        .unwrap();
+    assert!(!store.meeting_transcript_local(meeting.id).unwrap());
+    store
+        .set_meeting_transcript_local(meeting.id, true)
+        .unwrap();
+    store.delete_meeting(meeting.id).unwrap();
+    assert!(
+        !store.meeting_transcript_local(meeting.id).unwrap(),
+        "sai com a sessão"
+    );
+}

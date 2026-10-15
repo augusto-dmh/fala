@@ -5,6 +5,7 @@ import type {
   MeetingLine,
   MeetingSummary,
   ProgressStage,
+  TranscriptWait,
 } from "@/bindings";
 
 /** `mm:ss`, or `h:mm:ss` from one hour on. */
@@ -84,9 +85,7 @@ export function sessionHints(
           : content.audio === "imported"
             ? "meeting.granola.noAudio"
             : "meeting.source.noAudio"
-        : keys && !keys.elevenlabs
-          ? "meeting.keys.transcribeNeedsKey"
-          : null,
+        : null,
     generate:
       keys && !keys.anthropic
         ? "meeting.keys.notesNeedKey"
@@ -94,6 +93,40 @@ export function sessionHints(
           ? "meeting.keys.notesNeedContent"
           : null,
   };
+}
+
+/** What the bar says about an automatic transcript that has not arrived (it waits for a retry or
+ * the local model, or failed for good), or about one the local model wrote, and the label
+ * "Transcrever" takes: "Transcrever na nuvem" once the ElevenLabs key is there. Keys of i18n. */
+export function transcriptWait(
+  wait: TranscriptWait | null | undefined,
+  transcribing: boolean,
+  local: boolean | null = false,
+  cloudKey = false,
+): { status: string | null; action: string } {
+  if (transcribing)
+    return { status: null, action: "meeting.view.transcribing" };
+  if (wait?.state === "waiting")
+    return {
+      status: `meeting.view.wait.${wait.reason}`,
+      action: "meeting.view.retryNow",
+    };
+  if (wait?.state === "failed")
+    return {
+      status:
+        wait.error.kind === "invalid_key"
+          ? "meeting.view.wait.keyRefused"
+          : "meeting.view.wait.failed",
+      action: "meeting.view.retry",
+    };
+  if (local)
+    return {
+      status: "meeting.view.localTranscript",
+      action: cloudKey
+        ? "meeting.view.transcribeCloud"
+        : "meeting.view.transcribe",
+    };
+  return { status: null, action: "meeting.view.transcribe" };
 }
 
 /** The step whose command failed: it says which key a `missing_key` is about. */

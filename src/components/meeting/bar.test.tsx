@@ -52,6 +52,7 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
       onToggleTranscript={noop}
       onRecordDraft={noop}
       transcribing={false}
+      transcribeLabel="meeting.view.transcribe"
       transcribeDisabled={false}
       onTranscribe={noop}
       onCancelTranscription={noop}
@@ -76,7 +77,11 @@ const bar = (over: Partial<SessionBarProps> = {}) =>
   assert.ok(!done.includes(PICKER), "o template fica atrás da seta");
   assert.ok(!done.includes("meeting.view.cancel"));
   assert.ok(bar({ transcriptOpen: true }).includes('aria-pressed="true"'));
-  const running = bar({ transcribing: true, transcribeDisabled: true });
+  const running = bar({
+    transcribing: true,
+    transcribeLabel: "meeting.view.transcribing",
+    transcribeDisabled: true,
+  });
   assert.ok(running.includes("meeting.view.transcribing"));
   assert.ok(running.includes("meeting.view.cancel"));
 

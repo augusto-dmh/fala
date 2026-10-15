@@ -19,7 +19,8 @@ pub use elevenlabs::{ElevenLabsScribe, ScribeOptions, SCRIBE_BASE_URL};
 pub use guard::{MeetingRecording, MIC_FILE, SYSTEM_FILE};
 pub use local::{transcribe_with_fallback, LocalMeeting, MeetingRoute, WINDOW_MS};
 pub use retry::{
-    Failure, Next, RetryQueue, Waiting, BUSY_DELAYS, OFFLINE_DELAYS, OFFLINE_MAX_FAILURES,
+    reachable, Failure, Next, RetryQueue, Waiting, BUSY_DELAYS, OFFLINE_DELAYS,
+    OFFLINE_MAX_FAILURES, PROBE_EVERY,
 };
 pub use segments::{Channel, Segment, Speaker};
 

@@ -281,6 +281,9 @@ pub struct TranscriptionManager {
     /// `is_model_loaded()` consults this so the model still reports "loaded"
     /// while the worker holds it.
     active_engine_lease: Arc<AtomicU64>,
+    /// Held for a whole batch `transcribe`: a meeting's local windows and a
+    /// dictation wait for each other instead of finding the engine taken.
+    batch: Arc<Mutex<()>>,
 }
 
 impl TranscriptionManager {
@@ -301,6 +304,7 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
+            batch: Arc::new(Mutex::new(())),
         };
 
         // Start the idle watcher
@@ -1205,6 +1209,7 @@ impl TranscriptionManager {
             self.maybe_unload_immediately("empty audio");
             return Ok(String::new());
         }
+        let _batch = self.batch.lock().unwrap_or_else(|e| e.into_inner());
 
         // Check if model is loaded, if not try to load it
         {

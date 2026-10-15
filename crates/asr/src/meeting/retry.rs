@@ -4,6 +4,9 @@
 
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::AsrError;
@@ -40,15 +43,18 @@ impl Failure {
     }
 }
 
-/// Esperas depois de cada falha sem rede; da última em diante, a mesma espera até o limite.
-pub const OFFLINE_DELAYS: [Duration; 4] = [
+/// Esperas depois de cada falha sem rede. Entre elas, a [`reachable`] a cada [`PROBE_EVERY`]
+/// adianta a tentativa quando a rede volta.
+pub const OFFLINE_DELAYS: [Duration; 3] = [
     Duration::from_secs(10),
     Duration::from_secs(30),
     Duration::from_secs(60),
-    Duration::from_secs(5 * 60),
 ];
-/// Falhas seguidas sem rede até desistir (uns 20 min com as esperas acima).
-pub const OFFLINE_MAX_FAILURES: u32 = 8;
+/// Falhas seguidas sem rede até desistir (uns 2 min com as esperas acima, ou antes se a sonda
+/// achar a rede); quem chama passa então para o caminho local (ADR-0005).
+pub const OFFLINE_MAX_FAILURES: u32 = 4;
+/// De quanto em quanto tempo sondar a rede enquanto alguma sessão espera sem rede.
+pub const PROBE_EVERY: Duration = Duration::from_secs(10);
 /// Esperas depois de cada `429`/`5xx`; acabadas, a sessão desiste.
 pub const BUSY_DELAYS: [Duration; 3] = [
     Duration::from_secs(60),
@@ -155,9 +161,24 @@ impl<K: Copy + Eq + Hash> RetryQueue<K> {
         due
     }
 
+    /// Alguma sessão marcada espera porque a última tentativa foi sem rede: vale sondar.
+    pub fn any_offline(&self) -> bool {
+        self.waiting.values().any(|w| w.offline && w.due.is_some())
+    }
+
     /// A próxima tentativa marcada, se houver.
     pub fn next_due(&self) -> Option<Instant> {
         self.waiting.values().filter_map(|w| w.due).min()
+    }
+
+    /// A rede voltou: só as sessões que esperam por ela passam para `at`; as que esperam o
+    /// provedor (`429`/`5xx`) mantêm a espera.
+    pub fn wake_offline(&mut self, at: Instant) {
+        for waiting in self.waiting.values_mut().filter(|w| w.offline) {
+            if let Some(due) = &mut waiting.due {
+                *due = (*due).min(at);
+            }
+        }
     }
 
     /// O PC acordou: toda tentativa marcada para depois de `at` passa para
@@ -169,6 +190,40 @@ impl<K: Copy + Eq + Hash> RetryQueue<K> {
             }
         }
     }
+}
+
+/// Se uma conexão TCP com o host de `base_url` abre em `timeout`: a sonda de que a rede voltou.
+/// Não envia nada (nem chave, nem áudio); só `http://` e `https://`.
+pub fn reachable(base_url: &str, timeout: Duration) -> bool {
+    let (rest, port) = if let Some(rest) = base_url.strip_prefix("https://") {
+        (rest, 443)
+    } else if let Some(rest) = base_url.strip_prefix("http://") {
+        (rest, 80)
+    } else {
+        return false;
+    };
+    let authority = rest.split('/').next().unwrap_or_default();
+    let address = if authority.contains(':') {
+        authority.to_string()
+    } else {
+        format!("{authority}:{port}")
+    };
+    // A resolução não tem prazo próprio: roda à parte, e um DNS travado conta como sem rede.
+    let (tx, rx) = mpsc::channel::<Vec<SocketAddr>>();
+    let resolver = thread::Builder::new().spawn(move || {
+        if let Ok(addresses) = address.to_socket_addrs() {
+            let _ = tx.send(addresses.collect());
+        }
+    });
+    if resolver.is_err() {
+        return false;
+    }
+    let Ok(addresses) = rx.recv_timeout(timeout) else {
+        return false;
+    };
+    addresses
+        .iter()
+        .any(|addr| TcpStream::connect_timeout(addr, timeout).is_ok())
 }
 
 #[cfg(test)]
@@ -208,8 +263,8 @@ mod tests {
             let waiting = queue.get(1).unwrap();
             assert!(waiting.offline);
         }
-        assert_eq!(delays, [10, 30, 60, 300, 300, 300, 300]);
-        assert_eq!(queue.get(1), None, "a oitava falha desiste");
+        assert_eq!(delays, [10, 30, 60]);
+        assert_eq!(queue.get(1), None, "a quarta falha desiste");
     }
 
     #[test]
@@ -265,6 +320,30 @@ mod tests {
         let woke = t0 + Duration::from_secs(5);
         queue.wake(woke);
         assert_eq!(queue.next_due(), Some(woke));
+        assert!(!queue.any_offline(), "a sem rede está rodando");
+        queue.failed(3, Failure::Busy, t0); // +60 s, espera o provedor
+        queue.failed(4, Failure::Offline, t0); // +10 s
+        queue.wake_offline(t0 + Duration::from_secs(1));
+        assert_eq!(queue.get(4).map(|w| w.offline), Some(true));
+        assert_eq!(
+            queue.take_due(t0 + Duration::from_secs(1)),
+            [4],
+            "o provedor espera"
+        );
+        queue.forget(3);
         assert_eq!(queue.take_due(woke), [1], "quem roda não é remarcado");
+        queue.failed(2, Failure::Offline, woke);
+        assert!(queue.any_offline());
+    }
+
+    #[test]
+    fn the_probe_only_opens_a_connection() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let timeout = Duration::from_secs(2);
+        assert!(reachable(&format!("http://127.0.0.1:{port}/v1"), timeout));
+        drop(listener);
+        assert!(!reachable(&format!("http://127.0.0.1:{port}"), timeout));
+        assert!(!reachable("ftp://127.0.0.1", timeout));
     }
 }

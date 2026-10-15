@@ -2300,6 +2300,10 @@ sleeps?: MeetingSleep[];
  */
 series?: MeetingSeries | null; 
 /**
+ * The transcript came from the local model: the meeting offers to transcribe it in the cloud.
+ */
+transcript_local?: boolean | null; 
+/**
  * The automatic transcript has not arrived: it waits for a retry, or failed for good.
  */
 auto_transcript?: TranscriptWait | null }
@@ -2831,7 +2835,11 @@ export type WaitReason =
 /**
  * Not tried yet in this run (after a start, or behind another transcription).
  */
-"queued"
+"queued" | 
+/**
+ * Scribe gave up: the local model transcribes it next.
+ */
+"local"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 /**
  * A writing style. `id` ties it to the apps that use it, so renaming keeps the mapping.

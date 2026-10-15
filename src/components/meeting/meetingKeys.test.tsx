@@ -86,9 +86,10 @@ const dialog = read("./ImportDialog.tsx");
     sessionHints(both, content({ transcript: false })),
     off(null, "meeting.keys.notesNeedContent"),
   );
+  // Sem a chave da ElevenLabs, transcreve no computador (ADR-0023): nada desliga "Transcrever".
   assert.deepEqual(
     sessionHints(none, content()),
-    off("meeting.keys.transcribeNeedsKey", "meeting.keys.notesNeedKey"),
+    off(null, "meeting.keys.notesNeedKey"),
   );
   // Sem áudio, nenhuma chave faz transcrever: a dica diz por quê (Granola, ou áudio apagado pela
   // retenção ou pela lixeira, R5 da segunda passada de QA).
@@ -115,6 +116,7 @@ const dialog = read("./ImportDialog.tsx");
       onToggleTranscript={noop}
       onRecordDraft={noop}
       transcribing={false}
+      transcribeLabel="meeting.view.transcribe"
       transcribeDisabled
       transcribeHint="falta a ElevenLabs"
       onTranscribe={noop}
@@ -149,7 +151,6 @@ const dialog = read("./ImportDialog.tsx");
       "missingElevenlabs",
       "missingAnthropic",
       "add",
-      "transcribeNeedsKey",
       "notesNeedKey",
       "notesNeedContent",
     ]) {

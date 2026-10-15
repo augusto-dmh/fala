@@ -15,6 +15,7 @@
 //! importar de novo atualizar em vez de duplicar.
 //! `meeting_erasures`, aditiva, guarda os trechos que a pessoa apagou (texto e marcador).
 //! `meeting_takes`, aditiva, guarda as gravações a mais de uma sessão retomada.
+//! `meeting_local_transcripts`, aditiva, marca a transcrição feita pelo Parakeet local.
 //! `meeting_trash`, aditiva, guarda as sessões na lixeira por 30 dias; o `.md` delas fica em
 //! `Reuniões/.lixeira/`, e a lista, a busca e o MCP não as veem.
 //! `meeting_directory` junta as pessoas das reuniões por nome, sem tabela: é uma consulta sobre
@@ -36,6 +37,7 @@ mod meeting_people;
 mod meeting_search;
 mod meeting_series;
 mod meeting_takes;
+mod meeting_transcript_origin;
 mod meeting_trash;
 mod meetings;
 mod metrics;
