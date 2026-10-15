@@ -23,3 +23,21 @@ a captura), lock no main thread (aviso em thread), texto "quiet" ("Quase nenhum 
 gravado"). Mantidos por decisão: piso de −60 dBFS no mic (recado 00:10), limiar de 10 s
 espelhado na UI (já era assim com 30 s). `cargo clippy --workspace --all-targets -D warnings`
 limpo depois das correções.
+
+## PR 2 (#209)
+
+| Check | Evidência |
+| --- | --- |
+| C6 | `cargo test -p fala-meeting`: 76 passed; `a_mic_never_heard_warns_at_15_s` (com `mic_unheard`) e `switching_the_mic_starts_the_short_window_again` |
+| C7 | `cargo test -p fala --lib -- meeting:: overlay:: call_prompt::`: 95 passed (`pill_card_for_the_call_or_the_first_seconds`, `an_answer_takes_its_card_off_the_record`); `bun src/components/meeting/micSwitch.test.tsx`: S1–S4 ok |
+| CI | #209: rust, windows, frontend, deny, pr e secrets verdes |
+
+Duas revisões `code-review` (high): uma no código do #202 (corrida do [Descartar] com outro card,
+lixeira, canal no fallback, erro do keep sem log) e uma neste PR (pedido do seletor perdido,
+reabertura do mesmo mic zerando a contagem, card da pílula a cada 2 min com supressão de ruído,
+card mostrado entre a resposta e o fechamento, `openSignal` com o controle desligado, card velho
+na reunião seguinte). Corrigidas em 519e81c e c32dfe3. Ficaram: a checagem de lixeira dentro de
+`transcribe_with` (área do painel retry), voltar ao mic escolhido quando ele reaparece
+(`meeting-device-follow`), o custo de enumerar os dispositivos a cada pedido do mic, e a duplicação entre
+`MicSwitcher` e `MicrophoneSelector`.
+Não testado: o app rodando (o Fala instalado estava aberto) e um mic real mudo.
