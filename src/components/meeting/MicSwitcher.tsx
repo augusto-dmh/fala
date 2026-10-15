@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { DEFAULT_DEVICE_NAME, deviceLabel } from "@/lib/utils/deviceLabel";
 import { useSettings } from "../../hooks/useSettings";
 import { Dropdown } from "../ui/Dropdown";
-
-/** What the pill's muted-mic card sends to the main window (`open_meeting_mic_picker`). */
-export const PICK_MIC_EVENT = "meeting-pick-mic";
+import { onMicPick } from "./micPick";
 
 /**
  * "Switch microphone" on the muted-mic strip: the microphone picked here is the one dictation
@@ -23,13 +20,7 @@ export function MicSwitcher() {
     refreshAudioDevices,
   } = useSettings();
   const [openSignal, setOpenSignal] = useState(0);
-  useEffect(() => {
-    const unlisten = listen(PICK_MIC_EVENT, () => {
-      void refreshAudioDevices();
-      setOpenSignal((n) => n + 1);
-    });
-    return () => void unlisten.then((stop) => stop());
-  }, [refreshAudioDevices]);
+  useEffect(() => onMicPick(() => setOpenSignal((n) => n + 1)), []);
 
   const selected = getSetting("selected_microphone");
   return (

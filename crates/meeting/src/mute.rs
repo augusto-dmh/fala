@@ -69,6 +69,13 @@ impl MuteWatch {
 }
 
 impl MuteWatch {
+    /// O mic ainda não deu sinal desde o começo ou a troca, há [`MIC_EARLY_WARN_AFTER`]: o caso
+    /// do microfone errado, que a pill mostra. Depois do primeiro sinal, um mic que só fica quieto
+    /// (supressão de ruído entre frases) acende só o aviso de 120 s do painel.
+    pub fn mic_unheard(&self) -> bool {
+        self.mode.has_mic() && !self.mic_heard && self.mic_silent >= MIC_EARLY_WARN_AFTER
+    }
+
     fn mic_warn_after(&self) -> Duration {
         if self.mic_heard {
             MUTE_WARN_AFTER
@@ -168,11 +175,14 @@ mod tests {
         // O microfone errado: zero desde o começo, enquanto a call toca no sistema.
         let mut watch = MuteWatch::new(SessionMode::Meeting);
         assert!(!run(&mut watch, 0, 14, QUIET, LOUD).mic);
+        assert!(!watch.mic_unheard());
         assert!(run(&mut watch, 14, 15, QUIET, LOUD).mic);
+        assert!(watch.mic_unheard());
         // Um sinal apaga o aviso, e daí em diante o mic tem os 120 s de sempre.
         assert!(!run(&mut watch, 15, 16, LOUD, LOUD).mic);
         assert!(!run(&mut watch, 16, 135, QUIET, LOUD).mic);
         assert!(run(&mut watch, 135, 136, QUIET, LOUD).mic);
+        assert!(!watch.mic_unheard(), "heard once: only the panel's warning");
     }
 
     #[test]

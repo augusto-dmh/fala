@@ -243,6 +243,21 @@ fn settle_unanswered(app: &AppHandle, replaced: Option<CallPromptPayload>) {
     });
 }
 
+/// The answered card leaves the screen, unless another card took its place meanwhile: that
+/// one stays on record and on screen.
+fn hide_answered(app: &AppHandle) {
+    if current().is_some() {
+        return;
+    }
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(LABEL) {
+            let _ = window.hide();
+        }
+    });
+}
+
 /// The action for `answer`, taking the card off the record in the same step: a card that
 /// replaces it meanwhile is neither answered nor settled twice. `None` leaves the card as is.
 fn take_answered(answer: CallPromptAnswer) -> Option<AnswerAction> {
@@ -447,7 +462,7 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         log::debug!("call prompt: {answer:?} does not match the card on screen");
         return Ok(());
     };
-    close(&app);
+    hide_answered(&app);
     log::info!("call prompt answered: {answer:?}");
     match action {
         AnswerAction::Record => {
@@ -474,7 +489,11 @@ pub async fn answer_call_prompt(app: AppHandle, answer: CallPromptAnswer) -> Res
         AnswerAction::Keep(id) => {
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 let meetings = Arc::clone(&meetings);
-                tauri::async_runtime::spawn_blocking(move || meetings.keep_after_mistake(&id));
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(e) = meetings.keep_after_mistake(&id) {
+                        log::warn!("meeting {id}: not kept after [Keep]: {e}");
+                    }
+                });
             }
         }
         AnswerAction::Discard(id) => {

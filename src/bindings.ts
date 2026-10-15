@@ -2522,6 +2522,11 @@ export type MeetingStatus = { state: MeetingPhase; id: string | null; mode: Meet
  */
 recorded_ms: number; mic_level: number; system_level: number; muted_mic: boolean; muted_system: boolean; 
 /**
+ * The mic has not been heard since the start or the last switch, for 15 s: the wrong or a
+ * muted microphone. The pill says so with a way to switch.
+ */
+mic_unheard: boolean; 
+/**
  * Set once the session warns that the cap is near; "one more hour" clears it.
  */
 cap_remaining_ms: number | null; 

@@ -97,7 +97,7 @@ const RecordingOverlay: React.FC = () => {
   const [meetingMuted, setMeetingMuted] = useState(false);
   // The output the call plays on while the system channel records zeros, if any.
   const [callOutput, setCallOutput] = useState<string | null>(null);
-  // The meeting's mic is not heard: its name ("" when unknown), or `null`.
+  // The meeting's mic was never heard: its name ("" when unknown), or `null`.
   const [mutedMic, setMutedMic] = useState<string | null>(null);
   // A dictation zeroes the meeting's mic now: a card over the recording pill says so.
   const [meetingDictation, setMeetingDictation] = useState(false);
@@ -247,6 +247,8 @@ const RecordingOverlay: React.FC = () => {
         setCaptureReady(false);
         setLimitWarning(false);
         setNotice(null);
+        // The next meeting starts without the last one's mic card.
+        setMutedMic(null);
       });
 
       const unlistenNotice = await listen<OverlayNotice>(
@@ -293,7 +295,7 @@ const RecordingOverlay: React.FC = () => {
         setMeetingMuted(muted || zero);
         setCallOutput(event.payload.call_output);
         setMutedMic(
-          event.payload.muted_mic ? (event.payload.mic_input ?? "") : null,
+          event.payload.mic_unheard ? (event.payload.mic_input ?? "") : null,
         );
         setMeetingDictation(event.payload.dictating);
       });

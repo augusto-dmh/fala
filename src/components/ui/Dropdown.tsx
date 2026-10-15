@@ -60,7 +60,10 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   useEffect(() => {
-    if (openSignal) setIsOpen(true);
+    if (!openSignal || disabled) return;
+    onOpen?.();
+    setIsOpen(true);
+    // Only a new signal opens: a refreshed `onOpen` or a re-enabled control does not.
   }, [openSignal]);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);

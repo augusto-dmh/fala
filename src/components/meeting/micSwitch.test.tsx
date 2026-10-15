@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { MeetingStatus } from "@/bindings";
 import { CallOutputCard } from "../../overlay/MeetingPill";
-import { PICK_MIC_EVENT } from "./MicSwitcher";
+import { onMicPick, PICK_MIC_EVENT, requestMicPick } from "./micPick";
 import { RecorderPanel } from "./RecorderPanel";
 
 const read = (path: string) =>
@@ -24,6 +24,7 @@ const status = (over: Partial<MeetingStatus> = {}): MeetingStatus => ({
   system_level: 0.01,
   muted_mic: false,
   muted_system: false,
+  mic_unheard: false,
   cap_remaining_ms: null,
   low_disk_bytes: null,
   mic_input: "Microfone (NVIDIA Broadcast)",
@@ -82,6 +83,8 @@ const panel = (s: MeetingStatus) =>
   assert.match(html, />Trocar microfone</);
   const overlay = read("../../overlay/RecordingOverlay.tsx");
   assert.ok(overlay.includes("commands.openMeetingMicPicker()"));
+  // The card is for a mic never heard, not for two quiet minutes of a working one.
+  assert.ok(overlay.includes("event.payload.mic_unheard ?"));
   assert.ok(
     overlay.indexOf('kind="muted_mic"') <
       overlay.indexOf("showsConsentChip(meetingMs) ?"),
@@ -90,14 +93,23 @@ const panel = (s: MeetingStatus) =>
   ok("S2");
 }
 
-// S3: the command and the picker agree on the event; the picker opens on it.
+// S3: the pill's request waits for a picker that mounts later (the main window opens on the
+// session first), opens one already on screen, and opens nothing twice.
 {
+  let opened = 0;
+  requestMicPick();
+  const stop = onMicPick(() => opened++);
+  assert.equal(opened, 1, "a waiting request opens the picker that mounts");
+  requestMicPick();
+  assert.equal(opened, 2, "a picker on screen opens at once");
+  stop();
+  requestMicPick();
+  assert.equal(opened, 2, "nobody to open: it waits");
+  const again = onMicPick(() => opened++);
+  assert.equal(opened, 3);
+  again();
   const rust = read("../../../apps/desktop/src/overlay.rs");
   assert.ok(rust.includes(`emit_to("main", "${PICK_MIC_EVENT}", ())`));
-  const switcher = read("./MicSwitcher.tsx");
-  assert.match(switcher, /listen\(PICK_MIC_EVENT/);
-  assert.match(switcher, /openSignal=\{openSignal\}/);
-  assert.match(switcher, /updateSetting\("selected_microphone"/);
   ok("S3");
 }
 
