@@ -284,9 +284,21 @@ pub fn apply_selected_microphone(app: &AppHandle, device_name: String) -> Result
     write_settings(app, settings);
     crate::tray::update_tray_menu(app);
 
-    app.state::<Arc<AudioRecordingManager>>()
+    let updated = app
+        .state::<Arc<AudioRecordingManager>>()
         .update_selected_device()
-        .map_err(|e| format!("Failed to update selected device: {}", e))
+        .map_err(|e| format!("Failed to update selected device: {}", e));
+    meeting_microphone_changed(app);
+    updated
+}
+
+/// A meeting being recorded moves its mic channel to the new choice too. Off the caller's
+/// thread: a meeting that is starting holds its lock while it opens the devices.
+fn meeting_microphone_changed(app: &AppHandle) {
+    if let Some(meetings) = app.try_state::<Arc<crate::meeting::MeetingManager>>() {
+        let meetings = Arc::clone(&meetings);
+        std::thread::spawn(move || meetings.microphone_changed());
+    }
 }
 
 #[tauri::command]
@@ -370,6 +382,7 @@ pub fn set_clamshell_microphone(app: AppHandle, device_name: String) -> Result<(
         Some(device_name)
     };
     write_settings(&app, settings);
+    meeting_microphone_changed(&app);
     Ok(())
 }
 
@@ -432,6 +445,7 @@ pub async fn set_selected_channel(app: AppHandle, channel: Option<u16>) -> Resul
     let mut settings = get_settings(&app);
     settings.selected_channel = channel;
     write_settings(&app, settings);
+    meeting_microphone_changed(&app);
     Ok(())
 }
 

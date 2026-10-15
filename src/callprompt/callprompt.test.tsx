@@ -90,15 +90,13 @@ assert.match(html, />nao-avisar</);
 assert.match(html, /scaleX\(0\.5\)/);
 console.log("C15 card ok");
 
-// "Recorded by mistake?" says why it asks: a short recording, or a long one almost silent.
-assert.deepEqual(cardBody("mistake", 12), [
+// "Recorded by mistake?" says why it asks: a short recording, or one without sound.
+assert.deepEqual(cardBody("mistake", 9), [
   "callPrompt.mistake.short",
-  { seconds: 12 },
+  { seconds: 9 },
 ]);
-assert.deepEqual(cardBody("mistake", 7_200), [
-  "callPrompt.mistake.quiet",
-  { minutes: 120 },
-]);
+assert.deepEqual(cardBody("mistake", 12), ["callPrompt.mistake.quiet", {}]);
+assert.deepEqual(cardBody("mistake", 7_200), ["callPrompt.mistake.quiet", {}]);
 assert.deepEqual(cardBody("quit", null), ["callPrompt.quit.body", {}]);
 assert.deepEqual(cardBody("woke", 20), [
   "callPrompt.woke.body",
@@ -162,9 +160,9 @@ for (const { lang, json } of locales) {
     lookup(json, "callPrompt.mistake.short") as string,
     /\{\{seconds\}\}/,
   );
-  assert.match(
+  assert.doesNotMatch(
     lookup(json, "callPrompt.mistake.quiet") as string,
-    /\{\{minutes\}\}/,
+    /\{\{/,
   );
 }
 assert.equal(
