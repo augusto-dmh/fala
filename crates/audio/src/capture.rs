@@ -71,8 +71,9 @@ impl Blocks {
     }
 }
 
+/// As utterances de uma sessão; a prévia da reunião (`meeting::live`) usa a mesma máquina.
 #[derive(Default)]
-struct Session {
+pub(crate) struct Session {
     pending: Vec<f32>,
     recent: VecDeque<Vec<f32>>,
     onset: usize,
@@ -152,10 +153,7 @@ impl DictationCapture {
         self.resampler.finish(&mut self.scratch)?;
         let tail = std::mem::take(&mut self.scratch);
         let mut done = self.process(&tail)?;
-        if let Some(mut session) = self.session.take()
-            && let Some(mut utterance) = session.utterance.take()
-        {
-            utterance.append(&mut session.pending);
+        if let Some(utterance) = self.session.take().and_then(|mut s| s.take_open()) {
             if let Some(blocks) = self.blocks.as_mut() {
                 blocks.push(&utterance, false);
             }
@@ -178,7 +176,8 @@ impl DictationCapture {
         let frames: Vec<f32> = session.pending.drain(..full).collect();
         for frame in frames.as_chunks::<FRAME_SAMPLES>().0 {
             let voice = self.vad.is_voice(frame)?;
-            if let Some((utterance, on_silence)) = session.step(frame, voice) {
+            if let Some((utterance, on_silence)) = session.step(frame, voice, MAX_UTTERANCE_SAMPLES)
+            {
                 if let Some(blocks) = self.blocks.as_mut() {
                     blocks.push(&utterance, on_silence);
                 }
@@ -191,8 +190,13 @@ impl DictationCapture {
 
 impl Session {
     /// Um quadro classificado; devolve a utterance que ele fecha, se fechar, e se foi o
-    /// silêncio que a fechou.
-    fn step(&mut self, frame: &[f32], voice: bool) -> Option<(Vec<f32>, bool)> {
+    /// silêncio que a fechou. Uma utterance com `max` amostras é cortada ali.
+    pub(crate) fn step(
+        &mut self,
+        frame: &[f32],
+        voice: bool,
+        max: usize,
+    ) -> Option<(Vec<f32>, bool)> {
         if let Some(utterance) = self.utterance.as_mut() {
             utterance.extend_from_slice(frame);
             self.silence = if voice { 0 } else { self.silence + 1 };
@@ -200,7 +204,13 @@ impl Session {
                 self.silence = 0;
                 return self.utterance.take().map(|u| (u, true));
             }
-            if utterance.len() >= MAX_UTTERANCE_SAMPLES {
+            if utterance.len() >= max {
+                // O teto no meio de uma pausa fecha a utterance como o silêncio fecharia: uma
+                // nova, só de silêncio, não abre.
+                if self.silence > 0 {
+                    self.silence = 0;
+                    return self.utterance.take().map(|u| (u, true));
+                }
                 return self.utterance.replace(Vec::new()).map(|u| (u, false));
             }
             return None;
@@ -220,6 +230,18 @@ impl Session {
             self.utterance = Some(self.recent.drain(..).flatten().collect());
         }
         None
+    }
+
+    /// Uma utterance está aberta: o VAD ouviu voz e ainda não fechou o trecho.
+    pub(crate) fn speaking(&self) -> bool {
+        self.utterance.is_some()
+    }
+
+    /// A utterance aberta, com o que ainda não formava um quadro.
+    pub(crate) fn take_open(&mut self) -> Option<Vec<f32>> {
+        let mut utterance = self.utterance.take()?;
+        utterance.append(&mut self.pending);
+        Some(utterance)
     }
 }
 

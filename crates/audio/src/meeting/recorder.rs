@@ -234,6 +234,9 @@ fn to_i16(x: f32) -> i16 {
     (x.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16
 }
 
+/// Recebe cada lote escrito no WAV: o índice do primeiro frame e os dois canais (mic, sistema).
+pub type FrameTap = Box<dyn FnMut(u64, &[i16], &[i16]) + Send>;
+
 fn frames_at(now: Duration) -> u64 {
     (now.as_nanos() * u128::from(MEETING_RATE) / 1_000_000_000) as u64
 }
@@ -247,6 +250,7 @@ pub struct MeetingRecorder {
     last_flush: Duration,
     left: Vec<i16>,
     right: Vec<i16>,
+    tap: Option<FrameTap>,
 }
 
 impl MeetingRecorder {
@@ -261,7 +265,14 @@ impl MeetingRecorder {
             last_flush: Duration::ZERO,
             left: Vec::new(),
             right: Vec::new(),
+            tap: None,
         })
+    }
+
+    /// Entrega a `tap` os mesmos frames que vão ao WAV, depois do hold: o mic já sai zerado nos
+    /// intervalos de ditado (a prévia ao vivo, ADR-0019).
+    pub fn set_tap(&mut self, tap: FrameTap) {
+        self.tap = Some(tap);
     }
 
     pub fn push_mic(&mut self, samples: &[f32]) -> Result<(), AudioError> {
@@ -387,6 +398,9 @@ impl MeetingRecorder {
         self.mic.take(n, &mut self.left);
         self.system.take(n, &mut self.right);
         self.wav.write(&self.left, &self.right)?;
+        if let Some(tap) = self.tap.as_mut() {
+            tap(self.written, &self.left, &self.right);
+        }
         self.written += n as u64;
         Ok(())
     }
@@ -711,6 +725,37 @@ mod tests {
             }]
         );
         assert_eq!(mic.omit_late, 0);
+    }
+
+    #[test]
+    fn the_tap_gets_what_the_wav_gets_with_the_dictation_zeroed() {
+        let path = tmp("tap.wav");
+        let run = Run {
+            mic: Run::source(48_000, 4, 14),
+            system: Run::source(48_000, 4, 15),
+        };
+        let tapped = std::sync::Arc::new(std::sync::Mutex::new((Vec::new(), Vec::new())));
+        let sink = std::sync::Arc::clone(&tapped);
+        let (rec, _) = run.go_with(&path, 4, |step, rec| match step {
+            1 => {
+                let sink = std::sync::Arc::clone(&sink);
+                rec.set_tap(Box::new(move |first, mic, system| {
+                    let mut got = sink.lock().unwrap();
+                    assert_eq!(first, got.0.len() as u64, "lotes seguidos, sem buraco");
+                    got.0.extend_from_slice(mic);
+                    got.1.extend_from_slice(system);
+                }));
+            }
+            200 => rec.begin_omit(LOOKBACK),
+            300 => rec.end_omit(MARGIN),
+            _ => {}
+        });
+        rec.finish(Duration::from_secs(4)).unwrap();
+        let (left, right) = read(&path);
+        let got = tapped.lock().unwrap();
+        assert_eq!(got.0, left);
+        assert_eq!(got.1, right);
+        assert!(zeros(&got.0[96_000 - 19_200..144_000 + 2_400]));
     }
 
     #[test]
