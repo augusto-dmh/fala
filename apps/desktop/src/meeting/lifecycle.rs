@@ -340,8 +340,8 @@ impl MeetingManager {
     }
 
     /// At startup, in the background: the mirror catches up, the retention runs, the audio a
-    /// previous run left as WAV is retained (and transcribed, as after a stop), then the retention
-    /// runs once a day.
+    /// previous run left as WAV is retained (and transcribed, as after a stop), the transcripts
+    /// that waited for a retry go back to the queue, then the retention runs once a day.
     pub fn spawn_upkeep(app: &AppHandle) {
         let app = app.clone();
         let spawned = std::thread::Builder::new()
@@ -355,6 +355,7 @@ impl MeetingManager {
                 manager.run_retention();
                 manager.purge_trash();
                 manager.retain_stopped();
+                manager.resume_pending_transcripts();
                 loop {
                     std::thread::sleep(RETENTION_CHECK_EVERY);
                     let now = millis(super::now_local());

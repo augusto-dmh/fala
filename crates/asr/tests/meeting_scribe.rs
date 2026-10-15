@@ -578,3 +578,77 @@ mod local {
         assert!(server.requests().is_empty());
     }
 }
+
+/// A fila de tentativas sobre falhas de verdade do cliente HTTP: o que o servidor devolve vira
+/// a próxima tentativa (ou a desistência) e o áudio fica intacto até a resposta boa.
+mod retry {
+    use super::*;
+    use fala_asr::meeting::{Failure, Next, RetryQueue, BUSY_DELAYS, OFFLINE_DELAYS};
+
+    fn reply(status: u16) -> Reply {
+        Reply::Json {
+            status,
+            body: r#"{"detail":"x"}"#.to_string(),
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// Uma porta em que ninguém escuta: a conexão é recusada, como sem rede.
+    fn refused() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        url
+    }
+
+    #[test]
+    fn provider_and_network_failures_retry_until_the_transcript_arrives() {
+        let recording = session("retry", SessionMode::Meeting);
+        let t0 = Instant::now();
+        let mut queue = RetryQueue::new();
+        let attempt = |queue: &mut RetryQueue<u8>, scribe: &mut ElevenLabsScribe| {
+            let err = run(scribe, &recording).unwrap_err();
+            queue.failed(1, Failure::of(&err), t0)
+        };
+
+        let mut offline = ElevenLabsScribe::new(ApiKey::new(KEY).unwrap(), no_keyterms())
+            .with_base_url(refused());
+        assert_eq!(
+            attempt(&mut queue, &mut offline),
+            Next::RetryAt(t0 + OFFLINE_DELAYS[0])
+        );
+        assert!(queue.get(1).unwrap().offline);
+
+        let closed = FakeServer::start(Reply::Close);
+        assert_eq!(
+            attempt(&mut queue, &mut scribe(&closed, no_keyterms())),
+            Next::RetryAt(t0 + OFFLINE_DELAYS[1])
+        );
+
+        let busy = FakeServer::start(reply(429));
+        assert_eq!(
+            attempt(&mut queue, &mut scribe(&busy, no_keyterms())),
+            Next::RetryAt(t0 + BUSY_DELAYS[2])
+        );
+        assert!(!queue.get(1).unwrap().offline);
+
+        let down = FakeServer::start(reply(503));
+        assert_eq!(
+            attempt(&mut queue, &mut scribe(&down, no_keyterms())),
+            Next::GiveUp,
+            "a quarta falha seguida do provedor desiste"
+        );
+
+        // Recomeçando, a resposta boa chega e quem chama tira a sessão da fila.
+        let up = FakeServer::start(ok());
+        assert_eq!(
+            attempt(&mut queue, &mut scribe(&down, no_keyterms())),
+            Next::RetryAt(t0 + BUSY_DELAYS[0])
+        );
+        let segments = run(&mut scribe(&up, no_keyterms()), &recording).unwrap();
+        assert!(!segments.is_empty());
+        assert!(queue.forget(1).is_some());
+        assert_eq!(std::fs::read(recording.mic()).unwrap(), MIC_BYTES);
+        assert_eq!(std::fs::read(recording.system()).unwrap(), SYS_BYTES);
+    }
+}

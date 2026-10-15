@@ -2298,7 +2298,11 @@ sleeps?: MeetingSleep[];
 /**
  * The meetings of the same series ("Weekly produto 13/10" and "20/10"); absent without one.
  */
-series?: MeetingSeries | null }
+series?: MeetingSeries | null; 
+/**
+ * The automatic transcript has not arrived: it waits for a retry, or failed for good.
+ */
+auto_transcript?: TranscriptWait | null }
 /**
  * What erasing a stretch did.
  */
@@ -2331,7 +2335,12 @@ export type MeetingError = { kind: "consent_required" } | { kind: "already_activ
 /**
  * The provider key is not in the keyring.
  */
-{ kind: "missing_key" } | { kind: "invalid_key" } | { kind: "keyring" } | { kind: "transcription"; detail: string } | { kind: "cancelled" } | 
+{ kind: "missing_key" } | { kind: "invalid_key" } | { kind: "keyring" } | { kind: "transcription"; detail: string } | 
+/**
+ * Scribe was not reached (no network: `status` absent) or answered `429`/`5xx`; retrying
+ * may work. `reason` is the HTTP status or the transport error, never a body.
+ */
+{ kind: "unreachable"; detail: { status: number | null; reason: string } } | { kind: "cancelled" } | 
 /**
  * A transcription or a notes generation is already running.
  */
@@ -2616,7 +2625,11 @@ export type ProgressStage =
 /**
  * `phase` is `uploading` (bytes `done` of `total`) or `waiting` for the provider.
  */
-{ stage: "transcribing"; channel: string; phase: string; done: number; total: number } | { stage: "notes" } | { stage: "done" } | { stage: "failed"; error: MeetingError }
+{ stage: "transcribing"; channel: string; phase: string; done: number; total: number } | 
+/**
+ * The automatic transcript failed and runs again on its own (`retry`).
+ */
+{ stage: "waiting"; reason: WaitReason } | { stage: "notes" } | { stage: "done" } | { stage: "failed"; error: MeetingError }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 /**
  * Why "Restore defaults" refused, serialized as `{"kind": "..."}` for the dialog.
@@ -2785,6 +2798,18 @@ export type TemplateSource = "builtin" |
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 /**
+ * What a meeting shows about an automatic transcript that has not arrived.
+ */
+export type TranscriptWait = 
+/**
+ * It runs again on its own.
+ */
+{ state: "waiting"; reason: WaitReason } | 
+/**
+ * Retrying would not help, or the retries ran out: "Tentar de novo" is a click.
+ */
+{ state: "failed"; error: MeetingError }
+/**
  * A session in the trash.
  */
 export type TrashedMeetingSummary = { summary: MeetingSummary; 
@@ -2794,6 +2819,19 @@ export type TrashedMeetingSummary = { summary: MeetingSummary;
 trashed_at: string }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+export type WaitReason = 
+/**
+ * The last try had no network.
+ */
+"offline" | 
+/**
+ * Scribe answered `429` or `5xx`.
+ */
+"provider" | 
+/**
+ * Not tried yet in this run (after a start, or behind another transcription).
+ */
+"queued"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 /**
  * A writing style. `id` ties it to the apps that use it, so renaming keeps the mapping.

@@ -356,6 +356,11 @@ const detail = (over: Partial<MeetingDetail> = {}): MeetingDetail => ({
     "meeting.errors.audio_device",
   );
   assert.equal(errorKey("texto livre"), "meeting.errors.generic");
+  // Sem rede ou com a Scribe fora (`429`/`5xx`): um texto próprio, não o genérico.
+  assert.equal(
+    errorKey({ kind: "unreachable", detail: { status: null, reason: "dns" } }),
+    "meeting.errors.unreachable",
+  );
   for (const kind of Object.keys(pt.meeting.errors)) {
     assert.ok(en.meeting.errors[kind], `errors.${kind} em en`);
   }
